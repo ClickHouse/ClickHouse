@@ -615,6 +615,23 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             }
         }
     }
+
+    if (!create.attach && !settings.allow_experimental_map_type)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            WhichDataType which(*name_and_type_pair.type);
+            if (which.isMap())
+            {
+                const auto & type_name = name_and_type_pair.type->getName();
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type_name + "' because experimental Map type is not allowed. "
+                                 + "Set 'allow_experimental_map_type = 1' setting to enable";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -734,7 +751,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
         bool if_not_exists = create.if_not_exists;
 
-        // Table SQL definition is available even if the table is detached
+        // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         if (create.is_dictionary)
