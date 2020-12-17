@@ -30,6 +30,7 @@ SKIP_LIST = [
     "01018_Distributed__shard_num",
     "01018_ip_dictionary",
     "01023_materialized_view_query_context",  # flaky
+    "01035_lc_empty_part_bug",  # flaky
     "01046_materialized_view_with_join_over_distributed",  # flaky
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
