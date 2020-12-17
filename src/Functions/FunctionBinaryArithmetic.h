@@ -1015,8 +1015,8 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    auto const_a = col_left_const->template getValue<T0>();
-                    auto const_b = col_right_const->template getValue<T1>();
+                    const NativeResultType const_a = col_left_const->template getValue<T0>();
+                    const NativeResultType const_b = col_right_const->template getValue<T1>();
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
