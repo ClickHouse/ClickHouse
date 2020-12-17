@@ -4,6 +4,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct IsNaNImpl
 {
@@ -18,6 +20,7 @@ struct IsNaNImpl
 
 using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
+}
 
 void registerFunctionIsNaN(FunctionFactory & factory)
 {

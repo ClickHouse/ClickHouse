@@ -1,5 +1,5 @@
 ---
-toc_priority: 35
+toc_priority: 34
 toc_title: Arithmetic
 ---
 

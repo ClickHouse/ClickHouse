@@ -7,7 +7,9 @@ node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
 
 # no adaptive granularity by default
-node3 = cluster.add_instance('node3', image='yandex/clickhouse-server', tag='19.9.5.36', with_installed_binary=True, stay_alive=True)
+node3 = cluster.add_instance('node3', image='yandex/clickhouse-server', tag='19.9.5.36', with_installed_binary=True,
+                             stay_alive=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -20,7 +22,6 @@ def start_cluster():
 
 
 def test_attach_detach(start_cluster):
-
     node1.query("""
         CREATE TABLE test (key UInt64)
         ENGINE = ReplicatedMergeTree('/clickhouse/test', '1')
@@ -58,7 +59,8 @@ def test_mutate_with_mixed_granularity(start_cluster):
         ENGINE = MergeTree
         ORDER BY key PARTITION BY date""")
 
-    node3.query("INSERT INTO test SELECT toDate('2019-10-01') + number % 5, number, toString(number), toString(number * number) FROM numbers(500)")
+    node3.query(
+        "INSERT INTO test SELECT toDate('2019-10-01') + number % 5, number, toString(number), toString(number * number) FROM numbers(500)")
 
     assert node3.query("SELECT COUNT() FROM test") == "500\n"
 
@@ -68,7 +70,8 @@ def test_mutate_with_mixed_granularity(start_cluster):
 
     node3.query("ALTER TABLE test MODIFY SETTING enable_mixed_granularity_parts = 1")
 
-    node3.query("INSERT INTO test SELECT toDate('2019-10-01') + number % 5, number, toString(number), toString(number * number) FROM numbers(500, 500)")
+    node3.query(
+        "INSERT INTO test SELECT toDate('2019-10-01') + number % 5, number, toString(number), toString(number * number) FROM numbers(500, 500)")
 
     assert node3.query("SELECT COUNT() FROM test") == "1000\n"
     assert node3.query("SELECT COUNT() FROM test WHERE key % 100 == 0") == "10\n"

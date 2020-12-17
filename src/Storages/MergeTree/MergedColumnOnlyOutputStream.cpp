@@ -22,8 +22,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     , header(header_)
 {
     const auto & global_settings = data_part->storage.global_context.getSettings();
+    const auto & storage_settings = data_part->storage.getSettings();
+
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        storage_settings,
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
         global_settings.min_bytes_to_use_direct_io);
 
@@ -67,12 +70,15 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+    MergeTreeData::MutableDataPartPtr & new_part,
+    MergeTreeData::DataPart::Checksums & all_checksums,
+    bool sync)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finishDataSerialization(checksums);
-    writer->finishSkipIndicesSerialization(checksums);
+    writer->finishDataSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums, sync);
 
     auto columns = new_part->getColumns();
 

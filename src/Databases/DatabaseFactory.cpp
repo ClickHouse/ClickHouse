@@ -19,6 +19,7 @@
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
+#    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
@@ -83,7 +84,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
-        engine_define->sample_by || (engine_name != "MaterializeMySQL" && engine_define->settings))
+        engine_define->sample_by || (!endsWith(engine_name, "MySQL") && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
@@ -119,22 +120,32 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
-            if (engine_name == "MaterializeMySQL")
+            if (engine_name == "MySQL")
             {
-                MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
+                auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
 
-                auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
+                mysql_database_settings->loadFromQueryContext(context);
+                mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
-                if (engine_define->settings)
-                    materialize_mode_settings->loadFromQuery(*engine_define);
-
-                return std::make_shared<DatabaseMaterializeMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                return std::make_shared<DatabaseConnectionMySQL>(
+                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
             }
 
-            return std::make_shared<DatabaseConnectionMySQL>(
-                context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool));
+            MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
+
+            auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
+
+            if (engine_define->settings)
+                materialize_mode_settings->loadFromQuery(*engine_define);
+
+            if (create.uuid == UUIDHelpers::Nil)
+                return std::make_shared<DatabaseMaterializeMySQL<DatabaseOrdinary>>(
+                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
+                    , std::move(materialize_mode_settings));
+            else
+                return std::make_shared<DatabaseMaterializeMySQL<DatabaseAtomic>>(
+                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
+                    , std::move(materialize_mode_settings));
         }
         catch (...)
         {

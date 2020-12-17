@@ -3,9 +3,13 @@
 
 namespace DB
 {
+namespace
+{
 
 struct TanName { static constexpr auto name = "tan"; };
 using FunctionTan = FunctionMathUnary<UnaryFunctionVectorized<TanName, tan>>;
+
+}
 
 void registerFunctionTan(FunctionFactory & factory)
 {

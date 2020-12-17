@@ -194,6 +194,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
             auto src_buffer = cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, 0);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
             copyData(*src_buffer, *dst_buffer);
+            dst_buffer->finalize();
         },
         buf_size);
 }

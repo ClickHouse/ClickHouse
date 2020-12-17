@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: ClickHouse历史
+---
+
 # ClickHouse历史 {#clickhouseli-shi}
 
 ClickHouse最初是为 [YandexMetrica](https://metrica.yandex.com/) [世界第二大Web分析平台](http://w3techs.com/technologies/overview/traffic_analysis/all) 而开发的。多年来一直作为该系统的核心组件被该系统持续使用着。目前为止，该系统在ClickHouse中有超过13万亿条记录，并且每天超过200多亿个事件被处理。它允许直接从原始数据中动态查询并生成报告。本文简要介绍了ClickHouse在其早期发展阶段的目标。
@@ -13,7 +18,7 @@ Yandex.Metrica基于用户定义的字段，对实时访问、连接会话，生
 
 ClickHouse还被使用在：
 
--   存储来自Yandex.Metrica回话重放数据。
+-   存储来自Yandex.Metrica的会话重放数据。
 -   处理中间数据
 -   与Analytics一起构建全球报表。
 -   为调试Yandex.Metrica引擎运行查询

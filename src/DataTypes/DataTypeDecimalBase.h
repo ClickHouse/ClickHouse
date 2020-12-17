@@ -150,46 +150,45 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
+    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
+    {
+        return {precision, scale};
+    }
+
 protected:
     const UInt32 precision;
     const UInt32 scale;
 };
 
 
-template <typename T, typename U, template <typename> typename DecimalType>
-typename std::enable_if_t<(sizeof(T) >= sizeof(U)), DecimalType<T>>
-inline decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+template <typename T>
+inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_type)
 {
-    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
-    if (is_multiply)
-        scale = tx.getScale() + ty.getScale();
-    else if (is_divide)
-        scale = tx.getScale();
-    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
+    if (isColumnedAsDecimalT<T>(data_type))
+        return static_cast<const DataTypeDecimalBase<T> *>(&data_type);
+
+    return nullptr;
 }
 
-template <typename T, typename U, template <typename> typename DecimalType>
-typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DecimalType<U>>
-inline decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_multiply, bool is_divide)
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
 {
-    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
-    if (is_multiply)
-        scale = tx.getScale() * ty.getScale();
-    else if (is_divide)
-        scale = tx.getScale();
-    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
 }
 
-template <typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
 {
-    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
 }
 
-template <typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
 {
-    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
 }
 
 template <template <typename> typename DecimalType>

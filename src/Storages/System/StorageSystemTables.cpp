@@ -3,8 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
@@ -344,6 +344,12 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
+                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    {
+                        auto & create = ast->as<ASTCreateQuery &>();
+                        create.uuid = UUIDHelpers::Nil;
+                    }
+
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
 
@@ -424,7 +430,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows();
+                    auto total_rows = table->totalRows(context.getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -434,7 +440,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes();
+                    auto total_bytes = table->totalBytes(context.getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -482,7 +488,7 @@ private:
 Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
+    SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

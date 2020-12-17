@@ -217,4 +217,6 @@ SELECT count() FROM lc_nullable WHERE has(date_time, toDateTime('1970-01-01 03:0
 SELECT count() FROM lc_nullable WHERE has(str, '100');
 SELECT count() FROM lc_nullable WHERE has(fixed_string, toFixedString('100', 5));
 
+SELECT count() FROM lc_nullable WHERE has(date, toDate(has(u64, 1), '1970-01\002'));
+
 DROP TABLE IF EXISTS lc_nullable;

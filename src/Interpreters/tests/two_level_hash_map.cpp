@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
@@ -128,7 +128,7 @@ int main(int argc, char ** argv)
         std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
 
         if (sum_counts != n)
-            std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+            std::cerr << "Error!" << std::endl;
     }
 
     return 0;

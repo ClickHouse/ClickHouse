@@ -8,6 +8,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
+#include <Interpreters/Context.h>
 
 
 #include <DataTypes/DataTypeDate.h>
@@ -29,7 +30,7 @@ TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription &
     , expression_result_column_name(other.expression_result_column_name)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateDescription & other)
@@ -40,7 +41,7 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
     column_name = other.column_name;
     expression_result_column_name = other.expression_result_column_name;
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
     return *this;
@@ -53,9 +54,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 {
     for (const auto & action : ttl_expression->getActions())
     {
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            IFunctionBase & func = *action.function_base;
+            IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
                 throw Exception(
                     "TTL expression cannot contain non-deterministic functions, "
@@ -88,12 +89,13 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , aggregate_descriptions(other.aggregate_descriptions)
     , destination_type(other.destination_type)
     , destination_name(other.destination_name)
+    , recompression_codec(other.recompression_codec)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 
     if (other.where_expression)
-        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+        where_expression = other.where_expression->clone();
 }
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
@@ -108,13 +110,13 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         expression_ast.reset();
 
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
 
     result_column = other.result_column;
     if (other.where_expression)
-        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+        where_expression = other.where_expression->clone();
     else
         where_expression.reset();
 
@@ -124,6 +126,12 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     aggregate_descriptions = other.aggregate_descriptions;
     destination_type = other.destination_type;
     destination_name = other.destination_name;
+
+    if (other.recompression_codec)
+        recompression_codec = other.recompression_codec->clone();
+    else
+        recompression_codec.reset();
+
     return * this;
 }
 
@@ -263,6 +271,12 @@ TTLDescription TTLDescription::getTTLFromAST(
                     result.aggregate_descriptions.push_back(descr);
             }
         }
+        else if (ttl_element->mode == TTLMode::RECOMPRESS)
+        {
+            result.recompression_codec =
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    ttl_element->recompression_codec, {}, !context.getSettingsRef().allow_suspicious_codecs);
+        }
     }
 
     checkTTLExpression(result.expression, result.result_column);
@@ -276,6 +290,7 @@ TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
  , rows_ttl(other.rows_ttl)
  , move_ttl(other.move_ttl)
+ , recompression_ttl(other.recompression_ttl)
 {
 }
 
@@ -291,6 +306,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
 
     rows_ttl = other.rows_ttl;
     move_ttl = other.move_ttl;
+    recompression_ttl = other.recompression_ttl;
 
     return *this;
 }
@@ -311,15 +327,21 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
         auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
-        if (ttl.destination_type == DataDestinationType::DELETE)
+        if (ttl.mode == TTLMode::DELETE || ttl.mode == TTLMode::GROUP_BY)
         {
             if (seen_delete_ttl)
                 throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
             result.rows_ttl = ttl;
             seen_delete_ttl = true;
         }
+        else if (ttl.mode == TTLMode::RECOMPRESS)
+        {
+            result.recompression_ttl.emplace_back(std::move(ttl));
+        }
         else
+        {
             result.move_ttl.emplace_back(std::move(ttl));
+        }
     }
     return result;
 }

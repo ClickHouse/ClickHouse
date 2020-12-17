@@ -56,8 +56,9 @@ BlockIO InterpreterAlterQuery::execute()
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
     LiveViewCommands live_view_commands;
-    for (ASTAlterCommand * command_ast : alter.command_list->commands)
+    for (const auto & child : alter.command_list->children)
     {
+        auto * command_ast = child->as<ASTAlterCommand>();
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
@@ -87,7 +88,7 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, context.getSettingsRef());
-        auto partition_commands_pipe = table->alterPartition(query_ptr, metadata_snapshot, partition_commands, context);
+        auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, context);
         if (!partition_commands_pipe.empty())
             res.pipeline.init(std::move(partition_commands_pipe));
     }
@@ -124,8 +125,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    for (ASTAlterCommand * command : alter.command_list->commands)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(*command, alter.database, alter.table));
+    for (const auto & child : alter.command_list->children)
+        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.database, alter.table));
     return required_access;
 }
 
@@ -218,6 +219,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
+        case ASTAlterCommand::REMOVE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;

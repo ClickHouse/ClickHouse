@@ -1,6 +1,3 @@
-SET allow_experimental_data_skipping_indices = 1;
-
-
 DROP TABLE IF EXISTS bloom_filter_null_array;
 
 CREATE TABLE bloom_filter_null_array (v Array(LowCardinality(Nullable(String))), INDEX idx v TYPE bloom_filter(0.1) GRANULARITY 1) ENGINE = MergeTree() ORDER BY v;

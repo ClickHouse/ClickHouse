@@ -59,7 +59,7 @@ public:
 
     String getName() const override
     {
-        return Base::getName() + "If";
+        return Base::getName();
     }
 
     AggregateFunctionIfNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -100,7 +100,7 @@ public:
 
     String getName() const override
     {
-        return Base::getName() + "If";
+        return Base::getName();
     }
 
     AggregateFunctionIfNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -195,7 +195,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
             if (serialize_flag)
                 return std::make_shared<AggregateFunctionIfNullVariadic<false, true, true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, true, false>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, false, true>>(nested_function, arguments, params);
         }
     }
 }

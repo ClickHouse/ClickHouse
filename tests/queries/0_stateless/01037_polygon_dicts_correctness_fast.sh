@@ -11,7 +11,7 @@ tar -xf "${CURDIR}"/01037_test_data_perf.tar.gz -C "${CURDIR}"
 
 $CLICKHOUSE_CLIENT -n --query="
 DROP DATABASE IF EXISTS test_01037;
-CREATE DATABASE test_01037 Engine = Ordinary;
+CREATE DATABASE test_01037;
 DROP TABLE IF EXISTS test_01037.points;
 CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;
 "

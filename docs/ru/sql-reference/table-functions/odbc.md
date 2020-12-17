@@ -1,3 +1,8 @@
+---
+toc_priority: 44
+toc_title: odbc
+---
+
 # odbc {#table-functions-odbc}
 
 Возвращает таблицу, подключенную через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
