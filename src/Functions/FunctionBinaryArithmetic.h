@@ -1022,13 +1022,17 @@ public:
                     scale_a = right.getScaleMultiplier();
                 else if constexpr(result_is_decimal)
                     scale_a = type.scaleFactorFor(left, is_multiply);
-                else // The result is a floating point, so we need to get the scale explicitly
+                else if constexpr(dec_a)
                     scale_a = left.getScale();
+                else
+                    scale_a = 0.0; //won't be used, just to silence the warning
 
                 if constexpr(result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                else // Same
+                else if constexpr(dec_b)
                     scale_b = right.getScale();
+                else
+                    scale_b = 0.0; //same
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
