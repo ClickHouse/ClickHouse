@@ -957,7 +957,8 @@ public:
     }
 
     template <class T, class ResultDataType>
-    static auto helperGetOrConvert(const auto & col, const auto & scale) {
+    static auto helperGetOrConvert(const auto & col, const auto & scale)
+    {
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = typename NativeType<ResultType>::Type;
 
