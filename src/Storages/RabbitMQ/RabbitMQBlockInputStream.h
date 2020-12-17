@@ -24,6 +24,7 @@ public:
 
     String getName() const override { return storage.getName(); }
     Block getHeader() const override;
+    ConsumerBufferPtr getBuffer() { return buffer; }
 
     void readPrefixImpl() override;
     Block readImpl() override;

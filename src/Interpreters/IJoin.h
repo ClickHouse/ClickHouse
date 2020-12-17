@@ -12,6 +12,7 @@ namespace DB
 
 class Block;
 struct ExtraBlock;
+using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class IJoin
 {

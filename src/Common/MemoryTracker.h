@@ -136,11 +136,35 @@ public:
     private:
         BlockerInThread(const BlockerInThread &) = delete;
         BlockerInThread & operator=(const BlockerInThread &) = delete;
-        static thread_local bool is_blocked;
+        static thread_local uint64_t counter;
     public:
-        BlockerInThread() { is_blocked = true; }
-        ~BlockerInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
+        BlockerInThread() { ++counter; }
+        ~BlockerInThread() { --counter; }
+        static bool isBlocked() { return counter > 0; }
+    };
+
+    /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
+    /// - either configured memory limit reached
+    /// - or fault injected
+    ///
+    /// So this will simply ignore the configured memory limit (and avoid fault injection).
+    ///
+    /// NOTE: exception will be silently ignored, no message in log
+    /// (since logging from MemoryTracker::alloc() is tricky)
+    ///
+    /// NOTE: MEMORY_LIMIT_EXCEEDED Exception implicitly blocked if
+    /// stack unwinding is currently in progress in this thread (to avoid
+    /// std::terminate()), so you don't need to use it in this case explicitly.
+    struct LockExceptionInThread
+    {
+    private:
+        LockExceptionInThread(const LockExceptionInThread &) = delete;
+        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
+        static thread_local uint64_t counter;
+    public:
+        LockExceptionInThread() { ++counter; }
+        ~LockExceptionInThread() { --counter; }
+        static bool isBlocked() { return counter > 0; }
     };
 };
 
