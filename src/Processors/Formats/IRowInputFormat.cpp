@@ -53,6 +53,8 @@ Chunk IRowInputFormat::generate()
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
     block_missing_values.clear();
 
+    size_t num_rows = 0;
+
     try
     {
         RowReadExtension info;
@@ -65,6 +67,8 @@ Chunk IRowInputFormat::generate()
                 info.read_columns.clear();
                 if (!readRow(columns, info))
                     break;
+
+                ++num_rows;
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -107,30 +111,13 @@ Chunk IRowInputFormat::generate()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to minimal size (remove values, that was appended to only part of columns).
-
-                size_t min_size = std::numeric_limits<size_t>::max();
-                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    min_size = std::min(min_size, columns[column_idx]->size());
+                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
 
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
                 {
                     auto & column = columns[column_idx];
-                    if (column->size() > min_size)
-                        column->popBack(column->size() - min_size);
-                }
-
-                if (e.code() == ErrorCodes::INCORRECT_DATA)
-                {
-                    /// remove the last row to skip inserting wrong column
-                    size_t new_min_size = std::numeric_limits<size_t>::max();
-                    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                        new_min_size = std::min(new_min_size, columns[column_idx]->size());
-                    if (min_size == new_min_size)
-                    {
-                        for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                            columns[column_idx]->popBack(1);
-                    }
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
                 }
             }
         }
@@ -170,7 +157,6 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    auto num_rows = columns.front()->size();
     Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
