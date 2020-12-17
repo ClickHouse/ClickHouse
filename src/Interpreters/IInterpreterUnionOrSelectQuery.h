@@ -34,6 +34,8 @@ protected:
     Block result_header;
     SelectQueryOptions options;
     size_t max_streams = 1;
+    bool settings_limit_offset_needed = false;
+    bool settings_limit_offset_done = false;
 };
 }
 
