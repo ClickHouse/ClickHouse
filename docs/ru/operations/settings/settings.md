@@ -2324,4 +2324,6 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Значение по умолчанию: `0`.
 
+## union_default_mode {#union-default-mode}
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
