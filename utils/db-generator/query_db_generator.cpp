@@ -1255,10 +1255,10 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 
 TableList getTablesFromSelect(std::vector<std::string> queries)
 {
-    DB::ParserQueryWithOutput parser;
     TableList result;
     for (std::string & query : queries)
     {
+        DB::ParserQueryWithOutput parser(query.data() + query.size());
         DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
         for (auto & select : getSelect(ast))
         {
