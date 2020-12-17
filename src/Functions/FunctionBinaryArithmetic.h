@@ -1018,13 +1018,13 @@ public:
                     NativeResultType const_a;
                     NativeResultType const_b;
 
-                    if constexpr (IsFloatingPoint<ResultDataType> && dec_a)
+                    if constexpr (!result_is_decimal && dec_a)
                         const_a = DecimalUtils::convertTo<NativeResultType>(
                             col_left_const->template getValue<T0>(), scale_a);
                     else
                         const_a = col_left_const->template getValue<T0>();
 
-                    if constexpr (IsFloatingPoint<ResultDataType> && dec_b)
+                    if constexpr (!result_is_decimal && dec_b)
                         const_b = DecimalUtils::convertTo<NativeResultType>(
                             col_right_const->template getValue<T1>(), scale_b);
                     else
