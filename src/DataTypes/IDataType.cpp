@@ -156,7 +156,7 @@ DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-MutableColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, IColumn &) const
+ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const IColumn &) const
 {
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
@@ -173,11 +173,7 @@ Names IDataType::getSubcolumnNames() const
             new_path.push_back(elem);
             auto subcolumn_name = getSubcolumnNameForStream(new_path);
             if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
-            {
-                /// Not all of substreams have its subcolumn.
-                if (tryGetSubcolumnType(subcolumn_name))
-                    res.insert(subcolumn_name);
-            }
+                res.insert(subcolumn_name);
         }
     });
 
@@ -329,7 +325,7 @@ void IDataType::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// Do not cache complex type, because they can be constructed
-    /// their subcolumns, which are in cache.
+    /// from their subcolumns, which are in cache.
     if (!haveSubtypes())
     {
         auto cached_column = getFromSubstreamsCache(cache, settings.path);
@@ -340,7 +336,7 @@ void IDataType::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    auto mutable_column = IColumn::mutate(std::move(column));
+    auto mutable_column = column->assumeMutable();
     deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
     column = std::move(mutable_column);
 

@@ -47,7 +47,7 @@ static ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair &
 
     const auto & column = block.getByName(storage_name).column;
     if (name_and_type.isSubcolumn())
-        return name_and_type.getStorageType()->getSubcolumn(name_and_type.getSubcolumnName(), *column->assumeMutable());
+        return name_and_type.getStorageType()->getSubcolumn(name_and_type.getSubcolumnName(), *column);
 
     return column;
 }

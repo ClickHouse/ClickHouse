@@ -635,14 +635,14 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
     return nullptr;
 }
 
-MutableColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, IColumn & column) const
+ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
 {
     for (size_t i = 0; i < names.size(); ++i)
     {
         if (startsWith(subcolumn_name, names[i]))
         {
             size_t name_length = names[i].size();
-            auto & subcolumn = extractElementColumn(column, i);
+            const auto & subcolumn = extractElementColumn(column, i);
 
             if (subcolumn_name.size() == name_length)
                 return subcolumn.assumeMutable();

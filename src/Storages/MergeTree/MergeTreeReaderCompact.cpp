@@ -220,7 +220,7 @@ void MergeTreeReaderCompact::readData(
 
         storage_type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         storage_type->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
-        column = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column->assumeMutable());
+        column = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {

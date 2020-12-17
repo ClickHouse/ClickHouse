@@ -99,7 +99,7 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    MutableColumnPtr getSubcolumn(const String & subcolumn_name, IColumn & column) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
