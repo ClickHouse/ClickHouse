@@ -670,6 +670,29 @@ void IMergeTreeDataPart::loadRowsCount()
                         "Column {} has rows count {} according to size in memory "
                         "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
                 }
+
+                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
+                /// All this rows have to be written in column
+                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
+                /// We have more rows in column than in index granularity without last possibly incomplete mark
+                if (rows_in_column < index_granularity_without_last_mark)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Column {} has rows count {} according to size in memory "
+                        "and size of single value, but index granularity in part {} without last mark has {} rows, which is more than in column",
+                        backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
+                }
+
+                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
+                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
+                {
+                     throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Column {} has rows count {} in last mark according to size in memory "
+                        "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
+                        backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
+                }
             }
         }
 #endif

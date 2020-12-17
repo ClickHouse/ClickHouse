@@ -34,6 +34,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
+#include <Common/TLDListsHolder.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -57,6 +58,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -137,6 +139,28 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
     }
 }
 
+int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
+{
+    const int sleep_max_ms = 1000 * seconds_to_wait;
+    const int sleep_one_ms = 100;
+    int sleep_current_ms = 0;
+    int current_connections = 0;
+    while (sleep_current_ms < sleep_max_ms)
+    {
+        current_connections = 0;
+        for (auto & server : servers)
+        {
+            server.stop();
+            current_connections += server.currentConnections();
+        }
+        if (!current_connections)
+            break;
+        sleep_current_ms += sleep_one_ms;
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+    }
+    return current_connections;
+}
+
 }
 
 namespace DB
@@ -184,6 +208,85 @@ static std::string getUserName(uid_t user_id)
     else if (result)
         return result->pw_name;
     return toString(user_id);
+}
+
+Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
+{
+    Poco::Net::SocketAddress socket_address;
+    try
+    {
+        socket_address = Poco::Net::SocketAddress(host, port);
+    }
+    catch (const Poco::Net::DNSException & e)
+    {
+        const auto code = e.code();
+        if (code == EAI_FAMILY
+#if defined(EAI_ADDRFAMILY)
+                    || code == EAI_ADDRFAMILY
+#endif
+           )
+        {
+            LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
+                "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                "specify IPv4 address to listen in <listen_host> element of configuration "
+                "file. Example: <listen_host>0.0.0.0</listen_host>",
+                host, e.code(), e.message());
+        }
+
+        throw;
+    }
+    return socket_address;
+}
+
+Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
+{
+    auto address = makeSocketAddress(host, port, &logger());
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
+    if (secure)
+        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+        /// https://github.com/pocoproject/poco/pull/2257
+        socket.bind(address, /* reuseAddress = */ true);
+    else
+#endif
+#if POCO_VERSION < 0x01080000
+    socket.bind(address, /* reuseAddress = */ true);
+#else
+    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+#endif
+
+    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+
+    return address;
+}
+
+void Server::createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const
+{
+    /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
+    if (!config().has(port_name))
+        return;
+
+    auto port = config().getInt(port_name);
+    try
+    {
+        func(port);
+    }
+    catch (const Poco::Exception &)
+    {
+        std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
+
+        if (listen_try)
+        {
+            LOG_WARNING(&logger(), "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
+                "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
+                " Example for disabled IPv4: <listen_host>::</listen_host>",
+                message);
+        }
+        else
+        {
+            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+        }
+    }
 }
 
 void Server::uninitialize()
@@ -399,27 +502,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     StatusFile status{path + "status", StatusFile::write_full_info};
 
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-
-        global_context->shutdown();
-
-        LOG_DEBUG(log, "Shut down storages.");
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context_ptr = nullptr;
-        global_context.reset();
-        shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
-
     /// Try to increase limit on number of open files.
     {
         rlimit rlim;
@@ -481,6 +563,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
+    /// top_level_domains_lists
+    {
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
+        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
     }
 
     {
@@ -675,6 +763,92 @@ int Server::main(const std::vector<std::string> & /*args*/)
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+    Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
+
+    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+
+    std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
+
+    bool listen_try = config().getBool("listen_try", false);
+    if (listen_hosts.empty())
+    {
+        listen_hosts.emplace_back("::1");
+        listen_hosts.emplace_back("127.0.0.1");
+        listen_try = true;
+    }
+
+    for (const auto & listen_host : listen_hosts)
+    {
+        /// TCP TestKeeper
+        createServer(listen_host, "test_keeper_server.tcp_port", listen_try, [&](UInt16 port)
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            servers_to_start_before_tables.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                new TestKeeperTCPHandlerFactory(*this),
+                server_pool,
+                socket,
+                new Poco::Net::TCPServerParams));
+
+            LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
+        });
+    }
+
+    for (auto & server : servers_to_start_before_tables)
+        server.start();
+
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+
+        global_context->shutdown();
+
+        LOG_DEBUG(log, "Shut down storages.");
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
+            int current_connections = 0;
+            for (auto & server : servers_to_start_before_tables)
+            {
+                server.stop();
+                current_connections += server.currentConnections();
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all listening sockets.");
+
+            if (current_connections > 0)
+                current_connections = waitServersToFinish(servers_to_start_before_tables, config().getInt("shutdown_wait_unfinished", 5));
+
+            if (current_connections)
+                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
+            else
+                LOG_INFO(log, "Closed connections to servers for tables.");
+        }
+
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context_ptr = nullptr;
+        global_context.reset();
+        shared_context.reset();
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
+
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
@@ -804,75 +978,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
 #endif
 
+    std::vector<ProtocolServerAdapter> servers;
     {
-        Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
-
-        Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
-        Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-        http_params->setTimeout(settings.http_receive_timeout);
-        http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-        std::vector<ProtocolServerAdapter> servers;
-
-        std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
-
-        bool listen_try = config().getBool("listen_try", false);
-        if (listen_hosts.empty())
-        {
-            listen_hosts.emplace_back("::1");
-            listen_hosts.emplace_back("127.0.0.1");
-            listen_try = true;
-        }
-
-        auto make_socket_address = [&](const std::string & host, UInt16 port)
-        {
-            Poco::Net::SocketAddress socket_address;
-            try
-            {
-                socket_address = Poco::Net::SocketAddress(host, port);
-            }
-            catch (const Poco::Net::DNSException & e)
-            {
-                const auto code = e.code();
-                if (code == EAI_FAMILY
-#if defined(EAI_ADDRFAMILY)
-                    || code == EAI_ADDRFAMILY
-#endif
-                    )
-                {
-                    LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
-                        "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                        "specify IPv4 address to listen in <listen_host> element of configuration "
-                        "file. Example: <listen_host>0.0.0.0</listen_host>",
-                        host, e.code(), e.message());
-                }
-
-                throw;
-            }
-            return socket_address;
-        };
-
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false)
-        {
-               auto address = make_socket_address(host, port);
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
-               if (secure)
-                   /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
-                   /// https://github.com/pocoproject/poco/pull/2257
-                   socket.bind(address, /* reuseAddress = */ true);
-               else
-#endif
-#if POCO_VERSION < 0x01080000
-                   socket.bind(address, /* reuseAddress = */ true);
-#else
-                   socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
-#endif
-
-               socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
-
-               return address;
-        };
-
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context,
             config().getUInt("asynchronous_metrics_update_period_s", 60));
@@ -880,41 +987,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (const auto & listen_host : listen_hosts)
         {
-            auto create_server = [&](const char * port_name, auto && func)
-            {
-                /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-                if (!config().has(port_name))
-                    return;
-
-                auto port = config().getInt(port_name);
-                try
-                {
-                    func(port);
-                }
-                catch (const Poco::Exception &)
-                {
-                    std::string message = "Listen [" + listen_host + "]:" + std::to_string(port) + " failed: " + getCurrentExceptionMessage(false);
-
-                    if (listen_try)
-                    {
-                        LOG_WARNING(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
-                            "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
-                            "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                            " Example for disabled IPv4: <listen_host>::</listen_host>",
-                            message);
-                    }
-                    else
-                    {
-                        throw Exception{message, ErrorCodes::NETWORK_ERROR};
-                    }
-                }
-            };
-
             /// HTTP
-            create_server("http_port", [&](UInt16 port)
+            createServer(listen_host, "http_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
 
@@ -925,11 +1002,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// HTTPS
-            create_server("https_port", [&](UInt16 port)
+            createServer(listen_host, "https_port", listen_try, [&](UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -944,14 +1021,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP
-            create_server("tcp_port", [&](UInt16 port)
+            createServer(listen_host, "tcp_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this),
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
@@ -959,16 +1036,32 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
             });
 
-            /// TCP with SSL
-            create_server("tcp_port_secure", [&](UInt16 port)
+            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+            createServer(listen_host, "tcp_with_proxy_port", listen_try, [&](UInt16 port)
             {
-#if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure= */ true),
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+
+                LOG_INFO(log, "Listening for connections with native protocol (tcp) with PROXY: {}", address.toString());
+            });
+
+            /// TCP with SSL
+            createServer(listen_host, "tcp_port_secure", listen_try, [&](UInt16 port)
+            {
+#if USE_SSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
@@ -981,10 +1074,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// Interserver IO HTTP
-            create_server("interserver_http_port", [&](UInt16 port)
+            createServer(listen_host, "interserver_http_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -993,11 +1086,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
 
-            create_server("interserver_https_port", [&](UInt16 port)
+            createServer(listen_host, "interserver_https_port", listen_try, [&](UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -1011,10 +1104,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
             });
 
-            create_server("mysql_port", [&](UInt16 port)
+            createServer(listen_host, "mysql_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -1026,10 +1119,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
-            create_server("postgresql_port", [&](UInt16 port)
+            createServer(listen_host, "postgresql_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -1042,19 +1135,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
 #if USE_GRPC
-            create_server("grpc_port", [&](UInt16 port)
+            createServer(listen_host, "grpc_port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::SocketAddress server_address(listen_host, port);
-                servers.emplace_back(std::make_unique<GRPCServer>(*this, make_socket_address(listen_host, port)));
+                servers.emplace_back(std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, log)));
                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
             });
 #endif
 
             /// Prometheus (if defined and not setup yet with http_port)
-            create_server("prometheus.port", [&](UInt16 port)
+            createServer(listen_host, "prometheus.port", listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -1078,6 +1171,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
             setTextLog(global_context->getTextLog(), level);
         }
+
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
@@ -1116,21 +1210,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-            {
-                const int sleep_max_ms = 1000 * config().getInt("shutdown_wait_unfinished", 5);
-                const int sleep_one_ms = 100;
-                int sleep_current_ms = 0;
-                while (sleep_current_ms < sleep_max_ms)
-                {
-                    current_connections = 0;
-                    for (auto & server : servers)
-                        current_connections += server.currentConnections();
-                    if (!current_connections)
-                        break;
-                    sleep_current_ms += sleep_one_ms;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
-                }
-            }
+                current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections. But {} remain."
