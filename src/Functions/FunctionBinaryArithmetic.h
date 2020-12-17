@@ -1023,10 +1023,12 @@ public:
                 else if constexpr(result_is_decimal)
                     scale_a = type.scaleFactorFor(left, is_multiply);
                 else
-                    scale_a = 0.0; //won't be used
+                    scale_a = 0.0; //won't be used as the target column is not decimal
 
                 if constexpr(result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                else
+                    scale_b = 0.0; //won't be used, same
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
