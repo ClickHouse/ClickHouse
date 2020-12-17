@@ -235,6 +235,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+    size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
@@ -282,6 +283,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.compression_codec_desc = part->default_codec->getFullCodecDesc();
         part_info.shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true;
 
+        ++parts_selected_precondition;
+
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
@@ -292,6 +295,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         }
 
         prev_part = &part;
+    }
+
+    if (parts_selected_precondition == 0)
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "No parts satisfy preconditions for merge";
+        return SelectPartsDecision::CANNOT_SELECT;
     }
 
     IMergeSelector::PartsRange parts_to_merge;
