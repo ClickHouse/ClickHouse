@@ -3,6 +3,8 @@
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+service zookeeper start && sleep 5
+
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb

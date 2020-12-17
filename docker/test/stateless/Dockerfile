@@ -23,7 +23,9 @@ RUN apt-get update -y \
             telnet \
             tree \
             unixodbc \
-            wget
+            wget \
+            zookeeper
+
 
 RUN pip3 install numpy scipy pandas
 
