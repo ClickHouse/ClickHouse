@@ -476,9 +476,8 @@ public:
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
 
         /// e.g Decimal * Float64 = Float64
-        Case<IsOperation<Operation>::multiply, Switch<
-            Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, RightDataType>,
-            Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, LeftDataType>>>,
+        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, RightDataType>,
+        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, LeftDataType>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
