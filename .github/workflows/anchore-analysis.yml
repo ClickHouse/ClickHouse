@@ -2,7 +2,7 @@
 # vulnerability and compliance scan, and integrates the results with
 # GitHub Advanced Security code scanning feature.  For more information on
 # the Anchore scan action usage and parameters, see
-# https://github.com/anchore/scan-action.  For more information on
+# https://github.com/anchore/scan-action. For more information on
 # Anchore container image scanning in general, see
 # https://docs.anchore.com.
 
