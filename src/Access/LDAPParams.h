@@ -10,14 +10,6 @@
 namespace DB
 {
 
-struct LDAPRoleMappingRules
-{
-    String match = ".+";
-    String replace = "$&";
-
-    bool continue_on_match = false;
-};
-
 struct LDAPSearchParams
 {
     enum class Scope
@@ -32,9 +24,7 @@ struct LDAPSearchParams
     String search_filter;
     String attribute = "cn";
     Scope scope = Scope::SUBTREE;
-
-    bool fail_if_all_rules_mismatch = false;
-    std::vector<LDAPRoleMappingRules> rules;
+    String prefix;
 };
 
 using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
