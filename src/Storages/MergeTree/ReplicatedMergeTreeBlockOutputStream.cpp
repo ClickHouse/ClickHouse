@@ -493,7 +493,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 if (!zookeeper->tryGet(quorum_info.status_path, value, nullptr, event))
                     break;
 
-                LOG_TRACE(log, "Quorum {} still exists, will wait for updates", quorum_info.status_path);
+                LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_info.status_path);
 
                 ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
