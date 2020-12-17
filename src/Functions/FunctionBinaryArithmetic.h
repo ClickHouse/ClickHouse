@@ -551,13 +551,13 @@ class FunctionBinaryArithmetic : public IFunction
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
         const bool l = castType(left, [](const auto& c){
-            assert(std::is_same_v<decltype(c), Decimal32>);
+            assert((std::is_same_v<decltype(c), Decimal32>));
         });
 
         assert(l);
 
         const bool r = castType(right, [](const auto& c){
-            assert(std::is_same_v<decltype(c), Float32>);
+            assert((std::is_same_v<decltype(c), Float32>));
         });
 
         assert(r);
