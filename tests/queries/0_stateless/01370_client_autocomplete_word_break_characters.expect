@@ -4,7 +4,7 @@ log_user 0
 set timeout 1
 match_max 100000
 
-spawn $env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)
+spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)"
 expect ":) "
 
 # Make a query
