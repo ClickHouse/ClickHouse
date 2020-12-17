@@ -1029,10 +1029,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_withfill = false;
+            if (query.orderBy())
+            {
+                SortDescription order_descr = getSortDescription(query, *context);
+                for (auto & desc : order_descr)
+                    if (desc.with_fill)
+                    {
+                        has_withfill = true;
+                        break;
+                    }
+            }
+
             bool has_prelimit = false;
             if (!to_aggregation_stage &&
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
+                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
+                !has_withfill)
             {
                 executePreLimit(query_plan, false);
                 has_prelimit = true;
