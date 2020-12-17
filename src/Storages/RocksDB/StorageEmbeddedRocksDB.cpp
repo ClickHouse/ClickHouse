@@ -3,6 +3,8 @@
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <DataTypes/DataTypesNumber.h>
+
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 
 #include <Parsers/ASTSelectQuery.h>

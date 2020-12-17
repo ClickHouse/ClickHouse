@@ -204,7 +204,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication/#table_engines-replication) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 

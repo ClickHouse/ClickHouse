@@ -33,7 +33,7 @@ struct AvgFraction
 
     /// Allow division by zero as sometimes we need to return NaN.
     /// Invoked only is either Numerator or Denominator are Decimal.
-    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale) const
+    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
         if constexpr (IsDecimalNumber<Numerator> && IsDecimalNumber<Denominator>)
         {
