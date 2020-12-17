@@ -551,9 +551,9 @@ class FunctionBinaryArithmetic : public IFunction
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
         const bool l = castType(left, [](const auto& c){ 
-            return std::is_same_v<decltype(c), DataTypeDecimal<Decimal32>>; });
+            return std::is_same_v<std::decay_t<decltype(c)>, DataTypeDecimal<Decimal32>>; });
         const bool r = castType(right, [](const auto& c){ 
-            return std::is_same_v<decltype(c), DataTypeFloat32>; });
+            return std::is_same_v<std::decay_t<decltype(c)>, DataTypeFloat32>; });
 
         assert(l);
         assert(r);
