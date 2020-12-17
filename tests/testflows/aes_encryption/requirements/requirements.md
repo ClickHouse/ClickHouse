@@ -38,12 +38,6 @@
     * 4.2.12 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CBC](#rqsrs008aesencryptfunctionparametersmodevalueaes-128-cbc)
     * 4.2.13 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CBC](#rqsrs008aesencryptfunctionparametersmodevalueaes-192-cbc)
     * 4.2.14 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CBC](#rqsrs008aesencryptfunctionparametersmodevalueaes-256-cbc)
-    * 4.2.15 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB1](#rqsrs008aesencryptfunctionparametersmodevalueaes-128-cfb1)
-    * 4.2.16 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB1](#rqsrs008aesencryptfunctionparametersmodevalueaes-192-cfb1)
-    * 4.2.17 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB1](#rqsrs008aesencryptfunctionparametersmodevalueaes-256-cfb1)
-    * 4.2.18 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB8](#rqsrs008aesencryptfunctionparametersmodevalueaes-128-cfb8)
-    * 4.2.19 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB8](#rqsrs008aesencryptfunctionparametersmodevalueaes-192-cfb8)
-    * 4.2.20 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB8](#rqsrs008aesencryptfunctionparametersmodevalueaes-256-cfb8)
     * 4.2.21 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB128](#rqsrs008aesencryptfunctionparametersmodevalueaes-128-cfb128)
     * 4.2.22 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB128](#rqsrs008aesencryptfunctionparametersmodevalueaes-192-cfb128)
     * 4.2.23 [RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB128](#rqsrs008aesencryptfunctionparametersmodevalueaes-256-cfb128)
@@ -70,12 +64,6 @@
     * 4.2.44 [RQ.SRS008.AES.Encrypt.Function.AES-128-CBC.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-128-cbckeyandinitializationvectorlength)
     * 4.2.45 [RQ.SRS008.AES.Encrypt.Function.AES-192-CBC.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-192-cbckeyandinitializationvectorlength)
     * 4.2.46 [RQ.SRS008.AES.Encrypt.Function.AES-256-CBC.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-256-cbckeyandinitializationvectorlength)
-    * 4.2.47 [RQ.SRS008.AES.Encrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-128-cfb1keyandinitializationvectorlength)
-    * 4.2.48 [RQ.SRS008.AES.Encrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-192-cfb1keyandinitializationvectorlength)
-    * 4.2.49 [RQ.SRS008.AES.Encrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-256-cfb1keyandinitializationvectorlength)
-    * 4.2.50 [RQ.SRS008.AES.Encrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-128-cfb8keyandinitializationvectorlength)
-    * 4.2.51 [RQ.SRS008.AES.Encrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-192-cfb8keyandinitializationvectorlength)
-    * 4.2.52 [RQ.SRS008.AES.Encrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-256-cfb8keyandinitializationvectorlength)
     * 4.2.53 [RQ.SRS008.AES.Encrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-128-cfb128keyandinitializationvectorlength)
     * 4.2.54 [RQ.SRS008.AES.Encrypt.Function.AES-192-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-192-cfb128keyandinitializationvectorlength)
     * 4.2.55 [RQ.SRS008.AES.Encrypt.Function.AES-256-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesencryptfunctionaes-256-cfb128keyandinitializationvectorlength)
@@ -101,12 +89,6 @@
     * 4.2.75 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CBC](#rqsrs008aesdecryptfunctionparametersmodevalueaes-128-cbc)
     * 4.2.76 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CBC](#rqsrs008aesdecryptfunctionparametersmodevalueaes-192-cbc)
     * 4.2.77 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CBC](#rqsrs008aesdecryptfunctionparametersmodevalueaes-256-cbc)
-    * 4.2.78 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB1](#rqsrs008aesdecryptfunctionparametersmodevalueaes-128-cfb1)
-    * 4.2.79 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB1](#rqsrs008aesdecryptfunctionparametersmodevalueaes-192-cfb1)
-    * 4.2.80 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB1](#rqsrs008aesdecryptfunctionparametersmodevalueaes-256-cfb1)
-    * 4.2.81 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB8](#rqsrs008aesdecryptfunctionparametersmodevalueaes-128-cfb8)
-    * 4.2.82 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB8](#rqsrs008aesdecryptfunctionparametersmodevalueaes-192-cfb8)
-    * 4.2.83 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB8](#rqsrs008aesdecryptfunctionparametersmodevalueaes-256-cfb8)
     * 4.2.84 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB128](#rqsrs008aesdecryptfunctionparametersmodevalueaes-128-cfb128)
     * 4.2.85 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB128](#rqsrs008aesdecryptfunctionparametersmodevalueaes-192-cfb128)
     * 4.2.86 [RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB128](#rqsrs008aesdecryptfunctionparametersmodevalueaes-256-cfb128)
@@ -133,12 +115,6 @@
     * 4.2.107 [RQ.SRS008.AES.Decrypt.Function.AES-128-CBC.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-128-cbckeyandinitializationvectorlength)
     * 4.2.108 [RQ.SRS008.AES.Decrypt.Function.AES-192-CBC.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-192-cbckeyandinitializationvectorlength)
     * 4.2.109 [RQ.SRS008.AES.Decrypt.Function.AES-256-CBC.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-256-cbckeyandinitializationvectorlength)
-    * 4.2.110 [RQ.SRS008.AES.Decrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-128-cfb1keyandinitializationvectorlength)
-    * 4.2.111 [RQ.SRS008.AES.Decrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-192-cfb1keyandinitializationvectorlength)
-    * 4.2.112 [RQ.SRS008.AES.Decrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-256-cfb1keyandinitializationvectorlength)
-    * 4.2.113 [RQ.SRS008.AES.Decrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-128-cfb8keyandinitializationvectorlength)
-    * 4.2.114 [RQ.SRS008.AES.Decrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-192-cfb8keyandinitializationvectorlength)
-    * 4.2.115 [RQ.SRS008.AES.Decrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-256-cfb8keyandinitializationvectorlength)
     * 4.2.116 [RQ.SRS008.AES.Decrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-128-cfb128keyandinitializationvectorlength)
     * 4.2.117 [RQ.SRS008.AES.Decrypt.Function.AES-192-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-192-cfb128keyandinitializationvectorlength)
     * 4.2.118 [RQ.SRS008.AES.Decrypt.Function.AES-256-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesdecryptfunctionaes-256-cfb128keyandinitializationvectorlength)
@@ -165,12 +141,6 @@
     * 4.3.11 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CBC](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-128-cbc)
     * 4.3.12 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CBC](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-192-cbc)
     * 4.3.13 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CBC](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-256-cbc)
-    * 4.3.14 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB1](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-128-cfb1)
-    * 4.3.15 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB1](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-192-cfb1)
-    * 4.3.16 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB1](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-256-cfb1)
-    * 4.3.17 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB8](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-128-cfb8)
-    * 4.3.18 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB8](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-192-cfb8)
-    * 4.3.19 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB8](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-256-cfb8)
     * 4.3.20 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB128](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-128-cfb128)
     * 4.3.21 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB128](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-192-cfb128)
     * 4.3.22 [RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB128](#rqsrs008aesmysqlencryptfunctionparametersmodevalueaes-256-cfb128)
@@ -196,12 +166,6 @@
     * 4.3.42 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-128-cbckeyandinitializationvectorlength)
     * 4.3.43 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-192-cbckeyandinitializationvectorlength)
     * 4.3.44 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-256-cbckeyandinitializationvectorlength)
-    * 4.3.45 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-128-cfb1keyandinitializationvectorlength)
-    * 4.3.46 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-192-cfb1keyandinitializationvectorlength)
-    * 4.3.47 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-256-cfb1keyandinitializationvectorlength)
-    * 4.3.48 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-128-cfb8keyandinitializationvectorlength)
-    * 4.3.49 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-192-cfb8keyandinitializationvectorlength)
-    * 4.3.50 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-256-cfb8keyandinitializationvectorlength)
     * 4.3.51 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-128-cfb128keyandinitializationvectorlength)
     * 4.3.52 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-192-cfb128keyandinitializationvectorlength)
     * 4.3.53 [RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqlencryptfunctionaes-256-cfb128keyandinitializationvectorlength)
@@ -221,12 +185,6 @@
     * 4.3.67 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CBC](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-128-cbc)
     * 4.3.68 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CBC](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-192-cbc)
     * 4.3.69 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CBC](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-256-cbc)
-    * 4.3.70 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB1](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-128-cfb1)
-    * 4.3.71 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB1](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-192-cfb1)
-    * 4.3.72 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB1](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-256-cfb1)
-    * 4.3.73 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB8](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-128-cfb8)
-    * 4.3.74 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB8](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-192-cfb8)
-    * 4.3.75 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB8](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-256-cfb8)
     * 4.3.76 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB128](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-128-cfb128)
     * 4.3.77 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB128](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-192-cfb128)
     * 4.3.78 [RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB128](#rqsrs008aesmysqldecryptfunctionparametersmodevalueaes-256-cfb128)
@@ -252,12 +210,6 @@
     * 4.3.98 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-128-cbckeyandinitializationvectorlength)
     * 4.3.99 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-192-cbckeyandinitializationvectorlength)
     * 4.3.100 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CBC.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-256-cbckeyandinitializationvectorlength)
-    * 4.3.101 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-128-cfb1keyandinitializationvectorlength)
-    * 4.3.102 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-192-cfb1keyandinitializationvectorlength)
-    * 4.3.103 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-256-cfb1keyandinitializationvectorlength)
-    * 4.3.104 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-128-cfb8keyandinitializationvectorlength)
-    * 4.3.105 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-192-cfb8keyandinitializationvectorlength)
-    * 4.3.106 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-256-cfb8keyandinitializationvectorlength)
     * 4.3.107 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-128-cfb128keyandinitializationvectorlength)
     * 4.3.108 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-192-cfb128keyandinitializationvectorlength)
     * 4.3.109 [RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CFB128.KeyAndInitializationVector.Length](#rqsrs008aesmysqldecryptfunctionaes-256-cfb128keyandinitializationvectorlength)
@@ -441,7 +393,7 @@ version: 1.0
 of the `aes_encrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid
@@ -486,42 +438,6 @@ version: 1.0
 
 [ClickHouse] SHALL support `aes-256-cbc` as the value for the `mode` parameter of the `aes_encrypt` function
 and [AES] algorithm SHALL use the [CBC] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb1` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb1` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb1` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb8` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb8` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb8` as the value for the `mode` parameter of the `aes_encrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 256 bit key.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB128
 version: 1.0
@@ -682,42 +598,6 @@ version: 1.0
 [ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-256-cbc` and `key` is not 32 bytes
 or if specified `iv` is not 16 bytes or `aad` is specified.
 
-#### RQ.SRS008.AES.Encrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-128-cfb1` and `key` is not 16 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Encrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-192-cfb1` and `key` is not 24 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Encrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-256-cfb1` and `key` is not 32 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Encrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-128-cfb8` and `key` is not 16 bytes
-and if specified `iv` is not 16 bytes.
-
-#### RQ.SRS008.AES.Encrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-192-cfb8` and `key` is not 24 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Encrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt` function is set to `aes-256-cfb8` and `key` is not 32 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
 #### RQ.SRS008.AES.Encrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length
 version: 1.0
 
@@ -829,7 +709,7 @@ version: 1.0
 of the `aes_decrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid
@@ -874,42 +754,6 @@ version: 1.0
 
 [ClickHouse] SHALL support `aes-256-cbc` as the value for the `mode` parameter of the `aes_decrypt` function
 and [AES] algorithm SHALL use the [CBC] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb1` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb1` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb1` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb8` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb8` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb8` as the value for the `mode` parameter of the `aes_decrypt` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 256 bit key.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB128
 version: 1.0
@@ -1072,42 +916,6 @@ version: 1.0
 [ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-256-cbc` and `key` is not 32 bytes
 or if specified `iv` is not 16 bytes or `aad` is specified.
 
-#### RQ.SRS008.AES.Decrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-128-cfb1` and `key` is not 16 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Decrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-192-cfb1` and `key` is not 24 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Decrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-256-cfb1` and `key` is not 32 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Decrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-128-cfb8` and `key` is not 16 bytes
-and if specified `iv` is not 16 bytes.
-
-#### RQ.SRS008.AES.Decrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-192-cfb8` and `key` is not 24 bytes
-or `iv` is not 16 bytes or `aad` is specified.
-
-#### RQ.SRS008.AES.Decrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt` function is set to `aes-256-cfb8` and `key` is not 32 bytes
-or if specified `iv` is not 16 bytes or `aad` is specified.
-
 #### RQ.SRS008.AES.Decrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length
 version: 1.0
 
@@ -1221,7 +1029,7 @@ version: 1.0
 of the `aes_encrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -1265,42 +1073,6 @@ version: 1.0
 
 [ClickHouse] SHALL support `aes-256-cbc` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
 and [AES] algorithm SHALL use the [CBC] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb1` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb1` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb1` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb8` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-192-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb8` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-256-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb8` as the value for the `mode` parameter of the `aes_encrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 256 bit key.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.AES-128-CFB128
 version: 1.0
@@ -1463,42 +1235,6 @@ version: 1.0
 [ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-256-cbc` and `key` is less than 32 bytes
 or if specified `iv` is less than 16 bytes.
 
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-128-cfb1` and `key` is less than 16 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-192-cfb1` and `key` is less than 24 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-256-cfb1` and `key` is less than 32 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-128-cfb8` and `key` is less than 16 bytes
-and if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-192-cfb8` and `key` is less than 24 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_encrypt_mysql` function is set to `aes-256-cfb8` and `key` is less than 32 bytes
-or if specified `iv` is less than 16 bytes.
-
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length
 version: 1.0
 
@@ -1574,7 +1310,7 @@ version: 1.0
 of the `aes_decrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -1618,42 +1354,6 @@ version: 1.0
 
 [ClickHouse] SHALL support `aes-256-cbc` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
 and [AES] algorithm SHALL use the [CBC] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb1` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb1` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB1
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb1` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB1] block mode encryption with a 256 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-128-cfb8` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 128 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-192-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-192-cfb8` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 192 bit key.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-256-CFB8
-version: 1.0
-
-[ClickHouse] SHALL support `aes-256-cfb8` as the value for the `mode` parameter of the `aes_decrypt_mysql` function
-and [AES] algorithm SHALL use the [CFB8] block mode encryption with a 256 bit key.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.AES-128-CFB128
 version: 1.0
@@ -1814,42 +1514,6 @@ or if specified `iv` is less than 16 bytes.
 version: 1.0
 
 [ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-256-cbc` and `key` is less than 32 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-128-cfb1` and `key` is less than 16 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-192-cfb1` and `key` is less than 24 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CFB1.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-256-cfb1` and `key` is less than 32 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-128-cfb8` and `key` is less than 16 bytes
-and if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-192-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-192-cfb8` and `key` is less than 24 bytes
-or if specified `iv` is less than 16 bytes.
-
-#### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-256-CFB8.KeyAndInitializationVector.Length
-version: 1.0
-
-[ClickHouse] SHALL return an error when `mode` for the `aes_decrypt_mysql` function is set to `aes-256-cfb8` and `key` is less than 32 bytes
 or if specified `iv` is less than 16 bytes.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.AES-128-CFB128.KeyAndInitializationVector.Length

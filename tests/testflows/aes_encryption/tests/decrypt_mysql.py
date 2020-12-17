@@ -183,20 +183,6 @@ def invalid_parameters(self):
      Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_192_CBC_KeyAndInitializationVector_Length("1.0"))),
     ("'aes-256-cbc'", 32, 16,
      Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_256_CBC_KeyAndInitializationVector_Length("1.0"))),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_128_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb1'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_192_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb1'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_256_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_128_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb8'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_192_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb8'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_256_CFB8_KeyAndInitializationVector_Length("1.0"))),
     # CFB128
     ("'aes-128-cfb128'", 16, 16,
      Requirements(RQ_SRS008_AES_MySQL_Decrypt_Function_AES_128_CFB128_KeyAndInitializationVector_Length("1.0"))),
