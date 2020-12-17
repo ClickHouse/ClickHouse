@@ -25,7 +25,7 @@ class AddDefaultDatabaseVisitor
 {
 public:
     explicit AddDefaultDatabaseVisitor(
-        const String & database_name_, bool only_replace_current_database_function_ = false, std::ostream * ostr_ = nullptr)
+        const String & database_name_, bool only_replace_current_database_function_ = false, WriteBuffer * ostr_ = nullptr)
         : database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
         , visit_depth(0)
@@ -66,7 +66,7 @@ private:
     const String database_name;
     bool only_replace_current_database_function = false;
     mutable size_t visit_depth;
-    std::ostream * ostr;
+    WriteBuffer * ostr;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {

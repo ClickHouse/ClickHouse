@@ -22,12 +22,11 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-
-
-#include <Parsers/queryToString.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -1117,7 +1116,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     data_type_ptr = command.data_type;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -1133,7 +1132,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     continue;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(

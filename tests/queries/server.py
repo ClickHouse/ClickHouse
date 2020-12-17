@@ -23,6 +23,8 @@ class ServerThread(threading.Thread):
         self.etc_dir = os.path.join(tmp_dir, 'etc')
         self.server_config = os.path.join(self.etc_dir, 'server-config.xml')
         self.users_config = os.path.join(self.etc_dir, 'users.xml')
+        self.dicts_config = os.path.join(self.etc_dir, 'dictionaries.xml')
+        self.client_config = os.path.join(self.etc_dir, 'client-config.xml')
 
         os.makedirs(self.log_dir)
         os.makedirs(self.etc_dir)
@@ -42,6 +44,7 @@ class ServerThread(threading.Thread):
             '--tcp_port={tcp_port}'.format(tcp_port=self.tcp_port),
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
+            # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
         with open(self.server_config, 'w') as f:
@@ -50,6 +53,12 @@ class ServerThread(threading.Thread):
 
         with open(self.users_config, 'w') as f:
             f.write(ServerThread.DEFAULT_USERS_CONFIG)
+
+        with open(self.dicts_config, 'w') as f:
+            f.write(ServerThread.DEFAULT_DICTIONARIES_CONFIG.format(tcp_port=self.tcp_port))
+
+        with open(self.client_config, 'w') as f:
+            f.write(ServerThread.DEFAULT_CLIENT_CONFIG)
 
     def run(self):
         retries = ServerThread.DEFAULT_RETRIES
@@ -122,9 +131,51 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
     <tmp_path>{tmp_dir}/tmp/</tmp_path>
     <access_control_path>{tmp_dir}/data/access/</access_control_path>
     <users_config>users.xml</users_config>
+    <dictionaries_config>dictionaries.xml</dictionaries_config>
     <mark_cache_size>5368709120</mark_cache_size>
 
+    <keep_alive_timeout>3</keep_alive_timeout>
     <timezone>Europe/Moscow</timezone>
+
+    <macros>
+        <test>Hello, world!</test>
+        <shard>s1</shard>
+        <replica>r1</replica>
+    </macros>
+
+    <graphite_rollup>
+        <version_column_name>Version</version_column_name>
+        <pattern>
+            <regexp>sum</regexp>
+            <function>sum</function>
+            <retention>
+                <age>0</age>
+                <precision>600</precision>
+            </retention>
+            <retention>
+                <age>172800</age> <!-- 2 days -->
+                <precision>6000</precision>
+            </retention>
+        </pattern>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>600</precision>
+            </retention>
+            <retention>
+                <age>172800</age>
+                <precision>6000</precision>
+            </retention>
+        </default>
+    </graphite_rollup>
+
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
 
     <remote_servers>
         <test_shard_localhost>
@@ -180,7 +231,96 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                 </replica>
             </shard>
         </test_unavailable_shard>
+
+        <test_cluster_two_shards_different_databases>
+             <shard>
+                 <replica>
+                     <default_database>shard_0</default_database>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <replica>
+                     <default_database>shard_1</default_database>
+                     <host>localhost</host>
+                     <port>{tcp_port}</port>
+                 </replica>
+             </shard>
+         </test_cluster_two_shards_different_databases>
+
+         <test_cluster_two_shards_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_internal_replication>
+
+        <test_cluster_with_incorrect_pw>
+             <shard>
+                 <internal_replication>true</internal_replication>
+                 <replica>
+                     <host>127.0.0.1</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+                 <replica>
+                     <host>127.0.0.2</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+             </shard>
+         </test_cluster_with_incorrect_pw>
     </remote_servers>
+
+    <storage_configuration>
+        <disks>
+            <disk_memory>
+                <type>memory</type>
+            </disk_memory>
+        </disks>
+    </storage_configuration>
+
+    <zookeeper>
+        <implementation>testkeeper</implementation>
+    </zookeeper>
+
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+    </part_log>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+    </query_log>
+
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+    </query_thread_log>
+
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+    </text_log>
+
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+    </trace_log>
 </yandex>
 """
 
@@ -241,4 +381,753 @@ ServerThread.DEFAULT_USERS_CONFIG = \
         </default>
     </quotas>
 </yandex>
+"""
+
+
+ServerThread.DEFAULT_DICTIONARIES_CONFIG = \
+"""\
+<yandex>
+    <dictionary>
+        <name>flat_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>hashed_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>hashed_sparse_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <sparse_hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>cache_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <cache><size_in_cells>1000</size_in_cells></cache>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_hashed_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_hashed/>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_cache_ints</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>ints</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_cache><size_in_cells>1000</size_in_cells></complex_key_cache>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>i8</name>
+                <type>Int8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i16</name>
+                <type>Int16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i32</name>
+                <type>Int32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>i64</name>
+                <type>Int64</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u8</name>
+                <type>UInt8</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u16</name>
+                <type>UInt16</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u32</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>u64</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>flat_strings</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>strings</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>str</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>hashed_strings</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>strings</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>str</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>cache_strings</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>strings</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <cache><size_in_cells>1000</size_in_cells></cache>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>str</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_hashed_strings</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>strings</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_hashed/>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>str</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_cache_strings</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>strings</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_cache><size_in_cells>1000</size_in_cells></complex_key_cache>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>str</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>flat_decimals</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>decimals</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>d32</name>
+                <type>Decimal32(4)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d64</name>
+                <type>Decimal64(6)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d128</name>
+                <type>Decimal128(1)</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>hashed_decimals</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>decimals</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>d32</name>
+                <type>Decimal32(4)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d64</name>
+                <type>Decimal64(6)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d128</name>
+                <type>Decimal128(1)</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>cache_decimals</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>decimals</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <cache><size_in_cells>1000</size_in_cells></cache>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>d32</name>
+                <type>Decimal32(4)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d64</name>
+                <type>Decimal64(6)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d128</name>
+                <type>Decimal128(1)</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_hashed_decimals</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>decimals</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_hashed/>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>d32</name>
+                <type>Decimal32(4)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d64</name>
+                <type>Decimal64(6)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d128</name>
+                <type>Decimal128(1)</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_cache_decimals</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>{tcp_port}</port>
+                <user>default</user>
+                <password></password>
+                <db>system</db>
+                <table>decimals</table>
+            </clickhouse>
+        </source>
+        <lifetime>0</lifetime>
+        <layout>
+            <complex_key_cache><size_in_cells>1000</size_in_cells></complex_key_cache>
+        </layout>
+        <structure>
+            <key>
+                <attribute>
+                    <name>key</name>
+                    <type>UInt64</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>d32</name>
+                <type>Decimal32(4)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d64</name>
+                <type>Decimal64(6)</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>d128</name>
+                <type>Decimal128(1)</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>
+"""
+
+ServerThread.DEFAULT_CLIENT_CONFIG = \
+"""\
+<config>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>
 """

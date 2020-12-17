@@ -87,7 +87,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(const ASTPtr 
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            /// Default codec replaced with current default codec which may dependend on different
+            /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
             CompressionCodecPtr result_codec;
             if (codec_family_name == DEFAULT_CODEC_NAME)

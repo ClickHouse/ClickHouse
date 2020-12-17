@@ -108,9 +108,8 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
 
+    /// If true, insert NULL values to set.
     bool transform_null_in;
-
-    bool has_null = false;
 
     /// Check if set contains all the data.
     bool is_created = false;

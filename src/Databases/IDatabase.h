@@ -44,8 +44,6 @@ public:
     /// (a database with support for lazy tables loading
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
-    /// Reset reference counter to the StoragePtr.
-    virtual void reset() = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
 
@@ -95,8 +93,6 @@ public:
     const String & name() const override { return it->first; }
 
     const StoragePtr & table() const override { return it->second; }
-
-    void reset() override { it->second.reset(); }
 };
 
 /// Copies list of dictionaries and iterates through such snapshot.
@@ -150,6 +146,10 @@ public:
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
+
+    virtual bool canContainMergeTreeTables() const { return true; }
+
+    virtual bool canContainDistributedTables() const { return true; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -333,6 +333,10 @@ public:
 
     /// All tables and dictionaries should be detached before detaching the database.
     virtual bool shouldBeEmptyOnDetach() const { return true; }
+
+    virtual void assertCanBeDetached(bool /*cleanup*/) {}
+
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { assert(false); }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;

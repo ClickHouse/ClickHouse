@@ -93,6 +93,22 @@ String FieldVisitorDump::operator() (const Tuple & x) const
     return wb.str();
 }
 
+String FieldVisitorDump::operator() (const Map & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << "Map_(";
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
+
 String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
 {
     WriteBufferFromOwnString wb;
@@ -176,6 +192,82 @@ String FieldVisitorToString::operator() (const Tuple & x) const
     return wb.str();
 }
 
+String FieldVisitorToString::operator() (const Map & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '(';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
+
+
+void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { }
+void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { DB::writeVarUInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { DB::writeFloatBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const String & x, WriteBuffer & buf) const { DB::writeStringBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt128 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int128 & x, WriteBuffer & buf) const { DB::writeVarInt(x, buf); }
+void FieldVisitorWriteBinary::operator() (const UInt256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const Int256 & x, WriteBuffer & buf) const { DB::writeBinary(x, buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal32> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal64> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal128> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const { DB::writeBinary(x.getValue(), buf); }
+void FieldVisitorWriteBinary::operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const
+{
+    DB::writeStringBinary(x.name, buf);
+    DB::writeStringBinary(x.data, buf);
+}
+
+void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const UInt8 type = x[i].getType();
+        DB::writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
+    }
+}
+
+void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const UInt8 type = x[i].getType();
+        DB::writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
+    }
+}
+
+
+void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    DB::writeBinary(size, buf);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const UInt8 type = x[i].getType();
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
+    }
+}
+
 
 FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
@@ -231,6 +323,16 @@ void FieldVisitorHash::operator() (const String & x) const
 void FieldVisitorHash::operator() (const Tuple & x) const
 {
     UInt8 type = Field::Types::Tuple;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & elem : x)
+        applyVisitor(*this, elem);
+}
+
+void FieldVisitorHash::operator() (const Map & x) const
+{
+    UInt8 type = Field::Types::Map;
     hash.update(type);
     hash.update(x.size());
 

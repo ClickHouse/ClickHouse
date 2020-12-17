@@ -150,3 +150,5 @@ WITH
 SELECT
     hex(decrypt('aes-256-gcm', concat(ciphertext, tag), key, iv, aad)) as plaintext_actual,
     plaintext_actual = hex(plaintext);
+
+DROP TABLE encryption_test;
