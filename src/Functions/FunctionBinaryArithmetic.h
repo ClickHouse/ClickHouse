@@ -1015,11 +1015,18 @@ public:
                 if constexpr(result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
 
+                const auto get_value_or_convert = []<class T>(const auto& col, const auto & scale) {
+                    if constexpr(IsFloatingPoint<ResultType> && IsDecimalNumber<T>)
+                        return DecimalUtils::convertTo<NativeResultType>(col->template getValue<T>(), scale);
+                    else
+                        return col->template getValue<T>();
+                };
+
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    NativeResultType const_a = col_left_const->template getValue<T0>();
-                    NativeResultType const_b = col_right_const->template getValue<T1>();
+                    const NativeResultType const_a = get_value_or_convert<T0>(col_left_const, scale_a);
+                    const NativeResultType const_b = get_value_or_convert<T1>(col_right_const, scale_b);
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
@@ -1040,6 +1047,7 @@ public:
                 auto & vec_res = col_res->getData();
                 vec_res.resize(col_left_raw->size());
 
+
                 if (col_left && col_right)
                 {
                     if (check_decimal_overflow)
@@ -1049,7 +1057,7 @@ public:
                 }
                 else if (col_left_const && col_right)
                 {
-                    NativeResultType const_a = col_left_const->template getValue<T0>();
+                    const NativeResultType const_a = get_value_or_convert<T0>(col_left_const, scale_a);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template constantVector<dec_a, dec_b>(const_a, col_right->getData(), vec_res, scale_a, scale_b);
@@ -1058,7 +1066,7 @@ public:
                 }
                 else if (col_left && col_right_const)
                 {
-                    NativeResultType const_b = col_right_const->template getValue<T1>();
+                    const NativeResultType const_b = get_value_or_convert<T1>(col_right_const, scale_b);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template vectorConstant<dec_a, dec_b>(col_left->getData(), const_b, vec_res, scale_a, scale_b);
