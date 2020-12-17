@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <common/arithmeticOverflow.h>
@@ -29,7 +30,12 @@ struct MultiplyImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        return common::mulOverflow(static_cast<Result>(a), b, c);
+        if constexpr(std::is_same_v<Result, float> || std::is_same_v<Result, double>)
+        {
+            c = static_cast<Result>(a) * b;
+            return false;
+        } else
+            return common::mulOverflow(static_cast<Result>(a), b, c);
     }
 
 #if USE_EMBEDDED_COMPILER

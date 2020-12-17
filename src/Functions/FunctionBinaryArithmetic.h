@@ -1041,7 +1041,11 @@ public:
                          return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
-                col_res = ColVecResult::create(0, type.getScale());
+                if constexpr(IsDecimalNumber<ResultType>)
+                    col_res = ColVecResult::create(0, type.getScale());
+                else
+                    col_res = ColVecResult::create(0);
+
                 auto & vec_res = col_res->getData();
                 vec_res.resize(col_left_raw->size());
 
