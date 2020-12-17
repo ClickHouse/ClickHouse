@@ -279,7 +279,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         mysql_db='decimal_support',
         table_name=case_name,
         mysql_type=mysql_type,
-        mysql_values=mysql_values),
+        mysql_values=mysql_values,
         ch_mysql_db='mysql_db',
         ch_mysql_table='mysql_table_engine_' + case_name,
         expected_ch_type=expected_ch_type,
