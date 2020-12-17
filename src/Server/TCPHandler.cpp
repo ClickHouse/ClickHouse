@@ -11,6 +11,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
@@ -75,9 +77,13 @@ void TCPHandler::runImpl()
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 
+    /// Support for PROXY protocol
+    if (parse_proxy_protocol && !receiveProxyHeader())
+        return;
+
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_INFO(log, "Client has not sent any data.");
         return;
     }
 
@@ -96,7 +102,7 @@ void TCPHandler::runImpl()
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_WARNING(log, "Client has gone away.");
+            LOG_INFO(log, "Client has gone away.");
             return;
         }
 
@@ -436,12 +442,9 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         double elapsed = watch.elapsedSeconds();
         if (elapsed > receive_timeout)
         {
-            std::stringstream ss;
-            ss << "Timeout exceeded while receiving data from client.";
-            ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
-            ss << " timeout is " << receive_timeout << " seconds.";
-
-            throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
+            throw Exception(ErrorCodes::SOCKET_TIMEOUT,
+                            "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
+                            static_cast<size_t>(elapsed), receive_timeout);
         }
     }
 
@@ -520,6 +523,8 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
@@ -728,6 +733,78 @@ void TCPHandler::sendExtremes(const Block & extremes)
 }
 
 
+bool TCPHandler::receiveProxyHeader()
+{
+    if (in->eof())
+    {
+        LOG_WARNING(log, "Client has not sent any data.");
+        return false;
+    }
+
+    String forwarded_address;
+
+    /// Only PROXYv1 is supported.
+    /// Validation of protocol is not fully performed.
+
+    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
+
+    assertString("PROXY ", limit_in);
+
+    if (limit_in.eof())
+    {
+        LOG_WARNING(log, "Incomplete PROXY header is received.");
+        return false;
+    }
+
+    /// TCP4 / TCP6 / UNKNOWN
+    if ('T' == *limit_in.position())
+    {
+        assertString("TCP", limit_in);
+
+        if (limit_in.eof())
+        {
+            LOG_WARNING(log, "Incomplete PROXY header is received.");
+            return false;
+        }
+
+        if ('4' != *limit_in.position() && '6' != *limit_in.position())
+        {
+            LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
+            return false;
+        }
+
+        ++limit_in.position();
+        assertChar(' ', limit_in);
+
+        /// Read the first field and ignore other.
+        readStringUntilWhitespace(forwarded_address, limit_in);
+
+        /// Skip until \r\n
+        while (!limit_in.eof() && *limit_in.position() != '\r')
+            ++limit_in.position();
+        assertString("\r\n", limit_in);
+    }
+    else if (checkString("UNKNOWN", limit_in))
+    {
+        /// This is just a health check, there is no subsequent data in this connection.
+
+        while (!limit_in.eof() && *limit_in.position() != '\r')
+            ++limit_in.position();
+        assertString("\r\n", limit_in);
+        return false;
+    }
+    else
+    {
+        LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
+        return false;
+    }
+
+    LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
+    connection_context.getClientInfo().forwarded_for = forwarded_address;
+    return true;
+}
+
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -896,8 +973,6 @@ void TCPHandler::receiveQuery()
     state.is_empty = false;
     readStringBinary(state.query_id, *in);
 
-    query_context->setCurrentQueryId(state.query_id);
-
     /// Client info
     ClientInfo & client_info = query_context->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -916,14 +991,6 @@ void TCPHandler::receiveQuery()
 
     /// Set fields, that are known apriori.
     client_info.interface = ClientInfo::Interface::TCP;
-
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        /// 'Current' fields was set at receiveHello.
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
-    }
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
@@ -1001,11 +1068,32 @@ void TCPHandler::receiveQuery()
         query_context->clampToSettingsConstraints(settings_changes);
     }
     query_context->applySettingsChanges(settings_changes);
-    const Settings & settings = query_context->getSettingsRef();
+
+    // Use the received query id, or generate a random default. It is convenient
+    // to also generate the default OpenTelemetry trace id at the same time, and
+    // set the trace parent.
+    // Why is this done here and not earlier:
+    // 1) ClientInfo might contain upstream trace id, so we decide whether to use
+    // the default ids after we have received the ClientInfo.
+    // 2) There is the opentelemetry_start_trace_probability setting that
+    // controls when we start a new trace. It can be changed via Native protocol,
+    // so we have to apply the changes first.
+    query_context->setCurrentQueryId(state.query_id);
+
+    // Set parameters of initial query.
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
+
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
     ///  because settings.send_timeout is client-side setting which has opposite meaning on the server side.
     /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
+    const Settings & settings = query_context->getSettingsRef();
     state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), settings.receive_timeout, settings.send_timeout);
 }
 

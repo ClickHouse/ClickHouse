@@ -1,0 +1,28 @@
+(Expression)
+ExpressionTransform
+  (Aggregating)
+  FinalizingSimpleTransform
+    AggregatingSortedTransform 3 → 1
+      AggregatingInOrderTransform × 3
+        (Expression)
+        ExpressionTransform × 3
+          (SettingQuotaAndLimits)
+            (Expression)
+            ExpressionTransform × 3
+              (Union)
+                (MergingSorted)
+                  (Expression)
+                  ExpressionTransform
+                    (ReadFromStorage)
+                    MergeTree 0 → 1
+                (MergingSorted)
+                MergingSortedTransform 2 → 1
+                  (Expression)
+                  ExpressionTransform × 2
+                    (ReadFromStorage)
+                    MergeTree × 2 0 → 1
+                (MergingSorted)
+                  (Expression)
+                  ExpressionTransform
+                    (ReadFromStorage)
+                    MergeTree 0 → 1

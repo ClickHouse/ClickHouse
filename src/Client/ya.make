@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -6,7 +8,6 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
-CFLAGS(-g0)
 
 SRCS(
     Connection.cpp

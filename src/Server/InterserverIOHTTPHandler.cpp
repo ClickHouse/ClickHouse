@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/InterserverIOHandler.h>
+#include <Interpreters/Context.h>
 #include "IServer.h"
 
 namespace DB

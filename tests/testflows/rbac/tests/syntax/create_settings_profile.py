@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("create settings profile")
@@ -97,7 +97,7 @@ def feature(self, node="clickhouse1"):
                     node.query("CREATE SETTINGS PROFILE profile4 SETTINGS max_memory_usage = 100000001")
 
         with Scenario("I create settings profile with a setting value, does not exist, throws exception", flags=TE, requirements=[
-                RQ_SRS_006_RBAC_SettingsProfile_Create_Variables("1.0"), 
+                RQ_SRS_006_RBAC_SettingsProfile_Create_Variables("1.0"),
                 RQ_SRS_006_RBAC_SettingsProfile_Create_Variables_Value("1.0")]):
             with When("I create settings profile using settings and nonexistent value"):
                 exitcode, message = errors.unknown_setting("fake_setting")

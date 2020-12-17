@@ -42,6 +42,12 @@ public:
 
     String getEngineName() const override { return "MySQL"; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    bool shouldBeEmptyOnDetach() const override { return false; }
+
     bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;

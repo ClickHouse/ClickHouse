@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -86,8 +88,7 @@ struct PartialSortingLessWithCollation
             }
             else if (isCollationRequired(elem.description))
             {
-                const ColumnString & column_string = assert_cast<const ColumnString &>(*elem.column);
-                res = column_string.compareAtWithCollation(a, b, *elem.column, *elem.description.collator);
+                res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description.nulls_direction, *elem.description.collator);
             }
             else
                 res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
@@ -100,7 +101,6 @@ struct PartialSortingLessWithCollation
         return false;
     }
 };
-
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
@@ -120,14 +120,13 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         bool is_column_const = false;
         if (isCollationRequired(description[0]))
         {
-            /// it it's real string column, than we need sort
-            if (const ColumnString * column_string = checkAndGetColumn<ColumnString>(column))
-                column_string->getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
-            else if (checkAndGetColumnConstData<ColumnString>(column))
+            if (!column->isCollationSupported())
+                throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+
+            if (isColumnConst(*column))
                 is_column_const = true;
             else
-                throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
-
+                column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
         }
         else if (!isColumnConst(*column))
         {
@@ -163,8 +162,8 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             const IColumn * column = columns_with_sort_desc[i].column;
             if (isCollationRequired(description[i]))
             {
-                if (!checkAndGetColumn<ColumnString>(column) && !checkAndGetColumnConstData<ColumnString>(column))
-                    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+                if (!column->isCollationSupported())
+                    throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
 
                 need_collation = true;
             }
@@ -187,10 +186,8 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
                 if (isCollationRequired(column.description))
                 {
-                    const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);
-                    column_string.updatePermutationWithCollation(
-                        *column.description.collator,
-                        column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                    column.column->updatePermutationWithCollation(
+                        *column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
                 }
                 else
                 {
