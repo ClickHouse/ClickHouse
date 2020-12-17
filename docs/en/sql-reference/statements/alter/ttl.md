@@ -55,5 +55,5 @@ And now we have nothing to delete.
 
 ### See Also
 
-- More about the [TTL-expression](../../sql-reference/statements/create/table/#ttl-expression).
-- Modify column [with TTL](../../sql-reference/statements/alter/column/#alter_modify-column).
+- More about the [TTL-expression](../../../sql-reference/statements/create/table#ttl-expression).
+- Modify column [with TTL](../../../sql-reference/statements/alter/column#alter_modify-column).

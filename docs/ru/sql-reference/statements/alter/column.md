@@ -110,6 +110,25 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ``` sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
+## MODIFY REMOVE
+
+Удаляет что-либо из столбца. Например, больше не нужное свойство TTL.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name MODIFY column_name REMOVE property;
+```
+
+**Пример**
+
+```sql
+ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
+```
+
+## Смотрите также
+
+- [REMOVE TTL](ttl.md).
 
 Изменение типа столбца - это единственное действие, которое выполняет сложную работу - меняет содержимое файлов с данными. Для больших таблиц, выполнение может занять длительное время.
 
