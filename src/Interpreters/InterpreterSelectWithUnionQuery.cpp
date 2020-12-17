@@ -9,9 +9,13 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -130,10 +134,14 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
+    const Settings & settings = context->getSettingsRef();
+    if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
+        settings_limit_offset_needed = true;
+
     /// Normalize AST Tree
     if (!ast->is_normalized)
     {
-        CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{context->getSettingsRef().union_default_mode};
+        CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{settings.union_default_mode};
         CustomizeASTSelectWithUnionQueryNormalizeVisitor(union_default_mode).visit(query_ptr);
 
         /// After normalization, if it only has one ASTSelectWithUnionQuery child,
@@ -183,6 +191,52 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             required_result_column_names_for_other_selects[query_num].reserve(required_result_column_names.size());
             for (const auto & pos : positions_of_required_result_columns)
                 required_result_column_names_for_other_selects[query_num].push_back(full_result_header_for_current_select.getByPosition(pos).name);
+        }
+    }
+
+    if (num_children == 1 && settings_limit_offset_needed)
+    {
+        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
+        ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
+
+        if (!select_query->withFill() && !select_query->limit_with_ties)
+        {
+            UInt64 limit_length = 0;
+            UInt64 limit_offset = 0;
+
+            const ASTPtr limit_offset_ast = select_query->limitOffset();
+            if (limit_offset_ast)
+            {
+                limit_offset = limit_offset_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                UInt64 new_limit_offset = settings.offset + limit_offset;
+                limit_offset_ast->as<ASTLiteral &>().value = Field(new_limit_offset);
+            }
+            else if (settings.offset)
+            {
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.offset)));
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
+            }
+
+            const ASTPtr limit_length_ast = select_query->limitLength();
+            if (limit_length_ast)
+            {
+                limit_length = limit_length_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+                UInt64 new_limit_length = 0;
+                if (settings.offset == 0)
+                    new_limit_length = std::min(limit_length, UInt64(settings.limit));
+                else if (settings.offset < limit_length)
+                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+
+                limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
+            }
+            else if (settings.limit)
+            {
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.limit)));
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
+            }
+
+            settings_limit_offset_done = true;
         }
     }
 
@@ -293,39 +347,57 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
+    const Settings & settings = context->getSettingsRef();
 
     /// Skip union for single interpreter.
     if (num_plans == 1)
     {
         nested_interpreters.front()->buildQueryPlan(query_plan);
-        return;
+    }
+    else
+    {
+        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+        DataStreams data_streams(num_plans);
+
+        for (size_t i = 0; i < num_plans; ++i)
+        {
+            plans[i] = std::make_unique<QueryPlan>();
+            nested_interpreters[i]->buildQueryPlan(*plans[i]);
+            data_streams[i] = plans[i]->getCurrentDataStream();
+        }
+
+        auto max_threads = context->getSettingsRef().max_threads;
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+
+        const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
+        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
+        {
+            /// Add distinct transform
+            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+            auto distinct_step
+                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+
+            query_plan.addStep(std::move(distinct_step));
+        }
     }
 
-    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    DataStreams data_streams(num_plans);
-
-    for (size_t i = 0; i < num_plans; ++i)
+    if (settings_limit_offset_needed && !settings_limit_offset_done)
     {
-        plans[i] = std::make_unique<QueryPlan>();
-        nested_interpreters[i]->buildQueryPlan(*plans[i]);
-        data_streams[i] = plans[i]->getCurrentDataStream();
-    }
-
-    auto max_threads = context->getSettingsRef().max_threads;
-    auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
-
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
-
-    const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-    if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
-    {
-        /// Add distinct transform
-        const Settings & settings = context->getSettingsRef();
-        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-        auto distinct_step = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
-
-        query_plan.addStep(std::move(distinct_step));
+        if (settings.limit > 0)
+        {
+            auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), settings.limit, settings.offset);
+            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), settings.offset);
+            offset->setStepDescription("OFFSET for SETTINGS");
+            query_plan.addStep(std::move(offset));
+        }
     }
 
 }

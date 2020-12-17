@@ -39,7 +39,7 @@ data_compressed_bytes: 499
 last_exception:        
 ```
 
-**See also**
+**See Also**
 
 -   [Distributed table engine](../../engines/table-engines/special/distributed.md)
 
