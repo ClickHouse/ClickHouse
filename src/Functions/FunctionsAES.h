@@ -82,10 +82,9 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }
 
-    ~KeyHolder()
-    {
-        OPENSSL_cleanse(folded_key.data(), folded_key.size());
-    }
+    /// There is a function to clear key securely.
+    /// It makes absolutely zero sense to call it here because
+    /// key comes from column and already copied multiple times through various memory buffers.
 
 private:
     std::array<char, EVP_MAX_KEY_LENGTH> folded_key;
@@ -119,7 +118,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
         }
     }
 
-    throw DB::Exception("Unsupported cipher mode " + std::string(EVP_CIPHER_name(evp_cipher)), DB::ErrorCodes::BAD_ARGUMENTS);
+    throw DB::Exception("Unsupported cipher mode", DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 template <CipherMode mode>
@@ -178,7 +177,7 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -448,7 +447,7 @@ private:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         using namespace OpenSSLDetails;
 
@@ -577,7 +576,7 @@ private:
             auto input_value = input_column->getDataAt(r);
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                // empty plaintext results in empty ciphertext + tag, means there should be atleast tag_size bytes.
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                 if (input_value.size < tag_size)
                     throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
                             "should contain at least {} bytes of a tag.",

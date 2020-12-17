@@ -20,7 +20,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 یا سیمک 3 به جای کیک در سیستم های قدیمی تر.
 
-## نصب شورای همکاری خلیج فارس 9 {#install-gcc-9}
+## نصب شورای همکاری خلیج فارس 9 {#install-gcc-10}
 
 راه های مختلفی برای انجام این کار وجود دارد.
 
@@ -30,18 +30,18 @@ $ sudo apt-get install git cmake python ninja-build
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install gcc-10 g++-10
 ```
 
 ### نصب از منابع {#install-from-sources}
 
 نگاه کن [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## استفاده از شورای همکاری خلیج فارس 9 برای ساخت {#use-gcc-9-for-builds}
+## استفاده از شورای همکاری خلیج فارس 10 برای ساخت {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=gcc-9
-$ export CXX=g++-9
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ## پرداخت منابع کلیک {#checkout-clickhouse-sources}
@@ -77,7 +77,7 @@ $ cd ..
 -   دستگاه گوارش (استفاده می شود تنها به پرداخت منابع مورد نیاز برای ساخت)
 -   کیک 3.10 یا جدیدتر
 -   نینجا (توصیه می شود) و یا
--   ج ++ کامپایلر: شورای همکاری خلیج فارس 9 یا صدای شیپور 8 یا جدیدتر
+-   ج ++ کامپایلر: شورای همکاری خلیج فارس 10 یا صدای شیپور 8 یا جدیدتر
 -   لینکر: لیلند یا طلا (کلاسیک گنو الدی کار نخواهد کرد)
 -   پایتون (فقط در داخل ساخت لورم استفاده می شود و اختیاری است)
 

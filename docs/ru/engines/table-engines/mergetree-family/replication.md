@@ -149,6 +149,31 @@ CREATE TABLE table_name
 
 При работе с большими кластерами мы рекомендуем использовать подстановки, они уменьшают вероятность ошибки.
 
+Можно указать аргументы по умолчанию для движка реплицируемых таблиц в файле конфигурации сервера.
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_path>
+```
+
+В этом случае можно опустить аргументы при создании таблиц:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x;
+```
+
+Это будет эквивалентно следующему запросу:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x;
+```
+
 Выполните запрос `CREATE TABLE` на каждой реплике. Запрос создаёт новую реплицируемую таблицу, или добавляет новую реплику к имеющимся.
 
 Если вы добавляете новую реплику после того, как таблица на других репликах уже содержит некоторые данные, то после выполнения запроса, данные на новую реплику будут скачаны с других реплик. То есть, новая реплика синхронизирует себя с остальными.

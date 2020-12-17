@@ -22,7 +22,7 @@ namespace
 {
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
-/// Precision could be set as second argument or omitted. If ommited function uses Decimal presicion of the first argument.
+/// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
 class FunctionIsDecimalOverflow : public IFunction
 {
 public:
@@ -60,7 +60,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)

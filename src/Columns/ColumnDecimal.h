@@ -1,22 +1,18 @@
 #pragma once
 
-#include <cmath>
-
-#include <Common/typeid_cast.h>
+#include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnVectorHelper.h>
 #include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <Common/typeid_cast.h>
+#include <common/sort.h>
+
+#include <cmath>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -54,43 +50,6 @@ private:
     UInt32 scale;
 };
 
-/// std::vector extended by Decimal scale
-template <typename T>
-class DecimalVector : public std::vector<T>
-{
-public:
-    using Base = std::vector<T>;
-    using Base::operator[];
-
-    DecimalVector(size_t size, UInt32 scale_)
-    :   Base(size),
-        scale(scale_)
-    {}
-
-    DecimalVector(const DecimalVector & other)
-    :   Base(other.begin(), other.end()),
-        scale(other.scale)
-    {}
-
-    DecimalVector(DecimalVector && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-    }
-
-    DecimalVector & operator=(DecimalVector && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-        return *this;
-    }
-
-    UInt32 getScale() const { return scale; }
-
-private:
-    UInt32 scale;
-};
-
 /// A ColumnVector for Decimals
 template <typename T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
@@ -104,10 +63,7 @@ private:
 public:
     using ValueType = T;
     using NativeT = typename T::NativeType;
-    static constexpr bool is_POD = !is_big_int_v<NativeT>;
-    using Container = std::conditional_t<is_POD,
-                                         DecimalPaddedPODArray<T>,
-                                         DecimalVector<T>>;
+    using Container = DecimalPaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
@@ -126,23 +82,13 @@ public:
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return true; }
+    bool isFixedAndContiguous() const final { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
-    size_t allocatedBytes() const override
-    {
-        if constexpr (is_POD)
-            return data.allocated_bytes();
-        else
-            return data.capacity() * sizeof(data[0]);
-    }
-    void protect() override
-    {
-        if constexpr (is_POD)
-            data.protect();
-    }
+    size_t allocatedBytes() const override { return data.allocated_bytes(); }
+    void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve(n); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
@@ -150,37 +96,27 @@ public:
     void insertDefault() override { data.push_back(T()); }
     virtual void insertManyDefaults(size_t length) override
     {
-        if constexpr (is_POD)
-            data.resize_fill(data.size() + length);
-        else
-            data.resize(data.size() + length);
+        data.resize_fill(data.size() + length);
     }
     void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
     {
-        if constexpr (is_POD)
-            data.resize_assume_reserved(data.size() - n);
-        else
-            data.resize(data.size() - n);
+        data.resize_assume_reserved(data.size() - n);
     }
 
     StringRef getRawData() const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
-        else
-            throw Exception("getRawData() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        if constexpr (is_POD)
-            return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
-        else
-            throw Exception("getDataAt() is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
+
+    Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
@@ -253,9 +189,9 @@ protected:
             sort_end = res.begin() + limit;
 
         if (reverse)
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 
