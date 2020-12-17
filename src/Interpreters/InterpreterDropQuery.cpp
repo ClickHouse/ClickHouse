@@ -11,7 +11,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/DatabaseAtomic.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_MYSQL
+#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#endif
 
 
 namespace DB
@@ -66,10 +73,7 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
     if (query.kind == ASTDropQuery::Kind::Drop)
         DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
     else if (query.kind == ASTDropQuery::Kind::Detach)
-    {
-        if (auto * atomic = typeid_cast<DatabaseAtomic *>(db.get()))
-            atomic->waitDetachedTableNotInUse(uuid_to_wait);
-    }
+        db->waitDetachedTableNotInUse(uuid_to_wait);
 }
 
 BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
@@ -122,7 +126,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             table->checkTableCanBeDetached();
             table->shutdown();
             TableExclusiveLockHolder table_lock;
-            if (database->getEngineName() != "Atomic")
+            if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_id.table_name);
@@ -145,7 +149,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             table->shutdown();
 
             TableExclusiveLockHolder table_lock;
-            if (database->getEngineName() != "Atomic")
+            if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             database->dropTable(context, table_id.table_name, query.no_delay);
@@ -282,6 +286,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             bool drop = query.kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
+#if USE_MYSQL
+            if (database->getEngineName() == "MaterializeMySQL")
+                stopDatabaseSynchronization(database);
+#endif
+
             if (database->shouldBeEmptyOnDetach())
             {
                 /// DETACH or DROP all tables and dictionaries inside database.
@@ -312,9 +321,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
-            auto * database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
-            if (!drop && database_atomic)
-                database_atomic->assertCanBeDetached(true);
+            if (!drop)
+                database->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
             DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
