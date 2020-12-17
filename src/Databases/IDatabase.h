@@ -221,6 +221,8 @@ public:
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
+    ///
+    /// Note: ATTACH TABLE statement actually uses createTable method.
     virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -243,6 +245,13 @@ public:
     virtual void detachDictionary(const String & /*name*/)
     {
         throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
+    /// with next restart. The database may not support this method.
+    virtual void detachTablePermanently(const String & /*name*/)
+    {
+        throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Rename the table and possibly move the table to another database.
