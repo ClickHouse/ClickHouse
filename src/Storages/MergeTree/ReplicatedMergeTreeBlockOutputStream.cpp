@@ -491,6 +491,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 if (!zookeeper->tryGet(quorum_info.status_path, value, nullptr, event))
                     break;
 
+                LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_info.status_path);
+
                 ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
                 /// If the node has time to disappear, and then appear again for the next insert.
@@ -499,6 +501,8 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
                 if (!event->tryWait(quorum_timeout_ms))
                     throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
+
+                LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_info.status_path);
             }
 
             /// And what if it is possible that the current replica at this time has ceased to be active
