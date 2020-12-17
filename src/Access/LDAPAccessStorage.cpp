@@ -356,7 +356,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPSearchResul
                 external_role.compare(0, prefix.size(), prefix) == 0
             )
             {
-                role_names.emplace(external_role.substr(prefix.size()));
+                role_names.emplace(external_role, prefix.size());
             }
         }
     }
