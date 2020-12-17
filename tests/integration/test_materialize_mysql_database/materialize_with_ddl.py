@@ -52,36 +52,6 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
                      "/* Need ClickHouse support Enum('a', 'b', 'v') _enum ENUM('a', 'b', 'c'), */"
                      "_date Date, _datetime DateTime, _timestamp TIMESTAMP, _bool BOOLEAN) ENGINE = InnoDB;")
 
-    # check type mapping for mysql
-    check_query(clickhouse_node, """
-        SELECT name, `type` 
-        FROM `system`.columns 
-        where `database`='test_database' and `table`='test_table_1' ORDER BY name FORMAT TSV
-        """,
-        "_bigint\tNullable(Int64)\n"
-        "_bool\tNullable(Int8)\n"
-        "_char\tNullable(String)\n"
-        "_date\tNullable(Date)\n"
-        "_datetime\tNullable(DateTime)\n"
-        "_double\tNullable(Float64)\n"
-        "_float\tNullable(Float32)\n"
-        "_int\tNullable(Int32)\n"
-        "_integer\tNullable(Int32)\n"
-        "_timestamp\tDateTime\n"
-        "_varchar\tNullable(String)\n"
-        "key\tInt32\n"
-        "medium_int\tNullable(Int32)\n"
-        "small_int\tNullable(Int16)\n"
-        "tiny_int\tNullable(Int8)\n"
-        "unsigned_bigint\tNullable(UInt64)\n"
-        "unsigned_double\tNullable(Float64)\n"
-        "unsigned_float\tNullable(Float32)\n"
-        "unsigned_int\tNullable(UInt32)\n"
-        "unsigned_integer\tNullable(UInt32)\n"
-        "unsigned_medium_int\tNullable(UInt32)\n"
-        "unsigned_small_int\tNullable(UInt16)\n"
-        "unsigned_tiny_int\tNullable(UInt8)\n")
-
     # it already has some data
     mysql_node.query("""
         INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 
