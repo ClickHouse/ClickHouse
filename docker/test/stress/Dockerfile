@@ -12,8 +12,6 @@ RUN apt-get update -y \
             expect \
             python \
             python-lxml \
-            python-termcolor \
-            python-requests \
             curl \
             sudo \
             openssl \

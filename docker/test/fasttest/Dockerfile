@@ -54,8 +54,6 @@ RUN apt-get update \
         psmisc \
         python \
         python-lxml \
-        python-requests \
-        python-termcolor \
         qemu-user-static \
         rename \
         software-properties-common \
@@ -63,6 +61,13 @@ RUN apt-get update \
         unixodbc \
         wget \
        --yes --no-install-recommends
+
+# Some python2 packages deprecated in ubuntu 20.04, so install them using pip
+RUN add-apt-repository universe \
+    && apt install python2 \
+    && curl "https://bootstrap.pypa.io/get-pip.py" --output get-pip.py \
+    && python2 get-pip.py \
+    && pip install requests termcolor
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

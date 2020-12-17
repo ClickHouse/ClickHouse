@@ -56,8 +56,6 @@ RUN apt-get --allow-unauthenticated update -y \
             pkg-config \
             python \
             python-lxml \
-            python-requests \
-            python-termcolor \
             qemu-user-static \
             sudo \
             telnet \

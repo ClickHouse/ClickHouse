@@ -14,8 +14,6 @@ RUN apt-get update -y \
             openssl \
             python \
             python-lxml \
-            python-requests \
-            python-termcolor \
             qemu-user-static \
             sudo \
             telnet \
