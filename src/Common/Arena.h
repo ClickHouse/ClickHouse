@@ -130,7 +130,7 @@ private:
 public:
     Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
         : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
-        head(new MemoryChunk(initial_size_, nullptr)), size_in_bytes(head->size())
+        head(new MemoryChunk(initial_size_, nullptr)), size_in_bytes(head->size()),
         page_size(static_cast<size_t>(::getPageSize()))
     {
     }
