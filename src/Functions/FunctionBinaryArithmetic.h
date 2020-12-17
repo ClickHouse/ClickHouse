@@ -1022,13 +1022,13 @@ public:
                     scale_a = right.getScaleMultiplier();
                 else if constexpr(result_is_decimal)
                     scale_a = type.scaleFactorFor(left, is_multiply);
-                else
-                    scale_a = 0.0; //won't be used as the target column is not decimal
+                else // The result is a floating point, so we need to get the scale explicitly
+                    scale_a = left.getScale();
 
                 if constexpr(result_is_decimal)
                     scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                else
-                    scale_b = 0.0; //won't be used, same
+                else // Same
+                    scale_b = right.getScale();
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
