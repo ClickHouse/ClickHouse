@@ -1026,8 +1026,10 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0>(col_left_const, scale_a);
-                    const NativeResultType const_b = helperGetOrConvert<T1>(col_right_const, scale_b);
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultType, NativeResultType>(
+                        col_left_const, scale_a);
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultType, NativeResultType>(
+                        col_right_const, scale_b);
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
@@ -1058,7 +1060,8 @@ public:
                 }
                 else if (col_left_const && col_right)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0>(col_left_const, scale_a);
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultType, NativeResultType>(
+                        col_left_const, scale_a);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template constantVector<dec_a, dec_b>(const_a, col_right->getData(), vec_res, scale_a, scale_b);
@@ -1067,7 +1070,8 @@ public:
                 }
                 else if (col_left && col_right_const)
                 {
-                    const NativeResultType const_b = helperGetOrConvert<T1>(col_right_const, scale_b);
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultType, NativeResultType>(
+                        col_right_const, scale_b);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template vectorConstant<dec_a, dec_b>(col_left->getData(), const_b, vec_res, scale_a, scale_b);
