@@ -156,7 +156,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 #if defined(OS_DARWIN)
         uint32_t path_length = 0;
         _NSGetExecutablePath(nullptr, &path_length);
-        if (path_length <= 1) 
+        if (path_length <= 1)
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         std::string path(path_length, std::string::value_type());
@@ -179,6 +179,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Copy binary to the destination directory.
 
         /// TODO An option to link instead of copy - useful for developers.
+
+        std::cout << options["prefix"].as<std::string>() << std::endl;
 
         fs::path prefix = fs::path(options["prefix"].as<std::string>());
         fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
