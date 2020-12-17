@@ -987,10 +987,10 @@ public:
                 using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
 
-                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
-
                 static constexpr const bool dec_a = IsDecimalNumber<T0>;
                 static constexpr const bool dec_b = IsDecimalNumber<T1>;
+
+                ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
                 typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                 typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
@@ -1000,20 +1000,21 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    NativeResultType const_a;
-                    NativeResultType const_b;
+                    NativeResultType const_a = col_left_const->template getValue<T0>();
+                    NativeResultType const_b = col_right_const->template getValue<T1>();
 
-                    if constexpr (IsFloatingPoint<ResultDataType> && dec_a)
-                        const_a = DecimalUtils::convertTo<NativeResultType>(
-                            col_left_const->template getValue<T0>(), scale_a);
-                    else
-                        const_a = col_left_const->template getValue<T0>();
+                    //if constexpr (IsFloatingPoint<ResultDataType> && dec_a)
+                    //    const_a = DecimalUtils::convertTo<NativeResultType>(
+                    //        col_left_const->template getValue<T0>(), scale_a);
+                    //else
+                    //    const_a = col_left_const->template getValue<T0>();
 
-                    if constexpr (IsFloatingPoint<ResultDataType> && dec_b)
-                        const_b = DecimalUtils::convertTo<NativeResultType>(
-                            col_right_const->template getValue<T1>(), scale_b);
-                    else
-                        const_b = col_right_const->template getValue<T1>();
+                    //if constexpr (IsFloatingPoint<ResultDataType> && dec_b)
+                    //    const_b = DecimalUtils::convertTo<NativeResultType>(
+                    //        col_right_const->template getValue<T1>(), scale_b);
+                    //else
+                    //    const_b = col_right_const->template getValue<T1>();
+
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
