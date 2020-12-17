@@ -87,7 +87,8 @@ namespace DB
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE) {
+                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
+                        {
                             vec_to[i] = static_cast<Int32>(0);
                             vec_null_map_to[i] = true;
                         }
