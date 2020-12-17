@@ -93,10 +93,11 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * left_generic = block.getByPosition(arguments[0]).type.get();
-        const auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        const auto * left_generic = arguments[0].type.get();
+        const auto * right_generic = arguments[1].type.get();
+        ColumnPtr result_column;
         bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
@@ -108,14 +109,14 @@ public:
 
             using OpImpl = BitHammingDistanceImpl<T0, T1>;
 
-            const auto * const col_left_raw = block.getByPosition(arguments[0]).column.get();
-            const auto * const col_right_raw = block.getByPosition(arguments[1]).column.get();
+            const auto * const col_left_raw = arguments[0].column.get();
+            const auto * const col_right_raw = arguments[1].column.get();
 
             typename ColVecResult::MutablePtr col_res = nullptr;
             col_res = ColVecResult::create();
 
             auto & vec_res = col_res->getData();
-            vec_res.resize(block.rows());
+            vec_res.resize(input_rows_count);
 
             if (auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw))
             {
@@ -141,11 +142,13 @@ public:
             else
                 return false;
 
-            block.getByPosition(result).column = std::move(col_res);
+            result_column = std::move(col_res);
             return true;
         });
         if (!valid)
             throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::ILLEGAL_COLUMN);
+
+        return result_column;
     }
 };
 
