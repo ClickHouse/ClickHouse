@@ -999,8 +999,11 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
-                typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                typename ResultDataType::FieldType scale_a = dec_a ? type.scaleFactorFor(left, is_multiply) : 0;
+                typename ResultDataType::FieldType scale_b = dec_b
+                    ? type.scaleFactorFor(right, is_multiply || is_division)
+                    : 0;
+
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     scale_a = right.getScaleMultiplier();
 
