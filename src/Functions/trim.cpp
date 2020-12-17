@@ -6,11 +6,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 struct TrimModeLeft
 {
@@ -102,6 +104,8 @@ private:
 using FunctionTrimLeft = FunctionStringToString<FunctionTrimImpl<TrimModeLeft>, TrimModeLeft>;
 using FunctionTrimRight = FunctionStringToString<FunctionTrimImpl<TrimModeRight>, TrimModeRight>;
 using FunctionTrimBoth = FunctionStringToString<FunctionTrimImpl<TrimModeBoth>, TrimModeBoth>;
+
+}
 
 void registerFunctionTrim(FunctionFactory & factory)
 {

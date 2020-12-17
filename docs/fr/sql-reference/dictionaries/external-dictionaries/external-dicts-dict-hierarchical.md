@@ -27,7 +27,7 @@ Voici une structure hiérarchique:
 
 Cette hiérarchie peut être exprimée comme la table de dictionnaire suivante.
 
-| id\_région | région\_parent | nom\_région        |
+| id_région | région_parent | nom_région        |
 |------------|----------------|--------------------|
 | 1          | 0              | Russie             |
 | 2          | 1              | Moscou             |

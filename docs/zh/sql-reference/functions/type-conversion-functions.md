@@ -241,7 +241,7 @@ toDate/toDateTime函数的日期和日期时间格式定义如下：
     YYYY-MM-DD
     YYYY-MM-DD hh:mm:ss
 
-例外的是，如果将UInt32、Int32、UInt64或Int64类型的数值转换为Date类型，并且其对应的值大于等于65536，则该数值将被解析成unix时间戳（而不是对应的天数）。这意味着允许写入’toDate(unix\_timestamp)‘这种常见情况，否则这将是错误的，并且需要便携更加繁琐的’toDate(toDateTime(unix\_timestamp))’。
+例外的是，如果将UInt32、Int32、UInt64或Int64类型的数值转换为Date类型，并且其对应的值大于等于65536，则该数值将被解析成unix时间戳（而不是对应的天数）。这意味着允许写入’toDate(unix_timestamp)‘这种常见情况，否则这将是错误的，并且需要便携更加繁琐的’toDate(toDateTime(unix_timestamp))’。
 
 Date与DateTime之间的转换以更为自然的方式进行：通过添加空的time或删除time。
 

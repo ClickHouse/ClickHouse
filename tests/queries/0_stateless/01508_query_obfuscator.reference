@@ -1,0 +1,16 @@
+SELECT 116, 'Qqfu://2020-02-10isqkc1203 sp 2000-05-27T18:38:01', 13e100, Obsidian_id_diverTeam, sweets(Workplace), avgIf(remote('128.0.0.1'))
+SELECT treasury_mammoth_hazelnut between nutmeg and span, case when chive >= 116 then switching else null end
+
+SELECT
+    EarthquakeID,
+    Workout.ID, Workout.CoupleThrill,
+    MedalEMPIRE,
+    HOPE.ListingName, HOPE.ListingBomb, HOPE.ListingRamen, HOPE.ListingResult, HOPE.CoupleThrill, HOPE.Smile
+FROM merge.marsh_agreement
+WHERE
+    RecapitulationLeaver >= '2020-10-13' AND RecapitulationLeaver <= '2020-10-21'
+    AND MasonryID = 30750384
+    AND intHash32(EyeballID) = 448362928 AND intHash64(EyeballID) = 12572659331310383983
+    AND EarthquakeID IN (8195672321757027078, 7079643623150622129, 5057006826979676478, 7886875230160484653, 7494974311229040743)
+    AND Photography = 1
+

@@ -48,7 +48,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Con
 {
     if (add_default_db)
     {
-        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), nullptr);
+        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), false, nullptr);
         visitor.visit(query);
     }
 
@@ -98,21 +98,36 @@ void checkAllowedQueries(const ASTSelectQuery & query)
 
 }
 
+/// check if only one single select query in SelectWithUnionQuery
+static bool isSingleSelect(const ASTPtr & select, ASTPtr & res)
+{
+    auto new_select = select->as<ASTSelectWithUnionQuery &>();
+    if (new_select.list_of_selects->children.size() != 1)
+        return false;
+    auto & new_inner_query = new_select.list_of_selects->children.at(0);
+    if (new_inner_query->as<ASTSelectQuery>())
+    {
+        res = new_inner_query;
+        return true;
+    }
+    else
+        return isSingleSelect(new_inner_query, res);
+}
+
 SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, const Context & context)
 {
-    auto & new_select = select->as<ASTSelectWithUnionQuery &>();
+    ASTPtr new_inner_query;
 
-    if (new_select.list_of_selects->children.size() != 1)
+    if (!isSingleSelect(select, new_inner_query))
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    SelectQueryDescription result;
-
-    result.inner_query = new_select.list_of_selects->children.at(0)->clone();
-
-    auto & select_query = result.inner_query->as<ASTSelectQuery &>();
+    auto & select_query = new_inner_query->as<ASTSelectQuery &>();
     checkAllowedQueries(select_query);
+
+    SelectQueryDescription result;
     result.select_table_id = extractDependentTableFromSelectQuery(select_query, context);
-    result.select_query = select->clone();
+    result.select_query = select->as<ASTSelectWithUnionQuery &>().clone();
+    result.inner_query = new_inner_query->clone();
 
     return result;
 }

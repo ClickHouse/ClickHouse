@@ -1,9 +1,14 @@
-# 航班飞行数据 {#hang-ban-fei-xing-shu-ju}
+---
+toc_priority: 21
+toc_title: OnTime
+---
+
+# OnTime {#ontime}
 
 航班飞行数据有以下两个方式获取：
 
 -   从原始数据导入
--   下载预处理好的分区数据
+-   下载预处理好的数据
 
 ## 从原始数据导入 {#cong-yuan-shi-shu-ju-dao-ru}
 
@@ -19,7 +24,7 @@ done
 done
 ```
 
-(引用 https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
+(参考 https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 创建表结构：
 
@@ -149,7 +154,7 @@ $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhous
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -157,8 +162,7 @@ $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
 !!! info "信息"
-    如果要运行下面的SQL查询，必须使用完整的表名，
-`datasets.ontime`。
+    如果要运行下面的SQL查询，必须使用完整的表名，`datasets.ontime`。
 
 ## 查询： {#cha-xun}
 
@@ -356,7 +360,7 @@ ORDER by rate DESC
 LIMIT 1000;
 ```
 
-奖金:
+Bonus:
 
 ``` sql
 SELECT avg(cnt)
@@ -402,3 +406,5 @@ LIMIT 10;
 -   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
+
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

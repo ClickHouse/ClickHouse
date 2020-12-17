@@ -1,3 +1,8 @@
+---
+toc_priority: 58
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0432\u043d\u0435\u0448\u043d\u0438\u043c\u0438\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f\u043c\u0438"
+---
+
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
 Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
@@ -103,7 +108,7 @@ dictHas('dict_name', id)
 **Параметры**
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
@@ -179,7 +184,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
 
 **Возвращаемое значение**

@@ -419,7 +419,7 @@ ORDER BY h ASC
 いくつかの要素と他の要素との明示的に定義されたマッピングに従って値を変換します。
 あーならではのバリエーション機能:
 
-### transform(x,array\_from,array\_to,デフォルト) {#transformx-array-from-array-to-default}
+### transform(x,array_from,array_to,デフォルト) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -439,7 +439,7 @@ ORDER BY h ASC
 同じ文字が示されている場合（TまたはU）、数値型の場合、これらは一致する型ではなく、共通の型を持つ型である可能性があります。
 たとえば、最初の引数はInt64型で、二番目の引数は配列(UInt16)型です。
 
-もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array\_from’ これは、配列から既存の要素（つまり、同じ番号が付けられている）を返します。 ‘array\_to’ 配列 それ以外の場合は、 ‘default’. 複数の一致する要素がある場合 ‘array\_from’,一致するもののいずれかを返します。
+もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array_from’ これは、配列から既存の要素（つまり、同じ番号が付けられている）を返します。 ‘array_to’ 配列 それ以外の場合は、 ‘default’. 複数の一致する要素がある場合 ‘array_from’,一致するもののいずれかを返します。
 
 例:
 
@@ -461,10 +461,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### 変換(x,array\_from,array\_to) {#transformx-array-from-array-to}
+### 変換(x,array_from,array_to) {#transformx-array-from-array-to}
 
 最初のバリエーションとは異なり、 ‘default’ 引数は省略される。
-もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array\_from’ これは、配列から一致する要素（つまり、同じ番号が付けられている）を返します。 ‘array\_to’ 配列 それ以外の場合は、 ‘x’.
+もし ‘x’ 値は、要素のいずれかに等しいです。 ‘array_from’ これは、配列から一致する要素（つまり、同じ番号が付けられている）を返します。 ‘array_to’ 配列 それ以外の場合は、 ‘x’.
 
 タイプ:
 
@@ -1082,7 +1082,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 キーのリストに対応する値のリストを返します。
 
-ソーステーブルに特定のものが存在しない場合、 `0` または `null` に基づいて返されます [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) 設定。
+ソーステーブルに特定のものが存在しない場合、 `0` または `null` に基づいて返されます [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) 設定。
 
 詳細について `join_use_nulls` で [結合操作](../../engines/table-engines/special/join.md).
 
@@ -1121,15 +1121,15 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 外部モデルの評価
 モデル名とモデル引数を受け取ります。 Float64を返します。
 
-## throwIf(x\[,custom\_message\]) {#throwifx-custom-message}
+## throwIf(x\[,custom_message\]) {#throwifx-custom-message}
 
 引数がゼロ以外の場合は例外をスローします。
-custom\_message-オプションのパラメータです。
+custom_message-オプションのパラメータです。
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

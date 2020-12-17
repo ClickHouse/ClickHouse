@@ -45,12 +45,12 @@ toc_title: SYSTEM
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 重载已经被成功加载过的所有字典。
-默认情况下，字典是延时加载的（ [dictionaries\_lazy\_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)），不是在服务启动时自动加载，而是在第一次使用dictGet函数或通过 `SELECT from tables with ENGINE = Dictionary` 进行访问时被初始化。这个命令 `SYSTEM RELOAD DICTIONARIES` 就是针对这类表进行重新加载的。
+默认情况下，字典是延时加载的（ [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)），不是在服务启动时自动加载，而是在第一次使用dictGet函数或通过 `SELECT from tables with ENGINE = Dictionary` 进行访问时被初始化。这个命令 `SYSTEM RELOAD DICTIONARIES` 就是针对这类表进行重新加载的。
 
 
-## RELOAD DICTIONARY Dictionary\_name {#query_language-system-reload-dictionary}
+## RELOAD DICTIONARY Dictionary_name {#query_language-system-reload-dictionary}
 
-完全重新加载指定字典 `dictionary_name`，不管该字典的状态如何(LOADED / NOT\_LOADED / FAILED)。不管字典的更新结果如何，总是返回 `OK.`
+完全重新加载指定字典 `dictionary_name`，不管该字典的状态如何(LOADED / NOT_LOADED / FAILED)。不管字典的更新结果如何，总是返回 `OK.`
 字典的状态可以通过查询  `system.dictionaries`表来检查。
 
 
@@ -61,7 +61,7 @@ SELECT name, status FROM system.dictionaries;
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
 重置CH的dns缓存。有时候（对于旧的ClickHouse版本）当某些底层环境发生变化时（修改其它Clickhouse服务器的ip或字典所在服务器的ip），需要使用该命令。
-更多自动化的缓存管理相关信息，参见disable\_internal\_dns\_cache, dns\_cache\_update\_period这些参数。
+更多自动化的缓存管理相关信息，参见disable_internal_dns_cache, dns_cache_update_period这些参数。
 
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
@@ -89,7 +89,7 @@ SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ## DROP UNCOMPRESSED CACHE {#query_language-system-drop-uncompressed-cache}
 
 重置未压缩数据的缓存。用于ClickHouse开发和性能测试。
-管理未压缩数据缓存的参数，使用以下的服务器级别设置 [uncompressed\_cache\_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size)以及 `query/user/profile`级别设置 [use\_uncompressed\_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+管理未压缩数据缓存的参数，使用以下的服务器级别设置 [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size)以及 `query/user/profile`级别设置 [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
 
 
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
@@ -99,7 +99,7 @@ SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
-将日志信息缓冲数据刷入系统表（例如system.query\_log）。调试时允许等待不超过7.5秒。当信息队列为空时，会创建系统表。
+将日志信息缓冲数据刷入系统表（例如system.query_log）。调试时允许等待不超过7.5秒。当信息队列为空时，会创建系统表。
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 

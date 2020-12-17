@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: COLUMN
+toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}

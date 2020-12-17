@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
 
@@ -23,7 +22,7 @@ public:
 private:
     StorageRabbitMQ & storage;
     StorageMetadataPtr metadata_snapshot;
-    Context context;
+    const Context & context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

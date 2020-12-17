@@ -40,7 +40,7 @@ Question candidates:
 - How to implement pivot (like in pandas)?
 - How to remove the default ClickHouse user through users.d?
 - Importing MySQL dump to Clickhouse
-- Window function workarounds (row\_number, lag/lead, running diff/sum/average)
+- Window function workarounds (row_number, lag/lead, running diff/sum/average)
 ##}
 
 {## [Original article](https://clickhouse.tech/docs/en/faq) ##}
