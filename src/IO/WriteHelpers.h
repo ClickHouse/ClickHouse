@@ -29,7 +29,15 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#endif
 #include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include <Formats/FormatSettings.h>
 
