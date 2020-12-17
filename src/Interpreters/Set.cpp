@@ -14,8 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
-#include <Functions/FunctionsConversion.h>
-
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -265,11 +263,11 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
         if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
-            result = castColumn<CastType::accurateOrNull>(column_to_cast, data_types[i]);
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
         }
         else
         {
-            result = castColumn<CastType::accurate>(column_to_cast, data_types[i]);
+            result = castColumnAccurate(column_to_cast, data_types[i]);
         }
 
         materialized_columns.emplace_back() = result;

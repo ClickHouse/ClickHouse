@@ -2791,7 +2791,7 @@ class MonotonicityHelper
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
-template <typename DataType>
+    template <typename DataType>
     static auto monotonicityForType(const DataType * const)
     {
         return FunctionTo<DataType>::Type::Monotonic::get;
