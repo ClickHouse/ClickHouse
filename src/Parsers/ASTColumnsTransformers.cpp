@@ -94,7 +94,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
     for (const auto & child : children)
-        expected_columns.insert(child->as<const ASTIdentifier &>().name());
+        expected_columns.insert(child->as<const ASTIdentifier &>().shortName());
 
     for (auto it = nodes.begin(); it != nodes.end();)
     {
