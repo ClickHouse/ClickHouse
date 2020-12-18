@@ -2471,10 +2471,10 @@ Default value: `0`.
 
 **Usage**
 
-It can be useful when merges are CPU bounded not IO bounded (heavy compression is in use, calculation expensive aggregate functions or default expressions or just very high number of tiny merges).
-
 Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform the merge, then the merge is performed on other replicas as usual.
 
 High values for that threshold may lead to replication delays.
+
+Heavy compression is in use, calculation expensive aggregate functions or default expressions or just very high number of tiny merges when using the settings. It can be useful when merges are CPU bounded not IO bounded.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
