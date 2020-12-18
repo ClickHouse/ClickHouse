@@ -31,7 +31,7 @@ class Backport:
                         break
         return branches
 
-    def execute(self, repo, until_commit, number, find_lts, run_cherrypick):
+    def execute(self, repo, until_commit, number, run_cherrypick, find_lts=False):
         repo = LocalRepo(repo, 'origin', self.default_branch_name)
         all_branches = repo.get_release_branches()
 
