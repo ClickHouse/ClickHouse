@@ -67,15 +67,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (!deduplicate_by_columns.empty())
             {
-                const FormatSettings format_settings;
-                out << "\ndeduplicate_by_columns: [";
+                out << "\ndeduplicate_by_columns: ";
                 for (size_t i = 0; i < deduplicate_by_columns.size(); ++i)
                 {
-                    writeJSONString(deduplicate_by_columns[i], out, format_settings);
+                    writeCSVString(deduplicate_by_columns[i], out);
                     if (i != deduplicate_by_columns.size() - 1)
                         out << ",";
                 }
-                out << "]";
             }
 
             break;
@@ -212,18 +210,18 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
                 }
                 else if (checkString("into_uuid: ", in))
                     in >> new_part_uuid;
-                else if (checkString("deduplicate_by_columns: [", in))
+                else if (checkString("deduplicate_by_columns: ", in))
                 {
                     Strings new_deduplicate_by_columns;
+                    FormatSettings::CSV format_settings;
                     for (;;)
                     {
                         String tmp_column_name;
-                        readJSONString(tmp_column_name, in);
+                        readCSVString(tmp_column_name, in, format_settings);
                         new_deduplicate_by_columns.emplace_back(std::move(tmp_column_name));
                         if (!checkString(",", in))
                             break;
                     }
-                    assertString("]", in);
 
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
