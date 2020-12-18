@@ -205,7 +205,7 @@
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 
-                 Only file format with -----BEGIN DH PARAMETERS----- is supported.
+                 Only file format with BEGIN DH PARAMETERS is supported.
               -->
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
