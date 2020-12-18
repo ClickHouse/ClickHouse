@@ -3,15 +3,15 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromHDFS.h>
-#include <IO/WriteBufferFromHDFS.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/WriteHelpers.h>
-#include <IO/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -121,7 +121,7 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path), compression);
+                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, context.getGlobalContext().getConfigRef()), compression);
                 auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
                 reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
@@ -180,7 +180,7 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context.getGlobalContext().getConfigRef()), compression_method, 3);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
@@ -274,7 +274,7 @@ Pipe StorageHDFS::read(
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
-    HDFSBuilderPtr builder = createHDFSBuilder(uri_without_path + "/");
+    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_.getGlobalContext().getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();

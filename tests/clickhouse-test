@@ -175,6 +175,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
                 except OSError as e:
                     if e.errno != ESRCH:
                         raise
+
+            total_time = (datetime.now() - start_time).total_seconds()
             return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
     total_time = (datetime.now() - start_time).total_seconds()
