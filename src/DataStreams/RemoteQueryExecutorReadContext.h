@@ -29,10 +29,10 @@ public:
     FiberStack stack;
     boost::context::fiber fiber;
     std::mutex fiber_lock;
-    // std::unique_lock<std::mutex> * connection_lock;
 
     Poco::Timespan receive_timeout;
     MultiplexedConnections & connections;
+    Poco::Net::Socket * last_used_socket = nullptr;
 
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     int socket_fd = -1;
@@ -66,8 +66,7 @@ public:
                 throwFromErrno("Cannot add timer descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
         }
 
-        auto lock = std::make_unique<std::unique_lock<std::mutex>>(connections.cancel_mutex, std::defer_lock);
-        auto routine = Routine{connections, *this, std::move(lock)};
+        auto routine = Routine{connections, *this};
         // connection_lock = routine.connection_lock.get();
         fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
     }
@@ -104,7 +103,8 @@ public:
         }
         catch (DB::Exception & e)
         {
-            e.addMessage(" while reading from socket ({})", connections.getSocket().peerAddress().toString());
+            if (last_used_socket)
+                e.addMessage(" while reading from socket ({})", last_used_socket->peerAddress().toString());
             throw;
         }
     }
@@ -165,31 +165,11 @@ public:
             if (!fiber)
                 return false;
 
-//            if (!connection_lock->owns_lock())
-//                connection_lock->lock();
-
             fiber = std::move(fiber).resume();
-
-//            if (!is_read_in_progress)
-//                connection_lock->unlock();
         }
 
         if (exception)
             std::rethrow_exception(std::move(exception));
-
-        if (is_read_in_progress)
-        {
-            auto & socket = connections.getSocket();
-            try
-            {
-                setSocket(socket);
-            }
-            catch (DB::Exception & e)
-            {
-                e.addMessage(" while reading from socket ({})", socket.peerAddress().toString());
-                throw;
-            }
-        }
 
         return true;
     }
@@ -221,7 +201,29 @@ public:
     {
         MultiplexedConnections & connections;
         Self & read_context;
-        std::unique_ptr<std::unique_lock<std::mutex>> connection_lock;
+
+        struct ReadCallback
+        {
+            Self & read_context;
+            Fiber & fiber;
+
+            void operator()(Poco::Net::Socket & socket)
+            {
+                try
+                {
+                    read_context.setSocket(socket);
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage(" while reading from socket ({})", socket.peerAddress().toString());
+                    throw;
+                }
+
+                read_context.is_read_in_progress = true;
+                fiber = std::move(fiber).resume();
+                read_context.is_read_in_progress = false;
+            }
+        };
 
         Fiber operator()(Fiber && sink) const
         {
@@ -229,10 +231,7 @@ public:
             {
                 while (true)
                 {
-                    read_context.is_read_in_progress = true;
-                    read_context.packet = connections.receivePacketUnlocked(&sink);
-                    read_context.is_read_in_progress = false;
-
+                    read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink});
                     sink = std::move(sink).resume();
                 }
             }

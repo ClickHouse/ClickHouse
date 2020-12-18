@@ -67,11 +67,9 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const { return active_connection_count > 0; }
 
-    Poco::Net::Socket & getSocket() { return current_connection->getSocket(); }
-
 private:
     /// Internal version of `receivePacket` function without locking.
-    Packet receivePacketUnlocked(Fiber * fiber = nullptr);
+    Packet receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback = {});
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;

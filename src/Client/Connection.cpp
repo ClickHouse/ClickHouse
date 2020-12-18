@@ -742,10 +742,10 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(Fiber * fiber)
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
-    in->setFiber(fiber);
-    SCOPE_EXIT(in->setFiber(nullptr));
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT(in->setAsyncCallback({}));
 
     try
     {
