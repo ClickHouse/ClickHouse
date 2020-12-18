@@ -45,6 +45,7 @@ SKIP_LIST = [
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
+    "01274_alter_rename_column_distributed",  # flaky
     "01280_ssd_complex_key_dictionary",
     "01293_client_interactive_vertical_multiline",  # expect-test
     "01293_client_interactive_vertical_singleline",  # expect-test
