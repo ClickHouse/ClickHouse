@@ -102,13 +102,33 @@ class ParsingException : public Exception
 {
 public:
     using Exception::Exception;
+    
+    ParsingException()
+    {
+        Exception::addMessage("{}");
+    }
+    
+    ParsingException(const std::string & msg, int code)
+        : Exception(msg, code) 
+    {
+        Exception::addMessage("{}");
+    }
+
+    ParsingException(int code, const std::string & message)
+        : Exception(message, code)
+    {
+        Exception::addMessage("{}");
+    }
 
     /// We use additional field formatted_message_ to make this method const.
     std::string displayText() const override
     {
         try
         {
-            formatted_message_ = fmt::format(message(), line_number_);
+            if (line_number_ == -1)
+                formatted_message_ = fmt::format(message(), "");
+            else
+                formatted_message_ = fmt::format(message(), fmt::format("(at row {})\n", line_number_));
         }
         catch (...)
         {}
@@ -130,7 +150,7 @@ public:
     void setLineNumber(int line_number) { line_number_ = line_number;}
 
 private:
-    int line_number_;
+    ssize_t line_number_{-1};
     mutable std::string formatted_message_;
 
     const char * name() const throw() override { return "DB::ParsingException"; }

@@ -149,7 +149,7 @@ Chunk IRowInputFormat::generate()
         }
 
         e.setLineNumber(total_rows);
-        e.addMessage("(at row {})\n" + verbose_diagnostic);
+        e.addMessage(verbose_diagnostic);
         throw;
     }
     catch (Exception & e)
