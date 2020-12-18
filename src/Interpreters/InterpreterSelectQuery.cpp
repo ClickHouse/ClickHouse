@@ -1528,7 +1528,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
 
-        if (context->hasQueryContext())
+        if (context->hasQueryContext() && !options.is_internal)
         {
             auto local_storage_id = storage->getStorageID();
             context->getQueryContext().addQueryAccessInfo(

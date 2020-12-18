@@ -47,6 +47,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
@@ -499,7 +500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// reset Input callbacks if query is not INSERT SELECT
             context.resetInputCallbacks();
 
-        auto interpreter = InterpreterFactory::get(ast, context, stage);
+        auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -606,16 +607,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.query = query_for_logging;
             elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
 
-            if (use_processors)
-            {
-                const auto & info = context.getQueryAccessInfo();
-                elem.query_databases = info.databases;
-                elem.query_tables = info.tables;
-                elem.query_columns = info.columns;
-            }
-
-            interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
-
             elem.client_info = context.getClientInfo();
 
             bool log_queries = settings.log_queries && !internal;
@@ -623,6 +614,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Log into system table start of query execution, if need.
             if (log_queries)
             {
+                if (use_processors)
+                {
+                    const auto & info = context.getQueryAccessInfo();
+                    elem.query_databases = info.databases;
+                    elem.query_tables = info.tables;
+                    elem.query_columns = info.columns;
+                }
+
+                interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
+
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
