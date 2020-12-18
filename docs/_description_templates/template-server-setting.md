@@ -17,10 +17,12 @@ If the section contains several settings, list them here. Specify possible value
 
 **Example:**
 
+```xml
 <server_setting_name>
     <setting_1> ... </setting_1>
     <setting_2> ... </setting_2>
 </server_setting_name>
+```
 
 **Additional Info** (Optional)
 
