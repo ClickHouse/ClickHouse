@@ -58,15 +58,15 @@ Chunk IRowInputFormat::generate()
     try
     {
         RowReadExtension info;
-        for (size_t rows = 0; rows < params.max_block_size; ++rows)
+        bool continue_reading = true;
+        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
         {
             try
             {
                 ++total_rows;
 
                 info.read_columns.clear();
-                if (!readRow(columns, info))
-                    break;
+                continue_reading = readRow(columns, info);
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -79,7 +79,17 @@ Chunk IRowInputFormat::generate()
                     }
                 }
 
-                ++num_rows;
+                /// Some formats may read row AND say the read is finished.
+                /// For such a case, get the number or rows from first column.
+                if (!columns.empty())
+                    num_rows = columns.front()->size();
+
+                if (!continue_reading)
+                    break;
+
+                /// The case when there is no columns. Just count rows.
+                if (columns.empty())
+                    ++num_rows;
             }
             catch (Exception & e)
             {
