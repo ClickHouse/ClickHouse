@@ -7,9 +7,10 @@
 namespace DB
 {
 
-RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_)
+RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_)
     : SourceWithProgress(executor->getHeader(), false)
     , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
+    , async_read(async_read_)
 {
     /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
     const auto & sample = getPort().getHeader();
@@ -65,21 +66,25 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
         was_query_sent = true;
     }
-#if defined(OS_LINUX)
-    auto res = query_executor->read(read_context);
-    if (std::holds_alternative<int>(res))
+
+    Block block;
+
+    if (async_read)
     {
-        fd = std::get<int>(res);
-        is_async_state = true;
-        return Chunk();
+        auto res = query_executor->read(read_context);
+        if (std::holds_alternative<int>(res))
+        {
+            fd = std::get<int>(res);
+            is_async_state = true;
+            return Chunk();
+        }
+
+        is_async_state = false;
+
+        block = std::get<Block>(std::move(res));
     }
-
-    is_async_state = false;
-
-    auto block = std::get<Block>(std::move(res));
-#else
-    auto block = query_executor->read();
-#endif
+    else
+        block = query_executor->read();
 
     if (!block)
     {
@@ -161,9 +166,9 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read)
 {
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info));
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read));
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
