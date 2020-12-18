@@ -240,8 +240,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             }
 
             size_t pos = granule.start_row;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.granularity_rows);
-            if (granule.isCompleted())
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, granule.rows_to_write);
+            if (granule.is_complete)
                 ++skip_index_accumulated_marks[i];
         }
     }

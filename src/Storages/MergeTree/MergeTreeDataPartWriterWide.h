@@ -99,6 +99,11 @@ private:
     /// in our index_granularity array.
     void shiftCurrentMark(const Granules & granules_written);
 
+    /// Change rows in the last mark in index_granularity to rows_written_in_last_mark.
+    /// Flush all marks from last_non_written_marks to disk and increment current mark.
+    ///
+    /// This function used when blocks change granularity drastically and we have unfinished mark.
+    /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkAndFlushToDisk();
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
@@ -110,6 +115,8 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+    /// Non written marks to disk (for each column). Waiting until all rows for
+    /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
 
