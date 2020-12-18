@@ -52,8 +52,7 @@ else()
 endif()
 
 if (NOT ENABLE_CLICKHOUSE_CLIENT)
-    message(WARNING "ClickHouse client mode is not going to be built. You won't be able to connect to the server and run
-                    tests")
+    message(WARNING "ClickHouse client mode is not going to be built. You won't be able to connect to the server and run tests")
 else()
     message(STATUS "Client mode: ON")
 endif()
@@ -110,6 +109,12 @@ if (ENABLE_CLICKHOUSE_INSTALL)
     message(STATUS "ClickHouse install: ON")
 else()
     message(STATUS "ClickHouse install: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_GIT_IMPORT)
+    message(STATUS "ClickHouse git-import: ON")
+else()
+    message(STATUS "ClickHouse git-import: OFF")
 endif()
 
 if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
