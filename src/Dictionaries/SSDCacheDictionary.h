@@ -354,6 +354,8 @@ public:
     template <typename T>
     using ResultArrayType = SSDCacheStorage::ResultArrayType<T>;
 
+    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::unsupported;
+
 #define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)

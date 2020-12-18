@@ -569,6 +569,8 @@ public:
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
+    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::unsupported;
+
     template <typename T>
     using ResultArrayType = SSDComplexKeyCacheStorage::ResultArrayType<T>;
 

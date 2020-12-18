@@ -42,6 +42,12 @@ std::string toString(const AttributeUnderlyingType type);
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
+enum class DictionaryGetByType {
+    getByIdentifiers,
+    getByComplexKeys,
+    getByRange,
+    unsupported /* will be removed after migration to new interface */
+};
 
 /** Holds the description of a single dictionary attribute:
 *    - name, used for lookup into dictionary and source;
@@ -62,8 +68,68 @@ struct DictionaryAttribute final
     const bool hierarchical;
     const bool injective;
     const bool is_object_id;
+    const bool is_nullable;
+    const bool is_array;
 };
 
+template <typename Type>
+struct DictionaryAttributeType
+{
+    using AttributeType = Type;
+};
+
+template <typename F>
+void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
+{
+    switch (type)
+    {
+        case AttributeUnderlyingType::utUInt8:
+            func(DictionaryAttributeType<UInt8>());
+            break;
+        case AttributeUnderlyingType::utUInt16:
+            func(DictionaryAttributeType<UInt16>());
+            break;
+        case AttributeUnderlyingType::utUInt32:
+            func(DictionaryAttributeType<UInt32>());
+            break;
+        case AttributeUnderlyingType::utUInt64:
+            func(DictionaryAttributeType<UInt64>());
+            break;
+        case AttributeUnderlyingType::utUInt128:
+            func(DictionaryAttributeType<UInt128>());
+            break;
+        case AttributeUnderlyingType::utInt8:
+            func(DictionaryAttributeType<Int8>());
+            break;
+        case AttributeUnderlyingType::utInt16:
+            func(DictionaryAttributeType<Int16>());
+            break;
+        case AttributeUnderlyingType::utInt32:
+            func(DictionaryAttributeType<Int32>());
+            break;
+        case AttributeUnderlyingType::utInt64:
+            func(DictionaryAttributeType<Int64>());
+            break;
+        case AttributeUnderlyingType::utFloat32:
+            func(DictionaryAttributeType<Float32>());
+            break;
+        case AttributeUnderlyingType::utFloat64:
+            func(DictionaryAttributeType<Float64>());
+            break;
+        case AttributeUnderlyingType::utString:
+            func(DictionaryAttributeType<String>());
+            break;
+        case AttributeUnderlyingType::utDecimal32:
+            func(DictionaryAttributeType<Decimal32>());
+            break;
+        case AttributeUnderlyingType::utDecimal64:
+            func(DictionaryAttributeType<Decimal64>());
+            break;
+        case AttributeUnderlyingType::utDecimal128:
+            func(DictionaryAttributeType<Decimal128>());
+            break;
+    }
+};
 
 struct DictionarySpecialAttribute final
 {

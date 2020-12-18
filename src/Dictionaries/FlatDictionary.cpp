@@ -1,5 +1,7 @@
 #include "FlatDictionary.h"
 #include <IO/WriteHelpers.h>
+#include <Columns/ColumnsNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <Core/Defines.h>
@@ -14,6 +16,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
+    extern const int ILLEGAL_COLUMN;
 }
 
 static const auto initial_array_size = 1024;
@@ -102,183 +105,184 @@ void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray
     isInImpl(child_id, ancestor_ids, out);
 }
 
-
-#define DECLARE(TYPE) \
-    void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return null_value; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void FlatDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+ColumnPtr FlatDictionary::get(const std::string& attribute_name, const DataTypePtr &, const ColumnPtr id_column, const ColumnPtr default_untyped) const
 {
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    ColumnPtr result;
 
-    const auto & null_value = std::get<StringRef>(attribute.null_values);
+    const auto *id_col = checkAndGetColumn<ColumnUInt64>(id_column.get());
+    const auto *id_col_const = checkAndGetColumnConst<ColumnUInt64>(id_column.get()); 
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
-}
-
-#define DECLARE(TYPE) \
-    void FlatDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
+    if (id_col == nullptr && id_col_const == nullptr)
+    {
+        throw Exception{"Identifiers column must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
     }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
 
-void FlatDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
-{
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
-}
-
-#define DECLARE(TYPE) \
-    void FlatDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
+    PaddedPODArray<UInt64> ids_const(1);
+    
+    if (id_col_const != nullptr) {
+        ids_const[0] = id_col_const->getValue<UInt64>();     
     }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
 
-void FlatDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
+    const auto& ids = id_col != nullptr ? id_col->getData() : ids_const;
+    bool is_const = id_col_const != nullptr;
+
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    FlatDictionary::getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
+    /// TODO: Check that attribute type is same as result type
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        auto size = ids.size();
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        ids,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        ids,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t) { return def; });
+                }
+            }
+            else
+            {
+                const auto & null_value = std::get<StringRef>(attribute.null_values);
+
+                getItemsImpl<StringRef, StringRef>(
+                    attribute,
+                    ids,
+                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+    
+    if (is_const)
+    {
+        result = ColumnConst::create(std::move(result), 1);
+    }
+
+    return result;
 }
-
 
 void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
-    const auto & attribute = attributes.front();
+    const auto ids_count = ext::size(ids);
 
-    switch (attribute.type)
+    for (const auto i : ext::range(0, ids_count))
     {
-        case AttributeUnderlyingType::utUInt8:
-            has<UInt8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            has<UInt16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            has<UInt32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            has<UInt64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            has<UInt128>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            has<Int8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            has<Int16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            has<Int32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            has<Int64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            has<Float32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            has<Float64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utString:
-            has<String>(attribute, ids, out);
-            break;
-
-        case AttributeUnderlyingType::utDecimal32:
-            has<Decimal32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            has<Decimal64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            has<Decimal128>(attribute, ids, out);
-            break;
+        const auto id = ids[i];
+        out[i] = id < loaded_ids.size() && loaded_ids[id];
     }
+
+    query_count.fetch_add(ids_count, std::memory_order_relaxed);
 }
 
 
@@ -416,6 +420,14 @@ void FlatDictionary::addAttributeSize(const Attribute & attribute)
     bucket_count = array_ref.capacity();
 }
 
+template <>
+void FlatDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    const auto & array_ref = std::get<ContainerType<StringRef>>(attribute.arrays);
+    bytes_allocated += sizeof(PaddedPODArray<StringRef>) + array_ref.allocated_bytes();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+    bucket_count = array_ref.capacity();
+}
 
 void FlatDictionary::calculateBytesAllocated()
 {
@@ -423,60 +435,15 @@ void FlatDictionary::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
@@ -502,57 +469,16 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 
 FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    Attribute attr{type, {}, {}, {}, {}};
 
-    switch (type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utString:
-            createAttributeImpl<String>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributType = typename Type::AttributeType;
+        createAttributeImpl<AttributType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-    }
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
@@ -610,55 +536,14 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const 
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
-    switch (attribute.type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-            break;
-        case AttributeUnderlyingType::utInt8:
-            setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
-            break;
-        case AttributeUnderlyingType::utString:
-            setAttributeValueImpl<String>(attribute, id, value.get<String>());
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        setAttributeValueImpl<AttributeType>(attribute, id, value.get<AttributeType>());
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
-            break;
-    }
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 
@@ -669,21 +554,6 @@ const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
-}
-
-
-template <typename T>
-void FlatDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
-{
-    const auto ids_count = ext::size(ids);
-
-    for (const auto i : ext::range(0, ids_count))
-    {
-        const auto id = ids[i];
-        out[i] = id < loaded_ids.size() && loaded_ids[id];
-    }
-
-    query_count.fetch_add(ids_count, std::memory_order_relaxed);
 }
 
 

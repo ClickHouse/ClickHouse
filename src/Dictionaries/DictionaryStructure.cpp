@@ -2,6 +2,8 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -12,6 +14,7 @@
 #include <unordered_set>
 #include <ext/range.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -82,11 +85,6 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         if (type.find("128", start) == start)
             return AttributeUnderlyingType::utDecimal128;
     }
-
-    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-    // TODO: This should be fixed by fully supporting arrays in dictionaries.
-    if (type.find("Array") == 0)
-        return AttributeUnderlyingType::utString;
 
     throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
 }
@@ -319,8 +317,26 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             continue;
 
         const auto type_string = config.getString(prefix + "type");
-        const auto type = DataTypeFactory::instance().get(type_string);
-        const auto underlying_type = getAttributeUnderlyingType(type_string);
+        const auto initial_type = DataTypeFactory::instance().get(type_string);
+        auto type = initial_type;
+        bool is_array = false;
+        bool is_nullable = false;
+
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(type.get());
+        if (array_type)
+        {
+            is_array = true;
+            type = array_type->getNestedType();
+        }
+        
+        if (type->isNullable())
+        {
+            is_nullable = true;
+            type = removeNullable(type);
+        }
+
+        /// TODO: Fix for decimal
+        const auto underlying_type = getAttributeUnderlyingType(type->getName());
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -366,7 +382,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         has_hierarchy = has_hierarchy || hierarchical;
 
         res_attributes.emplace_back(
-            DictionaryAttribute{name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id});
+            DictionaryAttribute{name, underlying_type, initial_type, expression, null_value, hierarchical, injective, is_object_id, is_nullable, is_array});
     }
 
     return res_attributes;
