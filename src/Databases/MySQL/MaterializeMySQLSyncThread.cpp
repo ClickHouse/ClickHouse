@@ -43,7 +43,6 @@ static Context createQueryContext(const Context & global_context)
 {
     Settings new_query_settings = global_context.getSettings();
     new_query_settings.insert_allow_materialized_columns = true;
-    new_query_settings.optimize_on_insert = false;
 
     Context query_context(global_context);
     query_context.setSettings(new_query_settings);
