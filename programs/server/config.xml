@@ -202,7 +202,11 @@
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
-            <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+            <!-- dhparams are optional. You can delete the <dhParamsFile> element.
+                 To generate dhparams, use the following command:
+                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 
+                 Only file format with -----BEGIN DH PARAMETERS----- is supported.
+              -->
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
