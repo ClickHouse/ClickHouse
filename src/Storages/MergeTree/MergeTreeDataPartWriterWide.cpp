@@ -33,12 +33,12 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         size_t rows_left_in_block = block_rows - current_row;
         result.emplace_back(Granule{
             .start_row = current_row,
-            .granularity_rows = rows_left_in_last_mark,
-            .block_rows = std::min(rows_left_in_block, rows_left_in_last_mark),
+            .rows_to_write = std::min(rows_left_in_block, rows_left_in_last_mark),
             .mark_number = current_mark,
             .mark_on_start = false, /// Don't mark this granule because we have already marked it
+            .is_complete = (rows_left_in_block >= rows_left_in_last_mark),
         });
-        current_row += rows_left_in_last_mark;
+        current_row += result.back().rows_to_write;
         current_mark++;
     }
 
@@ -51,12 +51,12 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         /// save incomplete granule
         result.emplace_back(Granule{
             .start_row = current_row,
-            .granularity_rows = expected_rows_in_mark,
-            .block_rows = std::min(rows_left_in_block, expected_rows_in_mark),
+            .rows_to_write = std::min(rows_left_in_block, expected_rows_in_mark),
             .mark_number = current_mark,
             .mark_on_start = true,
+            .is_complete = (rows_left_in_block >= expected_rows_in_mark),
         });
-        current_row += expected_rows_in_mark;
+        current_row += result.back().rows_to_write;
         current_mark++;
     }
 
@@ -136,11 +136,12 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
+
 void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_written)
 {
     auto last_granule = granules_written.back();
     /// If we didn't finished last granule than we will continue to write it from new block
-    if (!last_granule.isCompleted())
+    if (!last_granule.is_complete)
     {
         /// Shift forward except last granule
         setCurrentMark(getCurrentMark() + granules_written.size() - 1);
@@ -148,9 +149,9 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
         /// We wrote whole block in the same granule, but didn't finished it.
         /// So add written rows to rows written in last_mark
         if (still_in_the_same_granule)
-            rows_written_in_last_mark += last_granule.block_rows;
+            rows_written_in_last_mark += last_granule.rows_to_write;
         else
-            rows_written_in_last_mark = last_granule.block_rows;
+            rows_written_in_last_mark = last_granule.rows_to_write;
     }
     else
     {
@@ -288,7 +289,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     IDataType::SerializeBinaryBulkSettings & serialize_settings,
     const Granule & granule)
 {
-    type.serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.granularity_rows, serialize_settings, serialization_state);
+    type.serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
@@ -333,8 +334,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     for (const auto & granule : granules)
     {
-        if (granule.granularity_rows > 0)
-            data_written = true;
+        data_written = true;
 
         if (granule.mark_on_start)
         {
@@ -353,7 +353,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
            granule
         );
 
-        if (granule.isCompleted())
+        if (granule.is_complete)
         {
             auto it = last_non_written_marks.find(name);
             if (it == last_non_written_marks.end())
