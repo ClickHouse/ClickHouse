@@ -957,15 +957,15 @@ public:
     }
 
     template <class T, class ResultDataType>
-    static auto helperGetOrConvert(const auto & col, const auto & scale)
+    static auto helperGetOrConvert(const auto & col_const, const auto & col)
     {
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = typename NativeType<ResultType>::Type;
 
         if constexpr (IsFloatingPoint<ResultDataType> && IsDecimalNumber<T>)
-            return DecimalUtils::convertTo<NativeResultType>(col->template getValue<T>(), scale);
+            return DecimalUtils::convertTo<NativeResultType>(col_const->template getValue<T>(), col.getScale());
         else
-            return col->template getValue<T>();
+            return col_const->template getValue<T>();
     }
 
     template <typename A, typename B>
@@ -1033,10 +1033,8 @@ public:
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
-                        col_left_const, left.getScale());
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
-                        col_right_const, right.getScale());
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<left_is_decimal, right_is_decimal>(
@@ -1070,8 +1068,7 @@ public:
                 }
                 else if (col_left_const && col_right)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
-                        col_left_const, left.getScale());
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template constantVector<left_is_decimal, right_is_decimal>(
@@ -1082,8 +1079,7 @@ public:
                 }
                 else if (col_left && col_right_const)
                 {
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
-                        col_right_const, right.getScale());
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
                     if (check_decimal_overflow)
                         OpImplCheck::template vectorConstant<left_is_decimal, right_is_decimal>(
