@@ -36,6 +36,10 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
 option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
     ${ENABLE_CLICKHOUSE_ALL})
 
+# https://presentations.clickhouse.tech/matemarketing_2020/
+option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories"
+    ${ENABLE_CLICKHOUSE_ALL})
+
 if (CLICKHOUSE_SPLIT_BINARY)
     option(ENABLE_CLICKHOUSE_INSTALL "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)" OFF)
 else ()
