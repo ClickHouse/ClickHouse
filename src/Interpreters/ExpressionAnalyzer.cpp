@@ -472,6 +472,15 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 
 bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
+    // Convenient to check here because at least we have the Context.
+    if (windowFunctions().size() > 0 &&
+        !context.getSettingsRef().allow_experimental_window_functions)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window functions are not implemented (while processing '{}')",
+            windowFunctions()[0]->formatForErrorMessage());
+    }
+
     for (const ASTFunction * function_node : windowFunctions())
     {
         assert(function_node->is_window_function);

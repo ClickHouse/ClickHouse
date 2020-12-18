@@ -1,5 +1,7 @@
 -- { echo }
 
+set allow_experimental_window_functions = 1;
+
 -- just something basic
 select number, count() over (partition by intDiv(number, 3) order by number) from numbers(10);
 
