@@ -156,7 +156,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 #if defined(OS_DARWIN)
         uint32_t path_length = 0;
         _NSGetExecutablePath(nullptr, &path_length);
-        if (path_length <= 1) 
+        if (path_length <= 1)
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         std::string path(path_length, std::string::value_type());
