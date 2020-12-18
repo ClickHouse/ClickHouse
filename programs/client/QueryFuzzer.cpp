@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -205,14 +206,88 @@ void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
     ast = new_ast;
 }
 
-void QueryFuzzer::fuzzColumnLikeExpressionList(ASTPtr ast)
+void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
+{
+    switch (fuzz_rand() % 10)
+    {
+        case 0:
+            elem->direction = -1;
+            break;
+        case 1:
+            elem->direction = 1;
+            break;
+        case 2:
+            elem->nulls_direction = -1;
+            elem->nulls_direction_was_explicitly_specified = true;
+            break;
+        case 3:
+            elem->nulls_direction = 1;
+            elem->nulls_direction_was_explicitly_specified = true;
+            break;
+        case 4:
+            elem->nulls_direction = elem->direction;
+            elem->nulls_direction_was_explicitly_specified = false;
+            break;
+        default:
+            // do nothing
+            break;
+    }
+}
+
+void QueryFuzzer::fuzzOrderByList(IAST * ast)
 {
     if (!ast)
     {
         return;
     }
 
-    auto * impl = assert_cast<ASTExpressionList *>(ast.get());
+    auto * list = assert_cast<ASTExpressionList *>(ast);
+
+    // Remove element
+    if (fuzz_rand() % 50 == 0 && list->children.size() > 1)
+    {
+        // Don't remove last element -- this leads to questionable
+        // constructs such as empty select.
+        list->children.erase(list->children.begin()
+                             + fuzz_rand() % list->children.size());
+    }
+
+    // Add element
+    if (fuzz_rand() % 50 == 0)
+    {
+        auto pos = list->children.empty()
+                ? list->children.begin()
+                : list->children.begin() + fuzz_rand() % list->children.size();
+        auto col = getRandomColumnLike();
+        if (col)
+        {
+            auto elem = std::make_shared<ASTOrderByElement>();
+            elem->children.push_back(col);
+            elem->direction = 1;
+            elem->nulls_direction = 1;
+            elem->nulls_direction_was_explicitly_specified = false;
+            elem->with_fill = false;
+
+            list->children.insert(pos, elem);
+        }
+        else
+        {
+            fprintf(stderr, "no random col!\n");
+        }
+    }
+
+    // We don't have to recurse here to fuzz the children, this is handled by
+    // the generic recursion into IAST.children.
+}
+
+void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
+{
+    if (!ast)
+    {
+        return;
+    }
+
+    auto * impl = assert_cast<ASTExpressionList *>(ast);
 
     // Remove element
     if (fuzz_rand() % 50 == 0 && impl->children.size() > 1)
@@ -281,17 +356,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzz(expr_list->children);
     }
+    else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
+    {
+        fuzzOrderByElement(order_by_element);
+    }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
-        fuzzColumnLikeExpressionList(fn->arguments);
-        fuzzColumnLikeExpressionList(fn->parameters);
+        fuzzColumnLikeExpressionList(fn->arguments.get());
+        fuzzColumnLikeExpressionList(fn->parameters.get());
 
         fuzz(fn->children);
+
+        if (fn->is_window_function)
+        {
+            fuzzColumnLikeExpressionList(fn->window_partition_by);
+            fuzzOrderByList(fn->window_order_by);
+        }
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
-        fuzzColumnLikeExpressionList(select->select());
-        fuzzColumnLikeExpressionList(select->groupBy());
+        fuzzColumnLikeExpressionList(select->select().get());
+        fuzzColumnLikeExpressionList(select->groupBy().get());
+        fuzzOrderByList(select->orderBy().get());
 
         fuzz(select->children);
     }
