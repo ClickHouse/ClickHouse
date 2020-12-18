@@ -241,13 +241,13 @@ struct DecimalBinaryOperation
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = apply(scale_a * undec(a[i]), undec(b[i]));
+                    c[i] = scale_a * apply(undec(a[i]), undec(b[i]));
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = apply(undec(a[i]), undec(b[i]) * scale_b);
+                    c[i] = scale_b * apply(undec(a[i]), undec(b[i]));
                 return;
             }
         }
