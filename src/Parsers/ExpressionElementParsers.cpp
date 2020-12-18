@@ -388,7 +388,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->is_window_function = true;
 
         // We are slightly breaking the parser interface by parsing the window
-        // definition into an existing ASTFunction, hence this weirdness.
+        // definition into an existing ASTFunction. Normally it would take a
+        // reference to ASTPtr and assign it the new node. We only have a pointer
+        // of a different type, hence this workaround with a temporary pointer.
         ASTPtr function_node_as_iast = function_node;
 
         ParserWindowDefinition window_definition;

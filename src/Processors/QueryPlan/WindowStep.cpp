@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-static Block addWindowFunctionColumns(const Block & block,
+static Block addWindowFunctionResultColumns(const Block & block,
     std::vector<WindowFunctionDescription> window_functions)
 {
     auto result = block;
@@ -48,21 +48,22 @@ WindowStep::WindowStep(const DataStream & input_stream_,
         const std::vector<WindowFunctionDescription> & window_functions_)
     : ITransformingStep(
         input_stream_,
-            addWindowFunctionColumns(input_stream_.header, window_functions_),
+            addWindowFunctionResultColumns(input_stream_.header,
+                window_functions_),
         getTraits())
     , window_description(window_description_)
     , window_functions(window_functions_)
     , input_header(input_stream_.header)
 {
-    /// Some columns may be removed by expression.
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
+    // We don't remove any columns, only add, so probably we don't have to update
+    // the output DataStream::distinct_columns.
 }
 
 void WindowStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & /*header*/)
     {
-        return std::make_shared<Transform>(input_header,
+        return std::make_shared<WindowTransform>(input_header,
             output_stream->header, window_description, window_functions);
     });
 
@@ -73,8 +74,38 @@ void WindowStep::transformPipeline(QueryPipeline & pipeline)
 void WindowStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
-    (void) prefix;
-    /// FIXME add some printing
+    settings.out << prefix << "Window: (";
+    if (!window_description.partition_by.empty())
+    {
+        settings.out << "PARTITION BY ";
+        for (size_t i = 0; i < window_description.partition_by.size(); ++i)
+        {
+            if (i > 0)
+            {
+                settings.out << ", ";
+            }
+
+            settings.out << window_description.partition_by[i].column_name;
+        }
+    }
+    if (!window_description.partition_by.empty()
+        && !window_description.order_by.empty())
+    {
+        settings.out << " ";
+    }
+    if (!window_description.order_by.empty())
+    {
+        settings.out << "ORDER BY "
+            << dumpSortDescription(window_description.order_by);
+    }
+    settings.out << ")\n";
+
+    for (size_t i = 0; i < window_functions.size(); ++i)
+    {
+        settings.out << prefix << (i == 0 ? "Functions: "
+                                          : "           ");
+        settings.out << window_functions[i].column_name << "\n";
+    }
 }
 
 }

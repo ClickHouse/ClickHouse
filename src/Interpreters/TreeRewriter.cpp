@@ -434,7 +434,7 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
             for (auto & arg : node->arguments->children)
             {
                 assertNoAggregates(arg, "inside another aggregate function");
-                assertNoWindows(arg, "inside another window function");
+                assertNoWindows(arg, "inside an aggregate function");
             }
         }
     }
@@ -459,7 +459,7 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
         {
             for (auto & arg : node->arguments->children)
             {
-                //assertNoAggregates(arg, "inside another aggregate function");
+                assertNoAggregates(arg, "inside a window function");
                 assertNoWindows(arg, "inside another window function");
             }
         }
