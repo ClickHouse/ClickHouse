@@ -352,9 +352,9 @@ struct DecimalBinaryOperation
             {
                 for (size_t i = 0; i < size; ++i)
                     if constexpr(IsDecimalNumber<ResultType>)
-                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
+                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
                     else
-                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
+                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
                 return;
             }
             else if (scale_b != 1)
