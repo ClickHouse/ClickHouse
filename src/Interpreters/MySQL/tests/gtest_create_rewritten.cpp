@@ -207,4 +207,3 @@ TEST(MySQLCreateRewritten, UniqueKeysConvert)
         "CREATE TABLE test_database.test_table_1 (`code` String, `name` String, `id` Int64, `tenant_id` Int64, `_sign` Int8() MATERIALIZED 1, `_version` UInt64() MATERIALIZED 1)"
         " ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(id, 18446744073709551) ORDER BY (code, name, tenant_id, id)");
 }
-
