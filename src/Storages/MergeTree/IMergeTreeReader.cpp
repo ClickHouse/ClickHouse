@@ -42,7 +42,14 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    for (const NameAndTypePair & column_from_part : data_part->getColumns())
+    auto part_columns = data_part->getColumns();
+    if (settings.convert_nested_to_subcolumns)
+    {
+        columns = Nested::convertToSubcolumns(columns);
+        part_columns = Nested::collect(part_columns);
+    }
+
+    for (const NameAndTypePair & column_from_part : part_columns)
         columns_from_part[column_from_part.name] = column_from_part.type;
 }
 

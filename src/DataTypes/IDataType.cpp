@@ -48,19 +48,6 @@ String IDataType::Substream::toString() const
     __builtin_unreachable();
 }
 
-size_t IDataType::SubstreamPath::getHash() const
-{
-    SipHash hash;
-    for (const auto & elem : *this)
-    {
-        hash.update(elem.type);
-        hash.update(elem.tuple_element_name);
-        hash.update(elem.escape_tuple_delimiter);
-    }
-
-    return hash.get64();
-}
-
 String IDataType::SubstreamPath::toString() const
 {
     WriteBufferFromOwnString wb;
