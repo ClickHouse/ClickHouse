@@ -1,7 +1,7 @@
 #include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <IO/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -23,15 +23,16 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
     std::string hdfs_uri;
     hdfsFile fin;
-    HDFSBuilderPtr builder;
+    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
-        : hdfs_uri(hdfs_name_)
+    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_,
+        const Poco::Util::AbstractConfiguration & config_)
+        : hdfs_uri(hdfs_name_),
+          builder(createHDFSBuilder(hdfs_uri, config_))
     {
         std::lock_guard lock(hdfs_init_mutex);
 
-        builder = createHDFSBuilder(hdfs_uri);
         fs = createHDFSFS(builder.get());
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const std::string path = hdfs_uri.substr(begin_of_path);
@@ -58,11 +59,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     }
 };
 
+
 std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
-ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_))
+ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_,
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t buf_size_)
+    : BufferWithOwnMemory<ReadBuffer>(buf_size_)
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, config_))
 {
 }
 
