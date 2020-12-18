@@ -64,7 +64,7 @@ RUN apt-get update \
 
 # Some python2 packages deprecated in ubuntu 20.04, so install them using pip
 RUN add-apt-repository universe \
-    && apt-get install python2 --yes --no-install-recommends \
+    && apt install python2 \
     && curl "https://bootstrap.pypa.io/get-pip.py" --output get-pip.py \
     && python2 get-pip.py \
     && pip install requests termcolor
