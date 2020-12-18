@@ -204,6 +204,8 @@ struct DecimalBinaryOperation
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
+    static constexpr bool is_plus_minus_compare_mult = is_plus_minus || is_compare || is_multiply;
+
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = std::conditional_t<is_float_division,
@@ -220,7 +222,7 @@ struct DecimalBinaryOperation
     {
         size_t size = a.size();
 
-        if constexpr (is_plus_minus_compare || is_multiply)
+        if constexpr (is_plus_minus_compare_mult)
         {
             if (scale_a != 1)
             {
@@ -351,37 +353,36 @@ private:
     template <bool scale_left>
     static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
-        if constexpr (is_plus_minus_compare)
+        static_assert(is_plus_minus_compare_mult);
+
+        NativeResultType res;
+
+        if constexpr (check_overflow)
         {
-            NativeResultType res;
-
-            if constexpr (check_overflow)
-            {
-                bool overflow = false;
-                if constexpr (scale_left)
-                    overflow |= common::mulOverflow(a, scale, a);
-                else
-                    overflow |= common::mulOverflow(b, scale, b);
-
-                if constexpr (can_overflow)
-                    overflow |= Op::template apply<NativeResultType>(a, b, res);
-                else
-                    res = Op::template apply<NativeResultType>(a, b);
-
-                if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-            }
+            bool overflow = false;
+            if constexpr (scale_left)
+                overflow |= common::mulOverflow(a, scale, a);
             else
-            {
-                if constexpr (scale_left)
-                    a *= scale;
-                else
-                    b *= scale;
-                res = Op::template apply<NativeResultType>(a, b);
-            }
+                overflow |= common::mulOverflow(b, scale, b);
 
-            return res;
+            if constexpr (can_overflow)
+                overflow |= Op::template apply<NativeResultType>(a, b, res);
+            else
+                res = Op::template apply<NativeResultType>(a, b);
+
+            if (overflow)
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
+        else
+        {
+            if constexpr (scale_left)
+                a *= scale;
+            else
+                b *= scale;
+            res = Op::template apply<NativeResultType>(a, b);
+        }
+
+        return res;
     }
 
     template <bool is_decimal_a>
