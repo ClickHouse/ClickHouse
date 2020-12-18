@@ -126,6 +126,7 @@ void SelectStreamFactory::createForShard(
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
+    bool async_read = context_ptr->getSettingsRef().async_socket_for_remote;
     if (processed_stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
@@ -153,7 +154,7 @@ void SelectStreamFactory::createForShard(
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);
 
-        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes));
+        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
         remote_pipes.back().addInterpreterContext(context_ptr);
     };
 
@@ -249,7 +250,7 @@ void SelectStreamFactory::createForShard(
                 pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast,
                 &context, context_ptr, throttler,
                 main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes]()
+                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes, async_read]()
             -> Pipe
         {
             auto current_settings = context.getSettingsRef();
@@ -295,7 +296,7 @@ void SelectStreamFactory::createForShard(
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
 
-                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes);
+                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
             }
         };
 

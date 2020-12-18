@@ -20,7 +20,7 @@ public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.
     /// AggregatedChunkInfo stores the bucket number used for two-level aggregation.
     /// This flag should be typically enabled for queries with GROUP BY which are executed till WithMergeableState.
-    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_);
+    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_);
     ~RemoteSource() override;
 
     Status prepare() override;
@@ -44,6 +44,7 @@ private:
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
 
+    const bool async_read;
     bool is_async_state = false;
     std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
     int fd = -1;
@@ -84,6 +85,6 @@ private:
 /// Create pipe with remote sources.
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes);
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read);
 
 }

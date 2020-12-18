@@ -59,11 +59,10 @@ public:
     /// Read next block of data. Returns empty block if query is finished.
     Block read();
 
-#if defined(OS_LINUX)
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
     /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
     std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
-#endif
+
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
     void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
