@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -99,6 +100,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int ACCESS_DENIED;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -209,6 +211,36 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
 
     JoinToSubqueryTransformVisitor::Data join_to_subs_data{tables, aliases};
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
+}
+
+/// Checks that the current user has the SELECT privilege.
+static void checkAccessRightsForSelect(
+    const Context & context,
+    const StorageID & table_id,
+    const StorageMetadataPtr & table_metadata,
+    const Strings & required_columns,
+    const TreeRewriterResult & syntax_analyzer_result)
+{
+    if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
+    {
+        /// For a trivial query like "SELECT count() FROM table" access is granted if at least
+        /// one column is accessible.
+        /// In this case just checking access for `required_columns` doesn't work correctly
+        /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
+        /// which is probably not the same column as the column the current user has access to.
+        auto access = context.getAccess();
+        for (const auto & column : table_metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+                return;
+        }
+        throw Exception(context.getUserName() + " : Not enough privileges. "
+                        "To execute this query it's necessary to have grant SELECT for at least one column on " + table_id.getFullTableName(),
+                        ErrorCodes::ACCESS_DENIED);
+    }
+
+    /// General check.
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
@@ -466,7 +498,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// The current user should have the SELECT privilege.
         /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
-        context->checkAccess(AccessType::SELECT, table_id, required_columns);
+        checkAccessRightsForSelect(*context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
