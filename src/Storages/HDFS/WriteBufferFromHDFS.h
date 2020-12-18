@@ -18,7 +18,7 @@ class WriteBufferFromHDFS : public BufferWithOwnMemory<WriteBuffer>
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
 public:
-    WriteBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    WriteBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration &, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
     WriteBufferFromHDFS(WriteBufferFromHDFS &&) = default;
 
     void nextImpl() override;
