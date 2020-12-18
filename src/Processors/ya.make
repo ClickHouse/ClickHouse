@@ -14,10 +14,10 @@ SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
-    Executors/PollingQueue.cpp
     Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
+    Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
