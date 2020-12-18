@@ -203,8 +203,6 @@ struct DecimalBinaryOperation
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
-    static constexpr bool is_plus_minus_compare_mult = is_plus_minus || is_compare || is_multiply;
-
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = std::conditional_t<is_float_division,
@@ -354,9 +352,9 @@ struct DecimalBinaryOperation
             {
                 for (size_t i = 0; i < size; ++i)
                     if constexpr(IsDecimalNumber<ResultType>)
-                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
+                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
                     else
-                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
+                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
                 return;
             }
             else if (scale_b != 1)
