@@ -298,18 +298,18 @@ struct DecimalBinaryOperation
             {
                 for (size_t i = 0; i < size; ++i)
                     if constexpr(IsDecimalNumber<ResultType>)
-                        c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
+                        c[i] = apply(undec(a[i]), b) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
                     else
-                        c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
+                        c[i] = apply(undec(a[i]), b) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     if constexpr(IsDecimalNumber<ResultType>)
-                        c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_b);
+                        c[i] = apply(undec(a[i]), b) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_b);
                     else
-                        c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_b);
+                        c[i] = apply(undec(a[i]), b) / DecimalUtils::scaleMultiplier<Int64>(scale_b);
 
                 return;
             }
