@@ -1022,17 +1022,13 @@ public:
                     left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
                     left_scale = type.scaleFactorFor(left, is_multiply);
-                else if constexpr(left_is_decimal) // BUG precision loss
-                    left_scale = DecimalUtils::convertTo<FieldType>(left.getScaleMultiplier(), left.getScale());
                 else
-                    left_scale = 1;
+                    left_scale = 1; //won't be used
 
                 if constexpr (result_is_decimal)
                     right_scale = type.scaleFactorFor(right, is_multiply || is_division);
-                else if constexpr(right_is_decimal) //BUG precision loss
-                    right_scale = DecimalUtils::convertTo<FieldType>(right.getScaleMultiplier(), right.getScale());
                 else
-                    right_scale = 1; //same
+                    right_scale = 1; //w
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
