@@ -68,8 +68,6 @@ Chunk IRowInputFormat::generate()
                 if (!readRow(columns, info))
                     break;
 
-                ++num_rows;
-
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -80,6 +78,8 @@ Chunk IRowInputFormat::generate()
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
+
+                ++num_rows;
             }
             catch (Exception & e)
             {
