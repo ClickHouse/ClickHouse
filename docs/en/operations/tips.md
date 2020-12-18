@@ -91,6 +91,23 @@ The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementati
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
 
+## Hypervisor configuration
+
+If you are using OpenStack, set
+```
+cpu_mode=host-passthrough
+```
+in nova.conf.
+
+If you are using libvirt, set
+```
+<cpu mode='host-passthrough'/>
+```
+in XML configuration.
+
+This is important for ClickHouse to be able to get correct information with `cpuid` instruction.
+Otherwise you may get `Illegal instruction` crashes when hypervisor is run on old CPU models.
+
 ## ZooKeeper {#zookeeper}
 
 You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn’t already overloaded.
