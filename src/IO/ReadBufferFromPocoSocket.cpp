@@ -29,7 +29,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
     Stopwatch watch;
 
     int flags = 0;
-    if (fiber)
+    if (async_callback)
         flags |= MSG_DONTWAIT;
 
     /// Add more details to exceptions.
@@ -37,14 +37,12 @@ bool ReadBufferFromPocoSocket::nextImpl()
     {
         bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
 
-        /// If fiber is specified, and read is blocking, run fiber and try again later.
+        /// If async_callback is specified, and read is blocking, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (bytes_read < 0 && fiber && errno == EAGAIN)
+        while (bytes_read < 0 && async_callback && errno == EAGAIN)
         {
-            //fiber->fd = socket.impl()->sockfd();
-            //fiber->timeout = socket.impl()->getReceiveTimeout();
-            *fiber = std::move(*fiber).resume();
+            async_callback(socket);
             bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
         }
     }

@@ -4,7 +4,6 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <Common/Fiber.h>
 
 namespace DB
 {
@@ -29,11 +28,10 @@ public:
 
     bool poll(size_t timeout_microseconds);
 
-    void setFiber(Fiber * fiber_) { fiber = fiber_; }
-    Poco::Net::Socket & getSocket() { return socket; }
+    void setAsyncCallback(std::function<void(Poco::Net::Socket &)> async_callback_) { async_callback = std::move(async_callback_); }
 
 private:
-    Fiber * fiber = nullptr;
+    std::function<void(Poco::Net::Socket &)> async_callback;
 };
 
 }

@@ -171,7 +171,8 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    Packet receivePacket(Fiber * fiber = nullptr);
+    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
+    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -189,8 +190,6 @@ public:
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
-
-    Poco::Net::Socket & getSocket() { return in->getSocket(); }
 
 private:
     String host;

@@ -428,7 +428,6 @@ if (USE_ROCKSDB)
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
 endif()
 
-target_link_libraries (clickhouse_common_io PRIVATE _boost_context)
 dbms_target_link_libraries(PRIVATE _boost_context)
 
 if (ENABLE_TESTS AND USE_GTEST)
