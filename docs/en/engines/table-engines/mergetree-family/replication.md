@@ -113,8 +113,6 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
-You can use a special logic for performing merges (for more information, see the documentation for [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold) setting). 
-
 ## Creating Replicated Tables {#creating-replicated-tables}
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
@@ -286,5 +284,6 @@ If the data in ZooKeeper was lost or damaged, you can save data by moving it to 
 **See also**
 
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [execute_merges_on_single_replica_time_threshold setting](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

@@ -2465,12 +2465,16 @@ Enables special logic to perform merges on replicas.
 Possible values:
 
 -   Positive integer (in seconds).
--   0 — Special merges logic is not executed.
+-   0 — Special merges logic is not used. Merges happen in the usual way on all the replicas.
 
 Default value: `0`.
 
-**Special logic to perform merges**
+**Usage**
 
-Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes, and the selected replica does not perform merge, then the merge is performed manually.
+It can be useful when merges are CPU bounded not IO bounded (heavy compression is in use, calculation expensive aggregate functions or default expressions or just very high number of tiny merges).
+
+Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform the merge, then the merge is performed on other replicas as usual.
+
+High values for that threshold may lead to replication delays.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
