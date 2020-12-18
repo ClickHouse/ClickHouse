@@ -1000,6 +1000,7 @@ public:
                 using NativeResultType = typename NativeType<ResultType>::Type;
                 using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
+                using FieldType = typename ResultDataType::FieldType;
 
                 static constexpr const bool left_is_decimal = IsDecimalNumber<T0>;
                 static constexpr const bool right_is_decimal = IsDecimalNumber<T1>;
@@ -1014,45 +1015,27 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                /// We need to be able to assign either the integer scale or its multiplier if
-                /// only one column is decimal (if both are, the resulting decimal will be the decimalResultType).
-                using FieldType = typename ResultDataType::FieldType;
-                std::conditional_t<left_is_decimal && !result_is_decimal, T0, FieldType> left_scale;
-                std::conditional_t<right_is_decimal && !result_is_decimal, T1, FieldType> right_scale;
-
-                const bool both_columns_are_const = col_left_const && col_right_const;
+                FieldType left_scale; // not really a Decimal scale, depends on the latter branches.
+                FieldType right_scale;
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
-                    left_scale = type.scaleFactorFor(left, is_multiply);
+                    left_scale = type.scaleFactorFor(left, is_multiply); //both are decimal, so multiply on 1 / scale
                 else if constexpr (left_is_decimal)
-                {
-                    // While multiplying constants, we need the Decimal scales as the conversion function from
-                    // Decimal utils takes it. When one of the columns is non-const, we need the scale multiplier
-                    // instead as the OpImpl::constantConstant function uses the multiplier.
-                    if (both_columns_are_const)
-                        left_scale = left.getScale();
-                    else
-                        left_scale = left.getScaleMultiplier();
-                }
+                    left_scale = left.getScale();
                 else
                     left_scale = 0.0; //won't be used, just to silence the warning
 
                 if constexpr (result_is_decimal)
                     right_scale = type.scaleFactorFor(right, is_multiply || is_division);
                 else if constexpr (right_is_decimal)
-                {
-                    if (both_columns_are_const)
-                        right_scale = right.getScale();
-                    else
-                        right_scale = right.getScaleMultiplier();
-                }
+                    right_scale = right.getScale();
                 else
                     right_scale = 0.0; //same
 
                 /// non-vector result
-                if (both_columns_are_const)
+                if (col_left_const && col_right_const)
                 {
                     const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
                         col_left_const, left_scale);
