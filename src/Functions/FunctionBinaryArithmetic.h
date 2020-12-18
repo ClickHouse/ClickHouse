@@ -242,13 +242,13 @@ struct DecimalBinaryOperation
             {
                 for (size_t i = 0; i < size; ++i)
                     // BUG very bad solution
-                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<UInt64>(scale_a);
+                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<UInt64>(scale_b);
+                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_b);
 
                 return;
             }
