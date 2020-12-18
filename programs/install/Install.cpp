@@ -165,11 +165,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         fs::path binary_self_path(path);
-#endif
-
-#if defined(OS_LINUX)
+#else
         fs::path binary_self_path = "/proc/self/exe";
 #endif
+
         if (!fs::exists(binary_self_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
                             binary_self_path.string());
