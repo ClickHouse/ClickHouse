@@ -1025,21 +1025,27 @@ public:
                 else if constexpr (result_is_decimal)
                     left_scale = type.scaleFactorFor(left, is_multiply); //both are decimal, so multiply on 1 / scale
                 else if constexpr (left_is_decimal)
+                {
                     // While multiplying constants, we need the Decimal scales as the conversion function from
                     // Decimal utils takes it. When one of the columns is non-const, we need the scale multiplier
                     // instead as the OpImpl::constantConstant function uses the multiplier.
-                    left_scale = both_columns_are_const
-                        ? left.getScale()
-                        : left.template getScaleMultiplier<FieldType>();
+                    if (both_columns_are_const)
+                        left_scale = left.getScale();
+                    else
+                        left_scale = left.getScaleMultiplier();
+                }
                 else
                     left_scale = 0.0; //won't be used, just to silence the warning
 
                 if constexpr (result_is_decimal)
                     right_scale = type.scaleFactorFor(right, is_multiply || is_division);
                 else if constexpr (right_is_decimal)
-                    right_scale = both_columns_are_const
-                        ? right.getScale()
-                        : right.template getScaleMultiplier<FieldType>();
+                {
+                    if (both_columns_are_const)
+                        right_scale = right.getScale();
+                    else
+                        right_scale = right.getScaleMultiplier();
+                }
                 else
                     right_scale = 0.0; //same
 
