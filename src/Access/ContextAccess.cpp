@@ -392,9 +392,12 @@ bool ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... 
     if (!getUser())
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
 
-    /// If the current user was allowed to create a temporary table
-    /// then he is allowed to do with it whatever he wants.
-    if ((sizeof...(args) >= 2) && (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE))
+    /// Access to temporary tables is controlled in an unusual way, not like normal tables.
+    /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
+    /// and other grants are considered as always given.
+    /// The DatabaseCatalog class won't resolve StorageID for temporary tables
+    /// which shouldn't be accessed.
+    if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
         return access_granted();
 
     auto acs = getAccessRightsWithImplicit();

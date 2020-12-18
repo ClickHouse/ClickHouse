@@ -206,27 +206,33 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
     return getFractionalPartWithScaleMultiplier(decimal, scaleMultiplier<typename DecimalType::NativeType>(scale));
 }
 
-/// Decimal to integer/float conversion with the ability to convert into itself (returns the original value);
-template <typename To, typename DecimalType>
-To convertTo(const DecimalType & decimal, size_t scale)
+/// Decimal to integer/float conversion
+template <typename To, typename DecimalType, typename ReturnType>
+ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 {
-    if constexpr (std::is_same_v<To, DecimalType>)
-        return decimal;
-
     using NativeT = typename DecimalType::NativeType;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     if constexpr (std::is_floating_point_v<To>)
     {
-        return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
+        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
     }
     else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
     {
         NativeT whole = getWholePart(decimal, scale);
 
         if constexpr (is_unsigned_v<To>)
+        {
             if (whole < 0)
-                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return static_cast<To>(whole);
+            {
+                if constexpr (throw_exception)
+                    throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                else
+                    return ReturnType(true);
+            }
+        }
+
+        result = static_cast<To>(whole);
     }
     else if constexpr (is_integer_v<To>)
     {
@@ -239,9 +245,34 @@ To convertTo(const DecimalType & decimal, size_t scale)
         static const constexpr CastTo max_to = std::numeric_limits<ToNativeT>::max();
 
         if (whole < min_to || whole > max_to)
-            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return static_cast<CastTo>(whole);
+        {
+            if constexpr (throw_exception)
+                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            else
+                return ReturnType(true);
+        }
+
+        result = static_cast<CastTo>(whole);
     }
+
+    return ReturnType(true);
+}
+
+
+template <typename To, typename DecimalType>
+To convertTo(const DecimalType & decimal, size_t scale)
+{
+    To result;
+
+    convertToImpl<To, DecimalType, void>(decimal, scale, result);
+
+    return result;
+}
+
+template <typename To, typename DecimalType>
+bool tryConvertTo(const DecimalType & decimal, size_t scale, To & result)
+{
+    return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>

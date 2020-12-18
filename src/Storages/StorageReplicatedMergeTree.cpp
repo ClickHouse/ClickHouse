@@ -3235,6 +3235,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         ReplicatedMergeTreeQuorumEntry quorum_entry(value);
         if (quorum_entry.part_name != part_name)
         {
+            LOG_TRACE(log, "Quorum {}, already achieved for part {} current part {}",
+                      quorum_status_path, part_name, quorum_entry.part_name);
             /// The quorum has already been achieved. Moreover, another INSERT with a quorum has already started.
             break;
         }
@@ -3244,6 +3246,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
         {
             /// The quorum is reached. Delete the node, and update information about the last part that was successfully written with quorum.
+            LOG_TRACE(log, "Got {} replicas confirmed quorum {}, going to remove node",
+                      quorum_entry.replicas.size(), quorum_status_path);
 
             Coordination::Requests ops;
             Coordination::Responses responses;
@@ -3291,6 +3295,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
         }
         else
         {
+            LOG_TRACE(log, "Quorum {} still not satisfied (have only {} replicas), updating node",
+                      quorum_status_path, quorum_entry.replicas.size());
             /// We update the node, registering there one more replica.
             auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
 

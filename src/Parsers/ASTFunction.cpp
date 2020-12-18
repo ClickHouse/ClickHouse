@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/SipHash.h>
@@ -393,6 +394,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
+            written = true;
+        }
+
+        if (!written && 0 == strcmp(name.c_str(), "map"))
+        {
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i != 0)
+                    settings.ostr << ", ";
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            }
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
