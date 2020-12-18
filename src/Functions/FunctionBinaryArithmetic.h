@@ -1025,14 +1025,14 @@ public:
                 else if constexpr(left_is_decimal) // BUG precision loss
                     left_scale = DecimalUtils::convertTo<FieldType>(left.getScaleMultiplier(), left.getScale());
                 else
-                    left_scale = 0.0; //won't be used, just to silence the warning
+                    left_scale = 1;
 
                 if constexpr (result_is_decimal)
                     right_scale = type.scaleFactorFor(right, is_multiply || is_division);
                 else if constexpr(right_is_decimal) //BUG precision loss
                     right_scale = DecimalUtils::convertTo<FieldType>(right.getScaleMultiplier(), right.getScale());
                 else
-                    right_scale = 0.0; //same
+                    right_scale = 1; //same
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
