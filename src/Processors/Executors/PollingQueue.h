@@ -9,7 +9,9 @@ namespace DB
 {
 
 #if defined(OS_LINUX)
-class AsyncTaskQueue
+
+/// This queue is used to poll descriptors. Generally, just a wrapper over epoll.
+class PollingQueue
 {
 public:
     struct TaskData
@@ -18,7 +20,6 @@ public:
 
         void * data = nullptr;
         int fd = -1;
-
 
         explicit operator bool() const { return data; }
     };
@@ -30,8 +31,8 @@ private:
     std::unordered_map<std::uintptr_t, TaskData> tasks;
 
 public:
-    AsyncTaskQueue();
-    ~AsyncTaskQueue();
+    PollingQueue();
+    ~PollingQueue();
 
     size_t size() const { return tasks.size(); }
     bool empty() const { return tasks.empty(); }
@@ -41,7 +42,7 @@ public:
 
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
-    /// Lock is used to wait on condvar.
+    /// Lock is unlocked during waiting.
     TaskData wait(std::unique_lock<std::mutex> & lock);
 
     /// Interrupt waiting.

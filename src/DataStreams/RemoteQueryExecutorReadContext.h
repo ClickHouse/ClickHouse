@@ -237,6 +237,9 @@ public:
             }
             catch (const boost::context::detail::forced_unwind &)
             {
+                /// This exception is thrown by fiber implementation in case if fiber is being deleted but hasn't exited
+                /// It should not be caught or it will segfault.
+                /// Other exceptions must be caught
                 throw;
             }
             catch (...)
