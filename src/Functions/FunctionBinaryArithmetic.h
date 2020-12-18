@@ -219,7 +219,8 @@ struct DecimalBinaryOperation
                                        NativeResultType scale_a [[maybe_unused]], NativeResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
-        if constexpr (is_plus_minus_compare)
+
+        if constexpr (is_plus_minus_compare || is_multiply)
         {
             if (scale_a != 1)
             {
