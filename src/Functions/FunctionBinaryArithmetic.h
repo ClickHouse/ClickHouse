@@ -248,7 +248,7 @@ struct DecimalBinaryOperation
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<UInt64>(scale_a);
+                    c[i] = apply(undec(a[i]), undec(b[i])) / DecimalUtils::scaleMultiplier<UInt64>(scale_b);
 
                 return;
             }
