@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/TestKeeperStorage.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -304,6 +305,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
+    mutable std::mutex test_keeper_storage_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -442,6 +445,10 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+        /// Stop zookeeper connection
+        zookeeper.reset();
+        /// Stop test_keeper storage
+        test_keeper_storage.reset();
     }
 
     bool hasTraceCollector() const
@@ -1505,6 +1512,15 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+std::shared_ptr<zkutil::TestKeeperStorage> & Context::getTestKeeperStorage() const
+{
+    std::lock_guard lock(shared->test_keeper_storage_mutex);
+    if (!shared->test_keeper_storage)
+        shared->test_keeper_storage = std::make_shared<zkutil::TestKeeperStorage>();
+
+    return shared->test_keeper_storage;
+}
+
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
@@ -2015,7 +2031,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
                     "2. File '{}' intended to force DROP {}\n"
                     "How to fix this:\n"
-                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
+                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
                     "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),

@@ -84,3 +84,6 @@ function test_with_engine {
 #test_with_engine StripeLog
 #test_with_engine Log
 test_with_engine Memory
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t1"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"

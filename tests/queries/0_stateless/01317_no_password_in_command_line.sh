@@ -22,7 +22,7 @@ do
         break
     fi
 
-    if ! kill -0 -- $bg_query
+    if ! kill -0 -- $bg_query 2>/dev/null
     then
         # The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. It is Ok.
         break
@@ -30,8 +30,6 @@ do
 done
 
 ps auxw | grep -F -- '--password' | grep -F hello ||:
-# Check that it is still running
-kill -0 -- $bg_query
 wait
 
 # Once again with different syntax
@@ -46,7 +44,7 @@ do
         break
     fi
 
-    if ! kill -0 -- $bg_query
+    if ! kill -0 -- $bg_query 2>/dev/null
     then
         # The SELECT sleep(1) query finished earlier that we could grep for it in the process list, but it should have run for at least one second. It is Ok.
         break
@@ -54,8 +52,6 @@ do
 done
 
 ps auxw | grep -F -- '--password' | grep -F hello ||:
-# Check that it is still running
-kill -0 -- $bg_query
 wait
 
 $CLICKHOUSE_CLIENT --query "DROP USER user"

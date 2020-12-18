@@ -24,6 +24,7 @@ RUN apt-get update -y \
             tree \
             moreutils \
             brotli \
+            zstd \
             gdb \
             lsof \
             unixodbc \

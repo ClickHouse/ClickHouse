@@ -57,7 +57,7 @@ public:
     {
         return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id, global_context); }
+    StoragePtr getParentStorage() const;
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const

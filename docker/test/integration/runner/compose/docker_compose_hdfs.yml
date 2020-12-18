@@ -2,6 +2,7 @@ version: '2.3'
 services:
     hdfs1:
         image: sequenceiq/hadoop-docker:2.7.0
+        hostname: hdfs1
         restart: always
         ports:
           - 50075:50075
