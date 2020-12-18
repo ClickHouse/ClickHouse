@@ -30,7 +30,7 @@ struct MultiplyImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        if constexpr(std::is_same_v<Result, float> || std::is_same_v<Result, double>)
+        if constexpr (std::is_same_v<Result, float> || std::is_same_v<Result, double>)
         {
             c = static_cast<Result>(a) * b;
             return false;
