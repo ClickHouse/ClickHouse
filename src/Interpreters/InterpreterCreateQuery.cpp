@@ -751,7 +751,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
         bool if_not_exists = create.if_not_exists;
 
-        // Table SQL definition is available even if the table is detached
+        // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         if (create.is_dictionary)

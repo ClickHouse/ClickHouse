@@ -451,6 +451,7 @@ public:
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
+    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 

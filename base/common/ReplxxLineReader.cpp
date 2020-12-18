@@ -47,7 +47,7 @@ ReplxxLineReader::ReplxxLineReader(
             {
                 if (!rx.history_load(history_file_path))
                 {
-                    rx.print("Loading history failed: %s\n", strerror(errno));
+                    rx.print("Loading history failed: %s\n", errnoToString(errno).c_str());
                 }
 
                 if (flock(history_file_fd, LOCK_UN))
@@ -88,7 +88,7 @@ ReplxxLineReader::ReplxxLineReader(
 ReplxxLineReader::~ReplxxLineReader()
 {
     if (close(history_file_fd))
-        rx.print("Close of history file failed: %s\n", strerror(errno));
+        rx.print("Close of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -113,7 +113,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // and that is why flock() is added here.
     bool locked = false;
     if (flock(history_file_fd, LOCK_EX))
-        rx.print("Lock of history file failed: %s\n", strerror(errno));
+        rx.print("Lock of history file failed: %s\n", errnoToString(errno).c_str());
     else
         locked = true;
 
@@ -121,10 +121,10 @@ void ReplxxLineReader::addToHistory(const String & line)
 
     // flush changes to the disk
     if (!rx.history_save(history_file_path))
-        rx.print("Saving history failed: %s\n", strerror(errno));
+        rx.print("Saving history failed: %s\n", errnoToString(errno).c_str());
 
     if (locked && 0 != flock(history_file_fd, LOCK_UN))
-        rx.print("Unlock of history file failed: %s\n", strerror(errno));
+        rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
 void ReplxxLineReader::enableBracketedPaste()
