@@ -42,6 +42,14 @@ void DatabaseLazy::loadStoredObjects(
     iterateMetadataFiles(context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
+
+        auto detached_permanently_flag = Poco::File(getMetadataPath() + "/" + file_name + detached_suffix);
+        if (detached_permanently_flag.exists())
+        {
+            LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+            return;
+        }
+
         attachTable(table_name, nullptr, {});
     });
 }

@@ -88,6 +88,10 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
+if (USE_HDFS)
+    add_headers_and_sources(dbms Storages/HDFS)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
@@ -389,8 +393,8 @@ if (USE_GRPC)
 endif()
 
 if (USE_HDFS)
-    target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
+    dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_AWS_S3)
