@@ -3,16 +3,18 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 
-#include <Storages/AlterCommands.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/Context.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/quoteString.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/AlterCommands.h>
 
 
 namespace DB
@@ -170,7 +172,7 @@ NamesAndTypesList IStorage::getVirtuals() const
 
 std::string PrewhereDAGInfo::dump() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
     if (alias_actions)
@@ -196,7 +198,7 @@ std::string PrewhereDAGInfo::dump() const
 
 std::string FilterInfo::dump() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
     ss << "FilterInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
     if (actions_dag)

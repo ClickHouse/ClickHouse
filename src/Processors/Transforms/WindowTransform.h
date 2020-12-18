@@ -13,6 +13,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
+// Runtime data for computing one window function
 struct WindowFunctionWorkspace
 {
     WindowFunctionDescription window_function;
@@ -22,11 +23,10 @@ struct WindowFunctionWorkspace
     std::vector<const IColumn *> argument_columns;
 };
 
-/** Executes a certain expression over the block.
-  * The expression consists of column identifiers from the block, constants, common functions.
-  * For example: hits * 2 + 3, url LIKE '%yandex%'
-  * The expression processes each row independently of the others.
-  */
+/*
+ * Computes several window functions that share the same window. The input must
+ * be sorted correctly for this window (PARTITION BY, then ORDER BY).
+ */
 class WindowTransform : public ISimpleTransform
 {
 public:
@@ -51,8 +51,10 @@ public:
     Block input_header;
 
     WindowDescription window_description;
+
     // Indices of the PARTITION BY columns in block.
     std::vector<size_t> partition_by_indices;
+
     // The columns for PARTITION BY and the row in these columns where the
     // current partition started. They might be in some of the previous blocks,
     // so we have to keep the shared ownership of the columns. We don't keep the
@@ -63,6 +65,7 @@ public:
     std::vector<ColumnPtr> partition_start_columns;
     size_t partition_start_row = 0;
 
+    // Data for computing the window functions.
     std::vector<WindowFunctionWorkspace> workspaces;
 
     std::unique_ptr<Arena> arena;

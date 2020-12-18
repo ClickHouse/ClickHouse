@@ -88,7 +88,6 @@ void WindowTransform::transform(Chunk & chunk)
         const auto & f = ws.window_function;
         const auto * a = f.aggregate_function.get();
 
-        //*
         // Create the resulting column.
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
@@ -98,6 +97,9 @@ void WindowTransform::transform(Chunk & chunk)
 
         for (size_t row = 0; row < num_rows; row++)
         {
+            // THIS IS BROKEN when we have multiple window functions.
+            // Have to switch the loops or track partition per-function.
+            //
             // Check whether the new partition has started and reinitialize the
             // aggregate function states.
             assert(partition_start_columns.size() == partition_by_indices.size());
@@ -120,7 +122,7 @@ void WindowTransform::transform(Chunk & chunk)
                 // Check whether the new partition started, by comparing all the
                 // PARTITION BY columns.
                 size_t first_inequal_column = 0;
-                for ( ; first_inequal_column < partition_start_columns.size();
+                for (; first_inequal_column < partition_start_columns.size();
                       ++first_inequal_column)
                 {
                     const auto * current_column = block.getColumns()[
@@ -165,17 +167,6 @@ void WindowTransform::transform(Chunk & chunk)
         }
 
         block.insert(column_with_type);
-        /*/
-        auto & column_with_type = block.getByName(f.column_name);
-        auto c = IColumn::mutate(std::move(column_with_type.column));
-
-        for (size_t i = 0; i < num_rows; i++)
-        {
-            c->insert(UInt64(i));
-        }
-
-        column_with_type.column.reset(c.get());
-        //*/
     }
 
     chunk.setColumns(block.getColumns(), num_rows);

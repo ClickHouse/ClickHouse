@@ -39,14 +39,6 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             (*it)->appendColumnName(ostr);
         }
     writeChar(')', ostr);
-
-    /*
-    if (window_name)
-    {
-        writeCString(" over ", ostr);
-        window_name->appendColumnName(ostr);
-    }
-    */
 }
 
 /** Get the text that identifies this element. */

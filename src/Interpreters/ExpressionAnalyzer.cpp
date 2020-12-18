@@ -1,7 +1,5 @@
 #include <Core/Block.h>
 
-#include <iostream>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -51,6 +49,9 @@
 
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
+
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -473,7 +474,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
     // Convenient to check here because at least we have the Context.
-    if (windowFunctions().size() > 0 &&
+    if (!windowFunctions().empty() &&
         !context.getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -481,15 +482,14 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
             windowFunctions()[0]->formatForErrorMessage());
     }
 
+    int next_window_index = 1;
     for (const ASTFunction * function_node : windowFunctions())
     {
         assert(function_node->is_window_function);
 
-        // FIXME not thread-safe, should use a per-query counter.
-        static int window_index = 1;
-
         WindowDescription window_description;
-        window_description.window_name = fmt::format("window_{}", window_index++);
+        window_description.window_name = fmt::format("window_{}",
+            next_window_index++);
 
         if (function_node->window_partition_by)
         {
@@ -548,6 +548,7 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
+        // Hence we clone the node (not very sane either, I know).
         getRootActionsNoMakeSet(window_function.function_node->clone(),
             true, actions);
 
@@ -572,7 +573,6 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
             window_function.argument_names[i] = name;
         }
 
-
         AggregateFunctionProperties properties;
         window_function.aggregate_function
             = AggregateFunctionFactory::instance().get(
@@ -583,8 +583,6 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
         window_descriptions.insert({window_description.window_name,
             window_description});
         window_functions.push_back(window_function);
-
-        fmt::print(stderr, "{}\n", window_function.dump());
     }
 
     return !windowFunctions().empty();
@@ -1502,7 +1500,7 @@ void ExpressionAnalysisResult::checkActions() const
 
 std::string ExpressionAnalysisResult::dump() const
 {
-    std::stringstream ss;
+    WriteBufferFromOwnString ss;
 
     ss << "need_aggregate " << need_aggregate << "\n";
     ss << "has_order_by " << has_order_by << "\n";
@@ -1567,31 +1565,6 @@ std::string ExpressionAnalysisResult::dump() const
     {
         ss << "final_projection " << final_projection->dumpDAG() << "\n";
     }
-
-    return ss.str();
-}
-
-std::string WindowFunctionDescription::dump() const
-{
-    std::stringstream ss;
-    ss << "window function '" << column_name << "' over '" << window_name <<"\n";
-    ss << "function node " << function_node->dumpTree() << "\n";
-    ss << "aggregate function '" << aggregate_function->getName() << "'\n";
-    if (function_parameters.size())
-    {
-        ss << "parameters " << toString(function_parameters) << "\n";
-    }
-
-    return ss.str();
-}
-
-std::string WindowDescription::dump() const
-{
-    std::stringstream ss;
-    ss << "window '" << window_name << "'\n";
-    ss << "partition_by " << dumpSortDescription(partition_by) << "\n";
-    ss << "order_by " << dumpSortDescription(order_by) << "\n";
-    ss << "full_sort_description " << dumpSortDescription(full_sort_description) << "\n";
 
     return ss.str();
 }

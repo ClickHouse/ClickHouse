@@ -22,6 +22,9 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     {
         data.is_array_join = true;
     }
+    // "is_aggregate_function" doesn't mean much by itself. Apparently here it is
+    // used to move filters from HAVING to WHERE, and probably for this purpose
+    // an aggregate function calculated as a window function is not relevant.
     else if (!ast_function.is_window_function
         && AggregateFunctionFactory::instance().isAggregateFunctionName(
             ast_function.name))

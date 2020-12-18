@@ -124,13 +124,11 @@ protected:
     bool allow_function_parameters;
 };
 
-struct ParserWindowDefinition : public IParserBase
+// Window definition (the thing that goes after OVER) for window function.
+class ParserWindowDefinition : public IParserBase
 {
-
-protected:
     const char * getName() const override { return "window definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
 };
 
 class ParserCodecDeclarationList : public IParserBase

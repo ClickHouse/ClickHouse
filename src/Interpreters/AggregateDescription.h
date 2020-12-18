@@ -29,7 +29,12 @@ using AggregateDescriptions = std::vector<AggregateDescription>;
 
 struct WindowFunctionDescription
 {
+    // According to the standard, a window function can refer to a window declared
+    // elsewhere, using its name. We haven't implemented this yet: all windows
+    // are declared in OVER clause, but they still get an auto-generated name,
+    // and this name is used to find the window that corresponds to a function.
     std::string window_name;
+
     std::string column_name;
     const ASTFunction * function_node;
     AggregateFunctionPtr aggregate_function;
@@ -43,10 +48,18 @@ struct WindowFunctionDescription
 struct WindowDescription
 {
     std::string window_name;
-    // Always ASC for now.
+
+    // We don't care about the particular order of keys for PARTITION BY, only
+    // that they are sorted. For now we always require ASC, but we could be more
+    // flexible and match any direction, or even different order of columns.
     SortDescription partition_by;
+
     SortDescription order_by;
+
+    // To calculate the window function, we sort input data first by PARTITION BY,
+    // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
+
     // No frame info as of yet.
 
     std::string dump() const;

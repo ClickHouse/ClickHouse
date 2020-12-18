@@ -38,11 +38,16 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
             if (arg_func->name == "lambda")
                 return false;
 
-            if ( arg_func->is_window_function
+            // We are looking for identifiers inside a function calculated inside
+            // the aggregate function `any()`. Window or aggregate function can't
+            // be inside `any` (checked by GetAggregatesMatcher).
+            if (arg_func->is_window_function
                 || AggregateFunctionFactory::instance().isAggregateFunctionName(
                     arg_func->name))
             {
-                return false;
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Found an aggregate function '{}' inside another aggregate"
+                    " function", arg_func->formatForErrorMessage());
             }
 
             if (!extractIdentifiers(*arg_func, identifiers))

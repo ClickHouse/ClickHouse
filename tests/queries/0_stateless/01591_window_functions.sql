@@ -27,3 +27,6 @@ select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 -- should work in ORDER BY though
 select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
 
+-- this one doesn't work yet -- looks like the column names clash, and the
+-- window count() is overwritten with aggregate count()
+-- select number, count(), count() over (partition by intDiv(number, 3)) from numbers(10) group by number order by count() desc;
