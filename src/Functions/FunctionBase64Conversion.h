@@ -158,7 +158,9 @@ public:
             __msan_unpoison(dst_pos, outlen);
 
             source += srclen + 1;
-            dst_pos += outlen + 1;
+            dst_pos += outlen;
+            *dst_pos = '\0';
+            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];

@@ -24,6 +24,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_clusters("CLUSTERS");
     ParserKeyword s_cluster("CLUSTER");
     ParserKeyword s_dictionaries("DICTIONARIES");
+    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_changed("CHANGED");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in("IN");
     ParserKeyword s_not("NOT");
@@ -98,6 +100,29 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
 
         query->cluster_str = std::move(cluster_str);
+    }
+    else if (bool changed = s_changed.ignore(pos); changed || s_settings.ignore(pos))
+    {
+        query->m_settings = true;
+
+        if (changed)
+        {
+            query->changed = true;
+            if (!s_settings.ignore(pos, expected))
+                return false;
+        }
+
+        /// Not expected due to "SHOW SETTINGS PROFILES"
+        if (bool insensitive = s_ilike.ignore(pos); insensitive || s_like.ignore(pos))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else
+            return false;
     }
     else
     {
