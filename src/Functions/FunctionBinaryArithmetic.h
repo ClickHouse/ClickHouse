@@ -348,6 +348,29 @@ struct DecimalBinaryOperation
                 return;
             }
         }
+        else if constexpr(is_multiply && (!is_decimal_a || !is_decimal_b)) // BUG very bad solution
+        {
+            if (scale_a != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    if constexpr(IsDecimalNumber<ResultType>)
+                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_a);
+                    else
+                        c[i] = apply(a, undec(a[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_a);
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    if constexpr(IsDecimalNumber<ResultType>)
+                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<NativeResultType>(scale_b);
+                    else
+                        c[i] = apply(a, undec(b[i])) / DecimalUtils::scaleMultiplier<Int64>(scale_b);
+
+                return;
+            }
+        }
+
         else if constexpr (is_division && is_decimal_b)
         {
             for (size_t i = 0; i < size; ++i)
