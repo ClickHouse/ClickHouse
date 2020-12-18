@@ -1,4 +1,4 @@
-#include <Processors/Executors/AsyncTaskQueue.h>
+#include <Processors/Executors/PollingQueue.h>
 
 #if defined(OS_LINUX)
 
@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-AsyncTaskQueue::AsyncTaskQueue()
+PollingQueue::PollingQueue()
 {
     epoll_fd = epoll_create(1);
     if (-1 == epoll_fd)
@@ -35,14 +35,14 @@ AsyncTaskQueue::AsyncTaskQueue()
         throwFromErrno("Cannot add pipe descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 }
 
-AsyncTaskQueue::~AsyncTaskQueue()
+PollingQueue::~PollingQueue()
 {
     close(epoll_fd);
     close(pipe_fd[0]);
     close(pipe_fd[1]);
 }
 
-void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
+void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.count(key))
@@ -58,7 +58,7 @@ void AsyncTaskQueue::addTask(size_t thread_number, void * data, int fd)
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 }
 
-AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & lock)
+PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 {
     if (is_finished)
         return {};
@@ -95,7 +95,7 @@ AsyncTaskQueue::TaskData AsyncTaskQueue::wait(std::unique_lock<std::mutex> & loc
     return res;
 }
 
-void AsyncTaskQueue::finish()
+void PollingQueue::finish()
 {
     is_finished = true;
     tasks.clear();

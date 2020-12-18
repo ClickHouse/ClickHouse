@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Wrapper over timerfd.
 class TimerDescriptor
 {
 private:

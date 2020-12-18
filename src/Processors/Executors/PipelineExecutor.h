@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/AsyncTaskQueue.h>
+#include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
 #include <Processors/Executors/ExecutingGraph.h>
@@ -61,7 +61,7 @@ private:
     /// Queue which stores tasks where processors returned Async status after prepare.
     /// If multiple threads are using, main thread will wait for async tasks.
     /// For single thread, will wait for async tasks only when task_queue is empty.
-    AsyncTaskQueue async_task_queue;
+    PollingQueue async_task_queue;
     size_t num_waiting_async_tasks = 0;
 
     ThreadsQueue threads_queue;
