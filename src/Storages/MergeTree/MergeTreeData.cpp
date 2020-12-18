@@ -1228,18 +1228,15 @@ void MergeTreeData::clearEmptyParts()
         return;
 
     auto parts = getDataPartsVector();
-    size_t empty_parts = 0;
     for (const auto & part : parts)
     {
         if (part->rows_count == 0)
         {
-            ++empty_parts;
             ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
             /// If another replica has already started drop, it's ok, no need to throw.
             dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
         }
     }
-    decreaseDataVolume(0, 0, empty_parts);
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
