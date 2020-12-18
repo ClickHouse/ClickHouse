@@ -1002,49 +1002,54 @@ public:
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
                 using FieldType = typename ResultDataType::FieldType;
 
-                static constexpr const bool dec_a = IsDecimalNumber<T0>;
-                static constexpr const bool dec_b = IsDecimalNumber<T1>;
+                static constexpr const bool left_is_decimal = IsDecimalNumber<T0>;
+                static constexpr const bool right_is_decimal = IsDecimalNumber<T1>;
                 static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
 
                 const ResultDataType type = [&] {
-                    if constexpr (dec_a && IsFloatingPoint<RightDataType>)
+                    if constexpr (left_is_decimal && IsFloatingPoint<RightDataType>)
                         return RightDataType();
-                    else if constexpr (dec_b && IsFloatingPoint<LeftDataType>)
+                    else if constexpr (right_is_decimal && IsFloatingPoint<LeftDataType>)
                         return LeftDataType();
                     else
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                FieldType scale_a;
-                FieldType scale_b;
+                FieldType left_scale; // not really a Decimal scale, depends on the latter branches.
+                FieldType right_scale;
+
+                const bool both_columns_are_const = col_left_const && col_right_const;
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                    scale_a = right.getScaleMultiplier();
+                    left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
-                    scale_a = type.scaleFactorFor(left, is_multiply);
-                else if constexpr (dec_a)
-                    scale_a = left.getScale();
+                    left_scale = type.scaleFactorFor(left, is_multiply); //both are decimal, so multiply on 1 / scale
+                else if constexpr (left_is_decimal)
+                    // While multiplying constants, we need the Decimal scales as the conversion function from
+                    // Decimal utils takes it. When one of the columns is non-const, we need the scale multiplier
+                    // instead as the OpImpl::constantConstant function uses the multiplier.
+                    left_scale = both_columns_are_const ? left.getScale() : left.getScaleMultiplier();
                 else
-                    scale_a = 0.0; //won't be used, just to silence the warning
+                    left_scale = 0.0; //won't be used, just to silence the warning
 
                 if constexpr (result_is_decimal)
-                    scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                else if constexpr (dec_b)
-                    scale_b = right.getScale();
+                    right_scale = type.scaleFactorFor(right, is_multiply || is_division);
+                else if constexpr (right_is_decimal)
+                    right_scale = both_columns_are_const ? right.getScale() : right.getScaleMultiplier();
                 else
-                    scale_b = 0.0; //same
+                    right_scale = 0.0; //same
 
                 /// non-vector result
-                if (col_left_const && col_right_const)
+                if (both_columns_are_const)
                 {
                     const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
-                        col_left_const, scale_a);
+                        col_left_const, left_scale);
                     const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
-                        col_right_const, scale_b);
+                        col_right_const, right_scale);
 
                     auto res = check_decimal_overflow ?
-                        OpImplCheck::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b) :
-                        OpImpl::template constantConstant<dec_a, dec_b>(const_a, const_b, scale_a, scale_b);
+                        OpImplCheck::template constantConstant<left_is_decimal, right_is_decimal>(const_a, const_b, left_scale, right_scale) :
+                        OpImpl::template constantConstant<left_is_decimal, right_is_decimal>(const_a, const_b, left_scale, right_scale);
 
                     if constexpr (result_is_decimal)
                         return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -1053,7 +1058,7 @@ public:
                          return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
-                if constexpr (IsDecimalNumber<ResultType>)
+                if constexpr (result_is_decimal)
                     col_res = ColVecResult::create(0, type.getScale());
                 else
                     col_res = ColVecResult::create(0);
@@ -1061,33 +1066,32 @@ public:
                 auto & vec_res = col_res->getData();
                 vec_res.resize(col_left_raw->size());
 
-
                 if (col_left && col_right)
                 {
                     if (check_decimal_overflow)
-                        OpImplCheck::template vectorVector<dec_a, dec_b>(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
+                        OpImplCheck::template vectorVector<left_is_decimal, right_is_decimal>(col_left->getData(), col_right->getData(), vec_res, left_scale, right_scale);
                     else
-                        OpImpl::template vectorVector<dec_a, dec_b>(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
+                        OpImpl::template vectorVector<left_is_decimal, right_is_decimal>(col_left->getData(), col_right->getData(), vec_res, left_scale, right_scale);
                 }
                 else if (col_left_const && col_right)
                 {
                     const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
-                        col_left_const, scale_a);
+                        col_left_const, left_scale);
 
                     if (check_decimal_overflow)
-                        OpImplCheck::template constantVector<dec_a, dec_b>(const_a, col_right->getData(), vec_res, scale_a, scale_b);
+                        OpImplCheck::template constantVector<left_is_decimal, right_is_decimal>(const_a, col_right->getData(), vec_res, left_scale, right_scale);
                     else
-                        OpImpl::template constantVector<dec_a, dec_b>(const_a, col_right->getData(), vec_res, scale_a, scale_b);
+                        OpImpl::template constantVector<left_is_decimal, right_is_decimal>(const_a, col_right->getData(), vec_res, left_scale, right_scale);
                 }
                 else if (col_left && col_right_const)
                 {
                     const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
-                        col_right_const, scale_b);
+                        col_right_const, right_scale);
 
                     if (check_decimal_overflow)
-                        OpImplCheck::template vectorConstant<dec_a, dec_b>(col_left->getData(), const_b, vec_res, scale_a, scale_b);
+                        OpImplCheck::template vectorConstant<left_is_decimal, right_is_decimal>(col_left->getData(), const_b, vec_res, left_scale, right_scale);
                     else
-                        OpImpl::template vectorConstant<dec_a, dec_b>(col_left->getData(), const_b, vec_res, scale_a, scale_b);
+                        OpImpl::template vectorConstant<left_is_decimal, right_is_decimal>(col_left->getData(), const_b, vec_res, left_scale, right_scale);
                 }
                 else
                     return nullptr;
