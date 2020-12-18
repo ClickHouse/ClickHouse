@@ -435,45 +435,69 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         }
     }
 
-    if (!written)
+    if (written)
     {
-        settings.ostr << (settings.hilite ? hilite_function : "") << name;
-
-        if (parameters)
-        {
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-            parameters->formatImpl(settings, state, nested_dont_need_parens);
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
-        }
-
-        if ((arguments && !arguments->children.empty()) || !no_empty_args)
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-
-        if (arguments)
-        {
-            bool special_hilite_regexp = settings.hilite
-                && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
-                    || name == "replaceRegexpAll");
-
-            for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
-            {
-                if (i != 0)
-                    settings.ostr << ", ";
-
-                bool special_hilite = false;
-                if (i == 1 && special_hilite_regexp)
-                    special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
-
-                if (!special_hilite)
-                    arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
-            }
-        }
-
-        if ((arguments && !arguments->children.empty()) || !no_empty_args)
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
-
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        return;
     }
+
+    settings.ostr << (settings.hilite ? hilite_function : "") << name;
+
+    if (parameters)
+    {
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+        parameters->formatImpl(settings, state, nested_dont_need_parens);
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+    }
+
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+
+    if (arguments)
+    {
+        bool special_hilite_regexp = settings.hilite
+            && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
+                || name == "replaceRegexpAll");
+
+        for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
+        {
+            if (i != 0)
+                settings.ostr << ", ";
+
+            bool special_hilite = false;
+            if (i == 1 && special_hilite_regexp)
+                special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
+
+            if (!special_hilite)
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+        }
+    }
+
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+
+    settings.ostr << (settings.hilite ? hilite_none : "");
+
+    if (!is_window_function)
+    {
+        return;
+    }
+
+    settings.ostr << " OVER (";
+    if (window_partition_by)
+    {
+        settings.ostr << "PARTITION BY ";
+        window_partition_by->formatImpl(settings, state, nested_dont_need_parens);
+    }
+    if (window_partition_by && window_order_by)
+    {
+        settings.ostr << " ";
+    }
+    if (window_order_by)
+    {
+        settings.ostr << "ORDER BY ";
+        window_order_by->formatImpl(settings, state, nested_dont_need_parens);
+    }
+    settings.ostr << ")";
 }
 
 }

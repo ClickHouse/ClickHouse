@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class ASTExpressionList;
+class ASTOrderByElement;
+
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
  * AST, changing numbers, list of columns, functions, etc. It remembers part of
@@ -46,7 +49,9 @@ struct QueryFuzzer
     ASTPtr getRandomColumnLike();
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
-    void fuzzColumnLikeExpressionList(ASTPtr ast);
+    void fuzzOrderByElement(ASTOrderByElement * elem);
+    void fuzzOrderByList(IAST * ast);
+    void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(const ASTPtr ast);
