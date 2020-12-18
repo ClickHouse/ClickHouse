@@ -263,7 +263,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
             .create_time = 123,
         },
-        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: "foo","bar","qux".*$)re"
     },
     {
         {
@@ -277,7 +277,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
             .create_time = 123,
         },
-        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: \["foo","bar","qux"].*$)re"
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: "foo","bar","qux".*$)re"
     },
     {
         // Validate that exotic column names are serialized/deserialized properly
@@ -288,12 +288,12 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             // Mixing features
             .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
             .deduplicate = true,
-            .deduplicate_by_columns = {"name with space", "\"column\"", "'column'", "колонка"},
+            .deduplicate_by_columns = {"name with space", "\"column\"", "'column'", "колонка", "\u30ab\u30e9\u30e0", "\x01\x03 column \x10\x11\x12"},
 
             .create_time = 123,
         },
-        // Due to excessive backslashes it is hard to write a digestibe regular expression
-        nullptr
+        R"re(^format version: 6.+merge.+deduplicate_by_columns: "name with space","""column""","'column'","колонка",)re"
+                "\"\u30ab\u30e9\u30e0\",\"\x01\x03 column \x10\x11\x12\".*$"
     },
 }));
 
