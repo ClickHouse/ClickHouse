@@ -186,8 +186,7 @@ inline constexpr const auto & undec(const T & x)
 }
 
 /// Binary operations for Decimals need scale args
-/// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
-/// *   no agrs scale. ScaleR = Scale1 + Scale2;
+/// +|-* scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// /   first arg scale. ScaleR = Scale1 (scale_a = DecimalType<B>::getScale()).
 template <template <typename, typename> typename Operation, typename ResultType_, bool check_overflow = true>
 struct DecimalBinaryOperation
@@ -222,7 +221,7 @@ struct DecimalBinaryOperation
     {
         size_t size = a.size();
 
-        if constexpr (is_plus_minus_compare_mult)
+        if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
             {
@@ -234,6 +233,21 @@ struct DecimalBinaryOperation
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(undec(a[i]), undec(b[i]), scale_b);
+                return;
+            }
+        }
+        else if constexpr(is_multiply && (!is_decimal_a || !is_decimal_b))
+        {
+            if (scale_a != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = apply(scale_a * undec(a[i]), undec(b[i]));
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = apply(undec(a[i]), undec(b[i]) * scale_b);
                 return;
             }
         }
@@ -353,13 +367,13 @@ private:
     template <bool scale_left>
     static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
-        static_assert(is_plus_minus_compare_mult);
-
+        static_assert(is_plus_minus_compare);
         NativeResultType res;
 
         if constexpr (check_overflow)
         {
             bool overflow = false;
+
             if constexpr (scale_left)
                 overflow |= common::mulOverflow(a, scale, a);
             else
