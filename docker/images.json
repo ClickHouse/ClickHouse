@@ -158,5 +158,9 @@
          "name": "yandex/clickhouse-stateless-unbundled-test",
          "dependent": [
          ]
+    },
+    "docker/test/integration/kerberized_hadoop": {
+        "name": "yandex/clickhouse-kerberized-hadoop",
+        "dependent": []
     }
 }

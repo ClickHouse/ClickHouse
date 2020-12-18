@@ -2,8 +2,9 @@
 
 #if USE_HDFS
 
-#include <IO/WriteBufferFromHDFS.h>
-#include <IO/HDFSCommon.h>
+#include <Interpreters/Context.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
 
 
@@ -23,12 +24,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
     std::string hdfs_uri;
     hdfsFile fout;
-    HDFSBuilderPtr builder;
+    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
+    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_)
         : hdfs_uri(hdfs_name_)
-        , builder(createHDFSBuilder(hdfs_uri))
+        , builder(createHDFSBuilder(hdfs_uri,config_))
         , fs(createHDFSFS(builder.get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
@@ -72,9 +73,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 };
 
-WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_))
+WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_, size_t buf_size_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_))
 {
 }
 
