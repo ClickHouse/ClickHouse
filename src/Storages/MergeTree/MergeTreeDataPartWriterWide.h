@@ -99,6 +99,8 @@ private:
     /// in our index_granularity array.
     void shiftCurrentMark(const Granules & granules_written);
 
+    void adjustLastMarkAndFlushToDisk();
+
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -108,6 +110,8 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+    using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
+    MarksForColumns last_non_written_marks;
 
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
