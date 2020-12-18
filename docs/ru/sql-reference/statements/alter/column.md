@@ -18,12 +18,12 @@ toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u
 ## ADD COLUMN {#alter_add-column}
 
 ``` sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
 Добавляет в таблицу новый столбец с именем `name`, типом `type`, [кодеком](../create/table.md#codecs) `codec` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](../create/index.md#create-default-values)).
 
-Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Обратите внимание, ClickHouse не позволяет добавлять столбцы в начало таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
+Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Если вы хотите добавить столбец в начало таблицы, используйте `FIRST`. Иначе, столбец добавляется в конец таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
 
 Добавление столбца всего лишь меняет структуру таблицы, и не производит никаких действий с данными - соответствующие данные не появляются на диске после ALTER-а. При чтении из таблицы, если для какого-либо столбца отсутствуют данные, то он заполняется значениями по умолчанию (выполняя выражение по умолчанию, если такое есть, или нулями, пустыми строками). Также, столбец появляется на диске при слиянии кусков данных (см. [MergeTree](../../../sql-reference/statements/alter/index.md)).
 
@@ -32,7 +32,23 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 Пример:
 
 ``` sql
-ALTER TABLE visits ADD COLUMN browser String AFTER user_id
+CREATE TABLE alter_test (CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);
+ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
+ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
+ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
+```
+
+``` sql
+Added1  UInt32
+CounterID       UInt32
+StartDate       Date
+UserID  UInt32
+VisitID UInt32
+NestedColumn.A  Array(UInt8)
+NestedColumn.S  Array(String)
+Added2  UInt32
+ToDrop  UInt32
+Added3  UInt32
 ```
 
 ## DROP COLUMN {#alter_drop-column}
@@ -88,7 +104,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:
@@ -102,6 +118,8 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
         Примеры изменения TTL столбца смотрите в разделе [TTL столбца](ttl.md#mergetree-column-ttl).
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
+
+Запрос также может изменять порядок столбцов при помощи `FIRST | AFTER`, смотри описание [ADD COLUMN](#alter_add-column).
 
 При изменении типа, значения преобразуются так, как если бы к ним была применена функция [toType](../../../sql-reference/statements/alter/index.md). Если изменяется только выражение для умолчания, запрос не делает никакой сложной работы и выполняется мгновенно.
 
