@@ -1022,11 +1022,15 @@ public:
                     left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
                     left_scale = type.scaleFactorFor(left, is_multiply);
+                else if constexpr(left_is_decimal) // BUG precision loss
+                    left_scale = DecimalUtils::convertTo<FieldType>(left.getScaleMultiplier());
                 else
                     left_scale = 0.0; //won't be used, just to silence the warning
 
                 if constexpr (result_is_decimal)
                     right_scale = type.scaleFactorFor(right, is_multiply || is_division);
+                else if constexpr(right_is_decimal) //BUG precision loss
+                    right_scale = DecimalUtils::convertTo<FieldType>(right.getScaleMultiplier());
                 else
                     right_scale = 0.0; //same
 
