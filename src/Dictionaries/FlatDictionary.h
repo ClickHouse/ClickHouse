@@ -3,8 +3,11 @@
 #include <atomic>
 #include <variant>
 #include <vector>
+#include <optional>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/IDataType.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
 #include <ext/range.h>
@@ -69,71 +72,9 @@ public:
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::getByIdentifiers;
 
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void
-    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
-        const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
+    ColumnPtr get(const std::string& attribute_name, const DataTypePtr & result_type, const ColumnPtr id_column, const ColumnPtr default_untyped) const;
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
@@ -146,6 +87,8 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        // bool is_array;
+
         std::variant<
             UInt8,
             UInt16,
@@ -180,6 +123,8 @@ private:
             ContainerType<Float64>,
             ContainerType<StringRef>>
             arrays;
+
+        std::optional<ContainerType<size_t>> array_offsets;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -211,9 +156,6 @@ private:
     void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
-
-    template <typename T>
-    void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
 
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;

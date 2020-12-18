@@ -119,6 +119,8 @@ public:
 
     std::exception_ptr getLastException() const override;
 
+    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::unsupported;
+
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
