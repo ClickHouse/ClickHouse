@@ -429,8 +429,8 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
-                mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
+                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for part {} for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
+                data_part->getFullPath(), mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
 
         auto column = type.createColumn();
 
@@ -444,6 +444,9 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         /// Now they must be equal
         if (column->size() != index_granularity_rows)
         {
+            if (must_be_last && !settings.can_use_adaptive_granularity)
+                break;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), actually in bin file {}, in mrk file {}",
                 mark_num, offset_in_compressed_file, offset_in_decompressed_block, column->size(), index_granularity.getMarkRows(mark_num));
@@ -575,19 +578,28 @@ void MergeTreeDataPartWriterWide::adjustLastMarkAndFlushToDisk()
     if (last_non_written_marks.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No saved marks for last mark {} having rows offset {}, total marks {}", getCurrentMark(), rows_written_in_last_mark, index_granularity.getMarksCount());
 
-    index_granularity.popMark();
-    index_granularity.appendMark(rows_written_in_last_mark);
+    if (settings.can_use_adaptive_granularity)
+    {
+        index_granularity.popMark();
+        index_granularity.appendMark(rows_written_in_last_mark);
+    }
+
     for (const auto & [name, marks] : last_non_written_marks)
+    {
         for (const auto & mark : marks)
             flushMarkToFile(mark, index_granularity.getMarkRows(getCurrentMark()));
+    }
 
     last_non_written_marks.clear();
 
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-        ++skip_index_accumulated_marks[i];
+    if (settings.can_use_adaptive_granularity)
+    {
+        for (size_t i = 0; i < skip_indices.size(); ++i)
+            ++skip_index_accumulated_marks[i];
 
-    setCurrentMark(getCurrentMark() + 1);
-    rows_written_in_last_mark = 0;
+        setCurrentMark(getCurrentMark() + 1);
+        rows_written_in_last_mark = 0;
+    }
 }
 
 }
