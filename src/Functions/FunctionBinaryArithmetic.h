@@ -1000,7 +1000,6 @@ public:
                 using NativeResultType = typename NativeType<ResultType>::Type;
                 using OpImpl = DecimalBinaryOperation<Op, ResultType, false>;
                 using OpImplCheck = DecimalBinaryOperation<Op, ResultType, true>;
-                using FieldType = typename ResultDataType::FieldType;
 
                 static constexpr const bool left_is_decimal = IsDecimalNumber<T0>;
                 static constexpr const bool right_is_decimal = IsDecimalNumber<T1>;
@@ -1015,15 +1014,18 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                FieldType left_scale; // not really a Decimal scale, depends on the latter branches.
-                FieldType right_scale;
+                /// We need to be able to assign either the integer scale or its multiplier if
+                /// only one column is decimal (if both are, the resulting decimal will be the decimalResultType).
+                using FieldType = typename ResultDataType::FieldType;
+                std::conditional_t<left_is_decimal && !result_is_decimal, T0, FieldType> left_scale;
+                std::conditional_t<right_is_decimal && !result_is_decimal, T1, FieldType> right_scale;
 
                 const bool both_columns_are_const = col_left_const && col_right_const;
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                     left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
-                    left_scale = type.scaleFactorFor(left, is_multiply); //both are decimal, so multiply on 1 / scale
+                    left_scale = type.scaleFactorFor(left, is_multiply);
                 else if constexpr (left_is_decimal)
                 {
                     // While multiplying constants, we need the Decimal scales as the conversion function from
