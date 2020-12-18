@@ -101,50 +101,20 @@ private:
 class ParsingException : public Exception
 {
 public:
-    using Exception::Exception;
+    ParsingException();
+    ParsingException(const std::string & msg, int code);
+    ParsingException(int code, const std::string & message);
     
-    ParsingException()
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    ParsingException(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
     {
-        Exception::addMessage("{}");
-    }
-    
-    ParsingException(const std::string & msg, int code)
-        : Exception(msg, code) 
-    {
-        Exception::addMessage("{}");
+        Exception::message(Exception::message() + "{}");
     }
 
-    ParsingException(int code, const std::string & message)
-        : Exception(message, code)
-    {
-        Exception::addMessage("{}");
-    }
 
-    /// We use additional field formatted_message_ to make this method const.
-    std::string displayText() const override
-    {
-        try
-        {
-            if (line_number_ == -1)
-                formatted_message_ = fmt::format(message(), "");
-            else
-                formatted_message_ = fmt::format(message(), fmt::format("(at row {})\n", line_number_));
-        }
-        catch (...)
-        {}
-
-        if (!formatted_message_.empty())
-        {
-            std::string result = name();
-            result.append(": ");
-            result.append(formatted_message_);
-            return result;
-        }
-        else
-        {
-            return Exception::displayText();
-        }
-    }
+    std::string displayText() const override;
 
     int getLineNumber() { return line_number_; }
     void setLineNumber(int line_number) { line_number_ = line_number;}
