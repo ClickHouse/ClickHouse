@@ -1528,6 +1528,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
 
+        if (context->hasQueryContext() && !options.is_internal)
+        {
+            auto local_storage_id = storage->getStorageID();
+            context->getQueryContext().addQueryAccessInfo(
+                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+        }
+
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
