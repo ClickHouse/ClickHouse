@@ -112,7 +112,6 @@ public:
 
     struct SubstreamPath : public std::vector<Substream>
     {
-        UInt64 getHash() const;
         String toString() const;
     };
 
