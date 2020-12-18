@@ -474,8 +474,6 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
     for (const ASTFunction * function_node : windowFunctions())
     {
-        fmt::print(stderr, "window function ast: {}\n", function_node->dumpTree());
-
         assert(function_node->is_window_function);
 
         // FIXME not thread-safe, should use a per-query counter.

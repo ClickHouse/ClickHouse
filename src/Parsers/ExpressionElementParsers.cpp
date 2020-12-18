@@ -396,8 +396,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             return false;
         }
-
-        fmt::print(stderr, "window function ast {}\n", function_node->dumpTree());
     }
 
     node = function_node;
