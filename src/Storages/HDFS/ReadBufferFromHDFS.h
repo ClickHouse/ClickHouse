@@ -8,6 +8,13 @@
 #include <string>
 #include <memory>
 
+#include <hdfs/hdfs.h>
+
+#include <common/types.h>
+
+#include <Interpreters/Context.h>
+
+
 namespace DB
 {
 /** Accepts HDFS path to file and opens it.
@@ -18,7 +25,7 @@ class ReadBufferFromHDFS : public BufferWithOwnMemory<ReadBuffer>
     struct ReadBufferFromHDFSImpl;
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 public:
-    ReadBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    ReadBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration &, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
     ~ReadBufferFromHDFS() override;
 
     bool nextImpl() override;

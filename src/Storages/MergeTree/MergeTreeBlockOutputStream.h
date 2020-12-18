@@ -24,6 +24,7 @@ public:
 
     Block getHeader() const override;
     void write(const Block & block) override;
+    void writePrefix() override;
 
 private:
     StorageMergeTree & storage;

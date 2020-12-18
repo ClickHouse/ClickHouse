@@ -4,6 +4,7 @@ import random
 import string
 import os
 import time
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/enable_test_keeper.xml', 'configs/logs_conf.xml'], with_zookeeper=True)
@@ -441,3 +442,84 @@ def test_end_of_watches_session(started_cluster):
                     zk.close()
         except:
             pass
+
+def test_concurrent_watches(started_cluster):
+    fake_zk = get_fake_zk()
+    fake_zk.restart()
+    global_path = "/test_concurrent_watches_0"
+    fake_zk.create(global_path)
+
+    dumb_watch_triggered_counter = 0
+    all_paths_triggered = []
+
+    existing_path = []
+    all_paths_created = []
+    watches_created = 0
+    def create_path_and_watch(i):
+        nonlocal watches_created
+        nonlocal all_paths_created
+        fake_zk.ensure_path(global_path + "/" + str(i))
+        # new function each time
+        def dumb_watch(event):
+            nonlocal dumb_watch_triggered_counter
+            dumb_watch_triggered_counter += 1
+            nonlocal all_paths_triggered
+            all_paths_triggered.append(event.path)
+
+        fake_zk.get(global_path + "/" + str(i), watch=dumb_watch)
+        all_paths_created.append(global_path + "/" + str(i))
+        watches_created += 1
+        existing_path.append(i)
+
+    trigger_called = 0
+    def trigger_watch(i):
+        nonlocal trigger_called
+        trigger_called += 1
+        fake_zk.set(global_path + "/" + str(i), b"somevalue")
+        try:
+            existing_path.remove(i)
+        except:
+            pass
+
+    def call(total):
+        for i in range(total):
+            create_path_and_watch(random.randint(0, 1000))
+            time.sleep(random.random() % 0.5)
+            try:
+                rand_num = random.choice(existing_path)
+                trigger_watch(rand_num)
+            except:
+                pass
+        while existing_path:
+            try:
+                rand_num = random.choice(existing_path)
+                trigger_watch(rand_num)
+            except:
+                pass
+
+    p = Pool(10)
+    arguments = [100] * 10
+    watches_must_be_created = sum(arguments)
+    watches_trigger_must_be_called = sum(arguments)
+    watches_must_be_triggered = sum(arguments)
+    p.map(call, arguments)
+    p.close()
+
+    # waiting for late watches
+    for i in range(50):
+        if dumb_watch_triggered_counter == watches_must_be_triggered:
+            break
+
+        time.sleep(0.1)
+
+    assert watches_created == watches_must_be_created
+    assert trigger_called >= watches_trigger_must_be_called
+    assert len(existing_path) == 0
+    if dumb_watch_triggered_counter != watches_must_be_triggered:
+        print("All created paths", all_paths_created)
+        print("All triggerred paths", all_paths_triggered)
+        print("All paths len", len(all_paths_created))
+        print("All triggered len", len(all_paths_triggered))
+        print("Diff", list(set(all_paths_created) - set(all_paths_triggered)))
+
+    assert dumb_watch_triggered_counter == watches_must_be_triggered
