@@ -734,7 +734,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 for (auto && part : write_ahead_log->restore(metadata_snapshot))
                     parts_from_wal.push_back(std::move(part));
             }
-            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME) && settings->in_memory_parts_enable_wal)
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
                 for (auto && part : wal.restore(metadata_snapshot))
@@ -2380,14 +2380,15 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
     }
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
-    if (parts_count_in_partition < settings->parts_to_delay_insert)
-        return;
 
     if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
+
+    if (parts_count_in_partition < settings->parts_to_delay_insert)
+        return;
 
     const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
     const size_t k = 1 + parts_count_in_partition - settings->parts_to_delay_insert; /// from 1 to max_k
@@ -2406,24 +2407,6 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-void MergeTreeData::throwInsertIfNeeded() const
-{
-    const auto settings = getSettings();
-    const size_t parts_count_in_total = getPartsCount();
-    if (parts_count_in_total >= settings->max_parts_in_total)
-    {
-        ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
-    }
-
-    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
-
-    if (parts_count_in_partition >= settings->parts_to_throw_insert)
-    {
-        ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
-    }
-}
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
@@ -2450,6 +2433,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 
     return nullptr;
 }
+
 
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
@@ -3140,8 +3124,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-    auto reservation = getStoragePolicy()->reserve(expected_size);
-    return checkAndReturnReservation(expected_size, std::move(reservation));
+    return getStoragePolicy()->reserveAndCheck(expected_size);
 }
 
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)
@@ -3895,7 +3878,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)
