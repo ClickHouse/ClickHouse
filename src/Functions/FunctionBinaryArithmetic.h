@@ -1015,45 +1015,34 @@ public:
                         return decimalResultType<is_multiply, is_division>(left, right);
                 }();
 
-                FieldType left_scale_factor; //Used by OpImpl if the left column is not const
-                FieldType right_scale_factor;
-
-                FieldType left_scale {0}; // Used by conversion functions if the left column is const
-                FieldType right_scale {0};
+                FieldType left_scale;
+                FieldType right_scale;
 
                 if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                    left_scale_factor = right.getScaleMultiplier();
+                    left_scale = right.getScaleMultiplier();
                 else if constexpr (result_is_decimal)
-                    left_scale_factor = type.scaleFactorFor(left, is_multiply); //both are decimal, so multiply on 1 / scale
-                else if constexpr (left_is_decimal)
-                {
-                    left_scale_factor = left.getScaleMultiplier();
-                    left_scale = left.getScale();
-                }
+                    left_scale = type.scaleFactorFor(left, is_multiply);
                 else
-                    left_scale_factor = 0.0; //won't be used, just to silence the warning
+                    left_scale = 0.0; //won't be used, just to silence the warning
 
                 if constexpr (result_is_decimal)
-                    right_scale_factor = type.scaleFactorFor(right, is_multiply || is_division);
-                else if constexpr (right_is_decimal)
-                {
-                    right_scale_factor = right.getScaleMultiplier();
-                    right_scale = right.getScale();
-                }
+                    right_scale = type.scaleFactorFor(right, is_multiply || is_division);
                 else
-                    right_scale_factor = 0.0; //same
+                    right_scale = 0.0; //same
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left_scale);
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right_scale);
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
+                        col_left_const, left.getScale());
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
+                        col_right_const, right.getScale());
 
                     auto res = check_decimal_overflow ?
                         OpImplCheck::template constantConstant<left_is_decimal, right_is_decimal>(
-                            const_a, const_b, left_scale_factor, right_scale_factor) :
+                            const_a, const_b, left_scale, right_scale) :
                         OpImpl::template constantConstant<left_is_decimal, right_is_decimal>(
-                            const_a, const_b, left_scale_factor, right_scale_factor);
+                            const_a, const_b, left_scale, right_scale);
 
                     if constexpr (result_is_decimal)
                         return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -1074,32 +1063,34 @@ public:
                 {
                     if (check_decimal_overflow)
                         OpImplCheck::template vectorVector<left_is_decimal, right_is_decimal>(
-                            col_left->getData(), col_right->getData(), vec_res, left_scale_factor, right_scale_factor);
+                            col_left->getData(), col_right->getData(), vec_res, left_scale, right_scale);
                     else
                         OpImpl::template vectorVector<left_is_decimal, right_is_decimal>(
-                            col_left->getData(), col_right->getData(), vec_res, left_scale_factor, right_scale_factor);
+                            col_left->getData(), col_right->getData(), vec_res, left_scale, right_scale);
                 }
                 else if (col_left_const && col_right)
                 {
-                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left_scale);
+                    const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(
+                        col_left_const, left.getScale());
 
                     if (check_decimal_overflow)
                         OpImplCheck::template constantVector<left_is_decimal, right_is_decimal>(
-                            const_a, col_right->getData(), vec_res, left_scale_factor, right_scale_factor);
+                            const_a, col_right->getData(), vec_res, left_scale, right_scale);
                     else
                         OpImpl::template constantVector<left_is_decimal, right_is_decimal>(
-                            const_a, col_right->getData(), vec_res, left_scale_factor, right_scale_factor);
+                            const_a, col_right->getData(), vec_res, left_scale, right_scale);
                 }
                 else if (col_left && col_right_const)
                 {
-                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right_scale);
+                    const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(
+                        col_right_const, right.getScale());
 
                     if (check_decimal_overflow)
                         OpImplCheck::template vectorConstant<left_is_decimal, right_is_decimal>(
-                            col_left->getData(), const_b, vec_res, left_scale_factor, right_scale_factor);
+                            col_left->getData(), const_b, vec_res, left_scale, right_scale);
                     else
                         OpImpl::template vectorConstant<left_is_decimal, right_is_decimal>(
-                            col_left->getData(), const_b, vec_res, left_scale_factor, right_scale_factor);
+                            col_left->getData(), const_b, vec_res, left_scale, right_scale);
                 }
                 else
                     return nullptr;
