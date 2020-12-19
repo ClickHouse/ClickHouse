@@ -14,8 +14,6 @@
 #include <unordered_set>
 #include <ext/range.h>
 
-#include <iostream>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -316,6 +314,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
+
+        /// TODO: Rewrite
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
         auto type = initial_type;
