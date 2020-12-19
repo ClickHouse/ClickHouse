@@ -104,7 +104,7 @@ private:
     ///
     /// This function used when blocks change granularity drastically and we have unfinished mark.
     /// Also useful to have exact amount of rows in last (non-final) mark.
-    void adjustLastMarkAndFlushToDisk();
+    void adjustLastMarkIfNeedAndFlushToDisk();
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 

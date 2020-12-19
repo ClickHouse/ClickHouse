@@ -172,7 +172,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         {
             size_t rows_left_in_last_mark = index_granularity.getMarkRows(getCurrentMark()) - rows_written_in_last_mark;
             if (rows_left_in_last_mark > index_granularity_for_block)
-                adjustLastMarkAndFlushToDisk();
+                adjustLastMarkIfNeedAndFlushToDisk();
         }
 
         fillIndexGranularity(index_granularity_for_block, block.rows());
@@ -390,7 +390,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
-    UInt64 index_granularity_rows = 0;
+    UInt64 index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 
     size_t mark_num;
 
@@ -404,7 +404,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         if (settings.can_use_adaptive_granularity)
             DB::readBinary(index_granularity_rows, mrk_in);
         else
-            index_granularity_rows = storage.getSettings()->index_granularity;
+            index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 
         if (must_be_last)
         {
@@ -476,7 +476,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
-        adjustLastMarkAndFlushToDisk();
+        adjustLastMarkIfNeedAndFlushToDisk();
 
     bool write_final_mark = (with_final_mark && data_written);
 
@@ -506,6 +506,8 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     serialization_states.clear();
 
 #ifndef NDEBUG
+    /// Heavy weight validation of written data. Checks that we are able to read
+    /// data according to marks. Otherwise throws LOGICAL_ERROR (equal to about in debug mode)
     for (const auto & column : columns_list)
     {
         if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
@@ -570,19 +572,25 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
 }
 
 
-void MergeTreeDataPartWriterWide::adjustLastMarkAndFlushToDisk()
+void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk()
 {
-    if (getCurrentMark() != index_granularity.getMarksCount() - 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Non last mark {} having rows offset {}, total marks {}", getCurrentMark(), rows_written_in_last_mark, index_granularity.getMarksCount());
-
-    if (last_non_written_marks.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No saved marks for last mark {} having rows offset {}, total marks {}", getCurrentMark(), rows_written_in_last_mark, index_granularity.getMarksCount());
-
-    if (settings.can_use_adaptive_granularity)
+    /// We can adjust marks only if we computed granularity for blocks.
+    /// Otherwise we cannot change granularity because it will differ from
+    /// other columns
+    if (compute_granularity && settings.can_use_adaptive_granularity)
     {
+        if (getCurrentMark() != index_granularity.getMarksCount() - 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non last mark {} (with {} rows) having rows offset {}, total marks {}",
+                            getCurrentMark(), index_granularity.getMarkRows(getCurrentMark()), rows_written_in_last_mark, index_granularity.getMarksCount());
+
         index_granularity.popMark();
         index_granularity.appendMark(rows_written_in_last_mark);
     }
+
+    /// Last mark should be filled, otherwise it's a bug
+    if (last_non_written_marks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No saved marks for last mark {} having rows offset {}, total marks {}",
+                        getCurrentMark(), rows_written_in_last_mark, index_granularity.getMarksCount());
 
     for (const auto & [name, marks] : last_non_written_marks)
     {
@@ -592,12 +600,16 @@ void MergeTreeDataPartWriterWide::adjustLastMarkAndFlushToDisk()
 
     last_non_written_marks.clear();
 
-    if (settings.can_use_adaptive_granularity)
+    if (compute_granularity && settings.can_use_adaptive_granularity)
     {
+        /// Also we add mark to each skip index because all of them
+        /// already accumulated all rows from current adjusting mark
         for (size_t i = 0; i < skip_indices.size(); ++i)
             ++skip_index_accumulated_marks[i];
 
+        /// This mark completed, go further
         setCurrentMark(getCurrentMark() + 1);
+        /// Without offset
         rows_written_in_last_mark = 0;
     }
 }
