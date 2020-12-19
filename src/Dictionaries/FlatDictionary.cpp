@@ -467,7 +467,7 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 
 FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}, {}};
+    Attribute attr{type, {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
