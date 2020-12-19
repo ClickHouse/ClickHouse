@@ -175,78 +175,24 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
-        ColumnPtr res;
+        auto dictionary = helper.getDictionary(arguments[0]);
+        auto dictionary_identifier_type = dictionary->getIdentifierType();
 
-        if (!((res = executeDispatchSimple<FlatDictionary>(arguments, dict))
-            || (res = executeDispatchSimple<DirectDictionary>(arguments, dict))
-            || (res = executeDispatchSimple<HashedDictionary>(arguments, dict))
-            || (res = executeDispatchSimple<CacheDictionary>(arguments, dict))
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            || (res = executeDispatchSimple<SSDCacheDictionary>(arguments, dict))
-#endif
-            || (res = executeDispatchComplex<ComplexKeyHashedDictionary>(arguments, dict))
-            || (res = executeDispatchComplex<ComplexKeyDirectDictionary>(arguments, dict))
-            || (res = executeDispatchComplex<ComplexKeyCacheDictionary>(arguments, dict))
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
-#endif
-#if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
-#endif
-            || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
-            || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
-            || (res = executeDispatchComplex<PolygonDictionaryIndexCell>(arguments, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        const auto id_col_untyped = arguments[1].column;
 
-        return res;
-    }
-
-    template <typename DictionaryType>
-    ColumnPtr executeDispatchSimple(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
-    {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        const auto * id_col_untyped = arguments[1].column.get();
-        if (const auto * id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
+        if (dictionary_identifier_type == DictionaryIdentifierType::simple)
         {
-            const auto & ids = id_col->getData();
-
-            auto out = ColumnUInt8::create(ext::size(ids));
-            dict->has(ids, out->getData());
-            return out;
+            return dictionary->has({ id_col_untyped }, { std::make_shared<DataTypeUInt64>() });
+        }
+        else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
+        {
+            /// TODO: Check if column is tuple and pass
+            return nullptr;
         }
         else
-            throw Exception{"Second argument of function " + getName() + " must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
-
-        return nullptr;
-    }
-
-    template <typename DictionaryType>
-    ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
-    {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        const ColumnWithTypeAndName & key_col_with_type = arguments[1];
-        const ColumnPtr & key_col = key_col_with_type.column;
-
-        if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
-            const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
-
-            auto out = ColumnUInt8::create(key_col_with_type.column->size());
-            dict->has(key_columns, key_types, out->getData());
-            return out;
+            return nullptr;
         }
-        else
-            throw Exception{"Second argument of function " + getName() + " must be " + dict->getKeyDescription(), ErrorCodes::TYPE_MISMATCH};
     }
 
     mutable FunctionDictHelper helper;
@@ -342,43 +288,8 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
+        auto dictionary = helper.getDictionary(arguments[0]);
         ColumnPtr res;
-
-        if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<DirectDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<CacheDictionary>(arguments, result_type, dict))
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            || (res = executeDispatch<SSDCacheDictionary>(arguments, result_type, dict))
-#endif
-            || (res = executeDispatch<ComplexKeyHashedDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<ComplexKeyDirectDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<ComplexKeyCacheDictionary>(arguments, result_type, dict))
-#if defined(OS_LINUX) || defined(__FreeBSD__)
-            || (res = executeDispatch<SSDComplexKeyCacheDictionary>(arguments, result_type, dict))
-#endif
-#if !defined(ARCADIA_BUILD)
-            || (res = executeDispatch<IPAddressDictionary>(arguments, result_type, dict))
-#endif
-            || (res = executeDispatch<PolygonDictionarySimple>(arguments, result_type, dict))
-            || (res = executeDispatch<PolygonDictionaryIndexEach>(arguments, result_type, dict))
-            || (res = executeDispatch<PolygonDictionaryIndexCell>(arguments, result_type, dict))
-            || (res = executeDispatch<RangeHashedDictionary>(arguments, result_type, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
-
-        return res;
-    }
-
-    template <typename DictionaryType>
-    ColumnPtr executeDispatch(
-        const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type,
-        const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
-    {
-        const auto * dictionary = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dictionary)
-            return nullptr;
 
         const auto * attr_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!attr_name_col)
@@ -388,28 +299,30 @@ private:
 
         const auto id_col_untyped = arguments[2].column;
 
-        constexpr auto dictionary_get_by_type = DictionaryType::get_by_type;
+        auto dictionary_identifier_type = dictionary->getIdentifierType();
 
-        if constexpr (dictionary_get_by_type == DictionaryGetByType::getByIdentifiers)
+        if (dictionary_identifier_type == DictionaryIdentifierType::simple)
         {
             if (dictionary_get_function_type == DictionaryGetFunctionType::withDefault)
             {
                 const auto default_col_untyped = arguments[3].column;
-                return dictionary->get(attr_name, result_type, id_col_untyped, default_col_untyped);
+                res = dictionary->getColumn(attr_name, result_type, { id_col_untyped }, { std::make_shared<DataTypeUInt64>() }, default_col_untyped);
             }
             else
             {
-                return dictionary->get(attr_name, result_type, id_col_untyped, nullptr);
+                res = dictionary->getColumn(attr_name, result_type, { id_col_untyped }, { std::make_shared<DataTypeUInt64>() }, nullptr);
             }
         }
-        else if constexpr (dictionary_get_by_type == DictionaryGetByType::getByComplexKeys)
+        else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
         {
-            return nullptr;
+            res = nullptr;
         }
         else
         {
-            return nullptr;
+            res = nullptr;
         }
+
+        return res;
     }
 
     mutable FunctionDictHelper helper;

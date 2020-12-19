@@ -876,7 +876,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 
 BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
+    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 

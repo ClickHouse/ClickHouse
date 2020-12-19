@@ -69,14 +69,17 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::simple; }
 
-    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::getByIdentifiers;
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr default_untyped) const override;
 
-    ColumnPtr get(const std::string& attribute_name, const DataTypePtr & result_type, const ColumnPtr id_column, const ColumnPtr default_untyped) const;
 
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -159,6 +162,8 @@ private:
 
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
+
+    const PaddedPODArray<Key> & getColumnDataAsIdendifiers(const IColumn & column, PaddedPODArray<Key> & backup_storage) const;
 
     PaddedPODArray<Key> getIds() const;
 

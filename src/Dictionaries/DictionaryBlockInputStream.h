@@ -25,12 +25,10 @@ namespace ErrorCodes
 /* BlockInputStream implementation for external dictionaries
  * read() returns blocks consisting of the in-memory contents of the dictionaries
  */
-template <typename DictionaryType, typename Key>
+template <typename Key>
 class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
-    using DictionaryPtr = std::shared_ptr<DictionaryType const>;
-
     DictionaryBlockInputStream(
         std::shared_ptr<const IDictionaryBase> dictionary, UInt64 max_block_size, PaddedPODArray<Key> && ids, const Names & column_names);
 
@@ -72,7 +70,7 @@ private:
         const DictionaryStructure & dictionary_structure,
         ColumnsWithTypeAndName & columns) const;
 
-    DictionaryPtr dictionary;
+    std::shared_ptr<const IDictionaryBase> dictionary;
     Names column_names;
     PaddedPODArray<Key> ids;
     ColumnsWithTypeAndName key_columns;
@@ -92,25 +90,25 @@ private:
 };
 
 
-template <typename DictionaryType, typename Key>
-DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
+template <typename Key>
+DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary_, UInt64 max_block_size_, PaddedPODArray<Key> && ids_, const Names & column_names_)
     : DictionaryBlockInputStreamBase(ids_.size(), max_block_size_)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , dictionary(dictionary_)
     , column_names(column_names_)
     , ids(std::move(ids_))
     , key_type(DictionaryKeyType::Id)
 {
 }
 
-template <typename DictionaryType, typename Key>
-DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
+template <typename Key>
+DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary_,
     UInt64 max_block_size_,
     const std::vector<StringRef> & keys,
     const Names & column_names_)
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size_)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , dictionary(dictionary_)
     , column_names(column_names_)
     , key_type(DictionaryKeyType::ComplexKey)
 {
@@ -118,8 +116,8 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     fillKeyColumns(keys, 0, keys.size(), dictionary_structure, key_columns);
 }
 
-template <typename DictionaryType, typename Key>
-DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
+template <typename Key>
+DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary_,
     UInt64 max_block_size_,
     const Columns & data_columns_,
@@ -127,19 +125,20 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     GetColumnsFunction && get_key_columns_function_,
     GetColumnsFunction && get_view_columns_function_)
     : DictionaryBlockInputStreamBase(data_columns_.front()->size(), max_block_size_)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , dictionary(dictionary_)
     , column_names(column_names_)
     , data_columns(data_columns_)
-    , get_key_columns_function(get_key_columns_function_)
-    , get_view_columns_function(get_view_columns_function_)
+    , get_key_columns_function(std::move(get_key_columns_function_))
+    , get_view_columns_function(std::move(get_view_columns_function_))
     , key_type(DictionaryKeyType::Callback)
 {
 }
 
 
-template <typename DictionaryType, typename Key>
-Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, size_t length) const
+template <typename Key>
+Block DictionaryBlockInputStream<Key>::getBlock(size_t start, size_t length) const
 {
+    /// TODO: Rewrite
     switch (key_type)
     {
         case DictionaryKeyType::ComplexKey:
@@ -186,11 +185,10 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
     throw Exception("Unexpected DictionaryKeyType.", ErrorCodes::LOGICAL_ERROR);
 }
 
-template <typename DictionaryType, typename Key>
-Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
+template <typename Key>
+Block DictionaryBlockInputStream<Key>::fillBlock(
     const PaddedPODArray<Key> & ids_to_fill, const Columns & keys, const DataTypes & types, ColumnsWithTypeAndName && view) const
 {
-    constexpr auto dictionary_get_by_type = DictionaryType::get_by_type;
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
     DataTypes data_types = types;
@@ -215,6 +213,9 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
         block_columns.emplace_back(ids_column, std::make_shared<DataTypeUInt64>(), structure.id->name);
     }
 
+    /// TODO: This can be optimized
+    auto dictionary_identifier_type = dictionary->getIdentifierType();
+
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
         const DictionaryAttribute & attribute = structure.attributes[idx];
@@ -222,11 +223,12 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
         {
             ColumnPtr column;
 
-            if constexpr (dictionary_get_by_type == DictionaryGetByType::getByIdentifiers)
+            if (dictionary_identifier_type == DictionaryIdentifierType::simple)
             {
-                column = dictionary->get(attribute.name, attribute.type, ids_column, nullptr /* default_untyped */);
+                column = dictionary->getColumn(
+                    attribute.name, attribute.type, {ids_column}, {std::make_shared<DataTypeUInt64>()}, nullptr /* default_untyped*/);
             }
-            else if constexpr (dictionary_get_by_type == DictionaryGetByType::getByComplexKeys)
+            else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
             {
                 column = nullptr;
             }
@@ -242,8 +244,8 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     return Block(block_columns);
 }
 
-template <typename DictionaryType, typename Key>
-ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const
+template <typename Key>
+ColumnPtr DictionaryBlockInputStream<Key>::getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const
 {
     auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().reserve(ids_to_fill.size());
@@ -253,8 +255,8 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(cons
 }
 
 
-template <typename DictionaryType, typename Key>
-void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
+template <typename Key>
+void DictionaryBlockInputStream<Key>::fillKeyColumns(
     const std::vector<StringRef> & keys,
     size_t start,
     size_t size,

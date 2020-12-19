@@ -105,26 +105,20 @@ void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray
     isInImpl(child_id, ancestor_ids, out);
 }
 
-ColumnPtr FlatDictionary::get(const std::string& attribute_name, const DataTypePtr &, const ColumnPtr id_column, const ColumnPtr default_untyped) const
+ColumnPtr FlatDictionary::getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr &,
+        const Columns & key_columns,
+        const DataTypes &,
+        const ColumnPtr default_untyped) const
 {
+    assert(!key_columns.empty());
     ColumnPtr result;
 
-    const auto *id_col = checkAndGetColumn<ColumnUInt64>(id_column.get());
-    const auto *id_col_const = checkAndGetColumnConst<ColumnUInt64>(id_column.get()); 
+    PaddedPODArray<Key> backup_storage;
 
-    if (id_col == nullptr && id_col_const == nullptr)
-    {
-        throw Exception{"Identifiers column must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
-    }
-
-    PaddedPODArray<UInt64> ids_const(1);
-    
-    if (id_col_const != nullptr) {
-        ids_const[0] = id_col_const->getValue<UInt64>();     
-    }
-
-    const auto& ids = id_col != nullptr ? id_col->getData() : ids_const;
-    bool is_const = id_col_const != nullptr;
+    const auto& ids = getColumnDataAsIdendifiers(*key_columns.front(), backup_storage);
+    bool is_const = isColumnConst(*key_columns.front());
 
     const auto & attribute = getAttribute(attribute_name);
 
@@ -272,8 +266,17 @@ ColumnPtr FlatDictionary::get(const std::string& attribute_name, const DataTypeP
     return result;
 }
 
-void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+
+ColumnUInt8::Ptr FlatDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
+    assert(!key_columns.empty());
+
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsIdendifiers(*key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
     const auto ids_count = ext::size(ids);
 
     for (const auto i : ext::range(0, ids_count))
@@ -283,8 +286,9 @@ void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> 
     }
 
     query_count.fetch_add(ids_count, std::memory_order_relaxed);
-}
 
+    return result;
+}
 
 void FlatDictionary::createAttributes()
 {
@@ -556,6 +560,28 @@ const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string
     return attributes[it->second];
 }
 
+const PaddedPODArray<FlatDictionary::Key> & FlatDictionary::getColumnDataAsIdendifiers(const IColumn & column, PaddedPODArray<Key> & backup_storage) const
+{
+
+    if (const auto *id_col = checkAndGetColumn<ColumnUInt64>(&column))
+    {
+        return id_col->getData();
+    }
+    else if (const auto *id_col_const = checkAndGetColumnConst<ColumnUInt64>(&column))
+    {
+        const auto full_column = id_col_const->convertToFullColumnIfConst();
+        const auto size = full_column->size();
+        backup_storage.resize(size);
+        for (size_t i = 0; i < size; ++i)
+            backup_storage[i] = full_column->getUInt(i);
+
+        return backup_storage;
+    }
+    else 
+        throw Exception{"Identifier column must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
+
+    return backup_storage;
+}
 
 PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
 {
@@ -570,7 +596,7 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
 
 BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<FlatDictionary, Key>;
+    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 

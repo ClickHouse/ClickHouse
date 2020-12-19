@@ -354,8 +354,6 @@ public:
     template <typename T>
     using ResultArrayType = SSDCacheStorage::ResultArrayType<T>;
 
-    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::unsupported;
-
 #define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
@@ -422,7 +420,7 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * out) const;
 
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
