@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>

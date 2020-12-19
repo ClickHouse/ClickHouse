@@ -91,7 +91,7 @@ public:
 
 private:
     /// MultiVersion data storage, so that we can copy the list of blocks to readers.
-    MultiVersion<BlocksList> data;
+    MultiVersion<Blocks> data;
 
     mutable std::mutex mutex;
 

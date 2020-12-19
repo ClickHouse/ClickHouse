@@ -243,6 +243,46 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
+## UPDATE IN PARTITION {#update-in-partition}
+
+Манипулирует данными в указанной партиции, соответствующими заданному выражению фильтрации. Реализовано как мутация [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Синтаксис:
+
+``` sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Пример
+
+``` sql
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+```
+
+### Смотрите также
+
+-   [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements)
+
+## DELETE IN PARTITION {#delete-in-partition}
+
+Удаляет данные в указанной партиции, соответствующие указанному выражению фильтрации. Реализовано как мутация [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Синтаксис:
+
+``` sql
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Пример
+
+``` sql
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+```
+
+### Смотрите также
+
+-   [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations)
+
 ## Как задавать имя партиции в запросах ALTER {#alter-how-to-specify-part-expr}
 
 Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
@@ -261,6 +301,8 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
+
+`IN PARTITION` указывает на партицию, для которой применяются выражения [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) или [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) в результате запроса `ALTER TABLE`. Новые куски создаются только в указанной партиции. Таким образом, `IN PARTITION` помогает снизить нагрузку, когда таблица разбита на множество партиций, а вам нужно обновить данные лишь точечно.
 
 Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
