@@ -177,24 +177,24 @@ class ReplicatedMergeTreeLogEntryDataTest : public ::testing::TestWithParam<std:
 
 TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
 {
-    const auto & [expected, match_regexp] = GetParam();
+    const auto & [expected, match_regex] = GetParam();
     const auto str = expected.toString();
 
-    if (match_regexp)
+    if (match_regex)
     {
         try
         {
             // egrep since "." matches newline and we can also use "\n" explicitly
-            std::regex re(match_regexp, std::regex::egrep);
+            std::regex re(match_regex, std::regex::egrep);
             EXPECT_TRUE(std::regex_match(str, re))
-                    << "Failed to match with \"" << match_regexp << "\"\nserialized ReplicatedMergeTreeLogEntryData: {\n"
-                    << str << "}";
+                    << "Failed to match serialized ReplicatedMergeTreeLogEntryData: {\n"
+                    << str << "} \nwith regex: \"" << match_regex << "\"\n";
         }
         catch (const std::regex_error &e)
         {
             FAIL() << e.what()
-                   << " on regex: " << match_regexp
-                   << " (" << strlen(match_regexp) << " bytes)" << std::endl;
+                   << " on regex: " << match_regex
+                   << " (" << strlen(match_regex) << " bytes)" << std::endl;
         }
         catch (...)
         {
@@ -263,7 +263,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
             .create_time = 123,
         },
-        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: "foo","bar","qux".*$)re"
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+deduplicate_by_columns: 'foo','bar','qux'.*$)re"
     },
     {
         {
@@ -277,7 +277,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
             .create_time = 123,
         },
-        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: "foo","bar","qux".*$)re"
+        R"re(^format version: 6.+merge.+into.+deduplicate: 1.+into_uuid: 00000000-075b-cd15-0000-093233447e0c.+deduplicate_by_columns: 'foo','bar','qux'.*$)re"
     },
     {
         // Validate that exotic column names are serialized/deserialized properly
@@ -292,8 +292,8 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
             .create_time = 123,
         },
-        R"re(^format version: 6.+merge.+deduplicate_by_columns: "name with space","""column""","'column'","колонка",)re"
-                "\"\u30ab\u30e9\u30e0\",\"\x01\x03 column \x10\x11\x12\".*$"
+        R"re(^format version: 6.+merge.+deduplicate_by_columns: 'name with space','"column"','\\'column\\'','колонка')re"
+                ",'\u30ab\u30e9\u30e0','\x01\x03 column \x10\x11\x12'.*$"
     },
 }));
 

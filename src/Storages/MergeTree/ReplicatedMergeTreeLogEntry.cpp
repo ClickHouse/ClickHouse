@@ -70,7 +70,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << "\ndeduplicate_by_columns: ";
                 for (size_t i = 0; i < deduplicate_by_columns.size(); ++i)
                 {
-                    writeCSVString(deduplicate_by_columns[i], out);
+                    out << quote << deduplicate_by_columns[i];
                     if (i != deduplicate_by_columns.size() - 1)
                         out << ",";
                 }
@@ -213,11 +213,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
                 else if (checkString("deduplicate_by_columns: ", in))
                 {
                     Strings new_deduplicate_by_columns;
-                    FormatSettings::CSV format_settings;
                     for (;;)
                     {
                         String tmp_column_name;
-                        readCSVString(tmp_column_name, in, format_settings);
+                        in >> quote >> tmp_column_name;
                         new_deduplicate_by_columns.emplace_back(std::move(tmp_column_name));
                         if (!checkString(",", in))
                             break;
