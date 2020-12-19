@@ -76,6 +76,14 @@ def invalid_parameters(self):
             message="DB::Exception: AAD can be only set for GCM-mode")
 
     with Example("invalid mode value", requirements=[RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Value_Invalid("1.0")]):
+        with When("using unsupported cfb1 mode"):
+            encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-cfb1'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb1")
+
+        with When("using unsupported cfb8 mode"):
+            encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-cfb8'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb8")
+
         with When("typo in the block algorithm"):
             encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-eeb'", exitcode=36,
                 message="DB::Exception: Invalid mode: aes-128-eeb")
@@ -116,14 +124,6 @@ def invalid_parameters(self):
     ("'aes-128-cbc'", 16, 16, None),
     ("'aes-192-cbc'", 24, 16, None),
     ("'aes-256-cbc'", 32, 16, None),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16, None),
-    ("'aes-192-cfb1'", 24, 16, None),
-    ("'aes-256-cfb1'", 32, 16, None),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16, None),
-    ("'aes-192-cfb8'", 24, 16, None),
-    ("'aes-256-cfb8'", 32, 16, None),
     # CFB128
     ("'aes-128-cfb128'", 16, 16, None),
     ("'aes-192-cfb128'", 24, 16, None),
@@ -195,7 +195,7 @@ def invalid_key_or_iv_length_for_gcm(self, mode, key_len, iv_len, aad):
 
     if iv_len is not None:
         with When(f"iv is too short"):
-            encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", iv=f"'{iv[:iv_len-1]}'", mode=mode, exitcode=198, message="DB::Exception:")
+            encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", iv=f"'{iv[:iv_len-1]}'", mode=mode, exitcode=0)
     else:
         with When("iv is not specified"):
             encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", mode=mode, exitcode=36, message="DB::Exception: Invalid IV size")

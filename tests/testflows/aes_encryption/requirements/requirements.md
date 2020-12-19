@@ -238,54 +238,54 @@ SHALL be measured.
 #### RQ.SRS008.AES.Encrypt.Function
 version: 1.0
 
-[ClickHouse] SHALL support `aes_encrypt` function to encrypt data using [AES].
+[ClickHouse] SHALL support `encrypt` function to encrypt data using [AES].
 
 #### RQ.SRS008.AES.Encrypt.Function.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `aes_encrypt` function
+[ClickHouse] SHALL support the following syntax for the `encrypt` function
 
 ```sql
-aes_encrypt(plaintext, key, mode, [iv, aad])
+encrypt(mode, plaintext, key, [iv, aad])
 ```
 
 #### RQ.SRS008.AES.Encrypt.Function.NIST.TestVectors
 version: 1.0
 
-[ClickHouse] `aes_encrypt` function output SHALL produce output that matches [NIST test vectors].
+[ClickHouse] `encrypt` function output SHALL produce output that matches [NIST test vectors].
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.PlainText
 version: 1.0
 
 [ClickHouse] SHALL support `plaintext` accepting any data type as
-the first parameter to the `aes_encrypt` function that SHALL specify the data to be encrypted.
+the first parameter to the `encrypt` function that SHALL specify the data to be encrypted.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `aes_encrypt` function that SHALL specify the encryption key.
+as the second parameter to the `encrypt` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode
 version: 1.0
 
 [ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
-to the `aes_encrypt` function that SHALL specify encryption key length and block encryption mode.
+to the `encrypt` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.ValuesFormat
 version: 1.0
 
 [ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter
-of the `aes_encrypt` function where
+of the `encrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
 
-[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_encrypt`
+[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `encrypt`
 function is not valid with the exception where such a mode is supported by the underlying
 [OpenSSL] implementation.
 
@@ -293,7 +293,7 @@ function is not valid with the exception where such a mode is supported by the u
 version: 1.0
 
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
-of the `aes_encrypt` function:
+of the `encrypt` function:
 
 * `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
 * `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
@@ -301,12 +301,6 @@ of the `aes_encrypt` function:
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
-* `aes-128-cfb1` that SHALL use [CFB1] block mode encryption with 128 bit key
-* `aes-192-cfb1` that SHALL use [CFB1] block mode encryption with 192 bit key
-* `aes-256-cfb1` that SHALL use [CFB1] block mode encryption with 256 bit key
-* `aes-128-cfb8` that SHALL use [CFB8] block mode encryption with 128 bit key
-* `aes-192-cfb8` that SHALL use [CFB8] block mode encryption with 192 bit key
-* `aes-256-cfb8` that SHALL use [CFB8] block mode encryption with 256 bit key
 * `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key
 * `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key
 * `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key
@@ -330,51 +324,51 @@ of the `aes_encrypt` function:
 version: 1.0
 
 [ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth
-parameter to the `aes_encrypt` function that SHALL specify the initialization vector for block modes that require
+parameter to the `encrypt` function that SHALL specify the initialization vector for block modes that require
 it.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.AdditionalAuthenticatedData
 version: 1.0
 
 [ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth
-parameter to the `aes_encrypt` function that SHALL specify the additional authenticated data
+parameter to the `encrypt` function that SHALL specify the additional authenticated data
 for block modes that require it.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.ReturnValue
 version: 1.0
 
 [ClickHouse] SHALL return the encrypted value of the data
-using `String` data type as the result of `aes_encrypt` function.
+using `String` data type as the result of `encrypt` function.
 
 #### RQ.SRS008.AES.Encrypt.Function.Key.Length.InvalidLengthError
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `key` length is not exact for the `aes_encrypt` function for a given block mode.
+[ClickHouse] SHALL return an error if the `key` length is not exact for the `encrypt` function for a given block mode.
 
 #### RQ.SRS008.AES.Encrypt.Function.InitializationVector.Length.InvalidLengthError
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `iv` length is specified and not of the exact size for the `aes_encrypt` function for a given block mode.
+[ClickHouse] SHALL return an error if the `iv` length is specified and not of the exact size for the `encrypt` function for a given block mode.
 
 #### RQ.SRS008.AES.Encrypt.Function.InitializationVector.NotValidForMode
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_encrypt` function for a mode that does not need it.
+[ClickHouse] SHALL return an error if the `iv` is specified for the `encrypt` function for a mode that does not need it.
 
 #### RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.NotValidForMode
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `aad` is specified for the `aes_encrypt` function for a mode that does not need it.
+[ClickHouse] SHALL return an error if the `aad` is specified for the `encrypt` function for a mode that does not need it.
 
 #### RQ.SRS008.AES.Encrypt.Function.AdditionalAuthenticationData.Length
 version: 1.0
 
-[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `aes_encrypt` function.
+[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `encrypt` function.
 
 #### RQ.SRS008.AES.Encrypt.Function.NonGCMMode.KeyAndInitializationVector.Length
 version: 1.0
 
-[ClickHouse] SHALL return an error when the `aes_encrypt` function is called with the following parameter values
+[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values
 when using non-GCM modes
 
 * `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified
@@ -402,59 +396,59 @@ when using non-GCM modes
 #### RQ.SRS008.AES.Encrypt.Function.GCMMode.KeyAndInitializationVector.Length
 version: 1.0
 
-[ClickHouse] SHALL return an error when the `aes_encrypt` function is called with the following parameter values
+[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values
 when using GCM modes
 
-* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified or is less than 8 bytes
-* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified or is less than 8 bytes
-* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified or is less than 8 bytes
+* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified
+* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified
+* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified
 
 #### RQ.SRS008.AES.Decrypt.Function
 version: 1.0
 
-[ClickHouse] SHALL support `aes_decrypt` function to decrypt data using [AES].
+[ClickHouse] SHALL support `decrypt` function to decrypt data using [AES].
 
 #### RQ.SRS008.AES.Decrypt.Function.Syntax
 version: 1.0
 
-[ClickHouse] SHALL support the following syntax for the `aes_decrypt` function
+[ClickHouse] SHALL support the following syntax for the `decrypt` function
 
 ```sql
-aes_decrypt(ciphertext, key, mode, [iv, aad])
+decrypt(mode, ciphertext, key, [iv, aad])
 ```
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.CipherText
 version: 1.0
 
 [ClickHouse] SHALL support `ciphertext` accepting `FixedString` or `String` data types as
-the first parameter to the `aes_decrypt` function that SHALL specify the data to be decrypted.
+the first parameter to the `decrypt` function that SHALL specify the data to be decrypted.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Key
 version: 1.0
 
 [ClickHouse] SHALL support `key` with `String` or `FixedString` data types
-as the second parameter to the `aes_decrypt` function that SHALL specify the encryption key.
+as the second parameter to the `decrypt` function that SHALL specify the encryption key.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode
 version: 1.0
 
 [ClickHouse] SHALL support `mode` with `String` or `FixedString` data types as the third parameter
-to the `aes_decrypt` function that SHALL specify encryption key length and block encryption mode.
+to the `decrypt` function that SHALL specify encryption key length and block encryption mode.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.ValuesFormat
 version: 1.0
 
 [ClickHouse] SHALL support values of the form `aes-[key length]-[mode]` for the `mode` parameter
-of the `aes_decrypt` function where
+of the `decrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
 
-[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `aes_decrypt`
+[ClickHouse] SHALL return an error if the specified value for the `mode` parameter of the `decrypt`
 function is not valid with the exception where such a mode is supported by the underlying
 [OpenSSL] implementation.
 
@@ -462,7 +456,7 @@ function is not valid with the exception where such a mode is supported by the u
 version: 1.0
 
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
-of the `aes_decrypt` function:
+of the `decrypt` function:
 
 * `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
 * `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
@@ -470,12 +464,6 @@ of the `aes_decrypt` function:
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
-* `aes-128-cfb1` that SHALL use [CFB1] block mode encryption with 128 bit key
-* `aes-192-cfb1` that SHALL use [CFB1] block mode encryption with 192 bit key
-* `aes-256-cfb1` that SHALL use [CFB1] block mode encryption with 256 bit key
-* `aes-128-cfb8` that SHALL use [CFB8] block mode encryption with 128 bit key
-* `aes-192-cfb8` that SHALL use [CFB8] block mode encryption with 192 bit key
-* `aes-256-cfb8` that SHALL use [CFB8] block mode encryption with 256 bit key
 * `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key
 * `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key
 * `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key
@@ -499,53 +487,53 @@ of the `aes_decrypt` function:
 version: 1.0
 
 [ClickHouse] SHALL support `iv` with `String` or `FixedString` data types as the optional fourth
-parameter to the `aes_decrypt` function that SHALL specify the initialization vector for block modes that require
+parameter to the `decrypt` function that SHALL specify the initialization vector for block modes that require
 it.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.AdditionalAuthenticatedData
 version: 1.0
 
 [ClickHouse] SHALL support `aad` with `String` or `FixedString` data types as the optional fifth
-parameter to the `aes_decrypt` function that SHALL specify the additional authenticated data
+parameter to the `decrypt` function that SHALL specify the additional authenticated data
 for block modes that require it.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.ReturnValue
 version: 1.0
 
 [ClickHouse] SHALL return the decrypted value of the data
-using `String` data type as the result of `aes_decrypt` function.
+using `String` data type as the result of `decrypt` function.
 
 #### RQ.SRS008.AES.Decrypt.Function.Key.Length.InvalidLengthError
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `key` length is not exact for the `aes_decrypt` function for a given block mode.
+[ClickHouse] SHALL return an error if the `key` length is not exact for the `decrypt` function for a given block mode.
 
 #### RQ.SRS008.AES.Decrypt.Function.InitializationVector.Length.InvalidLengthError
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `iv` is speficified and the length is not exact for the `aes_decrypt` function for a given block mode.
+[ClickHouse] SHALL return an error if the `iv` is speficified and the length is not exact for the `decrypt` function for a given block mode.
 
 #### RQ.SRS008.AES.Decrypt.Function.InitializationVector.NotValidForMode
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `iv` is specified for the `aes_decrypt` function
+[ClickHouse] SHALL return an error if the `iv` is specified for the `decrypt` function
 for a mode that does not need it.
 
 #### RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.NotValidForMode
 version: 1.0
 
-[ClickHouse] SHALL return an error if the `aad` is specified for the `aes_decrypt` function
+[ClickHouse] SHALL return an error if the `aad` is specified for the `decrypt` function
 for a mode that does not need it.
 
 #### RQ.SRS008.AES.Decrypt.Function.AdditionalAuthenticationData.Length
 version: 1.0
 
-[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `aes_decrypt` function.
+[ClickHouse] SHALL not limit the size of the `aad` parameter passed to the `decrypt` function.
 
 #### RQ.SRS008.AES.Decrypt.Function.NonGCMMode.KeyAndInitializationVector.Length
 version: 1.0
 
-[ClickHouse] SHALL return an error when the `aes_decrypt` function is called with the following parameter values
+[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values
 when using non-GCM modes
 
 * `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified
@@ -573,12 +561,12 @@ when using non-GCM modes
 #### RQ.SRS008.AES.Decrypt.Function.GCMMode.KeyAndInitializationVector.Length
 version: 1.0
 
-[ClickHouse] SHALL return an error when the `aes_decrypt` function is called with the following parameter values
+[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values
 when using GCM modes
 
-* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified or is less than 8 bytes
-* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified or is less than 8 bytes
-* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified or is less than 8 bytes
+* `aes-128-gcm` mode and `key` is not 16 bytes or `iv` is not specified
+* `aes-192-gcm` mode and `key` is not 24 bytes or `iv` is not specified
+* `aes-256-gcm` mode and `key` is not 32 bytes or `iv` is not specified
 
 ### MySQL Specific Functions
 
@@ -593,7 +581,7 @@ version: 1.0
 [ClickHouse] SHALL support the following syntax for the `aes_encrypt_mysql` function
 
 ```sql
-aes_encrypt_mysql(plaintext, key, mode, [iv])
+aes_encrypt_mysql(mode, plaintext, key, [iv])
 ```
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.PlainText
@@ -621,7 +609,7 @@ version: 1.0
 of the `aes_encrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -642,12 +630,6 @@ of the `aes_encrypt_mysql` function:
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
-* `aes-128-cfb1` that SHALL use [CFB1] block mode encryption with 128 bit key
-* `aes-192-cfb1` that SHALL use [CFB1] block mode encryption with 192 bit key
-* `aes-256-cfb1` that SHALL use [CFB1] block mode encryption with 256 bit key
-* `aes-128-cfb8` that SHALL use [CFB8] block mode encryption with 128 bit key
-* `aes-192-cfb8` that SHALL use [CFB8] block mode encryption with 192 bit key
-* `aes-256-cfb8` that SHALL use [CFB8] block mode encryption with 256 bit key
 * `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key
 * `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key
 * `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key
@@ -763,7 +745,7 @@ version: 1.0
 [ClickHouse] SHALL support the following syntax for the `aes_decrypt_mysql` function
 
 ```sql
-aes_decrypt_mysql(ciphertext, key, mode, [iv])
+aes_decrypt_mysql(mode, ciphertext, key, [iv])
 ```
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.CipherText
@@ -791,7 +773,7 @@ version: 1.0
 of the `aes_decrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [ECB], [CBC], [CFB1], [CFB8], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -812,12 +794,6 @@ of the `aes_decrypt_mysql` function:
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
-* `aes-128-cfb1` that SHALL use [CFB1] block mode encryption with 128 bit key
-* `aes-192-cfb1` that SHALL use [CFB1] block mode encryption with 192 bit key
-* `aes-256-cfb1` that SHALL use [CFB1] block mode encryption with 256 bit key
-* `aes-128-cfb8` that SHALL use [CFB8] block mode encryption with 128 bit key
-* `aes-192-cfb8` that SHALL use [CFB8] block mode encryption with 192 bit key
-* `aes-256-cfb8` that SHALL use [CFB8] block mode encryption with 256 bit key
 * `aes-128-cfb128` that SHALL use [CFB128] block mode encryption with 128 bit key
 * `aes-192-cfb128` that SHALL use [CFB128] block mode encryption with 192 bit key
 * `aes-256-cfb128` that SHALL use [CFB128] block mode encryption with 256 bit key
@@ -942,8 +918,6 @@ version: 1.0
 [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)
 [ECB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_codebook_(ECB)
 [CFB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
-[CFB1]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
-[CFB8]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
 [CFB128]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
 [OFB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Output_feedback_(OFB)
 [GDPR]: https://en.wikipedia.org/wiki/General_Data_Protection_Regulation

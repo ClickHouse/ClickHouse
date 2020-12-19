@@ -121,6 +121,14 @@ def invalid_parameters(self):
             message="DB::Exception: AAD can be only set for GCM-mode")
 
     with Example("invalid mode value", requirements=[RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Value_Invalid("1.0")]):
+        with When("using unsupported cfb1 mode"):
+            decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-cfb1'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb1")
+
+        with When("using unsupported cfb8 mode"):
+            decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-cfb8'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb8")
+
         with When("typo in the block algorithm"):
             decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-eeb'", exitcode=36,
                 message="DB::Exception: Invalid mode: aes-128-eeb")
@@ -161,14 +169,6 @@ def invalid_parameters(self):
     ("'aes-128-cbc'", 16, 16, None),
     ("'aes-192-cbc'", 24, 16, None),
     ("'aes-256-cbc'", 32, 16, None),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16, None),
-    ("'aes-192-cfb1'", 24, 16, None),
-    ("'aes-256-cfb1'", 32, 16, None),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16, None),
-    ("'aes-192-cfb8'", 24, 16, None),
-    ("'aes-256-cfb8'", 32, 16, None),
     # CFB128
     ("'aes-128-cfb128'", 16, 16, None),
     ("'aes-192-cfb128'", 24, 16, None),
