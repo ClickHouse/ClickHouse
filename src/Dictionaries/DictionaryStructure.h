@@ -42,13 +42,6 @@ std::string toString(const AttributeUnderlyingType type);
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
-enum class DictionaryGetByType {
-    getByIdentifiers,
-    getByComplexKeys,
-    getByRange,
-    unsupported /* will be removed after migration to new interface */
-};
-
 /** Holds the description of a single dictionary attribute:
 *    - name, used for lookup into dictionary and source;
 *    - type, used in conjunction with DataTypeFactory and getAttributeUnderlyingTypeByname;
