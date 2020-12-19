@@ -50,7 +50,7 @@ def invalid_parameters(self):
     we call it with invalid parameters.
     """
     with Example("no parameters"):
-        aes_encrypt_mysql(exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt provided 0, expected 3 to 4")
+        aes_encrypt_mysql(exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt_mysql provided 0, expected 3 to 4")
 
     with Example("missing key and mode"):
         aes_encrypt_mysql(plaintext="'hello there'", exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt_mysql provided 1")
