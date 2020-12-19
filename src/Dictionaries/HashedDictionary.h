@@ -66,8 +66,6 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    static constexpr DictionaryGetByType get_by_type = DictionaryGetByType::unsupported;  
-
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
@@ -138,7 +136,7 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
 
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
 
     void isInVectorVector(
         const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;

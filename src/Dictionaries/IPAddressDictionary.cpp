@@ -1045,7 +1045,7 @@ static auto keyViewGetter()
 
 BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<IPAddressDictionary, UInt64>;
+    using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
 
 
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;

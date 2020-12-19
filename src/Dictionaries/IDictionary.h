@@ -10,6 +10,8 @@
 #include <common/StringRef.h>
 #include "IDictionarySource.h"
 #include <Dictionaries/DictionaryStructure.h>
+#include <DataTypes/IDataType.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <chrono>
 #include <memory>
@@ -28,6 +30,13 @@ using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
+
+enum class DictionaryIdentifierType
+{
+    simple,
+    complex,
+    range
+};
 
 struct IDictionaryBase : public IExternalLoadable
 {
@@ -85,6 +94,29 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
+    virtual DictionaryIdentifierType getIdentifierType() const /* = 0; */
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Get identifier type not supported", getDictionaryID().getNameForLogs());
+    }
+
+    virtual ColumnPtr getColumn(
+        const std::string & attribute_name [[maybe_unused]],
+        const DataTypePtr & result_type [[maybe_unused]],
+        const Columns & key_columns [[maybe_unused]],
+        const DataTypes & key_types [[maybe_unused]],
+        const ColumnPtr default_untyped [[maybe_unused]]) const /* = 0; */
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Get column not supported", getDictionaryID().getNameForLogs());
+    }
+
+    virtual ColumnUInt8::Ptr has(const Columns & key_columns [[maybe_unused]], const DataTypes & key_types [[maybe_unused]]) const /* = 0; */
+    {
+         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Has not supported", getDictionaryID().getNameForLogs());
+    }
+
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     bool supportUpdates() const override { return true; }
@@ -115,7 +147,6 @@ protected:
     const String full_name;
 };
 
-
 struct IDictionary : IDictionaryBase
 {
     IDictionary(const StorageID & dict_id_) : IDictionaryBase(dict_id_) {}
@@ -123,8 +154,6 @@ struct IDictionary : IDictionaryBase
     virtual bool hasHierarchy() const = 0;
 
     virtual void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const = 0;
-
-    virtual void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const = 0;
 
     /// Methods for hierarchy.
 
