@@ -28,7 +28,7 @@ private:
     size_t file_pos;
 
     /// A piece of data from the cache, or a piece of read data that we put into the cache.
-    UncompressedCache::MappedPtr owned_cell;
+    UncompressedCache::HolderPtr owned_region;
 
     void initInput();
     bool nextImpl() override;

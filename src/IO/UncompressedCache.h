@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/LRUCache.h>
+#include <Common/ArrayCache.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
@@ -20,26 +20,16 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory<> data;
     size_t compressed_size;
     UInt32 additional_bytes;
 };
 
-struct UncompressedSizeWeightFunction
-{
-    size_t operator()(const UncompressedCacheCell & x) const
-    {
-        return x.data.size();
-    }
-};
-
-
 /** Cache of decompressed blocks for implementation of CachedCompressedReadBuffer. thread-safe.
   */
-class UncompressedCache : public LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>
+class UncompressedCache : public ArrayCache<UInt128, UncompressedCacheCell>
 {
 private:
-    using Base = LRUCache<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
+    using Base = ArrayCache<UInt128, UncompressedCacheCell>;
 
 public:
     UncompressedCache(size_t max_size_in_bytes)
@@ -58,9 +48,9 @@ public:
         return key;
     }
 
-    MappedPtr get(const Key & key)
+    HolderPtr get(const Key & key)
     {
-        MappedPtr res = Base::get(key);
+        Base::HolderPtr res = Base::get(key);
 
         if (res)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
@@ -68,12 +58,6 @@ public:
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
 
         return res;
-    }
-
-private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
-    {
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
     }
 };
 

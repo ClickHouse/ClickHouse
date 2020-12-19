@@ -33,40 +33,48 @@ bool CachedCompressedReadBuffer::nextImpl()
 
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = cache->hash(path, file_pos);
-    owned_cell = cache->get(key);
 
-    if (!owned_cell)
-    {
-        /// If not, read it from the file.
-        initInput();
-        file_in->seek(file_pos, SEEK_SET);
+    size_t size_decompressed = 0;
+    size_t size_compressed_without_checksum = 0;
+    size_t size_compressed = 0;
+    size_t additional_bytes = 0;
 
-        owned_cell = std::make_shared<UncompressedCacheCell>();
+    ///TODO: Fix interface probably payload can contain size then we can make cell
+    /// and return it as payload
+    owned_region = cache->getOrSet(
+        key,
+        [&]() -> size_t {
+            initInput();
+            file_in->seek(file_pos, SEEK_SET);
+            size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
-        size_t size_decompressed;
-        size_t size_compressed_without_checksum;
-        owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+            if (size_compressed)
+            {
+                additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
+                return size_decompressed + additional_bytes;
+            }
+            else
+            {
+                return 0;
+            }
+        },
+        [&](void * ptr, UncompressedCacheCell & payload) {
+            payload.compressed_size = size_compressed;
+            payload.additional_bytes = additional_bytes;
+            decompress(static_cast<char *>(ptr), size_decompressed, size_compressed_without_checksum);
+        },
+        nullptr);
 
-        if (owned_cell->compressed_size)
-        {
-            owned_cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-            owned_cell->data.resize(size_decompressed + owned_cell->additional_bytes);
-            decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
+    auto owned_cell = owned_region->payload();
+    auto size = owned_region->size();
 
-        }
-
-        /// Put data into cache.
-        /// NOTE: Even if we don't read anything (compressed_size == 0)
-        /// because we can reuse this information and don't reopen file in future
-        cache->set(key, owned_cell);
-    }
-
-    if (owned_cell->data.size() == 0)
+    if (owned_region->size() == 0)
         return false;
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
+    auto buffer_begin = static_cast<char*>(owned_region->ptr());
+    working_buffer = Buffer(buffer_begin, buffer_begin + size - owned_cell.additional_bytes);
 
-    file_pos += owned_cell->compressed_size;
+    file_pos += owned_cell.compressed_size;
 
     return true;
 }
@@ -80,8 +88,8 @@ CachedCompressedReadBuffer::CachedCompressedReadBuffer(
 
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-    if (owned_cell &&
-        offset_in_compressed_file == file_pos - owned_cell->compressed_size &&
+    if (owned_region &&
+        offset_in_compressed_file == file_pos - owned_region->payload().compressed_size &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         bytes += offset();

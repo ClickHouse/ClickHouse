@@ -31,6 +31,8 @@ struct MarksWeightFunction
 };
 
 
+/// TODO: Use ArrayCache
+
 /** Cache of 'marks' for StorageMergeTree.
   * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
   */

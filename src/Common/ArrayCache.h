@@ -77,9 +77,12 @@ namespace DB
   * Fragmentation is usually less than 10%.
   */
 
-template <typename Key, typename Payload>
+template <typename TKey, typename TPayload>
 class ArrayCache : private boost::noncopyable
 {
+public:
+    using Key = TKey;
+    using Payload = TPayload;
 private:
     struct LRUListTag;
     struct AdjacencyListTag;
@@ -184,6 +187,7 @@ private:
 
         ~Chunk()
         {
+            /// TODO: Probably should not throw exception in destructor
             if (ptr && 0 != munmap(ptr, size))
                 DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
         }
@@ -549,6 +553,22 @@ public:
         adjacency_list.clear_and_dispose([](RegionMetadata * elem) { elem->destroy(); });
     }
 
+    HolderPtr get(const Key & key)
+    {
+        std::lock_guard cache_lock(mutex);
+
+        auto it = key_map.find(key, RegionCompareByKey());
+        if (key_map.end() != it)
+        {
+            ++hits;
+            return std::make_shared<Holder>(*this, *it);
+        }
+        else
+        {
+            ++misses;
+            return nullptr;
+        }
+    }
 
     /// If the value for the key is in the cache, returns it.
     ///
@@ -669,7 +689,30 @@ public:
             throw;
         }
     }
+    
+    void getStats(size_t & out_hits, size_t & out_misses) const
+    {
+        std::lock_guard cache_lock(mutex);
+        out_hits = hits.load(std::memory_order_relaxed);
+        out_misses = misses.load(std::memory_order_relaxed);
+    }
 
+    size_t count()
+    {    
+        std::lock_guard cache_lock(mutex);
+        return adjacency_list.size();
+    }
+
+    size_t weight()
+    {
+        std::lock_guard cache_lock(mutex);
+        return total_size_in_use;
+    }
+
+    void reset()
+    {
+        /// TODO: Implement
+    }
 
     struct Statistics
     {
