@@ -230,7 +230,8 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
             }
             else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
             {
-                column = nullptr;
+                column = dictionary->getColumn(
+                    attribute.name, attribute.type, keys, data_types, nullptr /* default_untyped*/);
             }
             else
             {

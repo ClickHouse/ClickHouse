@@ -1,6 +1,8 @@
 #include "ComplexKeyHashedDictionary.h"
 #include <ext/map.h>
 #include <ext/range.h>
+#include <Columns/ColumnsNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 
@@ -32,216 +34,186 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     calculateBytesAllocated();
 }
 
-#define DECLARE(TYPE) \
-    void ComplexKeyHashedDictionary::get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
-    { \
-        dict_struct.validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t) { return null_value; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void ComplexKeyHashedDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
-{
-    dict_struct.validateKeyTypes(key_types);
-
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
-}
-
-#define DECLARE(TYPE) \
-    void ComplexKeyHashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        dict_struct.validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, \
-            key_columns, \
-            [&](const size_t row, const auto value) { out[row] = value; }, \
-            [&](const size_t row) { return def[row]; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void ComplexKeyHashedDictionary::getString(
+ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const std::string & attribute_name,
+    const DataTypePtr &,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnString * const def,
-    ColumnString * const out) const
+    const ColumnPtr default_untyped) const
 {
     dict_struct.validateKeyTypes(key_types);
+
+    ColumnPtr result;
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
+    /// TODO: Check that attribute type is same as result type
+
+    auto size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t) { return def; });
+                }
+            }
+            else
+            {
+                const auto & null_value = std::get<StringRef>(attribute.null_values);
+
+                getItemsImpl<StringRef, StringRef>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+   
+    return result;
 }
 
-#define DECLARE(TYPE) \
-    void ComplexKeyHashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        dict_struct.validateKeyTypes(key_types); \
-\
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void ComplexKeyHashedDictionary::getString(
-    const std::string & attribute_name,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const String & def,
-    ColumnString * const out) const
+ColumnUInt8::Ptr ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
 
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        key_columns,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
-}
-
-void ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
-{
-    dict_struct.validateKeyTypes(key_types);
+    auto size = key_columns.front()->size();
+    auto result = ColumnUInt8::create(size);
+    auto& out = result->getData();
 
     const auto & attribute = attributes.front();
 
-    switch (attribute.type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            has<UInt8>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            has<UInt16>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            has<UInt32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            has<UInt64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            has<UInt128>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            has<Int8>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            has<Int16>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            has<Int32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            has<Int64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            has<Float32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            has<Float64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utString:
-            has<StringRef>(attribute, key_columns, out);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            has<Decimal32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            has<Decimal64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            has<Decimal128>(attribute, key_columns, out);
-            break;
-    }
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            has<StringRef>(attribute, key_columns, out);
+        }
+        else
+        {
+            has<AttributeType>(attribute, key_columns, out);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 void ComplexKeyHashedDictionary::createAttributes()
@@ -407,66 +379,30 @@ void ComplexKeyHashedDictionary::addAttributeSize(const Attribute & attribute)
     bucket_count = map_ref.getBufferSizeInCells();
 }
 
+template <>
+void ComplexKeyHashedDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    const auto & map_ref = std::get<ContainerType<StringRef>>(attribute.maps);
+    bytes_allocated += sizeof(ContainerType<StringRef>) + map_ref.getBufferSizeInBytes();
+    bucket_count = map_ref.getBufferSizeInCells();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void ComplexKeyHashedDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 
     bytes_allocated += keys_pool.size();
@@ -479,65 +415,29 @@ void ComplexKeyHashedDictionary::createAttributeImpl(Attribute & attribute, cons
     attribute.maps.emplace<ContainerType<T>>();
 }
 
+template <>
+void ComplexKeyHashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.maps.emplace<ContainerType<StringRef>>();
+}
+
 ComplexKeyHashedDictionary::Attribute
 ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     Attribute attr{type, {}, {}, {}};
 
-    switch (type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributType = typename Type::AttributeType;
+        createAttributeImpl<AttributType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            attr.null_values = null_value.get<String>();
-            attr.maps.emplace<ContainerType<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
@@ -684,41 +584,26 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 {
     const Attribute & attribute = attributes.front();
 
-    switch (attribute.type)
-    {
-        case AttributeUnderlyingType::utUInt8:
-            return getKeys<UInt8>(attribute);
-        case AttributeUnderlyingType::utUInt16:
-            return getKeys<UInt16>(attribute);
-        case AttributeUnderlyingType::utUInt32:
-            return getKeys<UInt32>(attribute);
-        case AttributeUnderlyingType::utUInt64:
-            return getKeys<UInt64>(attribute);
-        case AttributeUnderlyingType::utUInt128:
-            return getKeys<UInt128>(attribute);
-        case AttributeUnderlyingType::utInt8:
-            return getKeys<Int8>(attribute);
-        case AttributeUnderlyingType::utInt16:
-            return getKeys<Int16>(attribute);
-        case AttributeUnderlyingType::utInt32:
-            return getKeys<Int32>(attribute);
-        case AttributeUnderlyingType::utInt64:
-            return getKeys<Int64>(attribute);
-        case AttributeUnderlyingType::utFloat32:
-            return getKeys<Float32>(attribute);
-        case AttributeUnderlyingType::utFloat64:
-            return getKeys<Float64>(attribute);
-        case AttributeUnderlyingType::utString:
-            return getKeys<StringRef>(attribute);
+    std::vector<StringRef> result;
 
-        case AttributeUnderlyingType::utDecimal32:
-            return getKeys<Decimal32>(attribute);
-        case AttributeUnderlyingType::utDecimal64:
-            return getKeys<Decimal64>(attribute);
-        case AttributeUnderlyingType::utDecimal128:
-            return getKeys<Decimal128>(attribute);
-    }
-    return {};
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            result = getKeys<StringRef>(attribute);
+        }
+        else
+        {
+            result = getKeys<AttributeType>(attribute);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 template <typename T>

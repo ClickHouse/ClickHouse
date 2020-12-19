@@ -109,16 +109,15 @@ ColumnPtr FlatDictionary::getColumn(
         const std::string& attribute_name,
         const DataTypePtr &,
         const Columns & key_columns,
-        const DataTypes &,
+        const DataTypes & key_types,
         const ColumnPtr default_untyped) const
 {
-    assert(!key_columns.empty());
+    dict_struct.validateKeyTypes(key_types);
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
 
     const auto& ids = getColumnDataAsIdendifiers(*key_columns.front(), backup_storage);
-    bool is_const = isColumnConst(*key_columns.front());
 
     const auto & attribute = getAttribute(attribute_name);
 
@@ -257,12 +256,7 @@ ColumnPtr FlatDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-    
-    if (is_const)
-    {
-        result = ColumnConst::create(std::move(result), 1);
-    }
-
+   
     return result;
 }
 
@@ -540,14 +534,55 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const 
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    switch (attribute.type)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        setAttributeValueImpl<AttributeType>(attribute, id, value.get<AttributeType>());
-    };
+        case AttributeUnderlyingType::utUInt8:
+            setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
+            break;
+        case AttributeUnderlyingType::utUInt16:
+            setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
+            break;
+        case AttributeUnderlyingType::utUInt32:
+            setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
+            break;
+        case AttributeUnderlyingType::utUInt64:
+            setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
+            break;
+        case AttributeUnderlyingType::utUInt128:
+            setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
+            break;
+        case AttributeUnderlyingType::utInt8:
+            setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
+            break;
+        case AttributeUnderlyingType::utInt16:
+            setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
+            break;
+        case AttributeUnderlyingType::utInt32:
+            setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
+            break;
+        case AttributeUnderlyingType::utInt64:
+            setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
+            break;
+        case AttributeUnderlyingType::utFloat32:
+            setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
+            break;
+        case AttributeUnderlyingType::utFloat64:
+            setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
+            break;
+        case AttributeUnderlyingType::utString:
+            setAttributeValueImpl<String>(attribute, id, value.get<String>());
+            break;
 
-    callOnDictionaryAttributeType(attribute.type, type_call);
+        case AttributeUnderlyingType::utDecimal32:
+            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
+            break;
+        case AttributeUnderlyingType::utDecimal64:
+            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
+            break;
+        case AttributeUnderlyingType::utDecimal128:
+            setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
+            break;
+    }
 }
 
 

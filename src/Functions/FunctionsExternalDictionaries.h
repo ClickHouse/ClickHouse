@@ -297,25 +297,31 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto id_col_untyped = arguments[2].column;
+        const ColumnWithTypeAndName & key_col_with_type = arguments[2];
+        const auto key_column = key_col_with_type.column;
 
         auto dictionary_identifier_type = dictionary->getIdentifierType();
+        
+        ColumnPtr default_col = nullptr;
+
+        if (dictionary_get_function_type == DictionaryGetFunctionType::withDefault)
+        {
+            default_col = arguments[3].column;
+        }
 
         if (dictionary_identifier_type == DictionaryIdentifierType::simple)
         {
-            if (dictionary_get_function_type == DictionaryGetFunctionType::withDefault)
-            {
-                const auto default_col_untyped = arguments[3].column;
-                res = dictionary->getColumn(attr_name, result_type, { id_col_untyped }, { std::make_shared<DataTypeUInt64>() }, default_col_untyped);
-            }
-            else
-            {
-                res = dictionary->getColumn(attr_name, result_type, { id_col_untyped }, { std::make_shared<DataTypeUInt64>() }, nullptr);
-            }
+            res = dictionary->getColumn(attr_name, result_type, { key_column }, { std::make_shared<DataTypeUInt64>() }, default_col);
         }
         else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
         {
-            res = nullptr;
+            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
+            ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
+
+            const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
+            const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+
+            res = dictionary->getColumn(attr_name, result_type, key_columns, key_types, default_col);
         }
         else
         {
