@@ -850,11 +850,11 @@ Don’t confuse blocks for compression (a chunk of memory consisting of bytes) w
 
 ## min_compress_block_size {#min-compress-block-size}
 
-For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min_compress_block_size’. By default, 65,536.
+For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
 
-The actual size of the block, if the uncompressed data is less than ‘max_compress_block_size’, is no less than this value and no less than the volume of data for one mark.
+The actual size of the block, if the uncompressed data is less than `max_compress_block_size`, is no less than this value and no less than the volume of data for one mark.
 
-Let’s look at an example. Assume that ‘index_granularity’ was set to 8192 during table creation.
+Let’s look at an example. Assume that `index_granularity` was set to 8192 during table creation.
 
 We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min_compress_block_size = 65,536, a compressed block will be formed for every two marks.
 
