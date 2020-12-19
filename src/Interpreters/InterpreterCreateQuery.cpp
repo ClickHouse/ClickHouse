@@ -54,6 +54,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -1107,6 +1108,18 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     return required_access;
+}
+
+void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+{
+    const auto & create = ast->as<const ASTCreateQuery &>();
+    elem.query_kind = "Create";
+    if (!create.as_table.empty())
+    {
+        String database = backQuoteIfNeed(create.as_database.empty() ? context.getCurrentDatabase() : create.as_database);
+        elem.query_databases.insert(database);
+        elem.query_tables.insert(database + "." + backQuoteIfNeed(create.as_table));
+    }
 }
 
 }

@@ -19,3 +19,5 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM map_formats_input"
 
 $CLICKHOUSE_CLIENT -q 'SELECT * FROM map_formats_input FORMAT Native' | $CLICKHOUSE_CLIENT -q "INSERT INTO map_formats_input FORMAT Native"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM map_formats_input"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE map_formats_input"
