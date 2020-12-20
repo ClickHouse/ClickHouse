@@ -77,3 +77,6 @@ def test_restore_replica(start_cluster):
     #5. Check the initial table being attached (not in readonly) and the result being replicated.
     node_1_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
     check_data()
+
+    # 6. check we cannot restore the already restored replica
+    node_1_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")

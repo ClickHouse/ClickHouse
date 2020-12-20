@@ -408,6 +408,8 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
     const String& old_table_name = table_id.table_name;
     const String new_table_name = old_table_name + "_" + std::to_string(thread_local_rng());
 
+    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name);
+
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {
         ASTPtr create_query_ptr = std::make_shared<ASTCreateQuery>();
