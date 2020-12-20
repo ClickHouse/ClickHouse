@@ -53,7 +53,7 @@ toc_title: "\u041a\u043e\u043c\u0431\u0438\u043d\u0430\u0442\u043e\u0440\u044b\u
 
 ## -Distinct {#agg-functions-combinator-distinct}
 
-Выбирает только уникальные элементы в таблице.
+При наличии комбинатора Distinct, каждое уникальное значение аргументов, будет учитано в агрегатной функции только один раз.
 Примеры: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` и т.п.
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
