@@ -157,6 +157,7 @@ SRCS(
     interpretSubquery.cpp
     join_common.cpp
     loadMetadata.cpp
+    processColumnTransformers.cpp
     sortBlock.cpp
 
 )
