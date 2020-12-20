@@ -2475,6 +2475,6 @@ Selects one replica to perform the merge on. Sets the time threshold from the st
 
 High values for that threshold may lead to replication delays.
 
-Heavy compression is in use, calculation expensive aggregate functions or default expressions or just very high number of tiny merges when using the settings. It can be useful when merges are CPU bounded not IO bounded.
+It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
