@@ -38,8 +38,8 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetDateTimeOrDefault>();
     factory.registerFunction<FunctionDictGetUUIDOrDefault>();
     factory.registerFunction<FunctionDictGetStringOrDefault>();
-    factory.registerFunction<FunctionDictGetNoType>();
-    factory.registerFunction<FunctionDictGetNoTypeOrDefault>();
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::withoutDefault>>();
+    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::withDefault>>();
 }
 
 }

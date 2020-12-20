@@ -78,7 +78,6 @@ public:
         const DataTypes & key_types,
         const ColumnPtr default_untyped) const override;
 
-
     ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
@@ -90,7 +89,6 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        // bool is_array;
 
         std::variant<
             UInt8,
@@ -127,7 +125,6 @@ private:
             ContainerType<StringRef>>
             arrays;
 
-        std::optional<ContainerType<size_t>> array_offsets;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -162,8 +159,6 @@ private:
 
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
-
-    const PaddedPODArray<Key> & getColumnDataAsIdendifiers(const IColumn & column, PaddedPODArray<Key> & backup_storage) const;
 
     PaddedPODArray<Key> getIds() const;
 

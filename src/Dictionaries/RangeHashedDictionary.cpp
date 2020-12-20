@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NOT_IMPLEMENTED;
 }
 
 bool RangeHashedDictionary::Range::isCorrectDate(const RangeStorageType & date)
@@ -85,66 +86,163 @@ RangeHashedDictionary::RangeHashedDictionary(
     calculateBytesAllocated();
 }
 
-
-#define DECLARE_MULTIPLE_GETTER(TYPE) \
-    void RangeHashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<RangeStorageType> & dates, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::ut##TYPE); \
-        getItems<TYPE>(attribute, ids, dates, out); \
-    }
-DECLARE_MULTIPLE_GETTER(UInt8)
-DECLARE_MULTIPLE_GETTER(UInt16)
-DECLARE_MULTIPLE_GETTER(UInt32)
-DECLARE_MULTIPLE_GETTER(UInt64)
-DECLARE_MULTIPLE_GETTER(UInt128)
-DECLARE_MULTIPLE_GETTER(Int8)
-DECLARE_MULTIPLE_GETTER(Int16)
-DECLARE_MULTIPLE_GETTER(Int32)
-DECLARE_MULTIPLE_GETTER(Int64)
-DECLARE_MULTIPLE_GETTER(Float32)
-DECLARE_MULTIPLE_GETTER(Float64)
-DECLARE_MULTIPLE_GETTER(Decimal32)
-DECLARE_MULTIPLE_GETTER(Decimal64)
-DECLARE_MULTIPLE_GETTER(Decimal128)
-#undef DECLARE_MULTIPLE_GETTER
-
-void RangeHashedDictionary::getString(
+ColumnPtr RangeHashedDictionary::getColumn(
     const std::string & attribute_name,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    ColumnString * out) const
+    const DataTypePtr &,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_untyped) const
 {
-    const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::utString);
-    const auto & attr = *std::get<Ptr<StringRef>>(attribute.maps);
-    const auto & null_value = std::get<String>(attribute.null_values);
+    /// TODO: Validate input types
 
-    for (const auto i : ext::range(0, ids.size()))
+    ColumnPtr result;
+
+    const auto & attribute = getAttribute(attribute_name);
+
+    /// TODO: Check that attribute type is same as result type
+
+    auto size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        const auto * it = attr.find(ids[i]);
-        if (it)
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
         {
-            const auto date = dates[i];
-            const auto & ranges_and_values = it->getMapped();
-            const auto val_it
-                = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<StringRef> & v)
-                  {
-                      return v.range.contains(date);
-                  });
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
 
-            const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : StringRef{null_value};
-            out->insertData(string_ref.data, string_ref.size);
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t) { return def; });
+                }
+            }
+            else
+            {
+                const auto & null_value = std::get<StringRef>(attribute.null_values);
+
+                getItemsImpl<StringRef, StringRef>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
         }
-        else
-            out->insertData(null_value.data(), null_value.size());
-    }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(size);
+            auto& out = column->getData();
 
-    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+   
+    return result;
 }
 
+ColumnUInt8::Ptr RangeHashedDictionary::has(const Columns &, const DataTypes &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Has not supported", getDictionaryID().getNameForLogs());
+}
 
 void RangeHashedDictionary::createAttributes()
 {
@@ -220,66 +318,84 @@ void RangeHashedDictionary::addAttributeSize(const Attribute & attribute)
     bucket_count = map_ref->getBufferSizeInCells();
 }
 
+template <>
+void RangeHashedDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    const auto & map_ref = std::get<Ptr<StringRef>>(attribute.maps);
+    bytes_allocated += sizeof(Collection<StringRef>) + map_ref->getBufferSizeInBytes();
+    bucket_count = map_ref->getBufferSizeInCells();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void RangeHashedDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type) 
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
+        callOnDictionaryAttributeType(attribute.type, type_call);
 
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+        // switch (attribute.type)
+        // {
+        //     case AttributeUnderlyingType::utUInt8:
+        //         addAttributeSize<UInt8>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utUInt16:
+        //         addAttributeSize<UInt16>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utUInt32:
+        //         addAttributeSize<UInt32>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utUInt64:
+        //         addAttributeSize<UInt64>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utUInt128:
+        //         addAttributeSize<UInt128>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utInt8:
+        //         addAttributeSize<Int8>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utInt16:
+        //         addAttributeSize<Int16>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utInt32:
+        //         addAttributeSize<Int32>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utInt64:
+        //         addAttributeSize<Int64>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utFloat32:
+        //         addAttributeSize<Float32>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utFloat64:
+        //         addAttributeSize<Float64>(attribute);
+        //         break;
 
-                break;
-            }
-        }
+        //     case AttributeUnderlyingType::utDecimal32:
+        //         addAttributeSize<Decimal32>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utDecimal64:
+        //         addAttributeSize<Decimal64>(attribute);
+        //         break;
+        //     case AttributeUnderlyingType::utDecimal128:
+        //         addAttributeSize<Decimal128>(attribute);
+        //         break;
+
+        //     case AttributeUnderlyingType::utString:
+        //     {
+        //         addAttributeSize<StringRef>(attribute);
+        //         bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+
+        //         break;
+        //     }
+        // }
     }
 }
 
@@ -290,113 +406,54 @@ void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Fie
     attribute.maps = std::make_unique<Collection<T>>();
 }
 
+template <>
+void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.maps = std::make_unique<Collection<StringRef>>();
+}
+
 RangeHashedDictionary::Attribute
 RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     Attribute attr{type, {}, {}, {}};
 
-    switch (type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            attr.null_values = null_value.get<String>();
-            attr.maps = std::make_unique<Collection<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
 
-
-template <typename OutputType>
-void RangeHashedDictionary::getItems(
-    const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    PaddedPODArray<OutputType> & out) const
-{
-    if (false) {} // NOLINT
-#define DISPATCH(TYPE) else if (attribute.type == AttributeUnderlyingType::ut##TYPE) getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
-
-template <typename AttributeType, typename OutputType>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    PaddedPODArray<OutputType> & out) const
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DefaultGetter && get_default) const
 {
-    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
-    const auto null_value = std::get<AttributeType>(attribute.null_values);
+    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    for (const auto i : ext::range(0, ids.size()))
+    const PaddedPODArray<Key> & ids = getColumnDataAsPaddedPODArray(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<RangeStorageType> & dates = getColumnDataAsPaddedPODArray(this, key_columns[1], range_backup_storage);
+
+    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    for (const auto row : ext::range(0, ids.size()))
     {
-        const auto it = attr.find(ids[i]);
+        const auto it = attr.find(ids[row]);
         if (it)
         {
-            const auto date = dates[i];
+            const auto date = dates[row];
             const auto & ranges_and_values = it->getMapped();
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<AttributeType> & v)
@@ -404,11 +461,11 @@ void RangeHashedDictionary::getItemsImpl(
                       return v.range.contains(date);
                   });
 
-            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value); // NOLINT
+            set_value(row, static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : get_default(row))); // NOLINT
         }
         else
         {
-            out[i] = static_cast<OutputType>(null_value); // NOLINT
+            set_value(row, get_default(row));
         }
     }
 

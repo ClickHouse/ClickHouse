@@ -52,38 +52,18 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    typedef Int64 RangeStorageType;
+    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::range; }
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr default_untyped) const override;
 
-#define DECLARE_MULTIPLE_GETTER(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<RangeStorageType> & dates, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE_MULTIPLE_GETTER(UInt8)
-    DECLARE_MULTIPLE_GETTER(UInt16)
-    DECLARE_MULTIPLE_GETTER(UInt32)
-    DECLARE_MULTIPLE_GETTER(UInt64)
-    DECLARE_MULTIPLE_GETTER(UInt128)
-    DECLARE_MULTIPLE_GETTER(Int8)
-    DECLARE_MULTIPLE_GETTER(Int16)
-    DECLARE_MULTIPLE_GETTER(Int32)
-    DECLARE_MULTIPLE_GETTER(Int64)
-    DECLARE_MULTIPLE_GETTER(Float32)
-    DECLARE_MULTIPLE_GETTER(Float64)
-    DECLARE_MULTIPLE_GETTER(Decimal32)
-    DECLARE_MULTIPLE_GETTER(Decimal64)
-    DECLARE_MULTIPLE_GETTER(Decimal128)
-#undef DECLARE_MULTIPLE_GETTER
+    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    void getString(
-        const std::string & attribute_name,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        ColumnString * out) const;
+    using RangeStorageType = Int64;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -130,7 +110,7 @@ private:
             Decimal128,
             Float32,
             Float64,
-            String>
+            StringRef>
             null_values;
         std::variant<
             Ptr<UInt8>,
@@ -166,21 +146,12 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-
-    template <typename OutputType>
-    void getItems(
-        const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        PaddedPODArray<OutputType> & out) const;
-
-    template <typename AttributeType, typename OutputType>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
         const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        PaddedPODArray<OutputType> & out) const;
-
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultGetter && get_default) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value);
