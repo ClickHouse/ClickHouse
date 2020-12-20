@@ -359,6 +359,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserCompoundIdentifier table_name_p(true);
+    ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
@@ -378,6 +379,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table;
     ASTPtr as_table_function;
     ASTPtr select;
+    ASTPtr from_path;
 
     String cluster_str;
     bool attach = false;
@@ -405,6 +407,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
+    if (attach && s_from.ignore(pos, expected))
+    {
+        ParserLiteral from_path_p;
+        if (!from_path_p.parse(pos, from_path, expected))
+            return false;
+    }
+
     if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -414,7 +423,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
-    if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+    bool short_attach = attach && !from_path;
+    if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
         auto query = std::make_shared<ASTCreateQuery>();
         node = query;
@@ -439,12 +449,22 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_rparen.ignore(pos, expected))
             return false;
 
-        if (!storage_p.parse(pos, storage, expected) && !is_temporary)
+        auto storage_parse_result = storage_p.parse(pos, storage, expected);
+
+        if (storage_parse_result && s_as.ignore(pos, expected))
+        {
+            if (!select_p.parse(pos, select, expected))
+                return false;
+        }
+
+        if (!storage_parse_result && !is_temporary)
         {
             if (!s_as.ignore(pos, expected))
                 return false;
             if (!table_function_p.parse(pos, as_table_function, expected))
+            {
                 return false;
+            }
         }
     }
     else
@@ -508,6 +528,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (from_path)
+        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
 
     return true;
 }
