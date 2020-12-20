@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/MultiplexedConnections.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -93,7 +94,7 @@ private:
 
     const String query;
     String query_id = "";
-    const Context & context;
+    Context context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
