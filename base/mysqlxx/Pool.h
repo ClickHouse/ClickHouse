@@ -127,10 +127,7 @@ public:
         void forceConnected() const;
 
         /// Connects to database. If connection is failed then returns false.
-        bool tryForceConnected() const
-        {
-            return data->conn.ping();
-        }
+        bool tryForceConnected() const;
 
         void incrementRefCount();
         void decrementRefCount();

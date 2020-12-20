@@ -143,6 +143,15 @@ public:
             map.erase(it);
         }
 
+        void remove(std::list<Node *>::iterator it)
+        {
+            auto map_it = map.find((*it)->result_name);
+            if (map_it != map.end() && map_it->second == it)
+                map.erase(map_it);
+
+            list.erase(it);
+        }
+
         void swap(Index & other)
         {
             list.swap(other.list);
@@ -151,6 +160,7 @@ public:
     };
 
     using Nodes = std::list<Node>;
+    using Inputs = std::vector<Node *>;
 
     struct ActionsSettings
     {
@@ -165,6 +175,7 @@ public:
 private:
     Nodes nodes;
     Index index;
+    Inputs inputs;
 
     ActionsSettings settings;
 
@@ -174,13 +185,15 @@ private:
 
 public:
     ActionsDAG() = default;
+    ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
-    explicit ActionsDAG(const NamesAndTypesList & inputs);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs);
+    explicit ActionsDAG(const NamesAndTypesList & inputs_);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
     const Index & getIndex() const { return index; }
+    const Inputs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     ColumnsWithTypeAndName getResultColumns() const;
@@ -190,9 +203,9 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
-    const Node & addInput(std::string name, DataTypePtr type);
-    const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnWithTypeAndName column);
+    const Node & addInput(std::string name, DataTypePtr type, bool can_replace = false);
+    const Node & addInput(ColumnWithTypeAndName column, bool can_replace = false);
+    const Node & addColumn(ColumnWithTypeAndName column, bool can_replace = false);
     const Node & addAlias(const std::string & name, std::string alias, bool can_replace = false);
     const Node & addArrayJoin(const std::string & source_name, std::string result_name);
     const Node & addFunction(
@@ -219,6 +232,7 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
+    bool hasStatefulFunctions() const;
     bool empty() const; /// If actions only contain inputs.
 
     const ActionsSettings & getSettings() const { return settings; }
@@ -227,9 +241,40 @@ public:
 
     ActionsDAGPtr clone() const;
 
+
+    enum class MatchColumnsMode
+    {
+        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
+        Position,
+        /// Find columns in source by their names. Allow excessive columns in source.
+        Name,
+    };
+
+    /// Create ActionsDAG which converts block structure from source to result.
+    /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
+    /// Conversion should be possible with only usage of CAST function and renames.
+    static ActionsDAGPtr makeConvertingActions(
+        const ColumnsWithTypeAndName & source,
+        const ColumnsWithTypeAndName & result,
+        MatchColumnsMode mode,
+        bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+
+    /// Create ActionsDAG which represents expression equivalent to applying lhs and rhs actions consequently.
+    /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
+    /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
+    /// Otherwise, any two actions may be combined.
+    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
+
+    Node & addAlias(Node & child, std::string alias, bool can_replace);
+    Node & addFunction(
+            const FunctionOverloadResolverPtr & function,
+            Inputs children,
+            std::string result_name,
+            bool can_replace);
 
     ActionsDAGPtr cloneEmpty() const
     {

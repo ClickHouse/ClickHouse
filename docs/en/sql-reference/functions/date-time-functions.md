@@ -25,7 +25,37 @@ SELECT
 
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone.
+Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
+
+```sql
+SELECT
+    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+    toTypeName(time_utc) AS type_utc,
+    toInt32(time_utc) AS int32utc,
+    toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
+    toTypeName(time_yekat) AS type_yekat,
+    toInt32(time_yekat) AS int32yekat,
+    toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
+    toTypeName(time_samoa) AS type_samoa,
+    toInt32(time_samoa) AS int32samoa
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+time_utc:   2019-01-01 00:00:00
+type_utc:   DateTime('UTC')
+int32utc:   1546300800
+time_yekat: 2019-01-01 05:00:00
+type_yekat: DateTime('Asia/Yekaterinburg')
+int32yekat: 1546300800
+time_samoa: 2018-12-31 13:00:00
+type_samoa: DateTime('US/Samoa')
+int32samoa: 1546300800
+```
+
+`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
 
 ## toYear {#toyear}
 
@@ -67,9 +97,8 @@ Leap seconds are not accounted for.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
-For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
-For Date argument: the behaviour is unspecified.
+For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
+For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
 
 **Syntax**
 
@@ -337,7 +366,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc {#date_trunc}
+## date\_trunc {#date_trunc}
 
 Truncates date and time data to the specified part of date.
 
@@ -406,7 +435,7 @@ Result:
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
-# now {#now}
+## now {#now}
 
 Returns the current date and time. 
 
@@ -535,18 +564,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 -   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-        Supported values:
-
-        | unit   |
-        | ---- |
-        |second  |
-        |minute  |
-        |hour    |
-        |day     |
-        |week    |
-        |month   |
-        |quarter |
-        |year    |
+        Supported values: second, minute, hour, day, week, month, quarter, year.
 
 -   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -644,7 +662,7 @@ Result:
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
-## FROM_UNIXTIME
+## FROM\_UNIXTIME {#fromunixfime}
 
 When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
 type.
@@ -673,4 +691,148 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 ┌─DateTime────────────┐
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
+```
+
+## toModifiedJulianDay {#tomodifiedjulianday}
+
+Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
+
+**Syntax**
+
+``` sql
+toModifiedJulianDay(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toModifiedJulianDay('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toModifiedJulianDay('2020-01-01')─┐
+│                             58849 │
+└───────────────────────────────────┘
+```
+
+## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
+
+Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+toModifiedJulianDayOrNull(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toModifiedJulianDayOrNull('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+```
+
+## fromModifiedJulianDay {#frommodifiedjulianday}
+
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+
+**Syntax**
+
+``` sql
+fromModifiedJulianDay(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromModifiedJulianDay(58849);
+```
+
+Result:
+
+``` text
+┌─fromModifiedJulianDay(58849)─┐
+│ 2020-01-01                   │
+└──────────────────────────────┘
+```
+
+## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
+
+Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+fromModifiedJulianDayOrNull(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [Nullable(String)](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromModifiedJulianDayOrNull(58849);
+```
+
+Result:
+
+``` text
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
 ```

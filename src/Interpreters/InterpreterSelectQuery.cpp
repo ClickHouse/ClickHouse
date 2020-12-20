@@ -14,6 +14,8 @@
 
 #include <Access/AccessFlags.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
+
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -29,6 +31,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
@@ -78,7 +81,6 @@
 #include <ext/map.h>
 #include <ext/scope_guard.h>
 #include <memory>
-#include <Processors/QueryPlan/ConvertingStep.h>
 
 
 namespace DB
@@ -217,10 +219,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
     const StorageMetadataPtr & metadata_snapshot_)
-    : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
-    , context(std::make_shared<Context>(context_))
+    : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
@@ -466,12 +466,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header, true);
 }
 
-
-Block InterpreterSelectQuery::getSampleBlock()
-{
-    return result_header;
-}
-
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, input, std::move(input_pipe));
@@ -479,7 +473,13 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     /// We must guarantee that result structure is the same as in getSampleBlock()
     if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
-        auto converting = std::make_unique<ConvertingStep>(query_plan.getCurrentDataStream(), result_header, true);
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                result_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                true);
+
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
         query_plan.addStep(std::move(converting));
     }
 }
@@ -497,6 +497,8 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
     query_info.query = query_ptr;
 
     if (storage && !options.only_analyze)
@@ -1177,7 +1179,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
         if (!query.prewhere() && !query.where())
-            num_rows = storage->totalRows();
+            num_rows = storage->totalRows(settings);
         else // It's possible to optimize count() given only partition predicates
         {
             SelectQueryInfo temp_query_info;
@@ -1526,6 +1528,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
 
+        if (context->hasQueryContext() && !options.is_internal)
+        {
+            auto local_storage_id = storage->getStorageID();
+            context->getQueryContext().addQueryAccessInfo(
+                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+        }
+
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
@@ -1550,7 +1559,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
     /// Specify the number of threads only if it wasn't specified in storage.
-    if (!query_plan.getMaxThreads())
+    ///
+    /// But in case of remote query and prefer_localhost_replica=1 (default)
+    /// The inner local query (that is done in the same process, without
+    /// network interaction), it will setMaxThreads earlier and distributed
+    /// query will not update it.
+    if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
@@ -1782,7 +1796,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
             output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
+            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
