@@ -355,13 +355,13 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
         if (granule.is_complete)
         {
-            auto it = last_non_written_marks.find(name);
-            if (it == last_non_written_marks.end())
+            auto marks_it = last_non_written_marks.find(name);
+            if (marks_it == last_non_written_marks.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No mark was saved for incomplete granule for column {}", backQuoteIfNeed(name));
 
-            for (const auto & mark : it->second)
+            for (const auto & mark : marks_it->second)
                 flushMarkToFile(mark, index_granularity.getMarkRows(granule.mark_number));
-            last_non_written_marks.erase(it);
+            last_non_written_marks.erase(marks_it);
         }
     }
 
