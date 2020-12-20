@@ -14,6 +14,7 @@ int main(int, char **) { return 0; }
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
+#include <common/getPageSize.h>
 #include <pcg_random.hpp>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
@@ -52,7 +53,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     std::vector<Memory<>> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
-        buffers[i] = Memory<>(block_size, sysconf(_SC_PAGESIZE));
+        buffers[i] = Memory<>(block_size, ::getPageSize());
 
     pcg64_fast rng(randomSeed());
 

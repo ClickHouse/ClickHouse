@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>

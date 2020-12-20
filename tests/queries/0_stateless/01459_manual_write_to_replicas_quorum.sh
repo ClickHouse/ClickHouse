@@ -17,7 +17,7 @@ done
 function thread {
     for x in {0..99}; do
         while true; do
-            $CLICKHOUSE_CLIENT --insert_quorum 5 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qF 'Quorum for previous write has not been satisfied yet' || break
+            $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qF 'Quorum for previous write has not been satisfied yet' || break
         done
     done
 }

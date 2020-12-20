@@ -427,7 +427,7 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
 
         for (const auto & sub_request : request.requests)
         {
-            auto sub_zk_request = dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
+            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
                 concrete_requests.push_back(std::make_shared<TestKeeperStorageCreateRequest>(sub_zk_request));
@@ -797,6 +797,21 @@ void TestKeeperStorage::clearDeadWatches(int64_t session_id)
                 }
                 if (watches_for_path.empty())
                     watches.erase(watch);
+            }
+
+            auto list_watch = list_watches.find(watch_path);
+            if (list_watch != list_watches.end())
+            {
+                auto & list_watches_for_path = list_watch->second;
+                for (auto w_it = list_watches_for_path.begin(); w_it != list_watches_for_path.end();)
+                {
+                    if (w_it->session_id == session_id)
+                        w_it = list_watches_for_path.erase(w_it);
+                    else
+                        ++w_it;
+                }
+                if (list_watches_for_path.empty())
+                    list_watches.erase(list_watch);
             }
         }
         sessions_and_watchers.erase(watches_it);
