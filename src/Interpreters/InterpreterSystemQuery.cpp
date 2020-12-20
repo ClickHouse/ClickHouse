@@ -352,7 +352,7 @@ BlockIO InterpreterSystemQuery::execute()
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::RESTORE_REPLICA:
-            restoreReplica(query);
+            restoreReplica();
             break;
         case Type::FLUSH_LOGS:
             context.checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -377,13 +377,14 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
-void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
+void InterpreterSystemQuery::restoreReplica()
 {
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
     auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
+    StorageReplicatedMergeTree * storage_replicated;
 
-    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    if (!table || ((storage_replicated = dynamic_cast<StorageReplicatedMergeTree*>(table.get())) == nullptr))
         throw Exception("There is no replicated table \"" +
             (table_id.database_name.empty() ? "" : (table_id.database_name + ".")) +
             table_id.table_name + "\"",
@@ -398,9 +399,13 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
             "Cannot restore table metadata because ZooKeeper session has expired.",
             ErrorCodes::NO_ZOOKEEPER);
 
-    if (zookeeper->exists(query.replica_zk_path))
+    StorageReplicatedMergeTree::Status status;
+    storage_replicated->getStatus(status);
+    const String replica_zk_path = status.zookeeper_path; // + "/replicas/" + query. replica ?
+
+    if (zookeeper->exists(replica_zk_path))
         throw Exception(
-            "Replica's metadata is present at " + query.replica_zk_path + " -- nothing to restore",
+            "Replica's metadata is present at " + replica_zk_path + " -- nothing to restore",
             ErrorCodes::NO_AVAILABLE_DATA);
 
     const UUID uuid = table_id.uuid;
@@ -408,7 +413,7 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
     const String& old_table_name = table_id.table_name;
     const String new_table_name = old_table_name + "_" + std::to_string(thread_local_rng());
 
-    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name);
+    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk path at " + replica_zk_path);
 
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {

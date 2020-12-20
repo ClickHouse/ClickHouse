@@ -53,7 +53,7 @@ private:
 
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
-    void restoreReplica(ASTSystemQuery & query);
+    void restoreReplica();
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void flushDistributed(ASTSystemQuery & query);

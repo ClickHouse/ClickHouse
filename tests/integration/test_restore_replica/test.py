@@ -47,6 +47,8 @@ def test_restore_replica(start_cluster):
 
     node_1_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
 
+    # TODO check that invoking the test on a non-existent or a non-replicated table produces an error
+
     # 0. Assert all the replicas have the data
     check_data()
 
