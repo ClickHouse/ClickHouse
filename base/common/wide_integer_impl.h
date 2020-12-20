@@ -5,9 +5,11 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include <cmath>
 #include <cfloat>
-#include <limits>
 #include <cassert>
+#include <limits>
+
 
 namespace wide
 {
