@@ -379,10 +379,15 @@ BlockIO InterpreterSystemQuery::execute()
 
 void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
 {
-    if (query.replica.empty())
-        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
-
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
+
+    auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
+
+    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+        throw Exception("There is no replicated table \"" +
+            (table_id.database_name.empty() ? "" : (table_id.database_name + ".")) +
+            table_id.table_name + "\"",
+            ErrorCodes::BAD_ARGUMENTS);
 
     /// 0. Check if the replica needs to be restored (metadata missing).
 
@@ -397,8 +402,6 @@ void InterpreterSystemQuery::restoreReplica(ASTSystemQuery & query)
         throw Exception(
             "Replica's metadata is present at " + query.replica_zk_path + " -- nothing to restore",
             ErrorCodes::NO_AVAILABLE_DATA);
-
-    auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
 
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
