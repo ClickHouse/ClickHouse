@@ -87,8 +87,7 @@ public:
             return;
 
         /// TODO: monotonicity for functions of several arguments
-        auto arguments = ast_function.arguments;
-        if (arguments->children.size() != 1)
+        if (!ast_function.arguments || ast_function.arguments->children.size() != 1)
         {
             data.reject();
             return;
@@ -125,14 +124,19 @@ public:
 
             if (!is_positive)
                 data.monotonicity.is_positive = !data.monotonicity.is_positive;
-            data.arg_data_type = function_base->getReturnType();
+            data.arg_data_type = function_base->getResultType();
         }
         else
             data.reject();
     }
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
+    static bool needChildVisit(const ASTPtr & parent, const ASTPtr &)
     {
+        /// Currently we check monotonicity only for single-argument functions.
+        /// Although, multi-argument functions with all but one constant arguments can also be monotonic.
+        if (const auto * func = typeid_cast<const ASTFunction *>(parent.get()))
+            return func->arguments->children.size() < 2;
+
         return true;
     }
 };

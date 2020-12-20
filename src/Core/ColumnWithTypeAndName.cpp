@@ -27,7 +27,7 @@ bool ColumnWithTypeAndName::operator==(const ColumnWithTypeAndName & other) cons
 }
 
 
-void ColumnWithTypeAndName::dumpStructure(WriteBuffer & out) const
+void ColumnWithTypeAndName::dumpNameAndType(WriteBuffer & out) const
 {
     out << name;
 
@@ -35,6 +35,11 @@ void ColumnWithTypeAndName::dumpStructure(WriteBuffer & out) const
         out << ' ' << type->getName();
     else
         out << " nullptr";
+}
+
+void ColumnWithTypeAndName::dumpStructure(WriteBuffer & out) const
+{
+    dumpNameAndType(out);
 
     if (column)
         out << ' ' << column->dumpStructure();

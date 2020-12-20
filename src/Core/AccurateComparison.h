@@ -4,6 +4,7 @@
 #include <limits>
 #include "Defines.h"
 #include "Types.h"
+#include <common/extended_types.h>
 #include <Common/NaNUtils.h>
 #include <Common/UInt128.h>
 
@@ -382,8 +383,8 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 {
-    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
-    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = minInt128();
+    static constexpr Int128 max_int128 = maxInt128();
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return static_cast<DB::Float64>(i) > f;
@@ -394,8 +395,8 @@ inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Float64 f, DB::Int128 i)
 {
-    static constexpr Int128 min_int128 = Int128(0x8000000000000000ll) << 64;
-    static constexpr Int128 max_int128 = (Int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr Int128 min_int128 = minInt128();
+    static constexpr Int128 max_int128 = maxInt128();
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return f > static_cast<DB::Float64>(i);
@@ -514,11 +515,32 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         return true;
     }
 
-    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
-    if (isNaN(value) && std::is_floating_point_v<To>)
+    if constexpr (std::is_floating_point_v<From> && std::is_floating_point_v<To>)
     {
-        result = value;
-        return true;
+        /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
+        if (isNaN(value))
+        {
+            result = value;
+            return true;
+        }
+
+        if (value == std::numeric_limits<From>::infinity())
+        {
+            result = std::numeric_limits<To>::infinity();
+            return true;
+        }
+
+        if (value == -std::numeric_limits<From>::infinity())
+        {
+            result = -std::numeric_limits<To>::infinity();
+            return true;
+        }
+    }
+
+    if (accurate::greaterOp(value, std::numeric_limits<To>::max())
+        || accurate::greaterOp(std::numeric_limits<To>::lowest(), value))
+    {
+        return false;
     }
 
     result = static_cast<To>(value);

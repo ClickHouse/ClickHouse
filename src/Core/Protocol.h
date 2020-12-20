@@ -146,6 +146,7 @@ namespace Protocol
                 "Ping",
                 "TablesStatusRequest",
                 "KeepAlive",
+                "Scalar",
             };
             return packet <= MAX
                 ? data[packet]

@@ -1,3 +1,8 @@
+---
+toc_priority: 38
+toc_title: GRANT
+---
+
 # GRANT
 
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
@@ -79,6 +84,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER RENAME COLUMN`
         - `ALTER INDEX`
             - `ALTER ORDER BY`
+            - `ALTER SAMPLE BY`			
             - `ALTER ADD INDEX`
             - `ALTER DROP INDEX`
             - `ALTER MATERIALIZE INDEX`
@@ -264,6 +270,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
         - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
             - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`			
             - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
             - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
             - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`

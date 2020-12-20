@@ -18,6 +18,7 @@
 #include <Poco/String.h>
 #include "registerAggregateFunctions.h"
 
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -56,11 +57,7 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::get(
-    const String & name,
-    const DataTypes & argument_types,
-    const Array & parameters,
-    AggregateFunctionProperties & out_properties,
-    int recursion_level) const
+    const String & name, const DataTypes & argument_types, const Array & parameters, AggregateFunctionProperties & out_properties) const
 {
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
@@ -81,11 +78,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             [](const auto & type) { return type->onlyNull(); });
 
         AggregateFunctionPtr nested_function = getImpl(
-            name, nested_types, nested_parameters, out_properties, has_null_arguments, recursion_level);
+            name, nested_types, nested_parameters, out_properties, has_null_arguments);
         return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false, recursion_level);
+    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
     if (!res)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
     return res;
@@ -97,8 +94,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    bool has_null_arguments,
-    int recursion_level) const
+    bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
     Value found;
@@ -108,13 +104,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     {
         found = it->second;
     }
-    /// Find by case-insensitive name.
-    /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
-    else if (recursion_level == 0)
-    {
-        if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
-            found = jt->second;
-    }
+
+    if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+        found = jt->second;
 
     if (found.creator)
     {
@@ -140,16 +132,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, nested_types, nested_parameters, out_properties, recursion_level + 1);
+        AggregateFunctionPtr nested_function = get(nested_name, nested_types, nested_parameters, out_properties);
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
+
+    String extra_info;
+    if (FunctionFactory::instance().hasNameOrAlias(name))
+        extra_info = ". There is an ordinary function with the same name, but aggregate function is expected here";
+
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception(fmt::format("Unknown aggregate function {}. Maybe you meant: {}", name, toString(hints)),
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                        "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
     else
-        throw Exception(fmt::format("Unknown aggregate function {}", name), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 
@@ -162,7 +159,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(
 }
 
 
-std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPropertiesImpl(const String & name_param, int recursion_level) const
+std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPropertiesImpl(const String & name_param) const
 {
     String name = getAliasToOrName(name_param);
     Value found;
@@ -172,13 +169,9 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     {
         found = it->second;
     }
-    /// Find by case-insensitive name.
-    /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
-    else if (recursion_level == 0)
-    {
-        if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
-            found = jt->second;
-    }
+
+    if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+        found = jt->second;
 
     if (found.creator)
         return found.properties;
@@ -195,7 +188,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
 
         /// NOTE: It's reasonable to also allow to transform properties by combinator.
-        return tryGetPropertiesImpl(nested_name, recursion_level + 1);
+        return tryGetPropertiesImpl(nested_name);
     }
 
     return {};
@@ -204,21 +197,21 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(const String & name) const
 {
-    return tryGetPropertiesImpl(name, 0);
+    return tryGetPropertiesImpl(name);
 }
 
 
-bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
+bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
     if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
     String name_lowercase = Poco::toLower(name);
-    if (recursion_level == 0 && (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase)))
+    if (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
-        return isAggregateFunctionName(name.substr(0, name.size() - combinator->getName().size()), recursion_level + 1);
+        return isAggregateFunctionName(name.substr(0, name.size() - combinator->getName().size()));
 
     return false;
 }

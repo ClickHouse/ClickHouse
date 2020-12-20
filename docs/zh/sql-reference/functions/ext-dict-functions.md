@@ -16,7 +16,7 @@
 
 `dictGetT('dict_name', 'attr_name', id)`
 
--   使用’id’键获取dict\_name字典中attr\_name属性的值。`dict_name`和`attr_name`是常量字符串。`id`必须是UInt64。
+-   使用’id’键获取dict_name字典中attr_name属性的值。`dict_name`和`attr_name`是常量字符串。`id`必须是UInt64。
     如果字典中没有`id`键，则返回字典描述中指定的默认值。
 
 ## dictGetTOrDefault {#ext_dict_functions-dictgettordefault}
@@ -29,13 +29,13 @@
 
 `dictIsIn ('dict_name', child_id, ancestor_id)`
 
--   对于’dict\_name’分层字典，查找’child\_id’键是否位于’ancestor\_id’内（或匹配’ancestor\_id’）。返回UInt8。
+-   对于’dict_name’分层字典，查找’child_id’键是否位于’ancestor_id’内（或匹配’ancestor_id’）。返回UInt8。
 
 ## 独裁主义 {#dictgethierarchy}
 
 `dictGetHierarchy('dict_name', id)`
 
--   对于’dict\_name’分层字典，返回从’id’开始并沿父元素链继续的字典键数组。返回Array（UInt64）
+-   对于’dict_name’分层字典，返回从’id’开始并沿父元素链继续的字典键数组。返回Array（UInt64）
 
 ## dictHas {#dicthas}
 

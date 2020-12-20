@@ -10,10 +10,23 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
+Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description)
+{
+    NameSet sort_keys;
+    for (const auto & key : sort_description)
+        sort_keys.insert(key.column_name);
+
+    /// Columns which are not from sorting key may not be constant anymore.
+    for (auto & column : header)
+        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
+            column.column = column.type->createColumn();
+
+    return header;
+}
 
 FillingTransform::FillingTransform(
         const Block & header_, const SortDescription & sort_description_)
-        : ISimpleTransform(header_, header_, true)
+        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
@@ -113,7 +126,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (generate_suffix)
     {
-        const auto & empty_columns = inputs.front().getHeader().getColumns();
+        const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
 

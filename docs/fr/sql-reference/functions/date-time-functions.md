@@ -163,7 +163,7 @@ Arrondit une date avec le temps au début de l " intervalle de dix minutes.
 
 Arrondit la date avec le temps jusqu'au début de l'intervalle de quinze minutes.
 
-## toStartOfInterval(time\_or\_data, intervalle x Unité \[, time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## toStartOfInterval(time_or_data, intervalle x Unité \[, time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 Ceci est une généralisation d'autres fonctions nommées `toStartOf*`. Exemple,
 `toStartOfInterval(t, INTERVAL 1 year)` renvoie la même chose que `toStartOfYear(t)`,

@@ -33,10 +33,10 @@ ClickHouse 收集的指标项：
 -   服务用于计算的资源占用的各种指标。
 -   关于查询处理的常见统计信息。
 
-可以在 [系统指标](system-tables/metrics.md#system_tables-metrics) ，[系统事件](system-tables/events.md#system_tables-events) 以及[系统异步指标](system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) 等系统表查看所有的指标项。
+可以在[系统指标](system-tables/metrics.md#system_tables-metrics)，[系统事件](system-tables/events.md#system_tables-events)以及[系统异步指标](system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics)等系统表查看所有的指标项。
 
-可以配置ClickHouse 往 [石墨](https://github.com/graphite-project)导入指标。 参考 [石墨部分](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 配置文件。在配置指标导出之前，需要参考Graphite[官方教程](https://graphite.readthedocs.io/en/latest/install.html)搭建服务。
+可以配置ClickHouse向[Graphite](https://github.com/graphite-project)推送监控信息并导入指标。参考[Graphite监控](server-configuration-parameters/settings.md#server_configuration_parameters-graphite)配置文件。在配置指标导出之前，需要参考[Graphite官方教程](https://graphite.readthedocs.io/en/latest/install.html)搭建Graphite服务。
 
-此外，您可以通过HTTP API监视服务器可用性。 将HTTP GET请求发送到 `/ping`。 如果服务器可用，它将以 `200 OK` 响应。
+此外，您可以通过HTTP API监视服务器可用性。将HTTP GET请求发送到`/ping`。如果服务器可用，它将以 `200 OK` 响应。
 
-要监视服务器集群的配置，应设置[max\_replica\_delay\_for\_distributed\_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries)参数并使用HTTP资源`/replicas_status`。 如果副本可用，并且不延迟在其他副本之后，则对`/replicas_status`的请求将返回200 OK。 如果副本滞后，请求将返回 `503 HTTP_SERVICE_UNAVAILABLE`，包括有关待办事项大小的信息。
+要监视服务器集群的配置，应设置[max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries)参数并使用HTTP资源`/replicas_status`。 如果副本可用，并且不延迟在其他副本之后，则对`/replicas_status`的请求将返回`200 OK`。 如果副本滞后，请求将返回`503 HTTP_SERVICE_UNAVAILABLE`，包括有关待办事项大小的信息。

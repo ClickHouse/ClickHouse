@@ -76,6 +76,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -85,6 +86,27 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
+        },
+        {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
+        },
+        {
+            "policy_name": "small_jbod_with_external_no_merges",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "volume_type": "JBOD",
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+            "prefer_not_to_merge": 1,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -94,6 +116,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -103,6 +126,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -112,6 +136,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "jbods_with_external",
@@ -121,6 +146,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -130,6 +156,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -139,6 +166,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.7,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -148,6 +176,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "default_disk_with_external",
@@ -157,6 +186,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -166,6 +196,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -175,6 +206,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "0",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -184,6 +216,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
         {
             "policy_name": "special_warning_policy",
@@ -193,6 +226,7 @@ def test_system_tables(start_cluster):
             "volume_type": "JBOD",
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
+            "prefer_not_to_merge": 0,
         },
     ]
 
@@ -252,7 +286,7 @@ def test_query_parser(start_cluster):
             node1.query(
                 "ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy='moving_jbod_with_external'")
     finally:
-        node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
+        node1.query("DROP TABLE IF EXISTS table_with_normal_policy SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -293,7 +327,7 @@ def test_alter_policy(start_cluster, name, engine):
             name=name)) == "jbods_with_external\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def get_random_string(length):
@@ -305,6 +339,9 @@ def get_used_disks_for_table(node, table_name):
         "select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(
             table_name)).strip().split('\n')
 
+
+def get_used_parts_for_table(node, table_name):
+    return node.query("SELECT name FROM system.parts WHERE table = '{}' AND active = 1 ORDER BY modification_time".format(table_name)).splitlines()
 
 def test_no_warning_about_zero_max_data_part_size(start_cluster):
     def get_log(node):
@@ -318,9 +355,7 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
             ORDER BY tuple()
             SETTINGS storage_policy='small_jbod_with_external'
         """)
-        node.query("""
-            DROP TABLE default.test_warning_table
-        """)
+        node.query("DROP TABLE default.test_warning_table SYNC")
         log = get_log(node)
         assert not re.search("Warning.*Volume.*special_warning_zero_volume", log)
         assert not re.search("Warning.*Volume.*special_warning_default_volume", log)
@@ -361,7 +396,7 @@ def test_round_robin(start_cluster, name, engine):
         assert used_disks[0] != used_disks[1]
         assert used_disks[2] == used_disks[0]
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -370,6 +405,8 @@ def test_round_robin(start_cluster, name, engine):
 ])
 def test_max_data_part_size(start_cluster, name, engine):
     try:
+        assert int(*node1.query("""SELECT max_data_part_size FROM system.storage_policies WHERE policy_name = 'jbods_with_external' AND volume_name = 'main'""").splitlines()) == 10*1024*1024
+
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
@@ -386,7 +423,7 @@ def test_max_data_part_size(start_cluster, name, engine):
         assert len(used_disks) == 1
         assert used_disks[0] == 'external'
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -403,7 +440,7 @@ def test_jbod_overflow(start_cluster, name, engine):
             SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
-        node1.query("SYSTEM STOP MERGES")
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -426,7 +463,7 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         assert used_disks[-1] == 'external'
 
-        node1.query("SYSTEM START MERGES")
+        node1.query(f"SYSTEM START MERGES {name}")
         time.sleep(1)
 
         node1.query("OPTIMIZE TABLE {} FINAL".format(name))
@@ -439,7 +476,7 @@ def test_jbod_overflow(start_cluster, name, engine):
         assert all(disk == 'external' for disk in disks_for_merges)
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {}".format(name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -455,6 +492,8 @@ def test_background_move(start_cluster, name, engine):
             ORDER BY tuple()
             SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
+
+        node1.query(f"SYSTEM STOP MERGES {name}")
 
         for i in range(5):
             data = []  # 5MB in total
@@ -484,8 +523,10 @@ def test_background_move(start_cluster, name, engine):
         # first (oldest) part was moved to external
         assert path.startswith("/external")
 
+        node1.query(f"SYSTEM START MERGES {name}")
+
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -572,7 +613,7 @@ def test_start_stop_moves(start_cluster, name, engine):
         assert used_disks[0] == 'external'
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def get_path_for_part_from_part_log(node, table, part_name):
@@ -660,7 +701,7 @@ def test_alter_move(start_cluster, name, engine):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "4\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("volume_or_disk", [
@@ -709,7 +750,7 @@ def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("volume_or_disk", [
@@ -753,7 +794,7 @@ def test_alter_double_move_partition(start_cluster, volume_or_disk):
                                                                                                      volume_or_disk=volume_or_disk))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def produce_alter_move(node, name):
@@ -832,12 +873,12 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             tasks.append(p.apply_async(optimize_table, (100,)))
 
         for task in tasks:
-            task.get(timeout=120)
+            task.get(timeout=240)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -890,7 +931,7 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
         assert node1.query("SELECT 1") == "1\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -921,7 +962,7 @@ def test_detach_attach(start_cluster, name, engine):
         assert node1.query("SELECT count() FROM {}".format(name)).strip() == "5"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -954,7 +995,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
         if node1.query("SELECT latest_fail_reason FROM system.mutations WHERE table = '{}'".format(name)) == "":
             assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
         else:  # mutation failed, let's try on another disk
-            print "Mutation failed"
+            print("Mutation failed")
             node1.query("OPTIMIZE TABLE {} FINAL".format(name))
             node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
             retry = 20
@@ -967,7 +1008,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -1025,7 +1066,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_simple_replication_and_moves(start_cluster):
@@ -1092,7 +1133,7 @@ def test_simple_replication_and_moves(start_cluster):
         set(disks2) == set(["jbod1", "external"])
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS replicated_table_for_moves")
+            node.query("DROP TABLE IF EXISTS replicated_table_for_moves SYNC")
 
 
 def test_download_appropriate_disk(start_cluster):
@@ -1114,7 +1155,7 @@ def test_download_appropriate_disk(start_cluster):
 
         for _ in range(10):
             try:
-                print "Syncing replica"
+                print("Syncing replica")
                 node2.query("SYSTEM SYNC REPLICA replicated_table_for_download")
                 break
             except:
@@ -1126,7 +1167,7 @@ def test_download_appropriate_disk(start_cluster):
 
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS replicated_table_for_download")
+            node.query("DROP TABLE IF EXISTS replicated_table_for_download SYNC")
 
 
 def test_rename(start_cluster):
@@ -1163,9 +1204,9 @@ def test_rename(start_cluster):
             node1.query("SELECT COUNT() FROM default.renaming_table1")
 
     finally:
-        node1.query("DROP TABLE IF EXISTS default.renaming_table")
-        node1.query("DROP TABLE IF EXISTS default.renaming_table1")
-        node1.query("DROP TABLE IF EXISTS test.renaming_table2")
+        node1.query("DROP TABLE IF EXISTS default.renaming_table SYNC")
+        node1.query("DROP TABLE IF EXISTS default.renaming_table1 SYNC")
+        node1.query("DROP TABLE IF EXISTS test.renaming_table2 SYNC")
 
 
 def test_freeze(start_cluster):
@@ -1199,7 +1240,7 @@ def test_freeze(start_cluster):
         node1.exec_in_container(["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"])
 
     finally:
-        node1.query("DROP TABLE IF EXISTS default.freezing_table")
+        node1.query("DROP TABLE IF EXISTS default.freezing_table SYNC")
         node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
 
 
@@ -1243,7 +1284,7 @@ def test_kill_while_insert(start_cluster):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+            node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
         except:
             """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
@@ -1263,8 +1304,7 @@ def test_move_while_merge(start_cluster):
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
 
-        parts = node1.query(
-            "SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        parts = get_used_parts_for_table(node1, name)
         assert len(parts) == 2
 
         def optimize():
@@ -1305,7 +1345,7 @@ def test_move_while_merge(start_cluster):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["2"]
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
 def test_move_across_policies_does_not_work(start_cluster):
@@ -1329,7 +1369,10 @@ def test_move_across_policies_does_not_work(start_cluster):
         """.format(name=name))
 
         node1.query("""INSERT INTO {name} VALUES (1)""".format(name=name))
-        node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        try:
+            node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+        except QueryRuntimeException:
+            """All parts of partition 'all' are already on disk 'jbod2'."""
 
         with pytest.raises(QueryRuntimeException, match='.*because disk does not belong to storage policy.*'):
             node1.query("""ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(name=name))
@@ -1343,5 +1386,162 @@ def test_move_across_policies_does_not_work(start_cluster):
         assert node1.query("""SELECT * FROM {name}""".format(name=name)).splitlines() == ["1"]
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
-        node1.query("DROP TABLE IF EXISTS {name}2".format(name=name))
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node1.query(f"DROP TABLE IF EXISTS {name}2 SYNC")
+
+
+def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
+    try:
+        node.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            TTL now()-1 TO VOLUME 'external'
+            SETTINGS storage_policy='{policy}'
+        """.format(name=name, policy=policy))
+
+        for i in range(parts):
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+
+        disks = get_used_disks_for_table(node, name)
+        assert set(disks) == {"external"}
+
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == parts_before_cmds
+
+        for cmd in cmds:
+            node.query(cmd)
+
+        node.query("""OPTIMIZE TABLE {name}""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == parts_after_cmds
+
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def _check_merges_are_working(node, storage_policy, volume, shall_work):
+    try:
+        name = "_check_merges_are_working_{storage_policy}_{volume}".format(storage_policy=storage_policy, volume=volume)
+
+        node.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY tuple()
+            SETTINGS storage_policy='{storage_policy}'
+        """.format(name=name, storage_policy=storage_policy))
+
+        created_parts = 24
+
+        for i in range(created_parts):
+            node.query("""INSERT INTO {name} VALUES ({n})""".format(name=name, n=i))
+            try:
+                node.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO VOLUME '{volume}' """.format(name=name, volume=volume))
+            except:
+                """Ignore 'nothing to move'."""
+
+        expected_disks = set(node.query("""
+            SELECT disks FROM system.storage_policies ARRAY JOIN disks WHERE volume_name = '{volume_name}'
+        """.format(volume_name=volume)).splitlines())
+
+        disks = get_used_disks_for_table(node, name)
+        assert set(disks) <= expected_disks
+
+        node.query("""OPTIMIZE TABLE {name} FINAL""".format(name=name))
+
+        parts = get_used_parts_for_table(node, name)
+        assert len(parts) == 1 if shall_work else created_parts
+
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def _get_prefer_not_to_merge_for_storage_policy(node, storage_policy):
+    return list(map(int, node.query("SELECT prefer_not_to_merge FROM system.storage_policies WHERE policy_name = '{}' ORDER BY volume_priority".format(storage_policy)).splitlines()))
+
+
+def test_simple_merge_tree_merges_are_disabled(start_cluster):
+    _check_merges_are_working(node1, "small_jbod_with_external_no_merges", "external", False)
+
+
+def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluster):
+    try:
+        name = "test_no_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external_no_merges"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy)
+            ], 2, 1)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+    finally:
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
+    try:
+        name = "test_no_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external_no_merges"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM START MERGES ON VOLUME {}.external".format(policy),
+                "SYSTEM RELOAD CONFIG"
+            ], 2, 1)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+    finally:
+        node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
+    try:
+        name = "test_yes_merges_in_configuration_allow_from_query_without_reload"
+        policy = "small_jbod_with_external"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
+                "INSERT INTO {name} VALUES (2)".format(name=name)
+            ], 1, 2)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+    finally:
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
+    try:
+        name = "test_yes_merges_in_configuration_allow_from_query_with_reload"
+        policy = "small_jbod_with_external"
+        node1.restart_clickhouse(kill=True)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 0]
+        _check_merges_are_working(node1, policy, "external", True)
+
+        _insert_merge_execute(node1, name, policy, 2, [
+                "SYSTEM STOP MERGES ON VOLUME {}.external".format(policy),
+                "INSERT INTO {name} VALUES (2)".format(name=name),
+                "SYSTEM RELOAD CONFIG"
+            ], 1, 2)
+        assert _get_prefer_not_to_merge_for_storage_policy(node1, policy) == [0, 1]
+        _check_merges_are_working(node1, policy, "external", False)
+
+    finally:
+        node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))

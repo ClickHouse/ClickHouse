@@ -372,7 +372,7 @@ static inline char * writeLeadingMinus(char * pos)
 
 static inline char * writeSIntText(int128_t x, char * pos)
 {
-    static const int128_t min_int128 = int128_t(0x8000000000000000ll) << 64;
+    static constexpr int128_t min_int128 = uint128_t(1) << 127;
 
     if (unlikely(x == min_int128))
     {

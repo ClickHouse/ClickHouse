@@ -1,3 +1,8 @@
+---
+toc_priority: 43
+toc_title: jdbc
+---
+
 # jdbc {#jdbc}
 
 `jdbc(jdbc_connection_uri, schema, table)` - возвращает таблицу, соединение с которой происходит через JDBC-драйвер.

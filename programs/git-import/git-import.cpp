@@ -205,13 +205,13 @@ struct Commit
 
     void writeTextWithoutNewline(WriteBuffer & out) const
     {
-        writeText(hash, out);
+        writeEscapedString(hash, out);
         writeChar('\t', out);
-        writeText(author, out);
+        writeEscapedString(author, out);
         writeChar('\t', out);
         writeText(time, out);
         writeChar('\t', out);
-        writeText(message, out);
+        writeEscapedString(message, out);
         writeChar('\t', out);
         writeText(files_added, out);
         writeChar('\t', out);
@@ -273,11 +273,11 @@ struct FileChange
     {
         writeText(change_type, out);
         writeChar('\t', out);
-        writeText(path, out);
+        writeEscapedString(path, out);
         writeChar('\t', out);
-        writeText(old_path, out);
+        writeEscapedString(old_path, out);
         writeChar('\t', out);
-        writeText(file_extension, out);
+        writeEscapedString(file_extension, out);
         writeChar('\t', out);
         writeText(lines_added, out);
         writeChar('\t', out);
@@ -399,17 +399,17 @@ struct LineChange
         writeChar('\t', out);
         writeText(hunk_lines_deleted, out);
         writeChar('\t', out);
-        writeText(hunk_context, out);
+        writeEscapedString(hunk_context, out);
         writeChar('\t', out);
-        writeText(line, out);
+        writeEscapedString(line, out);
         writeChar('\t', out);
         writeText(indent, out);
         writeChar('\t', out);
         writeText(line_type, out);
         writeChar('\t', out);
-        writeText(prev_commit_hash, out);
+        writeEscapedString(prev_commit_hash, out);
         writeChar('\t', out);
-        writeText(prev_author, out);
+        writeEscapedString(prev_author, out);
         writeChar('\t', out);
         writeText(prev_time, out);
     }
@@ -680,7 +680,7 @@ void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & fil
     for (auto & elem : file_changes)
     {
         auto & file = elem.second.file_change;
-        if (file.path != file.old_path)
+        if (!file.old_path.empty() && file.path != file.old_path)
             snapshot[file.path] = snapshot[file.old_path];
     }
 
