@@ -2326,4 +2326,63 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## union_default_mode {#union-default-mode}
 
+Устанавливает особый режим объединения результатов `SELECT` запросов, используя выражение [UNION](../../sql-reference/statements/select/union-all.md).
+
+Возможные значения:
+
+-   `'DISTINCT'` — ClickHouse выводит строки в результате объединения результатов запросов, удаляя повторяющиеся строки.
+-   `'ALL'` — ClickHouse выводит все строки в результате объединения результатов запросов, включая повторяющиеся строки.
+-   `''` — Clickhouse генерирует исключение при использовании с `UNION`.
+
+Значение по умолчанию: `'DISTINCT'`.
+
+**Пример использования 'DISTINCT' в качестве значения настройки**
+
+Запрос:
+
+```sql
+SET union_default_mode = 'DISTINCT';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+Результат:
+
+```text
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+**Пример использования 'ALL' в качестве значения настройки**
+
+Запрос:
+
+```sql
+SET union_default_mode = 'ALL';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+Результат:
+
+```text
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -25,16 +25,16 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Запросы, которые являются частью `UNION ALL` не могут быть заключен в круглые скобки. [ORDER BY](order-by.md) и [LIMIT](limit.md) применяются к отдельным запросам, а не к конечному результату. Если вам нужно применить преобразование к конечному результату, вы можете разместить все объединенные с помощью `UNION ALL` запросы в подзапрос в секции [FROM](from.md).
 
-## Ограничения {#limitations}
+# Секция UNION DISTINCT {#union-distinct-clause}
 
-Поддерживается только `UNION ALL`. Обычный `UNION` (`UNION DISTINCT`) не поддерживается. Если вам это нужно `UNION DISTINCT`, вы можете написать `SELECT DISTINCT` из подзапроса, содержащего `UNION ALL`.
+Разница между `UNION ALL` и `UNION DISTINCT` в том, что `UNION DISTINCT` выполняет явное преобразование для результата объединения. Это равнозначно выражению `SELECT DISTINCT` из подзапроса, содержащего `UNION ALL`.
 
 # Секция UNION {#union-clause}
 
-По умолчанию, `UNION` ведет себя так же, как и `UNION DISTINCT`. Но вы можете указать режим объединения с помощью настройки [union_default_mode](../../../operations/settings/settings.md#union-default-mode), значениями которой могут быть `ALL`, `DISTINCT` или пустая строка. Однако, если вы используете `UNION` с настройкой `union_default_mode`, значением которой является пустая строка, то сгенерируется исключение.
+По умолчанию, `UNION` ведет себя так же, как и `UNION DISTINCT`. Но вы можете указать особый режим объединения с помощью настройки [union_default_mode](../../../operations/settings/settings.md#union-default-mode), значениями которой могут быть `ALL`, `DISTINCT` или пустая строка. Однако если вы используете `UNION` с настройкой `union_default_mode`, значением которой является пустая строка, то будет сгенерировано исключение.
 
 ## Детали реализации {#implementation-details}
 
-Запросы, которые являются частью `UNION ALL` выполняются параллельно, и их результаты могут быть смешаны вместе.
+Запросы, которые являются частью `UNION ALL`, выполняются параллельно, и их результаты могут быть смешаны вместе.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/union-all/) <!-- hide -->
