@@ -29,6 +29,9 @@ xfails = {
 @TestFeature
 @Name("external user directory")
 @ArgumentParser(argparser)
+@Specifications(
+    SRS_009_ClickHouse_LDAP_External_User_Directory
+)
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Authentication("1.0")
 )

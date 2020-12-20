@@ -9,7 +9,7 @@
 #include "00825_protobuf_format_syntax2.pb.h"
 
 
-void writeInsertDataQueryForInputTest(std::stringstream & delimited_messages, const std::string & table_name, const std::string & format_schema, std::ostream & out)
+void writeInsertDataQueryForInputTest(std::stringstream & delimited_messages, const std::string & table_name, const std::string & format_schema, std::ostream & out)    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 {
     out << "echo -ne '";
     std::string bytes = delimited_messages.str();
@@ -27,7 +27,7 @@ void writeInsertDataQueryForInputTest(std::stringstream & delimited_messages, co
 
 void writeInsertDataQueriesForInputTest(std::ostream & out)
 {
-    std::stringstream ss;
+    std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     {
         Person person;
         person.set_uuid("a7522158-3d41-4b77-ad69-6c598ee55c49");

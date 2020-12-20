@@ -10,7 +10,7 @@ ${CLICKHOUSE_CLIENT} -q "select 1 format Null" "--query_id=$query_id"
 
 ${CLICKHOUSE_CURL} \
     --header "X-ClickHouse-Query-Id: $query_id" \
-    "http://localhost:8123/" \
+    $CLICKHOUSE_URL \
     --get \
     --data-urlencode "query=select 1 format Null"
 

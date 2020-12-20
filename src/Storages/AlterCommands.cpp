@@ -22,12 +22,11 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-
-
-#include <Parsers/queryToString.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -794,6 +793,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_copy = metadata;
+
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(metadata_copy, context);
@@ -824,6 +824,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
@@ -831,7 +832,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
@@ -1117,7 +1118,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     data_type_ptr = command.data_type;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
@@ -1133,7 +1134,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                     continue;
 
                 const auto & final_column_name = column_name;
-                const auto tmp_column_name = final_column_name + "_tmp";
+                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
                 const auto data_type_ptr = command.data_type;
 
                 default_expr_list->children.emplace_back(setAlias(

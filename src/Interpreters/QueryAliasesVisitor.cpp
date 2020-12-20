@@ -1,6 +1,3 @@
-#include <ostream>
-#include <sstream>
-
 #include <Common/typeid_cast.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -20,12 +17,12 @@ namespace ErrorCodes
 
 static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
 {
-    std::stringstream message;
-    message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":" << std::endl;
+    WriteBufferFromOwnString message;
+    message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
     formatAST(*ast, message, false, true);
-    message << std::endl << "and" << std::endl;
+    message << "\nand\n";
     formatAST(*prev_ast, message, false, true);
-    message << std::endl;
+    message << '\n';
     return message.str();
 }
 

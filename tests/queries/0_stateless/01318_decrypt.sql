@@ -1,5 +1,5 @@
 --- aes_decrypt_mysql(string, key, block_mode[, init_vector, AAD])
--- The MySQL-compatitable encryption, only ecb, cbc, cfb1, cfb8, cfb128 and ofb modes are supported,
+-- The MySQL-compatitable encryption, only ecb, cbc, cfb128 and ofb modes are supported,
 -- just like for MySQL
 -- https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt
 -- https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_block_encryption_mode
@@ -51,7 +51,6 @@ SELECT decrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad
 -- Invalid ciphertext should cause an error or produce garbage
 SELECT ignore(decrypt('aes-128-ecb', 'hello there', '1111111111111111')); -- {serverError 454} 1
 SELECT ignore(decrypt('aes-128-cbc', 'hello there', '1111111111111111')); -- {serverError 454} 2
-SELECT ignore(decrypt('aes-128-cfb1', 'hello there', '1111111111111111')); -- GIGO
 SELECT ignore(decrypt('aes-128-ofb', 'hello there', '1111111111111111')); -- GIGO
 SELECT ignore(decrypt('aes-128-ctr', 'hello there', '1111111111111111')); -- GIGO
 SELECT decrypt('aes-128-ctr', '', '1111111111111111') == '';
@@ -79,14 +78,6 @@ SELECT 'aes-128-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, in
 SELECT 'aes-192-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 SELECT 'aes-256-cbc' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 
-SELECT 'aes-128-cfb1' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-SELECT 'aes-192-cfb1' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-SELECT 'aes-256-cfb1' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-
-SELECT 'aes-128-cfb8' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-SELECT 'aes-192-cfb8' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-SELECT 'aes-256-cfb8' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
-
 SELECT 'aes-128-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 SELECT 'aes-192-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
 SELECT 'aes-256-cfb128' as mode, aes_decrypt_mysql(mode, aes_encrypt_mysql(mode, input, key, iv), key, iv) == input FROM encryption_test;
@@ -103,14 +94,6 @@ SELECT 'Strict mode without key folding and proper key and iv lengths checks.';
 SELECT 'aes-128-cbc' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
 SELECT 'aes-192-cbc' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;
 SELECT 'aes-256-cbc' as mode, decrypt(mode, encrypt(mode, input, key32, iv), key32, iv) == input FROM encryption_test;
-
-SELECT 'aes-128-cfb1' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
-SELECT 'aes-192-cfb1' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;
-SELECT 'aes-256-cfb1' as mode, decrypt(mode, encrypt(mode, input, key32, iv), key32, iv) == input FROM encryption_test;
-
-SELECT 'aes-128-cfb8' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
-SELECT 'aes-192-cfb8' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;
-SELECT 'aes-256-cfb8' as mode, decrypt(mode, encrypt(mode, input, key32, iv), key32, iv) == input FROM encryption_test;
 
 SELECT 'aes-128-cfb128' as mode, decrypt(mode, encrypt(mode, input, key16, iv), key16, iv) == input FROM encryption_test;
 SELECT 'aes-192-cfb128' as mode, decrypt(mode, encrypt(mode, input, key24, iv), key24, iv) == input FROM encryption_test;
@@ -150,3 +133,5 @@ WITH
 SELECT
     hex(decrypt('aes-256-gcm', concat(ciphertext, tag), key, iv, aad)) as plaintext_actual,
     plaintext_actual = hex(plaintext);
+
+DROP TABLE encryption_test;
