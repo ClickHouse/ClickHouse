@@ -9,6 +9,7 @@ namespace DB
 
 class Context;
 class AccessRightsElements;
+class DDLGuard;
 
 /// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
 struct UniqueTableName
@@ -53,6 +54,7 @@ class InterpreterRenameQuery : public IInterpreter
 public:
     InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
     BlockIO execute() override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);

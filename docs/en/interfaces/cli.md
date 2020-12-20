@@ -57,7 +57,7 @@ The command line is based on ‘replxx’ (similar to ‘readline’). In other 
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
 
-To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+To exit the client, press Ctrl+D, or enter one of the following instead of a query: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
 When processing a query, the client shows:
 
@@ -113,7 +113,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
--   `--query, -q` – The query to process when using non-interactive mode.
+-   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
+-   `--queries-file, -qf` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
@@ -123,6 +124,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
 -   `--secure` – If specified, will connect to server over secure connection.
+-   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
 ### Configuration Files {#configuration_files}

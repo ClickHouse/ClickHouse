@@ -117,8 +117,8 @@ You can compile packages and install them or use programs without installing pac
 
 You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-      /opt/clickhouse/data/default/
-      /opt/clickhouse/metadata/default/
+      /var/lib/clickhouse/data/default/
+      /var/lib/clickhouse/metadata/default/
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 

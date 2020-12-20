@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 
 namespace DB
@@ -61,6 +62,9 @@ template <typename T>
 decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
 {
     std::exception_ptr exception;
+
+    if (max_tries == 0)
+        throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
 
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
@@ -162,7 +166,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
     if (!missing_partitions.empty())
     {
-        std::stringstream ss;
+        WriteBufferFromOwnString ss;
         for (const String & missing_partition : missing_partitions)
             ss << " " << missing_partition;
 
@@ -605,7 +609,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         settings_push.replication_alter_partitions_sync = 2;
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
-                                  " ATTACH PARTITION " + partition_name +
+                                  ((partition_name == "'all'") ? " ATTACH PARTITION ID " : " ATTACH PARTITION ") + partition_name +
                                   " FROM " + getQuotedTable(helping_table);
 
         LOG_DEBUG(log, "Executing ALTER query: {}", query_alter_ast_string);
@@ -636,7 +640,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
             if (!task_table.isReplicatedTable())
             {
                 query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
-                                                " PARTITION " + partition_name + " DEDUPLICATE;";
+                                                ((partition_name == "'all'") ? " PARTITION ID " : " PARTITION ") + partition_name + " DEDUPLICATE;";
 
                 LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_alter_ast_string);
 
@@ -807,7 +811,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
         String query = "ALTER TABLE " + getQuotedTable(helping_table);
-        query += " DROP PARTITION " + task_partition.name + "";
+        query += ((task_partition.name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ")  + task_partition.name + "";
 
         /// TODO: use this statement after servers will be updated up to 1.1.54310
         // query += " DROP PARTITION ID '" + task_partition.name + "'";
@@ -1567,7 +1571,7 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
         DatabaseAndTableName original_table = task_table.table_push;
         DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first, original_table.second + "_piece_" + toString(current_piece_number));
 
-        String query = "ALTER TABLE " + getQuotedTable(helping_table) + " DROP PARTITION " + partition_name;
+        String query = "ALTER TABLE " + getQuotedTable(helping_table) + ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") + partition_name;
 
         const ClusterPtr & cluster_push = task_table.cluster_push;
         Settings settings_push = task_cluster->settings_push;
@@ -1585,11 +1589,14 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
     LOG_DEBUG(log, "All helping tables dropped partition {}", partition_name);
 }
 
-String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
 {
+    Context remote_context(context);
+    remote_context.setSettings(settings);
+
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
     Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
-            connection, query, InterpreterShowCreateQuery::getSampleBlock(), context, settings));
+            connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
 
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1601,7 +1608,7 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
     String create_query_pull_str = getRemoteCreateTable(
             task_shard.task_table.table_pull,
             *connection_entry,
-            &task_cluster->settings_pull);
+            task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
     const auto & settings = context.getSettingsRef();
@@ -1670,14 +1677,24 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
 
 std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
+    std::set<String> res;
+
     createShardInternalTables(timeouts, task_shard, false);
 
     TaskTable & task_table = task_shard.task_table;
 
+    const String & partition_name = queryToString(task_table.engine_push_partition_key_ast);
+
+    if (partition_name == "'all'")
+    {
+        res.emplace("'all'");
+        return res;
+    }
+
     String query;
     {
         WriteBufferFromOwnString wb;
-        wb << "SELECT DISTINCT " << queryToString(task_table.engine_push_partition_key_ast) << " AS partition FROM"
+        wb << "SELECT DISTINCT " << partition_name << " AS partition FROM"
            << " " << getQuotedTable(task_shard.table_read_shard) << " ORDER BY partition DESC";
         query = wb.str();
     }
@@ -1692,7 +1709,6 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     local_context.setSettings(task_cluster->settings_pull);
     Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().getInputStream());
 
-    std::set<String> res;
     if (block)
     {
         ColumnWithTypeAndName & column = block.getByPosition(0);
@@ -1803,7 +1819,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)
         max_successful_executions_per_shard = 0;
 
-    std::atomic<size_t> origin_replicas_number;
+    std::atomic<size_t> origin_replicas_number = 0;
 
     /// We need to execute query on one replica at least
     auto do_for_shard = [&] (UInt64 shard_index, Settings shard_settings)
@@ -1844,6 +1860,9 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(shard_settings).getSaturated(shard_settings.max_execution_time);
             auto connections = shard.pool->getMany(timeouts, &shard_settings, pool_mode);
 
+            Context shard_context(context);
+            shard_context.setSettings(shard_settings);
+
             for (auto & connection : connections)
             {
                 if (connection.isNull())
@@ -1852,7 +1871,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 try
                 {
                     /// CREATE TABLE and DROP PARTITION queries return empty block
-                    RemoteBlockInputStream stream{*connection, query, Block{}, context, &shard_settings};
+                    RemoteBlockInputStream stream{*connection, query, Block{}, shard_context};
                     NullBlockOutputStream output{Block{}};
                     copyData(stream, output);
 

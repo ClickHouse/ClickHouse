@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
 #include <ext/range.h>
+#include <IO/Operators.h>
 
 
 namespace DB

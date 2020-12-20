@@ -25,12 +25,13 @@ RUN apt-get update \
             python3 \
             python3-dev \
             python3-pip \
+            python3-setuptools \
             rsync \
             tree \
             tzdata \
             vim \
             wget \
-    && pip3 --no-cache-dir install clickhouse_driver scipy \
+    && pip3 --no-cache-dir install 'git+https://github.com/mymarilyn/clickhouse-driver.git' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
@@ -52,4 +53,3 @@ COPY * /
 CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\\(.*\\)nodes.*$/\\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
 # docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
-

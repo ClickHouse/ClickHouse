@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <query>select arrayUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
     <query>select arrayDistinct(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
     <query>select arrayEnumerateUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>

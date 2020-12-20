@@ -12,7 +12,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register_functions.h>
+#include <Common/tests/gtest_global_register.h>
+#include <Poco/String.h>
+
 
 using namespace DB;
 
@@ -180,5 +182,16 @@ TEST(MySQLCreateRewritten, RewrittenQueryWithPrimaryKey)
         "CREATE TABLE `test_database`.`test_table_1` (`key_1` BIGINT NOT NULL, key_2 INT NOT NULL, PRIMARY KEY (`key_1`, `key_2`)) ENGINE=InnoDB DEFAULT CHARSET=utf8", context_holder.context)),
         "CREATE TABLE test_database.test_table_1 (`key_1` Int64, `key_2` Int32, `_sign` Int8() MATERIALIZED 1, `_version` UInt64() MATERIALIZED 1) ENGINE = "
         "ReplacingMergeTree(_version) PARTITION BY intDiv(key_2, 4294967) ORDER BY (key_1, key_2)");
+}
+
+TEST(MySQLCreateRewritten, RewrittenQueryWithPrefixKey)
+{
+    tryRegisterFunctions();
+    const auto & context_holder = getContext();
+
+    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
+        "CREATE TABLE `test_database`.`test_table_1` (`key` int NOT NULL PRIMARY KEY, `prefix_key` varchar(200) NOT NULL, KEY prefix_key_index(prefix_key(2))) ENGINE=InnoDB DEFAULT CHARSET=utf8", context_holder.context)),
+        "CREATE TABLE test_database.test_table_1 (`key` Int32, `prefix_key` String, `_sign` Int8() MATERIALIZED 1, `_version` UInt64() MATERIALIZED 1) ENGINE = "
+        "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY (key, prefix_key)");
 }
 

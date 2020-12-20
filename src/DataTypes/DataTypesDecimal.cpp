@@ -29,9 +29,7 @@ namespace ErrorCodes
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
-    std::stringstream ss;
-    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
-    return ss.str();
+    return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
 
