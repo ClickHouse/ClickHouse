@@ -23,13 +23,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <ext/range.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
 
 namespace DB
 {
@@ -251,11 +251,26 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
+    materialized_columns.reserve(num_key_columns);
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        checkTypesEqual(i, block.safeGetByPosition(i).type);
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        ColumnPtr result;
+
+        const auto & column_before_cast = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column_to_cast
+            = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+
+        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        {
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
+        }
+        else
+        {
+            result = castColumnAccurate(column_to_cast, data_types[i]);
+        }
+
+        materialized_columns.emplace_back() = result;
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
