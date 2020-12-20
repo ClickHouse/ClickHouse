@@ -356,11 +356,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.attribute_names.push_back("clickhouse.thread_id");
         span.attribute_values.push_back(thread_id);
 
-#ifndef NDEBUG
-        span.attribute_names.push_back("clickhouse.end.stacktrace");
-        span.attribute_values.push_back(StackTrace().toString());
-#endif
-
         opentelemetry_span_log->add(span);
     }
 
@@ -430,6 +425,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
             elem.master_thread_id = thread_group->master_thread_id;
             elem.query = thread_group->query;
+            elem.normalized_query_hash = thread_group->normalized_query_hash;
         }
     }
 
