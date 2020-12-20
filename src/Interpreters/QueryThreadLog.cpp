@@ -40,6 +40,7 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),        "master_thread_id"},
         {std::make_shared<DataTypeString>(),        "current_database"},
         {std::make_shared<DataTypeString>(),        "query"},
+        {std::make_shared<DataTypeUInt64>(),        "normalized_query_hash"},
 
         {std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
         {std::make_shared<DataTypeString>(),        "user"},
@@ -95,6 +96,7 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insert(normalized_query_hash);
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 

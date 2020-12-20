@@ -37,7 +37,7 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers(100000)</value>
+               <value>numbers(2000000)</value>
            </values>
         </substitution>
         <substitution>
