@@ -37,7 +37,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
 
     ASTs & args = args_func.at(0)->children;
 
-    const size_t max_args = is_cluster_function ? 3 : 5;
+    const size_t max_args = is_cluster_function ? 4 : 5;
     if (args.size() < 2 || args.size() > max_args)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -108,6 +108,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
                 ++arg_num;
             }
         }
+    }
+
+    /// Cluster function may have sharding key for insert
+    if (is_cluster_function && arg_num < args.size())
+    {
+        sharding_key = args[arg_num];
+        ++arg_num;
     }
 
     /// Username and password parameters are prohibited in cluster version of the function
@@ -208,7 +215,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             remote_table_function_ptr,
             String{},
             context,
-            ASTPtr{},
+            sharding_key,
             String{},
             String{},
             false,
@@ -221,7 +228,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             remote_table_id.table_name,
             String{},
             context,
-            ASTPtr{},
+            sharding_key,
             String{},
             String{},
             false,
