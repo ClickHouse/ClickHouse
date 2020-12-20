@@ -8,6 +8,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -19,10 +21,13 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#include <Storages/SelectQueryInfo.h>
+
 namespace DB
 {
 
-StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_)
+StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
@@ -41,7 +46,7 @@ Pipe StorageMaterializeMySQL::read(
     unsigned int num_streams)
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
 
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
@@ -102,7 +107,7 @@ Pipe StorageMaterializeMySQL::read(
 NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
 {
     /// If the background synchronization thread has exception.
-    database->rethrowExceptionIfNeed();
+    rethrowSyncExceptionIfNeed(database);
     return nested_storage->getVirtuals();
 }
 
