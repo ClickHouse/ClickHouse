@@ -48,7 +48,8 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const auto & attribute = getAttribute(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
-
+    /// TODO: Check if const will work as expected
+    
     auto size = key_columns.front()->size();
 
     auto type_call = [&](const auto &dictionary_attribute_type)
@@ -433,8 +434,8 @@ ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingTyp
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributType = typename Type::AttributeType;
-        createAttributeImpl<AttributType>(attr, null_value);
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
     };
 
     callOnDictionaryAttributeType(type, type_call);

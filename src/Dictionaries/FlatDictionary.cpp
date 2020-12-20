@@ -116,12 +116,12 @@ ColumnPtr FlatDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-
-    const auto& ids = getColumnDataAsIdendifiers(*key_columns.front(), backup_storage);
-
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    
     const auto & attribute = getAttribute(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -266,7 +266,7 @@ ColumnUInt8::Ptr FlatDictionary::has(const Columns & key_columns, const DataType
     assert(!key_columns.empty());
 
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsIdendifiers(*key_columns.front(), backup_storage);
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
     auto result = ColumnUInt8::create(ext::size(ids));
     auto& out = result->getData();
@@ -472,8 +472,8 @@ FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const Attribut
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributType = typename Type::AttributeType;
-        createAttributeImpl<AttributType>(attr, null_value);
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
     };
 
     callOnDictionaryAttributeType(type, type_call);
@@ -593,29 +593,6 @@ const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
-}
-
-const PaddedPODArray<FlatDictionary::Key> & FlatDictionary::getColumnDataAsIdendifiers(const IColumn & column, PaddedPODArray<Key> & backup_storage) const
-{
-
-    if (const auto *id_col = checkAndGetColumn<ColumnUInt64>(&column))
-    {
-        return id_col->getData();
-    }
-    else if (const auto *id_col_const = checkAndGetColumnConst<ColumnUInt64>(&column))
-    {
-        const auto full_column = id_col_const->convertToFullColumnIfConst();
-        const auto size = full_column->size();
-        backup_storage.resize(size);
-        for (size_t i = 0; i < size; ++i)
-            backup_storage[i] = full_column->getUInt(i);
-
-        return backup_storage;
-    }
-    else 
-        throw Exception{"Identifier column must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
-
-    return backup_storage;
 }
 
 PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const

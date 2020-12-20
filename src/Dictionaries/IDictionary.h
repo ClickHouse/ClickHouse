@@ -155,6 +155,7 @@ struct IDictionary : IDictionaryBase
 
     virtual void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const = 0;
 
+    /// TODO: Rewrite
     /// Methods for hierarchy.
 
     virtual void isInVectorVector(
@@ -196,4 +197,34 @@ inline void checkAttributeType(const IDictionaryBase * dictionary, const std::st
                         attribute_name, toString(attribute_type), toString(to)};
 }
 
+template <typename T>
+static const PaddedPODArray<T> &
+getColumnDataAsPaddedPODArray(const IDictionaryBase * dictionary, const ColumnPtr column, PaddedPODArray<T> & backup_storage)
+{
+    bool is_const_column = isColumnConst(*column);
+    auto full_column = column->convertToFullColumnIfConst();
+    auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
+
+    if (!vector_col)
+    {
+        throw Exception{
+            ErrorCodes::TYPE_MISMATCH,
+            "{}: type mismatch: column has wrong type expected {}",
+            dictionary->getDictionaryID().getNameForLogs(),
+            "" /* TODO: Type name*/};
+    }
+
+    if (is_const_column)
+    {
+        // With type conversion and const columns we need to use backup storage here
+        auto & data = vector_col->getData();
+        backup_storage.assign(data);
+
+        return backup_storage;
+    }
+    else
+    {
+        return vector_col->getData();
+    }
+}
 }
