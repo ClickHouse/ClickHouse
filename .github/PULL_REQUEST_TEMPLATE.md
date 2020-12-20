@@ -1,15 +1,17 @@
-I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla/?lang=en
+Before contributing to Clickhouse,I hereby agree to the terms and conditions of the CLA available at:-
+https://yandex.ru/legal/cla/?lang=en
 
-Changelog category (leave one):
-- New Feature
-- Bug Fix
-- Improvement
-- Performance Improvement
-- Backward Incompatible Change
-- Build/Testing/Packaging Improvement
-- Documentation (changelog entry is not required)
-- Other
-- Not for changelog (changelog entry is not required)
+
+*The Changelog category for level one are as follows:
+-> New Feature
+-> Bug Fix
+-> Improvement
+-> Performance Improvement
+-> Backward Incompatible Change
+-> Build/Testing/Packaging Improvement
+-> Documentation (changelog entry is not required)
+-> Other
+-> Not for changelog (changelog entry is not required)
 
 
 Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
@@ -26,4 +28,4 @@ By adding documentation, you'll allow users to try your new feature immediately,
 If you are doing this for the first time, it's recommended to read the lightweight [Contributing to ClickHouse Documentation](https://github.com/ClickHouse/ClickHouse/tree/master/docs/README.md) guide first.
 
 
-Information about CI checks: https://clickhouse.tech/docs/en/development/continuous-integration/
+For more information about CI checks, refer to : https://clickhouse.tech/docs/en/development/continuous-integration/
