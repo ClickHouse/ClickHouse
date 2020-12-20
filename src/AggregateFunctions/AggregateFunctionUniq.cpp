@@ -2,6 +2,11 @@
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
+
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -10,6 +15,15 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include "registerAggregateFunctions.h"
+
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -132,6 +146,43 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     factory.registerFunction("uniqExact",
         {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
+}
+
+template <typename T, typename Data>
+void AggregateFunctionUniq<T, Data>::mergeFinalized(
+     AggregateDescriptions & merge_aggregates,
+     const Block & header_before_aggregation,
+     const NamesAndTypesList & aggregation_keys,
+     const Names & selected_columns,
+     const String & aggregation_column_name)
+{
+    ColumnNumbers keys;
+    for (const auto & key : aggregation_keys)
+        keys.push_back(header_before_aggregation.getPositionByName(key.name));
+    int distinct_cnt_col_pos = -1;
+    int col_size = selected_columns.size();
+    for (int i=0; i<col_size; i++) {
+        if (selected_columns[i]==aggregation_column_name) {
+            distinct_cnt_col_pos = i;
+            break;
+        }
+    }
+
+    if (distinct_cnt_col_pos == -1) {
+        throw Exception("the aggregation column name " + aggregation_column_name +
+                " is not in the list of selected columns.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    DataTypes types;
+    ColumnWithTypeAndName distinct_cnt_col = header_before_aggregation.getByPosition(distinct_cnt_col_pos);
+    types.push_back(distinct_cnt_col.type);
+    ColumnNumbers args;
+    args.push_back(distinct_cnt_col_pos);
+    auto agg_func = std::make_shared<AggregateFunctionSum<UInt64, UInt64, AggregateFunctionSumData<UInt64>, AggregateFunctionTypeSum>>(types);
+    Array agg_func_params;
+    Names arg_names;
+    AggregateDescription merge_aggregate{agg_func, agg_func_params, args, arg_names, distinct_cnt_col.name};
+    merge_aggregates.push_back(merge_aggregate);
 }
 
 }

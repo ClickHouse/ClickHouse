@@ -24,7 +24,9 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
+struct AggregateDescription;
 
+using AggregateDescriptions = std::vector<AggregateDescription>;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
@@ -194,6 +196,23 @@ public:
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
+
+    /** Indicates whether the finalized result of this aggregation function
+     *  on multiple servers can be merged in initiator node for distributed query.
+     */
+    virtual bool canMergeFinalized() { return false; }
+
+    /** Add step to merge the finalized result of this aggregation function
+     *  on initiator node.
+     */
+    virtual void mergeFinalized(AggregateDescriptions & /*merge_aggregates*/,
+                                const Block & /*header_before_aggregation*/,
+                                const NamesAndTypesList & /*aggregation_keys*/,
+                                const Names & /*selected_columns*/,
+                                const String & /*aggregation_column_name*/)
+    {
+        throw Exception("mergeFinalized is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
 protected:
     DataTypes argument_types;

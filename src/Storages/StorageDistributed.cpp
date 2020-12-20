@@ -456,6 +456,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             return QueryProcessingStage::Complete;
     }
 
+    if (settings.distributed_group_by_merge_finalized)
+    {
+        return QueryProcessingStage::Complete;
+    }
+
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
     if (to_stage == QueryProcessingStage::WithMergeableState)

@@ -1075,6 +1075,32 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             if (!to_aggregation_stage)
                 executeOffset(query_plan);
         }
+        else if (from_stage == QueryProcessingStage::Complete
+          && !settings.distributed_group_by_no_merge
+          && settings.distributed_group_by_merge_finalized
+          && expressions.need_aggregate) {
+            int agg_size = query_analyzer->aggregates().size();
+            bool shouldMergeFinalized = true;
+            for (int i=0; i<agg_size; i++) {
+                if (!query_analyzer->aggregates()[i].function->canMergeFinalized()) {
+                    shouldMergeFinalized = false;
+                    break;
+                }
+            }
+            if (shouldMergeFinalized) {
+                AggregateDescriptions mergeAggregates;
+                for (int i=0; i<agg_size; i++) {
+                    query_analyzer->aggregates()[i].function->mergeFinalized(
+                        mergeAggregates,
+                        query_plan.getCurrentDataStream().header,
+                        query_analyzer->aggregationKeys(),
+                        expressions.selected_columns,
+                        query_analyzer->aggregates()[i].column_name
+                    );
+                }
+                executeMergeFinalized(query_plan,mergeAggregates);
+            }
+        }
     }
 
     if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
@@ -1686,6 +1712,37 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     query_plan.addStep(std::move(merging_aggregated));
 }
 
+void InterpreterSelectQuery::executeMergeFinalized(QueryPlan & query_plan, AggregateDescriptions & mergeAggs)
+{
+    const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
+    bool overflow_row=false;
+    bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
+    const Settings & settings = context->getSettingsRef();
+    SortDescription group_by_sort_description;
+
+    ColumnNumbers keys;
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header_before_aggregation.getPositionByName(key.name));
+    auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                                        : static_cast<size_t>(settings.max_threads);
+    Aggregator::Params aggregatorParams(header_before_aggregation, keys, mergeAggs, overflow_row, settings.max_threads);
+
+
+
+
+    QueryPlanStepPtr aggregating_step = std::make_unique<AggregatingStep>(
+        query_plan.getCurrentDataStream(),
+        aggregatorParams, true,
+        settings.max_block_size,
+        settings.max_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        std::move(nullptr),
+        std::move(group_by_sort_description));
+
+    query_plan.addStep(std::move(aggregating_step));
+}
 
 void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
 {

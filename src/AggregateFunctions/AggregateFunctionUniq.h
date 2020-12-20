@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/AggregateDescription.h>
 
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
@@ -235,6 +236,14 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+    bool canMergeFinalized() override { return true; }
+
+    void mergeFinalized(AggregateDescriptions & merge_aggregates,
+                        const Block & header_before_aggregation,
+                        const NamesAndTypesList & aggregation_keys,
+                        const Names & selected_columns,
+                        const String & aggregation_column_name) override;
 };
 
 
