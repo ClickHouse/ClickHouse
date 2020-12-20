@@ -11,7 +11,6 @@ namespace ProfileEvents
 {
     extern const Event UncompressedCacheHits;
     extern const Event UncompressedCacheMisses;
-    extern const Event UncompressedCacheWeightLost;
 }
 
 namespace DB

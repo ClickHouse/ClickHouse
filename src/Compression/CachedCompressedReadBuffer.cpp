@@ -1,10 +1,15 @@
 #include "CachedCompressedReadBuffer.h"
 
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
-
 #include <utility>
 
+namespace ProfileEvents
+{
+    extern const Event UncompressedCacheHits;
+    extern const Event UncompressedCacheMisses;
+}
 
 namespace DB
 {
@@ -13,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
-
 
 void CachedCompressedReadBuffer::initInput()
 {
@@ -30,7 +34,6 @@ void CachedCompressedReadBuffer::initInput()
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
-
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = cache->hash(path, file_pos);
 
@@ -39,6 +42,7 @@ bool CachedCompressedReadBuffer::nextImpl()
     size_t size_compressed = 0;
     size_t additional_bytes = 0;
 
+    bool was_calculated = false;
     ///TODO: Fix interface probably payload can contain size then we can make cell
     /// and return it as payload
     owned_region = cache->getOrSet(
@@ -62,14 +66,23 @@ bool CachedCompressedReadBuffer::nextImpl()
         [&](void * ptr, UncompressedCacheCell & payload)
         {
             payload.compressed_size = size_compressed;
-            
+
             if (payload.compressed_size)
             {
                 payload.additional_bytes = additional_bytes;
                 decompress(static_cast<char *>(ptr), size_decompressed, size_compressed_without_checksum);
             }
         },
-        nullptr);
+        &was_calculated);
+
+    if (was_calculated)
+    {
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
+    }
 
     auto owned_cell = owned_region->payload();
     auto size = owned_region->size();
