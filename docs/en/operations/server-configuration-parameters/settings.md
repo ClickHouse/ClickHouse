@@ -569,7 +569,7 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## metric_log {#metric_log}
 
-To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+To turn on metrics history collection on [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
 
 ``` xml
 <yandex>
