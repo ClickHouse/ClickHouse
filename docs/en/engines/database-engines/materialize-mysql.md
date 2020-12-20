@@ -57,25 +57,29 @@ Other types are not supported. If MySQL table contains a column of such type, Cl
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-### DDL Queries
+### DDL Queries {#ddl-queries}
 
 MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). If ClickHouse cannot parse some DDL query, the query is ignored.
 
-### DML Queries
+###  Data Replication {#data-replication}
 
-`MaterializeMySQL` engine supports only `INSERT` and `SELECT` queries.
+MaterializeMySQL does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
 
-MySql `DELETE` query is converted into `INSERT` with `_sign=-1`. 
+- MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
-MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
+- MySQl `DELETE` query is converted into `INSERT` with `_sign=-1`. 
 
-`SELECT` query has some specifics:
+- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
+
+### Selecting from MaterializeMySQL Tables {#select}
+
+`SELECT` query form MaterializeMySQL tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default, so the deleted rows are not included into the result set. 
 
-### Index Conversion
+### Index Conversion {#index-conversion}
 
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
 
@@ -90,9 +94,9 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
 
 ## Examples of Use {#examples-of-use}
 
-Table in MySQL:
+Queries in MySQL:
 
-``` text
+``` sql
 mysql> CREATE DATABASE db;
 mysql> CREATE TABLE db.test (a INT PRIMARY KEY, b INT);
 mysql> INSERT INTO db.test VALUES (1, 11), (2, 22);
@@ -100,7 +104,8 @@ mysql> DELETE FROM db.test WHERE a=1;
 mysql> ALTER TABLE db.test ADD COLUMN c VARCHAR(16);
 mysql> UPDATE db.test SET c='Wow!', b=222;
 mysql> SELECT * FROM test;
-
+```
+```text
 +---+------+------+ 
 | a |    b |    c |
 +---+------+------+ 
@@ -109,6 +114,8 @@ mysql> SELECT * FROM test;
 ```
 
 Database in ClickHouse, exchanging data with the MySQL server:
+
+The database and the table created:
 
 ``` sql
 CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***');
@@ -121,6 +128,8 @@ SHOW TABLES FROM mysql;
 └──────┘
 ```
 
+After inserting data:
+
 ``` sql
 SELECT * FROM mysql.test;
 ```
@@ -132,6 +141,8 @@ SELECT * FROM mysql.test;
 └───┴────┘
 ```
 
+After deleting data, adding the column and updating:
+
 ``` sql
 SELECT * FROM mysql.test;
 ```
@@ -140,21 +151,6 @@ SELECT * FROM mysql.test;
 ┌─a─┬───b─┬─c────┐ 
 │ 2 │ 222 │ Wow! │ 
 └───┴─────┴──────┘
-```
-
-``` sql
-INSERT INTO mysql_db.test VALUES (3,4);
-```
-
-``` sql
-SELECT * FROM mysql_db.test;
-```
-
-``` text
-┌─int_id─┬─value─┐
-│      1 │     2 │
-│      3 │     4 │
-└────────┴───────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/database_engines/materialize-mysql/) <!--hide-->
