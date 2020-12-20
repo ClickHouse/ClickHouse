@@ -127,7 +127,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
-Since version 20.5, `clickhouse-client` has automatic syntax highlighting. You don't need any parameters to enable it.
+Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 
 ### Configuration Files {#configuration_files}
 
