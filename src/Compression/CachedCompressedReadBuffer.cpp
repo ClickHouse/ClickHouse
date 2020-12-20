@@ -43,7 +43,8 @@ bool CachedCompressedReadBuffer::nextImpl()
     /// and return it as payload
     owned_region = cache->getOrSet(
         key,
-        [&]() -> size_t {
+        [&]() -> size_t
+        {
             initInput();
             file_in->seek(file_pos, SEEK_SET);
             size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
@@ -58,10 +59,15 @@ bool CachedCompressedReadBuffer::nextImpl()
                 return 0;
             }
         },
-        [&](void * ptr, UncompressedCacheCell & payload) {
+        [&](void * ptr, UncompressedCacheCell & payload)
+        {
             payload.compressed_size = size_compressed;
-            payload.additional_bytes = additional_bytes;
-            decompress(static_cast<char *>(ptr), size_decompressed, size_compressed_without_checksum);
+            
+            if (payload.compressed_size)
+            {
+                payload.additional_bytes = additional_bytes;
+                decompress(static_cast<char *>(ptr), size_decompressed, size_compressed_without_checksum);
+            }
         },
         nullptr);
 

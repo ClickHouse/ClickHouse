@@ -689,7 +689,7 @@ public:
             throw;
         }
     }
-    
+
     void getStats(size_t & out_hits, size_t & out_misses) const
     {
         std::lock_guard cache_lock(mutex);
@@ -698,7 +698,7 @@ public:
     }
 
     size_t count()
-    {    
+    {
         std::lock_guard cache_lock(mutex);
         return adjacency_list.size();
     }
