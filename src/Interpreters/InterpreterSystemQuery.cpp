@@ -401,6 +401,13 @@ void InterpreterSystemQuery::restoreReplica()
 
     StorageReplicatedMergeTree::Status status;
     storage_replicated->getStatus(status);
+
+    /// If there exists the path zk_path + /replicas/ *, we have at least one working replica,
+    /// no need to restore anything.
+    // TODO check if these is no /replicas path or it is empty
+    // TODO Add the ZKPATH option to restore the table metadata on a certain replica,
+    // now suggest to launch create table
+
     const String replica_zk_path = status.zookeeper_path; // + "/replicas/" + query. replica ?
 
     if (zookeeper->exists(replica_zk_path))
