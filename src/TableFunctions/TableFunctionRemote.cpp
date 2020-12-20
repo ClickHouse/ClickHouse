@@ -37,7 +37,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
 
     ASTs & args = args_func.at(0)->children;
 
-    const size_t max_args = is_cluster_function ? 4 : 5;
+    const size_t max_args = is_cluster_function ? 4 : 6;
     if (args.size() < 2 || args.size() > max_args)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -122,15 +122,34 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     {
         if (arg_num < args.size())
         {
-            username = get_string_literal(*args[arg_num], "Username");
+            try
+            {
+                username = get_string_literal(*args[arg_num], "Username");
+            }
+            catch (const Exception & _ [[maybe_unused]])
+            {
+                username = "default";
+                sharding_key = args[arg_num];
+            }
             ++arg_num;
         }
-        else
-            username = "default";
 
-        if (arg_num < args.size())
+        if (arg_num < args.size() && !sharding_key)
         {
-            password = get_string_literal(*args[arg_num], "Password");
+            try
+            {
+                password = get_string_literal(*args[arg_num], "Password");
+            }
+            catch (const Exception & _ [[maybe_unused]])
+            {
+                sharding_key = args[arg_num];
+            }
+            ++arg_num;
+        }
+
+        if (arg_num < args.size() && !sharding_key)
+        {
+            sharding_key = args[arg_num];
             ++arg_num;
         }
     }
@@ -248,9 +267,12 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-    help_message = fmt::format("Table function '{}' requires from 2 to {} parameters: "
-                               "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
-                               name, is_cluster_function ? 3 : 5, is_cluster_function ? "" : ", [username, [password]].");
+    help_message = fmt::format(
+        "Table function '{}' requires from 2 to {} parameters: "
+        "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
+        name,
+        is_cluster_function ? 4 : 6,
+        is_cluster_function ? ", [sharding_key]" : ", [username, [password], sharding_key]");
 }
 
 

@@ -14,14 +14,10 @@ Allows to access all shards in an existing cluster which configured in `remote_s
 Signatures:
 
 ``` sql
-cluster('cluster_name', db.table)
-cluster('cluster_name', db, table)
-cluster('cluster_name', db.table, sharding_key)
-cluster('cluster_name', db, table, sharding_key)
-clusterAllReplicas('cluster_name', db.table)
-clusterAllReplicas('cluster_name', db, table)
-clusterAllReplicas('cluster_name', db.table, sharding_key)
-clusterAllReplicas('cluster_name', db, table, sharding_key)
+cluster('cluster_name', db.table[, sharding_key])
+cluster('cluster_name', db, table[, sharding_key])
+clusterAllReplicas('cluster_name', db.table[, sharding_key])
+clusterAllReplicas('cluster_name', db, table[, sharding_key])
 ```
 
 `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
