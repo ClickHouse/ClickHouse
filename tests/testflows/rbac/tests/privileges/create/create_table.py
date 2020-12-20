@@ -706,6 +706,9 @@ def create_as_merge(self, node=None):
                 with When("I grant CREATE TABLE privilege to a user"):
                     node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
 
+                with And("I grant SELECT privilege to a user to allow executing the table function merge()"):
+                    node.query(f"GRANT SELECT ON {source_table_name} TO {user_name}")
+
                 with Then("I try to create a table as another table"):
                     node.query(f"CREATE TABLE {table_name} AS merge(default,'{source_table_name}')", settings = [("user", f"{user_name}")])
 

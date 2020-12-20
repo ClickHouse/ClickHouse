@@ -14,6 +14,8 @@
 
 #include <Access/AccessFlags.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
+
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -1526,6 +1528,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
 
+        if (context->hasQueryContext() && !options.is_internal)
+        {
+            auto local_storage_id = storage->getStorageID();
+            context->getQueryContext().addQueryAccessInfo(
+                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+        }
+
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
@@ -1550,7 +1559,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
 
     /// Specify the number of threads only if it wasn't specified in storage.
-    if (!query_plan.getMaxThreads())
+    ///
+    /// But in case of remote query and prefer_localhost_replica=1 (default)
+    /// The inner local query (that is done in the same process, without
+    /// network interaction), it will setMaxThreads earlier and distributed
+    /// query will not update it.
+    if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     /// Aliases in table declaration.
@@ -1782,7 +1796,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
             output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
+            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
             settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
