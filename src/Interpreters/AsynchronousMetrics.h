@@ -13,9 +13,10 @@ namespace DB
 {
 
 class Context;
+class ProtocolServerAdapter;
 
-typedef double AsynchronousMetricValue;
-typedef std::unordered_map<std::string, AsynchronousMetricValue> AsynchronousMetricValues;
+using AsynchronousMetricValue = double;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
 
 /** Periodically (by default, each minute, starting at 30 seconds offset)
@@ -28,22 +29,34 @@ public:
     // The default value of update_period_seconds is for ClickHouse-over-YT
     // in Arcadia -- it uses its own server implementation that also uses these
     // metrics.
-    AsynchronousMetrics(Context & context_, int update_period_seconds = 60)
-        : context(context_),
-          update_period(update_period_seconds),
-          thread([this] { run(); })
+    AsynchronousMetrics(
+        Context & global_context_,
+        int update_period_seconds,
+        const std::vector<ProtocolServerAdapter> & servers_to_start_before_tables_,
+        const std::vector<ProtocolServerAdapter> & servers_)
+        : global_context(global_context_)
+        , update_period(update_period_seconds)
+        , servers_to_start_before_tables(servers_to_start_before_tables_)
+        , servers(servers_)
     {
     }
 
     ~AsynchronousMetrics();
 
+    /// Separate method allows to initialize the `servers` variable beforehand.
+    void start()
+    {
+        thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
+    }
 
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
 private:
-    Context & context;
+    Context & global_context;
     const std::chrono::seconds update_period;
+    const std::vector<ProtocolServerAdapter> & servers_to_start_before_tables;
+    const std::vector<ProtocolServerAdapter> & servers;
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;
@@ -54,7 +67,7 @@ private:
     MemoryStatisticsOS memory_stat;
 #endif
 
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
     void update();

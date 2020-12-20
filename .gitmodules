@@ -124,9 +124,6 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/ClickHouse-Extras/openssl.git
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
@@ -183,7 +180,7 @@
 	url = https://github.com/kthohr/stats.git
 [submodule "contrib/krb5"]
 	path = contrib/krb5
-	url = https://github.com/krb5/krb5
+	url = https://github.com/ClickHouse-Extras/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/cyrusimap/cyrus-sasl
@@ -211,3 +208,6 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/boringssl"]
+	path = contrib/boringssl
+	url = https://github.com/ClickHouse-Extras/boringssl.git

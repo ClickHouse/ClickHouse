@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/TestKeeperStorage.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <unordered_map>
 #include <future>
 
 namespace DB
@@ -33,8 +34,8 @@ private:
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
 
-    std::queue<zkutil::TestKeeperStorage::AsyncResponse> responses;
-    std::vector<zkutil::TestKeeperStorage::AsyncResponse> watch_responses;
+    size_t response_id_counter = 0;
+    std::unordered_map<size_t, zkutil::TestKeeperStorage::AsyncResponse> responses;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
