@@ -153,8 +153,6 @@ WHERE has(NER, 'strawberry')
 ORDER BY length(directions) DESC
 LIMIT 10
 
-Query id: 978d5568-9a2c-414d-8bb9-c585d80b7c76
-
 ┌─title────────────────────────────────────────────────────────────┬─length(NER)─┬─length(directions)─┐
 │ Chocolate-Strawberry-Orange Wedding Cake                         │          24 │                126 │
 │ Strawberry Cream Cheese Crumble Tart                             │          19 │                 47 │
