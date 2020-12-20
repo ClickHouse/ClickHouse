@@ -2519,22 +2519,4 @@ Result:
 └───┘
 ```
 
-**Example of using an empty string as a setting value**
-
-Query:
-
-```sql
-SET union_default_mode = '';
-SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
-```
-
-Result:
-
-```text
-Query id: 8f3755e8-ef76-4d1a-bdb2-7f6fc8a669ec
-
-Received exception from server (version 20.11.1):
-Code: 2005. DB::Exception: Received from localhost:9000. DB::Exception: Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty.
-```
-
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
