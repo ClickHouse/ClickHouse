@@ -17,7 +17,7 @@ node = cluster.add_instance('node',
 def start_cluster():
     try:
         cluster.start()
-        node.query('CREATE DATABASE test ENGINE=Ordinary')
+        node.query('CREATE DATABASE test ENGINE=Ordinary') # Different paths with Atomic
         yield cluster
     finally:
         cluster.shutdown()
@@ -48,7 +48,9 @@ def test_insert(start_cluster):
     # manual only (but only for remote node)
     node.query('SYSTEM STOP DISTRIBUTED SENDS test.dist_foo')
 
-    node.query('INSERT INTO test.dist_foo SELECT * FROM numbers(100)')
+    node.query('INSERT INTO test.dist_foo SELECT * FROM numbers(100)', settings={
+        'use_compact_format_in_distributed_parts_names': '0',
+    })
     assert _files_in_dist_mon(node, 'disk1', 'dist_foo') == 1
     assert _files_in_dist_mon(node, 'disk2', 'dist_foo') == 0
 
@@ -61,7 +63,9 @@ def test_insert(start_cluster):
     #
     node.query('RENAME TABLE test.dist_foo TO test.dist2_foo')
 
-    node.query('INSERT INTO test.dist2_foo SELECT * FROM numbers(100)')
+    node.query('INSERT INTO test.dist2_foo SELECT * FROM numbers(100)', settings={
+        'use_compact_format_in_distributed_parts_names': '0',
+    })
     assert _files_in_dist_mon(node, 'disk1', 'dist2_foo') == 0
     assert _files_in_dist_mon(node, 'disk2', 'dist2_foo') == 1
 

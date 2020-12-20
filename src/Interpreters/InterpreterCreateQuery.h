@@ -16,6 +16,8 @@ class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 
 /** Allows to create new table or database,
@@ -54,6 +56,10 @@ public:
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool sanity_check_compression_codecs);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
+
+    static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
     struct TableProperties

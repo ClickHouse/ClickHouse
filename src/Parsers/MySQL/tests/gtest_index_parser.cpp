@@ -17,13 +17,13 @@ TEST(ParserIndex, AllIndexOptions)
     ASTPtr ast = parseQuery(p_index, input.data(), input.data() + input.size(), "", 0, 0);
 
     ASTDeclareIndex * declare_index = ast->as<ASTDeclareIndex>();
-    EXPECT_EQ(declare_index->index_columns->children[0]->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_index->index_columns->children[0]->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_index->index_columns->children[1]->as<ASTFunction>()->name, "col_02");
     EXPECT_EQ(declare_index->index_columns->children[1]->as<ASTFunction>()->arguments->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
-    EXPECT_EQ(declare_index->index_columns->children[2]->as<ASTIdentifier>()->name, "col_03");
+    EXPECT_EQ(declare_index->index_columns->children[2]->as<ASTIdentifier>()->name(), "col_03");
     ASTDeclareOptions * declare_options = declare_index->index_options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["key_block_size"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
-    EXPECT_EQ(declare_options->changes["index_type"]->as<ASTIdentifier>()->name, "HASH");
+    EXPECT_EQ(declare_options->changes["index_type"]->as<ASTIdentifier>()->name(), "HASH");
     EXPECT_EQ(declare_options->changes["comment"]->as<ASTLiteral>()->value.safeGet<String>(), "index comment");
     EXPECT_EQ(declare_options->changes["visible"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
 }
@@ -36,12 +36,12 @@ TEST(ParserIndex, OptionalIndexOptions)
     ASTPtr ast = parseQuery(p_index, input.data(), input.data() + input.size(), "", 0, 0);
 
     ASTDeclareIndex * declare_index = ast->as<ASTDeclareIndex>();
-    EXPECT_EQ(declare_index->index_columns->children[0]->as<ASTIdentifier>()->name, "col_01");
+    EXPECT_EQ(declare_index->index_columns->children[0]->as<ASTIdentifier>()->name(), "col_01");
     EXPECT_EQ(declare_index->index_columns->children[1]->as<ASTFunction>()->name, "col_02");
     EXPECT_EQ(declare_index->index_columns->children[1]->as<ASTFunction>()->arguments->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
-    EXPECT_EQ(declare_index->index_columns->children[2]->as<ASTIdentifier>()->name, "col_03");
+    EXPECT_EQ(declare_index->index_columns->children[2]->as<ASTIdentifier>()->name(), "col_03");
     ASTDeclareOptions * declare_options = declare_index->index_options->as<ASTDeclareOptions>();
-    EXPECT_EQ(declare_options->changes["index_type"]->as<ASTIdentifier>()->name, "HASH");
+    EXPECT_EQ(declare_options->changes["index_type"]->as<ASTIdentifier>()->name(), "HASH");
     EXPECT_EQ(declare_options->changes["visible"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
     EXPECT_EQ(declare_options->changes["key_block_size"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 3);
 }

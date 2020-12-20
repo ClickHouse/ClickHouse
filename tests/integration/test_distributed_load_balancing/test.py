@@ -18,7 +18,7 @@ queries = nodes * 5
 
 
 def bootstrap():
-    for n in cluster.instances.values():
+    for n in list(cluster.instances.values()):
         # At startup, server loads configuration files.
         #
         # However ConfigReloader does not know about already loaded files
@@ -26,7 +26,7 @@ def bootstrap():
         # just after server starts (+ 2 seconds, reload timeout).
         #
         # And on configuration reload the clusters will be re-created, so some
-        # internal stuff will be reseted:
+        # internal stuff will be reset:
         # - error_count
         # - last_used (round_robing)
         #
@@ -90,7 +90,7 @@ def get_node(query_node, table='dist', *args, **kwargs):
 
     query_node.query('SELECT * FROM ' + table, *args, **kwargs)
 
-    for n in cluster.instances.values():
+    for n in list(cluster.instances.values()):
         n.query('SYSTEM FLUSH LOGS')
 
     rows = query_node.query("""

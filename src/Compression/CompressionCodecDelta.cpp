@@ -136,7 +136,7 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 namespace
 {
 
-UInt8 getDeltaBytesSize(DataTypePtr column_type)
+UInt8 getDeltaBytesSize(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
@@ -155,7 +155,7 @@ UInt8 getDeltaBytesSize(DataTypePtr column_type)
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
-    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         UInt8 delta_bytes_size = 0;
 

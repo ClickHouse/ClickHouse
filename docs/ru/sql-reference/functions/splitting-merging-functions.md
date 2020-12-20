@@ -1,3 +1,8 @@
+---
+toc_priority: 47
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0440\u0430\u0437\u0431\u0438\u0435\u043d\u0438\u044f\u0020\u0438\u0020\u0441\u043b\u0438\u044f\u043d\u0438\u044f\u0020\u0441\u0442\u0440\u043e\u043a\u0020\u0438\u0020\u043c\u0430\u0441\u0441\u0438\u0432\u043e\u0432"
+---
+
 # Функции разбиения и слияния строк и массивов {#funktsii-razbieniia-i-sliianiia-strok-i-massivov}
 
 ## splitByChar(separator, s) {#splitbycharseparator-s}

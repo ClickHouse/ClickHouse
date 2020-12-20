@@ -130,6 +130,18 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
 }
 
 
+bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)
+{
+    for (const Substream & elem : path)
+    {
+        if (elem.type == Substream::NullMap
+            || elem.type == Substream::ArraySizes
+            || elem.type == Substream::DictionaryIndexes)
+            return false;
+    }
+    return true;
+}
+
 void IDataType::insertDefaultInto(IColumn & column) const
 {
     column.insertDefault();

@@ -3,7 +3,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/hex.h>
@@ -18,6 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
@@ -80,20 +80,19 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
+    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
-    , should_batch_inserts(storage.global_context->getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , min_batched_block_size_rows(storage.global_context->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context->getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
+    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Poco::Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
-    , bg_pool(bg_pool_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
 {
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
@@ -251,7 +250,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    const auto settings = storage.global_context->getSettings();
+    const auto settings = storage.global_context.getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -310,7 +309,7 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
     LOG_TRACE(log, "Started processing `{}`", file_path);
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
     try
     {
@@ -366,7 +365,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
 
         UInt64 initiator_revision;
         readVarUInt(initiator_revision, header_buf);
-        if (ClickHouseRevision::get() < initiator_revision)
+        if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
         {
             LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
         }
@@ -485,7 +484,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context->getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -585,7 +584,7 @@ public:
     explicit DirectoryMonitorBlockInputStream(const String & file_name)
         : in(file_name)
         , decompressing_in(in)
-        , block_in(decompressing_in, ClickHouseRevision::get())
+        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
         , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
         Settings insert_settings;
@@ -690,7 +689,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             readHeader(in, insert_settings, insert_query, client_info, log);
 
             CompressedReadBuffer decompressing_in(in);
-            NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
+            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
             block_in.readPrefix();
 
             while (Block block = block_in.read())

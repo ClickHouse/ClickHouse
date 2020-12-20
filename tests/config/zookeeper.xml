@@ -1,5 +1,0 @@
-<yandex>
-    <zookeeper>
-        <implementation>testkeeper</implementation>
-    </zookeeper>
-</yandex>
