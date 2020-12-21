@@ -44,4 +44,68 @@ SELECT wordShingleMinhashCaseInsensitive(s) FROM defaults;
 SELECT wordShingleMinhashUTF8(s) FROM defaults;
 SELECT wordShingleMinhashCaseInsensitiveUTF8(s) FROM defaults;
 
+TRUNCATE TABLE defaults;
+INSERT INTO defaults SELECT arrayJoin(splitByString('\n\n',
+'ClickHouse uses all available hardware to its full potential to process each query as fast as possible. Peak processing performance for a single query stands at more than 2 terabytes per second (after decompression, only used columns). In distributed setup reads are automatically balanced among healthy replicas to avoid increasing latency.
+ClickHouse supports multi-master asynchronous replication and can be deployed across multiple datacenters. All nodes are equal, which allows avoiding having single points of failure. Downtime of a single node or the whole datacenter wont affect the systems availability for both reads and writes.
+ClickHouse is simple and works out-of-the-box. It streamlines all your data processing: ingest all your structured data into the system and it becomes instantly available for building reports. SQL dialect allows expressing the desired result without involving any custom non-standard API that could be found in some alternative systems.
+
+ClickHouse makes full use of all available hardware to process every request as quickly as possible. Peak performance for a single query is over 2 terabytes per second (only used columns after unpacking). In a distributed setup, reads are automatically balanced across healthy replicas to avoid increased latency.
+ClickHouse supports asynchronous multi-master replication and can be deployed across multiple data centers. All nodes are equal to avoid single points of failure. Downtime for one site or the entire data center will not affect the system''s read and write availability.
+ClickHouse is simple and works out of the box. It simplifies all the processing of your data: it loads all your structured data into the system, and they immediately become available for building reports. The SQL dialect allows you to express the desired result without resorting to any non-standard APIs that can be found in some alternative systems.
+
+ClickHouse makes full use of all available hardware to process each request as quickly as possible. Peak performance for a single query is over 2 terabytes per second (used columns only after unpacking). In a distributed setup, reads are automatically balanced across healthy replicas to avoid increased latency.
+ClickHouse supports asynchronous multi-master replication and can be deployed across multiple data centers. All nodes are equal to avoid a single point of failure. Downtime for one site or the entire data center will not affect the system''s read / write availability.
+ClickHouse is simple and works out of the box. It simplifies all the processing of your data: it loads all your structured data into the system, and they are immediately available for building reports. The SQL dialect allows you to express the desired result without resorting to any of the non-standard APIs found in some alternative systems.
+
+ClickHouse makes full use of all available hardware to process each request as quickly as possible. Peak performance for a single query is over 2 terabytes per second (using columns only after unpacking). In a distributed setup, reads are automatically balanced across healthy replicas to avoid increased latency.
+ClickHouse supports asynchronous multi-master replication and can be deployed across multiple data centers. All nodes are equal to avoid a single point of failure. Downtime for one site or the entire data center will not affect the read / write availability of the system.
+ClickHouse is simple and works out of the box. It simplifies all the processing of your data: it loads all of your structured data into the system, and it is immediately available for building reports. The SQL dialect allows you to express the desired result without resorting to any of the non-standard APIs found in some alternative systems.
+
+ClickHouse makes full use of all available hardware to process each request as quickly as possible. Peak performance for a single query is over 2 terabytes per second (using columns after decompression only). In a distributed setup, reads are automatically balanced across healthy replicas to avoid increased latency.
+ClickHouse supports asynchronous multi-master replication and can be deployed across multiple data centers. All nodes are equal to avoid a single point of failure. Downtime for one site or the entire data center will not affect the read / write availability of the system.
+ClickHouse is simple and works out of the box. It simplifies all processing of your data: it loads all your structured data into the system and immediately becomes available for building reports. The SQL dialect allows you to express the desired result without resorting to any of the non-standard APIs found in some alternative systems.
+
+ClickHouse makes full use of all available hardware to process each request as quickly as possible. Peak performance for a single query is over 2 terabytes per second (using columns after decompression only). In a distributed setup, reads are automatically balanced across healthy replicas to avoid increased latency.
+ClickHouse supports asynchronous multi-master replication and can be deployed across multiple data centers. All nodes are equal to avoid a single point of failure. Downtime for one site or the entire data center will not affect the read / write availability of the system.
+ClickHouse is simple and works out of the box. It simplifies all processing of your data: it loads all structured data into the system and immediately becomes available for building reports. The SQL dialect allows you to express the desired result without resorting to any of the non-standard APIs found in some alternative systems.'
+));
+
+SELECT 'uniqExact', uniqExact(s) FROM defaults;
+
+
+SELECT 'ngramSimhash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhash(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimhashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimhashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimhashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimhash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhash(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimhashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimhashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimhashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+
+SELECT 'ngramMinhash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhash(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinhashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinhashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinhashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinhash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhash(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinhashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinhashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinhashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+
 DROP TABLE defaults;
