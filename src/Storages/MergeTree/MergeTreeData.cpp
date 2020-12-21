@@ -878,7 +878,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (!data_parts_indexes.insert(part).second)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
-            /// Update data volume
             addPartContributionToDataVolume(part);
         });
     }
@@ -929,7 +928,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
-            /// Update data volume
             removePartContributionToDataVolume(*it);
         };
 
@@ -1299,7 +1297,6 @@ void MergeTreeData::dropAllData()
         }
     }
 
-    /// Update data volume
     setDataVolume(0, 0, 0);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -2011,12 +2008,10 @@ bool MergeTreeData::renameTempPartAndReplace(
             ++reduce_parts;
         }
 
-        /// Update data volume
         decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
 
         modifyPartState(part_it, DataPartState::Committed);
         addPartContributionToColumnSizes(part);
-        /// Update data volume
         addPartContributionToDataVolume(part);
     }
 
@@ -2060,7 +2055,6 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
         if (part->state == IMergeTreeDataPart::State::Committed)
         {
             removePartContributionToColumnSizes(part);
-            /// Update data volume
             removePartContributionToDataVolume(part);
         }
 
@@ -2176,7 +2170,6 @@ restore_covered)
 
     if (part->state == DataPartState::Committed)
     {
-        /// Update data volume
         removePartContributionToDataVolume(part);
         removePartContributionToColumnSizes(part);
     }
@@ -2461,7 +2454,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
 
-            /// Update data volume
             removePartContributionToDataVolume(original_active_part);
             addPartContributionToDataVolume(part_copy);
 
@@ -3405,7 +3397,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.addPartContributionToColumnSizes(part);
             }
         }
-        /// Update date volume
         data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
         data.increaseDataVolume(add_bytes, add_rows, add_parts);
     }
