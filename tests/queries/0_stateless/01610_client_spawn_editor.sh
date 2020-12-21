@@ -1,4 +1,4 @@
-#!/tmp/gentoo/usr/bin/expect -f
+#!/usr/bin/expect -f
 
 log_user 0
 set timeout 5
