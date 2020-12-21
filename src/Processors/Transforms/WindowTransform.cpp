@@ -18,10 +18,10 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , window_description(window_description_)
 {
     workspaces.reserve(window_function_descriptions.size());
-    for (size_t i = 0; i < window_function_descriptions.size(); ++i)
+    for (const auto & f : window_function_descriptions)
     {
         WindowFunctionWorkspace workspace;
-        workspace.window_function = window_function_descriptions[i];
+        workspace.window_function = f;
 
         const auto & aggregate_function
             = workspace.window_function.aggregate_function;
@@ -61,10 +61,10 @@ WindowTransform::WindowTransform(const Block & input_header_,
 WindowTransform::~WindowTransform()
 {
     // Some states may be not created yet if the creation failed.
-    for (size_t i = 0; i < workspaces.size(); i++)
+    for (auto & w : workspaces)
     {
-        workspaces[i].window_function.aggregate_function->destroy(
-            workspaces[i].aggregate_function_state.data());
+        w.window_function.aggregate_function->destroy(
+            w.aggregate_function_state.data());
     }
 }
 
@@ -103,7 +103,7 @@ void WindowTransform::transform(Chunk & chunk)
             // Check whether the new partition has started and reinitialize the
             // aggregate function states.
             assert(partition_start_columns.size() == partition_by_indices.size());
-            if (partition_start_columns.size() == 0)
+            if (partition_start_columns.empty())
             {
                 // No PARTITION BY at all, do nothing.
             }
