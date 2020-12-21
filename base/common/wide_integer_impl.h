@@ -243,7 +243,7 @@ struct integer<Bits, Signed>::_impl
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
 
         /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
-        if (!isfinite(t))
+        if (!std::isfinite(t))
         {
             self = 0;
             return;
