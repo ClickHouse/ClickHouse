@@ -10,3 +10,4 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE orc_load (int Int32, smallint Int8, b
 cat "$DATA_FILE"  | ${CLICKHOUSE_CLIENT} -q "insert into orc_load format ORC"
 ${CLICKHOUSE_CLIENT} --query="select * from orc_load"
 
+${CLICKHOUSE_CLIENT} --query="drop table orc_load"

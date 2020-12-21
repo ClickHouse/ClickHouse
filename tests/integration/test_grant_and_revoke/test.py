@@ -3,7 +3,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance')
+instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'])
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -226,8 +226,8 @@ def test_introspection():
 
     assert instance.query(
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option") == \
-           TSV([["A", "\N", "SELECT", "test", "table", "\N", 0, 0],
-                ["B", "\N", "CREATE", "\N", "\N", "\N", 0, 1]])
+           TSV([["A", "\\N", "SELECT", "test", "table", "\\N", 0, 0],
+                ["B", "\\N", "CREATE", "\\N", "\\N", "\\N", 0, 1]])
 
 
 def test_current_database():

@@ -409,7 +409,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
         throw Exception("Duplicate column with name " + column_name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
         String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
         if (!files.count(stream_name))
@@ -454,7 +454,7 @@ static std::chrono::seconds getLockTimeout(const Context & context)
 Pipe StorageTinyLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

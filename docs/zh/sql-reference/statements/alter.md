@@ -426,7 +426,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 -   `system.parts`表  `partition`列的某个值，例如， `ALTER TABLE visits DETACH PARTITION 201901`
 -   表的列表达式。支持常量及常量表达式。例如， `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`
 -   使用分区ID。分区ID是字符串变量（可能的话有较好的可读性），在文件系统和ZooKeeper中作为分区名称。分区ID必须配置在 `PARTITION ID`中，用单引号包含，例如， `ALTER TABLE visits DETACH PARTITION ID '201901'`
--   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached\_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
+-   在 [ALTER ATTACH PART](#alter_attach-partition) 和 [DROP DETACHED PART](#alter_drop-detached) 操作中，要配置块的名称，使用 [system.detached_parts](../../operations/system-tables/detached_parts.md#system_tables-detached_parts)表中 `name`列的字符串值，例如： `ALTER TABLE visits ATTACH PART '201901_1_1_0'`
 
 
 设置分区时，引号使用要看分区表达式的类型。例如，对于 `String`类型，需要设置用引号(`'`)包含的名称。对于 `Date` 和 `Int*`引号就不需要了。

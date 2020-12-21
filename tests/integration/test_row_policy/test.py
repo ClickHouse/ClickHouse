@@ -34,7 +34,7 @@ def started_cluster():
 
         for current_node in nodes:
             current_node.query('''
-                CREATE DATABASE mydb ENGINE=Ordinary;
+                CREATE DATABASE mydb;
 
                 CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);
@@ -360,7 +360,7 @@ def test_miscellaneous_engines():
     # ReplicatedCollapsingMergeTree
     node.query("DROP TABLE mydb.filtered_table1")
     node.query(
-        "CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-00/filtered_table1', 'replica1', b) ORDER BY a")
+        "CREATE TABLE mydb.filtered_table1 (a UInt8, b Int8) ENGINE ReplicatedCollapsingMergeTree('/clickhouse/tables/00-01/filtered_table1', 'replica1', b) ORDER BY a")
     node.query("INSERT INTO mydb.filtered_table1 values (0, 1), (0, 1), (1, 1), (1, 1)")
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 1], [1, 1]])
 

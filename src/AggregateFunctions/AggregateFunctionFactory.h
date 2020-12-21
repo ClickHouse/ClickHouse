@@ -21,7 +21,8 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
-/** Creator have arguments: name of aggregate function, types of arguments, values of parameters.
+/**
+ * The invoker has arguments: name of aggregate function, types of arguments, values of parameters.
  * Parameters are for "parametric" aggregate functions.
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
@@ -59,12 +60,11 @@ public:
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     /// Throws an exception if not found.
-    AggregateFunctionPtr get(
-        const String & name,
+    AggregateFunctionPtr
+    get(const String & name,
         const DataTypes & argument_types,
         const Array & parameters,
-        AggregateFunctionProperties & out_properties,
-        int recursion_level = 0) const;
+        AggregateFunctionProperties & out_properties) const;
 
     /// Returns nullptr if not found.
     AggregateFunctionPtr tryGet(
@@ -76,7 +76,7 @@ public:
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(const String & name) const;
 
-    bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
+    bool isAggregateFunctionName(const String & name) const;
 
 private:
     AggregateFunctionPtr getImpl(
@@ -84,12 +84,10 @@ private:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        bool has_null_arguments,
-        int recursion_level) const;
+        bool has_null_arguments) const;
 
-    std::optional<AggregateFunctionProperties> tryGetPropertiesImpl(const String & name, int recursion_level) const;
+    std::optional<AggregateFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
-private:
     using AggregateFunctions = std::unordered_map<String, Value>;
 
     AggregateFunctions aggregate_functions;

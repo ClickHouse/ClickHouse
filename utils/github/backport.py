@@ -78,14 +78,14 @@ class Backport:
                     backport_map[pr['number']].remove(matched_backported.group(1))
                     logging.info('\tskipping %s because it\'s already backported manually', matched_backported.group(1))
 
-        for pr, branches in backport_map.items():
+        for pr, branches in list(backport_map.items()):
             logging.info('PR #%s needs to be backported to:', pr)
             for branch in branches:
                 logging.info('\t%s, and the status is: %s', branch, run_cherrypick(self._token, pr, branch))
 
         # print API costs
         logging.info('\nGitHub API total costs per query:')
-        for name, value in self._gh.api_costs.items():
+        for name, value in list(self._gh.api_costs.items()):
             logging.info('%s : %s', name, value)
 
 
