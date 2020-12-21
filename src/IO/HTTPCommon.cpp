@@ -164,7 +164,11 @@ namespace
             UInt16 proxy_port;
             bool is_proxy_https;
 
-            bool operator ==(const Key &) const = default;
+            bool operator ==(const Key & rhs) const
+            {
+                return std::tie(target_host, target_port, is_target_https, proxy_host, proxy_port, is_proxy_https)
+                    == std::tie(rhs.target_host, rhs.target_port, rhs.is_target_https, rhs.proxy_host, rhs.proxy_port, rhs.is_proxy_https);
+            }
         };
 
     private:
