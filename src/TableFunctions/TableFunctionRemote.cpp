@@ -50,16 +50,17 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
 
     size_t arg_num = 0;
 
-    auto get_string_literal = [](const IAST & node, const char * description)
+    auto get_string_literal = [](const IAST & node, String & res)
     {
         const auto * lit = node.as<ASTLiteral>();
         if (!lit)
-            throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+            return false;
 
         if (lit->value.getType() != Field::Types::String)
-            throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+            return false;
 
-        return safeGet<const String &>(lit->value);
+        res = safeGet<const String &>(lit->value);
+        return true;
     };
 
     if (is_cluster_function)
@@ -70,7 +71,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
-            cluster_description = get_string_literal(*args[arg_num], "Hosts pattern");
+            if (!get_string_literal(*args[arg_num], cluster_description))
+                throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
     }
     ++arg_num;
 
@@ -122,29 +124,21 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     {
         if (arg_num < args.size())
         {
-            try
-            {
-                username = get_string_literal(*args[arg_num], "Username");
-            }
-            catch (const Exception & _ [[maybe_unused]])
+            if (!get_string_literal(*args[arg_num], username))
             {
                 username = "default";
                 sharding_key = args[arg_num];
+                ++arg_num;
             }
-            ++arg_num;
         }
 
         if (arg_num < args.size() && !sharding_key)
         {
-            try
-            {
-                password = get_string_literal(*args[arg_num], "Password");
-            }
-            catch (const Exception & _ [[maybe_unused]])
+            if (!get_string_literal(*args[arg_num], password))
             {
                 sharding_key = args[arg_num];
+                ++arg_num;
             }
-            ++arg_num;
         }
 
         if (arg_num < args.size() && !sharding_key)
