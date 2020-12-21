@@ -12,11 +12,22 @@ dpkg -i package_folder/clickhouse-test_*.deb
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-service clickhouse-server start && sleep 5
+# For flaky check we also enable thread fuzzer
+if [ "$NUM_TRIES" -gt "1" ]; then
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+    export THREAD_FUZZER_SLEEP_TIME_US=100000
+    # simpliest way to forward env variables to server
+    /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+    sleep 5
+else
+    service clickhouse-server start && sleep 5
+fi
 
 if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
+
 
 function run_tests()
 {
