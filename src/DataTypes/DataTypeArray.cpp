@@ -313,7 +313,7 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     if (checkChar('[', istr))
         has_braces = true;
     else if (!allow_unenclosed)
-        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,  "Array does not start with '[' character");
+        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
 
     try
     {
