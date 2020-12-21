@@ -141,15 +141,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
-There are several processing stages:
-
--   Preparing temporary (new) files with modified data.
--   Renaming old files.
--   Renaming the temporary (new) files to the old names.
--   Deleting the old files.
-
-Only the first stage takes time. If there is a failure at this stage, the data is not changed.
-If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
+The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
