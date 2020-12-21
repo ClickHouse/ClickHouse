@@ -43,20 +43,6 @@ This approach allows us to complete the `ALTER` query instantly, without increas
 Example:
 
 ``` sql
-DESC alter_test FORMAT TSV;
-```
-
-``` text
-CounterID       UInt32
-StartDate       Date
-UserID  UInt32
-VisitID UInt32
-NestedColumn.A  Array(UInt8)
-NestedColumn.S  Array(String)
-ToDrop  UInt32
-```
-
-``` sql
 ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
 ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
 ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
