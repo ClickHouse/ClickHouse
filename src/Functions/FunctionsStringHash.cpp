@@ -107,6 +107,21 @@ struct Hash
 #endif
         return crc1 | (crc2 << 32u);
     }
+
+    static ALWAYS_INLINE inline UInt64 hashSum(const UInt64 * hashes, size_t K)
+    {
+        UInt64 crc1 = -1ULL;
+        UInt64 crc2 = -1ULL;
+#ifdef __SSE4_2__
+        for (size_t i = 0; i < K; i += 2)
+            crc1 = _mm_crc32_u64(crc1, hashes[i]);
+        for (size_t i = 1; i < K; i += 2)
+            crc2 = _mm_crc32_u64(crc2, hashes[i]);
+#else
+        throw Exception("hashSum is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+        return crc1 | (crc2 << 32u);
+    }
 };
 
 // Simhash String -> UInt64
