@@ -79,6 +79,10 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Databases/PostgreSQL)
+endif()
+
 if (USE_ROCKSDB)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()

@@ -19,11 +19,11 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix,
-    const std::string & connection_str,
+    PGConnectionPtr connection_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
-    , connection(std::make_shared<pqxx::connection>(connection_str))
+    , connection(std::move(connection_))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))
@@ -40,7 +40,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other)
     : dict_struct(other.dict_struct)
     , sample_block(other.sample_block)
-    , connection(other.connection)
+    , connection(std::make_shared<PGConnection>(other.connection->conn_str()))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(other.db)
     , table(other.table)
@@ -59,7 +59,7 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
     return std::make_shared<PostgreSQLBlockInputStream>(
-            connection, load_all_query, sample_block, max_block_size);
+            connection->conn(), load_all_query, sample_block, max_block_size);
 }
 
 
@@ -67,20 +67,20 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    return std::make_shared<PostgreSQLBlockInputStream>(connection, load_update_query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), load_update_query, sample_block, max_block_size);
 }
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return std::make_shared<PostgreSQLBlockInputStream>(connection, query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), query, sample_block, max_block_size);
 }
 
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return std::make_shared<PostgreSQLBlockInputStream>(connection, query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), query, sample_block, max_block_size);
 }
 
 
@@ -102,7 +102,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    PostgreSQLBlockInputStream block_input_stream(connection, request, invalidate_sample_block, 1);
+    PostgreSQLBlockInputStream block_input_stream(connection->conn(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 
@@ -167,9 +167,10 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             config.getUInt(fmt::format("{}.port", config_prefix), 0),
             config.getString(fmt::format("{}.user", config_prefix), ""),
             config.getString(fmt::format("{}.password", config_prefix), ""));
+        auto connection = std::make_shared<PGConnection>(connection_str);
 
         return std::make_unique<PostgreSQLDictionarySource>(
-                dict_struct, config, config_prefix, connection_str, sample_block);
+                dict_struct, config, config_prefix, connection, sample_block);
 #else
         (void)dict_struct;
         (void)config;

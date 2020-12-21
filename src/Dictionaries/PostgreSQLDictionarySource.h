@@ -11,11 +11,11 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <pqxx/pqxx>
 
 namespace DB
 {
-using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 /// Allows loading dictionaries from a PostgreSQL database
 class PostgreSQLDictionarySource final : public IDictionarySource
@@ -25,7 +25,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
-        const std::string & connection_str,
+        PGConnectionPtr connection_,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -50,7 +50,7 @@ private:
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    ConnectionPtr connection;
+    PGConnectionPtr connection;
     Poco::Logger * log;
 
     const std::string db;
