@@ -71,8 +71,10 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
+        {
             if (!get_string_literal(*args[arg_num], cluster_description))
                 throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
+        }
     }
     ++arg_num;
 
@@ -128,8 +130,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
             {
                 username = "default";
                 sharding_key = args[arg_num];
-                ++arg_num;
             }
+            ++arg_num;
         }
 
         if (arg_num < args.size() && !sharding_key)
@@ -137,8 +139,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Cont
             if (!get_string_literal(*args[arg_num], password))
             {
                 sharding_key = args[arg_num];
-                ++arg_num;
             }
+            ++arg_num;
         }
 
         if (arg_num < args.size() && !sharding_key)
