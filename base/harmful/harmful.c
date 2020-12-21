@@ -164,7 +164,7 @@ TRAP(utmpname)
 TRAP(utmpxname)
 //TRAP(valloc)
 TRAP(vlimit)
-TRAP(wcrtomb)
+//TRAP(wcrtomb) // Used by Standard C++ library
 TRAP(wcsnrtombs)
 TRAP(wcsrtombs)
 TRAP(wctomb)
