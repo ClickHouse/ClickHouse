@@ -61,6 +61,7 @@ SKIP_LIST = [
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
+    "01375_storage_file_tsv_csv_with_names_write_prefix",  # flaky
     "01376_GROUP_BY_injective_elimination_dictGet",
     "01393_benchmark_secure_port",
     "01418_custom_settings",
