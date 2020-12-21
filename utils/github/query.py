@@ -165,7 +165,7 @@ class Query:
         '''
         _QUERY = '''
             repository(owner: "{owner}" name: "{name}") {{
-                pullRequests(labels: "{label_name}") {{
+                pullRequests(first: {min_page_size} labels: "{label_name}") {{
                     nodes {{
                         {pull_request_data}
                     }}
@@ -173,7 +173,8 @@ class Query:
             }}
         '''
 
-        query = _QUERY.format(owner=self._owner, name=self._name, label_name=label_name, pull_request_data=self._PULL_REQUEST)
+        query = _QUERY.format(owner=self._owner, name=self._name, label_name=label_name,
+                              pull_request_data=self._PULL_REQUEST, min_page_size=self._min_page_size)
         return self._run(query)['repository']['pullRequests']['nodes']
 
     def get_pull_requests(self, before_commit):
