@@ -1081,7 +1081,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
           && expressions.need_aggregate)
         {
             int agg_size = query_analyzer->aggregates().size();
-            bool shouldMergeFinalized = true;
+            bool should_merge_finalized = true;
             for (int i=0; i<agg_size; i++)
             {
                 if (!query_analyzer->aggregates()[i].function->canMergeFinalized())
@@ -1092,18 +1092,18 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
             if (shouldMergeFinalized)
             {
-                AggregateDescriptions mergeAggregates;
+                AggregateDescriptions merge_aggregates;
                 for (int i=0; i<agg_size; i++)
                 {
                     query_analyzer->aggregates()[i].function->mergeFinalized(
-                        mergeAggregates,
+                        merge_aggregates,
                         query_plan.getCurrentDataStream().header,
                         query_analyzer->aggregationKeys(),
                         expressions.selected_columns,
                         query_analyzer->aggregates()[i].column_name
                     );
                 }
-                executeMergeFinalized(query_plan,mergeAggregates);
+                executeMergeFinalized(query_plan,merge_aggregates);
             }
         }
     }
@@ -1731,11 +1731,11 @@ void InterpreterSelectQuery::executeMergeFinalized(QueryPlan & query_plan, Aggre
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
                                         ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                                         : static_cast<size_t>(settings.max_threads);
-    Aggregator::Params aggregatorParams(header_before_aggregation, keys, mergeAggs, overflow_row, settings.max_threads);
+    Aggregator::Params aggregator_params(header_before_aggregation, keys, mergeAggs, overflow_row, settings.max_threads);
 
     QueryPlanStepPtr aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
-        aggregatorParams, true,
+        aggregator_params, true,
         settings.max_block_size,
         settings.max_threads,
         temporary_data_merge_threads,
