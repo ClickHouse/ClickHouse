@@ -688,7 +688,7 @@ def main(args):
                 prefix, suffix = item.split('_', 1)
 
                 try:
-                    return reverse * int(prefix), suffix
+                    return reverse * int(prefix)
                 except ValueError:
                     return 99997
 
