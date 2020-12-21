@@ -32,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -161,14 +162,17 @@ void AggregateFunctionUniq<T, Data>::mergeFinalized(
         keys.push_back(header_before_aggregation.getPositionByName(key.name));
     int distinct_cnt_col_pos = -1;
     int col_size = selected_columns.size();
-    for (int i=0; i<col_size; i++) {
-        if (selected_columns[i]==aggregation_column_name) {
+    for (int i=0; i<col_size; i++)
+    {
+        if (selected_columns[i]==aggregation_column_name)
+        {
             distinct_cnt_col_pos = i;
             break;
         }
     }
 
-    if (distinct_cnt_col_pos == -1) {
+    if (distinct_cnt_col_pos == -1)
+    {
         throw Exception("the aggregation column name " + aggregation_column_name +
                 " is not in the list of selected columns.", ErrorCodes::LOGICAL_ERROR);
     }

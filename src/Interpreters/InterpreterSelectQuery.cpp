@@ -1078,18 +1078,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         else if (from_stage == QueryProcessingStage::Complete
           && !settings.distributed_group_by_no_merge
           && settings.distributed_group_by_merge_finalized
-          && expressions.need_aggregate) {
+          && expressions.need_aggregate)
+        {
             int agg_size = query_analyzer->aggregates().size();
             bool shouldMergeFinalized = true;
-            for (int i=0; i<agg_size; i++) {
-                if (!query_analyzer->aggregates()[i].function->canMergeFinalized()) {
+            for (int i=0; i<agg_size; i++)
+            {
+                if (!query_analyzer->aggregates()[i].function->canMergeFinalized())
+                {
                     shouldMergeFinalized = false;
                     break;
                 }
             }
-            if (shouldMergeFinalized) {
+            if (shouldMergeFinalized)
+            {
                 AggregateDescriptions mergeAggregates;
-                for (int i=0; i<agg_size; i++) {
+                for (int i=0; i<agg_size; i++)
+                {
                     query_analyzer->aggregates()[i].function->mergeFinalized(
                         mergeAggregates,
                         query_plan.getCurrentDataStream().header,
@@ -1727,9 +1732,6 @@ void InterpreterSelectQuery::executeMergeFinalized(QueryPlan & query_plan, Aggre
                                         ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                                         : static_cast<size_t>(settings.max_threads);
     Aggregator::Params aggregatorParams(header_before_aggregation, keys, mergeAggs, overflow_row, settings.max_threads);
-
-
-
 
     QueryPlanStepPtr aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
