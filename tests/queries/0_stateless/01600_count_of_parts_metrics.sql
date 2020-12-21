@@ -1,16 +1,4 @@
 
-SELECT
-    SUM(IF(metric = 'Parts', value, 0)) AS Parts,
-    SUM(IF(metric = 'PartsActive', value, 0)) AS PartsActive,
-    SUM(IF(metric = 'PartsInactive', value, 0)) AS PartsInactive
-FROM system.metrics;
-
-SELECT
-    SUM(1) AS Parts,
-    SUM(IF(active = 1, 1, 0)) AS PartsActive,
-    SUM(IF(active = 0, 1, 0)) AS PartsInactive
-FROM system.parts;
-
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;
 
