@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Aliases.h"
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -13,9 +12,7 @@ namespace ErrorCodes
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-            : task_zookeeper_path(task_zookeeper_path_)
-            , default_local_database(default_local_database_)
-    {}
+            : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 

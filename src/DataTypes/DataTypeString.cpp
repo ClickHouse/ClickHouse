@@ -295,7 +295,7 @@ void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, co
 
 void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeXMLString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 

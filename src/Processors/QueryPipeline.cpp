@@ -1,11 +1,12 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Processors/ResizeProcessor.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -14,7 +15,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -96,12 +96,6 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform));
 }
 
-void QueryPipeline::transform(const Transformer & transformer)
-{
-    checkInitializedAndNotCompleted();
-    pipe.transform(transformer);
-}
-
 void QueryPipeline::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();
@@ -130,7 +124,18 @@ void QueryPipeline::addMergingAggregatedMemoryEfficientTransform(AggregatingTran
 void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
-    pipe.resize(num_streams, force, strict);
+
+    if (!force && num_streams == getNumStreams())
+        return;
+
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(getHeader(), getNumStreams(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(getHeader(), getNumStreams(), num_streams);
+
+    pipe.addTransform(std::move(resize));
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
@@ -191,6 +196,59 @@ void QueryPipeline::addExtremesTransform()
     pipe.addTransform(std::move(transform), nullptr, port);
 }
 
+void QueryPipeline::addCreatingSetsTransform(SubqueriesForSets subqueries_for_sets, const SizeLimits & network_transfer_limits, const Context & context)
+{
+    checkInitializedAndNotCompleted();
+
+    Pipes sources;
+
+    for (auto & subquery : subqueries_for_sets)
+    {
+        if (!subquery.second.source.empty())
+        {
+            auto & source = sources.emplace_back(std::move(subquery.second.source));
+            if (source.numOutputPorts() > 1)
+                source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
+
+            source.dropExtremes();
+
+            auto creating_sets = std::make_shared<CreatingSetsTransform>(
+                    source.getHeader(),
+                    getHeader(),
+                    std::move(subquery.second),
+                    network_transfer_limits,
+                    context);
+
+            InputPort * totals = nullptr;
+            if (source.getTotalsPort())
+                totals = creating_sets->addTotalsPort();
+
+            source.addTransform(std::move(creating_sets), totals, nullptr);
+        }
+    }
+
+    if (sources.empty())
+        return;
+
+    auto * collected_processors = pipe.collected_processors;
+
+    /// We unite all sources together.
+    /// Set collected_processors to attach all newly-added processors to current query plan step.
+    auto source = Pipe::unitePipes(std::move(sources), collected_processors);
+    if (source.numOutputPorts() > 1)
+        source.addTransform(std::make_shared<ResizeProcessor>(source.getHeader(), source.numOutputPorts(), 1));
+    source.collected_processors = nullptr;
+
+    resize(1);
+
+    Pipes pipes;
+    pipes.emplace_back(std::move(source));
+    pipes.emplace_back(std::move(pipe));
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+
+    pipe.addTransform(std::make_shared<ConcatProcessor>(getHeader(), 2));
+}
+
 void QueryPipeline::setOutputFormat(ProcessorPtr output)
 {
     checkInitializedAndNotCompleted();
@@ -227,15 +285,10 @@ QueryPipeline QueryPipeline::unitePipelines(
 
         if (!pipeline.isCompleted())
         {
-            auto actions_dag = ActionsDAG::makeConvertingActions(
-                    pipeline.getHeader().getColumnsWithTypeAndName(),
-                    common_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position);
-            auto actions = std::make_shared<ExpressionActions>(actions_dag);
-
             pipeline.addSimpleTransform([&](const Block & header)
             {
-               return std::make_shared<ExpressionTransform>(header, actions);
+               return std::make_shared<ConvertingTransform>(
+                       header, common_header, ConvertingTransform::MatchColumnsMode::Position);
             });
         }
 
@@ -260,46 +313,6 @@ QueryPipeline QueryPipeline::unitePipelines(
     }
 
     return pipeline;
-}
-
-
-void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
-{
-    resize(1);
-
-    auto transform = std::make_shared<CreatingSetsTransform>(
-            getHeader(),
-            res_header,
-            std::move(subquery_for_set),
-            limits,
-            context);
-
-    InputPort * totals_port = nullptr;
-
-    if (pipe.getTotalsPort())
-        totals_port = transform->addTotalsPort();
-
-    pipe.addTransform(std::move(transform), totals_port, nullptr);
-}
-
-void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
-{
-    checkInitializedAndNotCompleted();
-    assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
-
-    IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
-    for (size_t i = 0; i < delayed_streams.size(); ++i)
-        delayed_streams[i] = i;
-
-    auto * collected_processors = pipe.collected_processors;
-
-    Pipes pipes;
-    pipes.emplace_back(std::move(pipe));
-    pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
-
-    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams);
-    addTransform(std::move(processor));
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)

@@ -194,12 +194,12 @@ inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const ch
     s.insert(rb.position(), end);
 }
 
-template <char... chars, typename Vector>
-void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
+template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -210,28 +210,19 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<'\t', '\n'>(s, buf);
-}
-
-template <typename Vector>
-void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<' '>(s, buf);
-}
-
-template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
-    readStringUntilCharsInto<'\0'>(s, buf);
-    buf.ignore();
-}
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
 
-void readStringUntilWhitespace(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilWhitespaceInto(s, buf);
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            break;
+    }
+    buf.ignore();
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -489,7 +480,7 @@ void readEscapedString(String & s, ReadBuffer & buf)
 }
 
 template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
 /** If enable_sql_style_quoting == true,
@@ -502,12 +493,8 @@ template <char quote, bool enable_sql_style_quoting, typename Vector>
 static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
-    {
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
-            "Cannot parse quoted string: expected opening quote '{}', got '{}'",
-            std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
-    }
-
+        throw Exception("Cannot parse quoted string: expected opening quote",
+            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
     while (!buf.eof())
@@ -575,7 +562,7 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(NullSink & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -755,7 +742,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
@@ -830,11 +817,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// YYYY-MM-DD hh:mm:ss
     static constexpr auto date_time_broken_down_length = 19;
-    /// YYYY-MM-DD
-    static constexpr auto date_broken_down_length = 10;
-    /// unix timestamp max length
     static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
@@ -848,15 +831,12 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         ++buf.position();
     }
 
-    /// 2015-01-01 01:02:03 or 2015-01-01
+    /// 2015-01-01 01:02:03
     if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
     {
-        const auto already_read_length = s_pos - s;
-        const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
-        const size_t remaining_date_size = date_broken_down_length - already_read_length;
-
-        size_t size = buf.read(s_pos, remaining_date_time_size);
-        if (size != remaining_date_time_size && size != remaining_date_size)
+        const size_t remaining_size = date_time_broken_down_length - (s_pos - s);
+        size_t size = buf.read(s_pos, remaining_size);
+        if (remaining_size != size)
         {
             s_pos[size] = 0;
 
@@ -870,16 +850,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
         UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-        UInt8 hour = 0;
-        UInt8 minute = 0;
-        UInt8 second = 0;
-
-        if (size == remaining_date_time_size)
-        {
-            hour = (s[11] - '0') * 10 + (s[12] - '0');
-            minute = (s[14] - '0') * 10 + (s[15] - '0');
-            second = (s[17] - '0') * 10 + (s[18] - '0');
-        }
+        UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+        UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+        UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
 
         if (unlikely(year == 0))
             datetime = 0;
@@ -918,7 +891,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
         throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     else if (*buf.position() == '"') /// skip double-quoted string
     {
-        NullOutput sink;
+        NullSink sink;
         readJSONStringInto(sink, buf);
     }
     else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+' || *buf.position() == '.') /// skip number
@@ -982,7 +955,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
             // field name
             if (*buf.position() == '"')
             {
-                NullOutput sink;
+                NullSink sink;
                 readJSONStringInto(sink, buf);
             }
             else

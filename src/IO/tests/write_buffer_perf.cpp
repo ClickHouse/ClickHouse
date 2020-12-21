@@ -3,7 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 

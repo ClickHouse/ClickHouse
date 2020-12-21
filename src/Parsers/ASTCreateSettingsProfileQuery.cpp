@@ -2,7 +2,6 @@
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB

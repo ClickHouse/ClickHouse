@@ -198,7 +198,7 @@ real    75m56.214s
 
 (وارد کردن داده ها به طور مستقیم از پستگرس نیز ممکن است با استفاده از `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 برای شروع, ما یک جدول بر روی یک سرور ایجاد. بعد ما را به جدول توزیع.
 
@@ -286,7 +286,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## دانلود پارتیشن های تهیه شده {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

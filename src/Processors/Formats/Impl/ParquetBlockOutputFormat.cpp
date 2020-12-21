@@ -84,7 +84,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
+           FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {
             auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);

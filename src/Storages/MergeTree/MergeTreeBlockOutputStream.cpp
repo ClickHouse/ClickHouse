@@ -13,28 +13,25 @@ Block MergeTreeBlockOutputStream::getHeader() const
 }
 
 
-void MergeTreeBlockOutputStream::writePrefix()
-{
-    /// Only check "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded();
-}
-
-
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
+    storage.delayInsertOrThrowIfNeeded();
+
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot);
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
         storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        storage.background_executor.triggerTask();
+        if (storage.merging_mutating_task_handle)
+        {
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+            storage.merging_mutating_task_handle->signalReadyToRun();
+        }
     }
 }
 

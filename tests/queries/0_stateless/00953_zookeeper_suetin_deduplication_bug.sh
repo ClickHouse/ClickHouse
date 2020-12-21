@@ -61,5 +61,3 @@ done
 $CLICKHOUSE_CLIENT --query="INSERT INTO elog VALUES (toDate('2018-10-01'), 2, 'hello')"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(*) from elog" # still 5 rows
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE elog"

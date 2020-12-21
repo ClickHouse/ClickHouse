@@ -46,7 +46,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
             auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
 
-            ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
+            ColumnWithTypeAndName res_column = block_to_calculate.getByPosition(block_to_calculate.columns() - 1);
 
             if (!isUInt8(res_column.type))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Constraint {} does not return a value of type UInt8",
@@ -59,10 +59,14 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 /// Is violated.
                 if (!value)
                 {
-                    throw Exception(ErrorCodes::VIOLATED_CONSTRAINT,
-                                    "Constraint {} for table {} is violated, because it is a constant expression returning 0. "
-                                    "It is most likely an error in table definition.",
-                                    backQuote(constraint_ptr->name), table_id.getNameForLogs());
+                    std::stringstream exception_message;
+
+                    exception_message << "Constraint " << backQuote(constraint_ptr->name)
+                        << " for table " << table_id.getNameForLogs()
+                        << " is violated, because it is a constant expression returning 0."
+                        << " It is most likely an error in table definition.";
+
+                    throw Exception{exception_message.str(), ErrorCodes::VIOLATED_CONSTRAINT};
                 }
             }
             else
@@ -82,27 +86,27 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
                     Names related_columns = constraint_expr->getRequiredColumns();
 
+                    std::stringstream exception_message;
+
+                    exception_message << "Constraint " << backQuote(constraint_ptr->name)
+                        << " for table " << table_id.getNameForLogs()
+                        << " is violated at row " << (rows_written + row_idx + 1)
+                        << ". Expression: (" << serializeAST(*(constraint_ptr->expr), true) << ")"
+                        << ". Column values";
+
                     bool first = true;
-                    String column_values_msg;
-                    constexpr size_t approx_bytes_for_col = 32;
-                    column_values_msg.reserve(approx_bytes_for_col * related_columns.size());
                     for (const auto & name : related_columns)
                     {
                         const IColumn & column = *block.getByName(name).column;
                         assert(row_idx < column.size());
 
-                        if (!first)
-                            column_values_msg.append(", ");
-                        column_values_msg.append(backQuoteIfNeed(name));
-                        column_values_msg.append(" = ");
-                        column_values_msg.append(applyVisitor(FieldVisitorToString(), column[row_idx]));
+                        exception_message << (first ? ": " : ", ")
+                            << backQuoteIfNeed(name) << " = " << applyVisitor(FieldVisitorToString(), column[row_idx]);
+
                         first = false;
                     }
 
-                    throw Exception(ErrorCodes::VIOLATED_CONSTRAINT,
-                                    "Constraint {} for table {} is violated at row {}. Expression: ({}). Column values: {}",
-                                    backQuote(constraint_ptr->name), table_id.getNameForLogs(), rows_written + row_idx + 1,
-                                    serializeAST(*(constraint_ptr->expr), true), column_values_msg);
+                    throw Exception{exception_message.str(), ErrorCodes::VIOLATED_CONSTRAINT};
                 }
             }
         }

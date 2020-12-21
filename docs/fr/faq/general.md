@@ -17,7 +17,7 @@ La plupart des implémentations MapReduce vous permettent d'exécuter du code ar
 
 ## Que Faire si j'ai un problème avec les encodages lors de l'utilisation D'Oracle via ODBC? {#oracle-odbc-encodings}
 
-Si vous utilisez Oracle via le pilote ODBC comme source de dictionnaires externes, vous devez définir la valeur correcte pour `NLS_LANG` variable d'environnement dans `/etc/default/clickhouse`. Pour plus d'informations, voir le [FAQ Oracle NLS_LANG](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+Si vous utilisez Oracle via le pilote ODBC comme source de dictionnaires externes, vous devez définir la valeur correcte pour `NLS_LANG` variable d'environnement dans `/etc/default/clickhouse`. Pour plus d'informations, voir le [FAQ Oracle NLS\_LANG](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **Exemple**
 

@@ -59,7 +59,7 @@ Komut satırı dayanmaktadır ‘replxx’ (benzer ‘readline’). Başka bir d
 
 Varsayılan olarak, kullanılan biçim PrettyCompact. Sorgunun biçim yan tümcesinde veya belirterek biçimi değiştirebilirsiniz `\G` sorgunun sonunda, `--format` veya `--vertical` komut satırında veya istemci yapılandırma dosyasını kullanarak bağımsız değişken.
 
-İstemciden çıkmak için Ctrl+D tuşlarına basın veya bir sorgu yerine aşağıdakilerden birini girin: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+İstemciden çıkmak için Ctrl+D (veya Ctrl+C) tuşlarına basın veya bir sorgu yerine aşağıdakilerden birini girin: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
 Bir sorguyu işlerken, istemci şunları gösterir:
 
