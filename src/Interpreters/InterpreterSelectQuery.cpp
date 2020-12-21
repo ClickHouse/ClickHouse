@@ -1086,11 +1086,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             {
                 if (!query_analyzer->aggregates()[i].function->canMergeFinalized())
                 {
-                    shouldMergeFinalized = false;
+                    should_merge_finalized = false;
                     break;
                 }
             }
-            if (shouldMergeFinalized)
+            if (should_merge_finalized)
             {
                 AggregateDescriptions merge_aggregates;
                 for (int i=0; i<agg_size; i++)
