@@ -1,9 +1,18 @@
+/** This library provides runtime instrumentation (hardening)
+  * that ensures no "harmful" functions from libc are called
+  * (by terminating the program immediately).
+  */
+
+/// It is only enabled in debug build (it's intended use is for CI checks).
+#if !defined(NDEBUG)
+
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 #else
     #pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
 #endif
 
+/// We cannot use libc headers here.
 long write(int, const void *, unsigned long);
 #define TRAP(func) void func() { write(2, #func "\n", __builtin_strlen(#func) + 1); __builtin_trap(); }
 
@@ -11,6 +20,9 @@ long write(int, const void *, unsigned long);
 /// nm -D /lib/x86_64-linux-gnu/{libc.so.6,libdl.so.2,libm.so.6,libpthread.so.0,librt.so.1,libnss_dns.so.2,libresolv.so.2} | grep -P '_r@?$' | awk '{ print $3 }' | sed -r -e 's/_r//' | grep -vP '^_'
 
 /// See also https://reviews.llvm.org/D90944
+
+/// You can edit this list and even comment out some functions.
+/// The only purpose of the library is to force you to pay attention.
 
 TRAP(argp_error)
 TRAP(argp_help)
@@ -228,3 +240,5 @@ TRAP(lgammaf32)
 TRAP(lgammaf32x)
 TRAP(lgammaf64)
 TRAP(lgammaf64x)
+
+#endif
