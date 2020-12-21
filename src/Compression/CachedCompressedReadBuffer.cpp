@@ -1,15 +1,8 @@
 #include "CachedCompressedReadBuffer.h"
 
-#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <utility>
-
-namespace ProfileEvents
-{
-    extern const Event UncompressedCacheHits;
-    extern const Event UncompressedCacheMisses;
-}
 
 namespace DB
 {
@@ -39,50 +32,38 @@ bool CachedCompressedReadBuffer::nextImpl()
 
     size_t size_decompressed = 0;
     size_t size_compressed_without_checksum = 0;
-    size_t size_compressed = 0;
-    size_t additional_bytes = 0;
+    UncompressedCacheCell payload;
+    payload.compressed_size = 0;
+    payload.additional_bytes = 0;
 
-    bool was_calculated = false;
-    ///TODO: Fix interface probably payload can contain size then we can make cell
-    /// and return it as payload
     owned_region = cache->getOrSet(
         key,
         [&]() -> size_t
         {
             initInput();
             file_in->seek(file_pos, SEEK_SET);
-            size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
 
-            if (size_compressed)
+            payload.compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+
+            if (payload.compressed_size)
             {
-                additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-                return size_decompressed + additional_bytes;
+                payload.additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
+                return size_decompressed + payload.additional_bytes;
             }
             else
             {
                 return 0;
             }
         },
-        [&](void * ptr, UncompressedCacheCell & payload)
+        [&](void * ptr, UncompressedCacheCell & payload_to_initialize)
         {
-            payload.compressed_size = size_compressed;
+            payload_to_initialize = payload;
 
-            if (payload.compressed_size)
+            if (payload_to_initialize.compressed_size)
             {
-                payload.additional_bytes = additional_bytes;
                 decompress(static_cast<char *>(ptr), size_decompressed, size_compressed_without_checksum);
             }
-        },
-        &was_calculated);
-
-    if (was_calculated)
-    {
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
-    }
+        });
 
     auto owned_cell = owned_region->payload();
     auto size = owned_region->size();
@@ -90,7 +71,7 @@ bool CachedCompressedReadBuffer::nextImpl()
     if (owned_region->size() == 0)
         return false;
 
-    auto buffer_begin = static_cast<char*>(owned_region->ptr());
+    auto * buffer_begin = static_cast<char*>(owned_region->ptr());
     working_buffer = Buffer(buffer_begin, buffer_begin + size - owned_cell.additional_bytes);
 
     file_pos += owned_cell.compressed_size;

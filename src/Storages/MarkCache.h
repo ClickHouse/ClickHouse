@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Common/LRUCache.h>
+#include <Common/ArrayCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
@@ -19,27 +19,24 @@ namespace DB
 {
 
 /// Estimate of number of bytes in cache for marks.
-struct MarksWeightFunction
-{
-    /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
-    static constexpr size_t MARK_CACHE_OVERHEAD = 128;
+// struct MarksWeightFunction
+// {
+//     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
+//     static constexpr size_t MARK_CACHE_OVERHEAD = 128;
 
-    size_t operator()(const MarksInCompressedFile & marks) const
-    {
-        return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
-    }
-};
-
-
-/// TODO: Use ArrayCache
+//     size_t operator()(const MarksInCompressedFile & marks) const
+//     {
+//         return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
+//     }
+// };
 
 /** Cache of 'marks' for StorageMergeTree.
   * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
   */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
+class MarkCache : public ArrayCache<UInt128, MarksInCompressedFile>
 {
 private:
-    using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
+    using Base = ArrayCache<UInt128, MarksInCompressedFile>;
 
 public:
     MarkCache(size_t max_size_in_bytes)
@@ -57,16 +54,30 @@ public:
         return key;
     }
 
-    template <typename LoadFunc>
-    MappedPtr getOrSet(const Key & key, LoadFunc && load)
+    HolderPtr get(const Key & key)
     {
-        auto result = Base::getOrSet(key, load);
-        if (result.second)
+        Base::HolderPtr res = Base::get(key);
+
+        if (res)
+            ProfileEvents::increment(ProfileEvents::MarkCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
+
+        return res;
+    }
+
+    template <typename GetSizeFunc, typename InitializeFunc>
+    HolderPtr getOrSet(const Key & key, GetSizeFunc && get_size, InitializeFunc && initialize)
+    {
+        bool was_calculated = false;
+        auto result = Base::getOrSet(key, get_size, initialize, &was_calculated);
+
+        if (was_calculated)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
-        return result.first;
+        return result;
     }
 };
 

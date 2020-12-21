@@ -58,6 +58,21 @@ public:
 
         return res;
     }
+
+    template <typename GetSizeFunc, typename InitializeFunc>
+    HolderPtr getOrSet(const Key & key, GetSizeFunc && get_size, InitializeFunc && initialize)
+    {
+        bool was_calculated = false;
+        auto result = Base::getOrSet(key, get_size, initialize, &was_calculated);
+
+        if (was_calculated)
+            ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
+
+        return result;
+    }
+
 };
 
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;

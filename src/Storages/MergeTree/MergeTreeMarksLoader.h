@@ -10,8 +10,6 @@ struct MergeTreeIndexGranularityInfo;
 class MergeTreeMarksLoader
 {
 public:
-    using MarksPtr = MarkCache::MappedPtr;
-
     MergeTreeMarksLoader(
         DiskPtr disk_,
         MarkCache * mark_cache_,
@@ -23,7 +21,7 @@ public:
 
     const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
-    bool initialized() const { return marks != nullptr; }
+    bool initialized() const { return is_initialized; }
 
 private:
     DiskPtr disk;
@@ -32,11 +30,13 @@ private:
     size_t marks_count;
     const MergeTreeIndexGranularityInfo & index_granularity_info;
     bool save_marks_in_cache = false;
+    bool is_initialized = false;
     size_t columns_in_mark;
-    MarkCache::MappedPtr marks;
+    MarkCache::HolderPtr marks_cache;
+    MarksInCompressedFile marks_non_cache;
 
     void loadMarks();
-    MarkCache::MappedPtr loadMarksImpl();
+    void readIntoMarks(MarksInCompressedFile& marks_to_load);
 };
 
 }

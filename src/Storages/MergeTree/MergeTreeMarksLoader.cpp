@@ -33,7 +33,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
-    if (!marks)
+    if (!is_initialized)
         loadMarks();
 
 #ifndef NDEBUG
@@ -42,14 +42,13 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
             + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
 #endif
 
-    return (*marks)[row_index * columns_in_mark + column_index];
+    /// If we get marks from cache use marks_cache_holder
+    auto& valid_marks = marks_cache ? marks_cache->payload() : marks_non_cache;
+    return valid_marks[row_index * columns_in_mark + column_index];
 }
 
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
+void MergeTreeMarksLoader::readIntoMarks(MarksInCompressedFile & marks_to_load)
 {
-    /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
     size_t file_size = disk->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
     size_t expected_file_size = mark_size * marks_count;
@@ -59,13 +58,11 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             "Bad size of marks file '" + fullPath(disk, mrk_path) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
             ErrorCodes::CORRUPTED_DATA);
 
-    auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
-
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
         auto buffer = disk->readFile(mrk_path, file_size);
-        buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
+        buffer->readStrict(reinterpret_cast<char *>(marks_to_load.data()), file_size);
 
         if (!buffer->eof())
             throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
@@ -77,7 +74,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         size_t i = 0;
         while (!buffer->eof())
         {
-            res->read(*buffer, i * columns_in_mark, columns_in_mark);
+            marks_to_load.read(*buffer, i * columns_in_mark, columns_in_mark);
             buffer->seek(sizeof(size_t), SEEK_CUR);
             ++i;
         }
@@ -85,32 +82,43 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         if (i * mark_size != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
-    res->protect();
-    return res;
 }
 
 void MergeTreeMarksLoader::loadMarks()
 {
+    /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+
     if (mark_cache)
     {
         auto key = mark_cache->hash(mrk_path);
+
         if (save_marks_in_cache)
         {
-            auto callback = [this]{ return loadMarksImpl(); };
-            marks = mark_cache->getOrSet(key, callback);
+            auto get_size = [&] { return marks_count * columns_in_mark * sizeof(MarkInCompressedFile); };
+
+            auto initialization = [&](void * ptr, MarksInCompressedFile & payload)
+            {
+                payload = MarksInCompressedFile(marks_count * columns_in_mark, ptr);
+                readIntoMarks(payload);
+            };
+
+            marks_cache = mark_cache->getOrSet(key, get_size, initialization);
         }
         else
         {
-            marks = mark_cache->get(key);
-            if (!marks)
-                marks = loadMarksImpl();
+            marks_cache = mark_cache->get(key);
         }
     }
-    else
-        marks = loadMarksImpl();
 
-    if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+    if (!marks_cache)
+    {
+        MarksInCompressedFile marks_to_load(marks_count * columns_in_mark);
+        readIntoMarks(marks_to_load);
+        marks_non_cache = std::move(marks_to_load);
+    }
+
+    is_initialized = true;
 }
 
 }
