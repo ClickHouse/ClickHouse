@@ -11,6 +11,7 @@
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -126,6 +127,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    size_t getRandomShardIndex(size_t shard_num);
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
@@ -198,6 +201,9 @@ protected:
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
 
+    // For random shard index generation
+    mutable std::mutex rng_mutex;
+    pcg64 rng;
 };
 
 }

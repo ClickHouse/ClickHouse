@@ -17,6 +17,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -373,6 +374,7 @@ StorageDistributed::StorageDistributed(
     , cluster_name(global_context.getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
+    , rng(randomSeed())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -543,7 +545,8 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     }
 
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
-    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    if (!settings.insert_distributed_one_random_shard && !has_sharding_key
+        && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
     {
         throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
                         ErrorCodes::STORAGE_REQUIRES_PARAMETER);
@@ -887,6 +890,13 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
+}
+
+
+size_t StorageDistributed::getRandomShardIndex(size_t shard_num)
+{
+    std::lock_guard lock(rng_mutex);
+    return std::uniform_int_distribution<size_t>(0, shard_num - 1)(rng);
 }
 
 
