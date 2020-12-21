@@ -125,6 +125,7 @@ void ThreadFuzzer::initConfiguration()
 
 #    undef INIT_WRAPPER_PARAMS
 #endif
+    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "pthread_mutex_lock_before_migrate_probability {}", pthread_mutex_lock_before_migrate_probability);
 }
 
 
