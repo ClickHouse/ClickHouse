@@ -1423,6 +1423,18 @@ Possible values:
 
 Default value: `uniqExact`.
 
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+
+This option will rewrite all aggregate functions in a query, adding `-OrNull` suffix to them.
+It is implemented via query rewrite (similar to [`count_distinct_implementation`](settings-count_distinct_implementation) setting) to get consistent results for distributed queries.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Enables or disables silently skipping of unavailable shards.
