@@ -1784,7 +1784,6 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             + w.window_name + "'");
         query_plan.addStep(std::move(merge_sorting_step));
 
-
         // First MergeSorted, now MergingSorted......
         auto merging_sorted = std::make_unique<MergingSortedStep>(
             query_plan.getCurrentDataStream(),
