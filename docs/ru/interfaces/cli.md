@@ -11,9 +11,9 @@ ClickHouse предоставляет собственный клиент ком
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 19.17.1.1579 (official build).
+ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```
@@ -130,6 +130,8 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 -   `--config-file` — имя конфигурационного файла.
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
+
+Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
 
 ### Конфигурационные файлы {#konfiguratsionnye-faily}
 
