@@ -1,16 +1,12 @@
-#!/usr/bin/env bash
-
-#\
-export CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-#\
-. "$CURDIR"/../shell_config.sh
-#\
-export EDITOR=$CURDIR/01610_client_spawn_editor_open.editor
-#\
-exec expect -f $CURDIR/01610_client_spawn_editor.sh "$@"
+#!/tmp/gentoo/usr/bin/expect -f
 
 log_user 0
-set timeout 1
+set timeout 5
+match_max 100000
+
+if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
+
+set env(EDITOR) [file dirname [file normalize [info script]]]"/01610_client_spawn_editor_open.editor"
 
 spawn clickhouse-client
 expect ":) "
