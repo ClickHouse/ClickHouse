@@ -40,14 +40,13 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
 
             // We are looking for identifiers inside a function calculated inside
             // the aggregate function `any()`. Window or aggregate function can't
-            // be inside `any` (checked by GetAggregatesMatcher).
+            // be inside `any`, but this check in GetAggregatesMatcher happens
+            // later, so we have to explicitly skip these nested functions here.
             if (arg_func->is_window_function
                 || AggregateFunctionFactory::instance().isAggregateFunctionName(
                     arg_func->name))
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Found an aggregate function '{}' inside another aggregate"
-                    " function", arg_func->formatForErrorMessage());
+                return false;
             }
 
             if (!extractIdentifiers(*arg_func, identifiers))

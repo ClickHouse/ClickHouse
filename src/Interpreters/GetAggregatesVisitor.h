@@ -20,9 +20,11 @@ public:
     {
         const char * assert_no_aggregates = nullptr;
         const char * assert_no_windows = nullptr;
-        std::unordered_set<String> uniq_names;
-        std::vector<const ASTFunction *> aggregates;
-        std::vector<const ASTFunction *> window_functions;
+        // Explicit empty initializers are needed to make designated initializers
+        // work on GCC 10.
+        std::unordered_set<String> uniq_names {};
+        std::vector<const ASTFunction *> aggregates {};
+        std::vector<const ASTFunction *> window_functions {};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
