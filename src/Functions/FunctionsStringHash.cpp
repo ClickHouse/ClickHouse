@@ -48,7 +48,7 @@ struct Hash
         return crc;
     }
 
-    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt32 * hashes, size_t size, size_t offset)
+    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes, size_t size, size_t offset)
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
@@ -122,7 +122,7 @@ struct SimhashImpl
     // we made an assumption that the size of one word cann't exceed 128, which may not true
     // if some word's size exceed 128, it would be cut up to several word
     static constexpr size_t max_string_size = 1u << 15;
-    static constexpr size_t simultaneously_codepoints_num = StrOp::default_padding + N - 1;
+    static constexpr size_t simultaneously_codepoints_num = StrOp::buffer_size;
 
     // Simhash ngram calculate function: String ->UInt64
     // this function extracting ngram from input string, and maintain a 64-dimensions vector
@@ -323,7 +323,7 @@ struct MinhashImpl
     using MinHeap = FixedHeap<std::greater<size_t>, K, 0>;
     using StrOp = ExtractStringImpl<N, CaseInsensitive>;
     static constexpr size_t max_string_size = 1u << 15;
-    static constexpr size_t simultaneously_codepoints_num = StrOp::default_padding + N - 1;
+    static constexpr size_t simultaneously_codepoints_num = StrOp::buffer_size;
 
     // Minhash ngram calculate function, String -> Tuple(UInt64, UInt64)
     // we extract ngram from input string, and calculate a hash value for each ngram

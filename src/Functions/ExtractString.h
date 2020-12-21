@@ -19,11 +19,16 @@ namespace DB
 template <size_t N, bool CaseInsensitive>
 struct ExtractStringImpl
 {
+    /// Padding form ColumnsString. It is a number of bytes we can always read starting from pos if pos < end.
     static constexpr size_t default_padding = 16;
 
-    // the length of code_points = default_padding + N -1
+    /// Functions are read `default_padding - (N - 1)` bytes into the buffer. Window of size N is used.
+    /// Read copies `N - 1` last bytes from buffer into beginning, and then reads new bytes.
+    static constexpr size_t buffer_size = default_padding + N - 1;
+
+    // the length of code_points = buffer_size
     // pos: the current beginning location that we want to copy data
-    // end: the end loction of the string
+    // end: the end location of the string
     static ALWAYS_INLINE size_t readASCIICodePoints(UInt8 * code_points, const char *& pos, const char * end)
     {
         /// Offset before which we copy some data.
