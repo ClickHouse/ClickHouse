@@ -4,7 +4,8 @@
     #pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
 #endif
 
-#define TRAP(func) void func() { __builtin_trap(); }
+long write(int, const void *, unsigned long);
+#define TRAP(func) void func() { write(2, #func "\n", __builtin_strlen(#func) + 1); __builtin_trap(); }
 
 /// Trap all non thread-safe functions:
 /// nm -D /lib/x86_64-linux-gnu/{libc.so.6,libdl.so.2,libm.so.6,libpthread.so.0,librt.so.1,libnss_dns.so.2,libresolv.so.2} | grep -P '_r@?$' | awk '{ print $3 }' | sed -r -e 's/_r//' | grep -vP '^_'
@@ -111,7 +112,7 @@ TRAP(mbrlen)
 TRAP(mbrtowc)
 TRAP(mbsnrtowcs)
 TRAP(mbsrtowcs)
-TRAP(mbtowc)
+//TRAP(mbtowc) // Used by Standard C++ library
 TRAP(mcheck)
 TRAP(mprobe)
 TRAP(mrand48)
@@ -135,7 +136,7 @@ TRAP(setgrent)
 TRAP(sethostent)
 TRAP(sethostid)
 TRAP(setkey)
-TRAP(setlocale)
+//TRAP(setlocale) // Used by replxx at startup
 TRAP(setlogmask)
 TRAP(setnetent)
 TRAP(setnetgrent)
@@ -150,7 +151,7 @@ TRAP(sigprocmask)
 TRAP(sigsuspend)
 TRAP(sleep)
 TRAP(srand48)
-//TRAP(strerror)
+//TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 TRAP(strsignal)
 TRAP(strtok)
 TRAP(tcflow)
@@ -183,7 +184,7 @@ TRAP(dirname)
 TRAP(dlerror)
 TRAP(ftw)
 TRAP(getc_unlocked)
-TRAP(getenv)
+//TRAP(getenv) // Ok at program startup
 TRAP(inet_ntoa)
 TRAP(lgamma)
 TRAP(lgammaf)
@@ -192,7 +193,14 @@ TRAP(nftw)
 TRAP(nl_langinfo)
 TRAP(putc_unlocked)
 TRAP(rand)
-TRAP(readdir)
+/** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
+  * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams
+  * are thread-safe.  In cases where multiple threads must read from the same directory stream, using readdir() with external
+  * synchronization is still preferable to the use of the deprecated readdir_r(3)  function. It is expected that a future
+  * version of POSIX.1 will require that readdir() be thread-safe when concurrently employed on different directory streams.
+  * - man readdir
+  */
+//TRAP(readdir)
 TRAP(system)
 TRAP(wcstombs)
 TRAP(ether_aton)
