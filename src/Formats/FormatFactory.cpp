@@ -258,7 +258,6 @@ InputFormatPtr FormatFactory::getInputFormat(
 
     auto format = input_getter(buf, sample, params, format_settings);
 
-
     /// It's a kludge. Because I cannot remove context from values format.
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
