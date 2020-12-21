@@ -28,6 +28,10 @@
 #    include <mysqlxx/Pool.h>
 #endif
 
+#if USE_LIBPQXX
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
+#endif
+
 namespace DB
 {
 
@@ -80,7 +84,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_define->engine->arguments)
+    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_name != "PostgreSQL" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
@@ -167,6 +171,42 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
+
+#if USE_LIBPQXX
+
+    else if (engine_name == "PostgreSQL")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 4)
+            throw Exception(fmt::format(
+                        "{} Database require postgres_host_port, postgres_dbname, "
+                        "postgres_username, mysql_password arguments.", engine_name),
+                ErrorCodes::BAD_ARGUMENTS);
+
+        ASTs & engine_args = engine->arguments->children;
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
+        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+        auto parsed_host_port = parseAddress(host_port, 5432);
+        String connection_str;
+        connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
+                postgres_database_name, parsed_host_port.first, std::to_string(parsed_host_port.second),
+                username, password);
+        /// no connection is made here
+        auto connection = std::make_shared<PGConnection>(connection_str);
+
+        return std::make_shared<DatabasePostgreSQL>(
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection);
+    }
+
+#endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }

@@ -14,6 +14,8 @@
 namespace DB
 {
 
+class PGConnection;
+using PGConnectionPtr = std::shared_ptr<PGConnection>;
 using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
@@ -23,8 +25,7 @@ public:
     StoragePostgreSQL(
         const StorageID & table_id_,
         const std::string & remote_table_name_,
-        ConnectionPtr connection_,
-        const String connection_str,
+        PGConnectionPtr connection_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);
@@ -44,13 +45,10 @@ public:
 
 private:
     friend class PostgreSQLBlockOutputStream;
-    void checkConnection(ConnectionPtr & connection) const;
 
     String remote_table_name;
     Context global_context;
-
-    ConnectionPtr connection;
-    const String connection_str;
+    PGConnectionPtr connection;
 };
 
 
@@ -58,12 +56,10 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit PostgreSQLBlockOutputStream(
-        const StoragePostgreSQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         ConnectionPtr connection_,
         const std::string & remote_table_name_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
+        : metadata_snapshot(metadata_snapshot_)
         , connection(connection_)
         , remote_table_name(remote_table_name_)
     {
@@ -76,7 +72,6 @@ public:
     void writeSuffix() override;
 
 private:
-    const StoragePostgreSQL & storage;
     StorageMetadataPtr metadata_snapshot;
     ConnectionPtr connection;
     std::string remote_table_name;
@@ -84,6 +79,35 @@ private:
     std::unique_ptr<pqxx::work> work;
     std::unique_ptr<pqxx::stream_to> stream_inserter;
 };
+
+
+/// Tiny connection class to make it more convenient to use.
+class PGConnection
+{
+public:
+    PGConnection(std::string & connection_str_) : connection_str(connection_str_) {}
+    PGConnection(const PGConnection &) = delete;
+    PGConnection operator =(const PGConnection &) = delete;
+
+    ConnectionPtr conn()
+    {
+        checkUpdateConnection();
+        return connection;
+    }
+
+    std::string & conn_str() { return connection_str; }
+
+private:
+    ConnectionPtr connection;
+    std::string connection_str;
+
+    void checkUpdateConnection()
+    {
+        if (!connection || !connection->is_open())
+            connection = std::make_unique<pqxx::connection>(connection_str);
+    }
+};
+
 }
 
 #endif

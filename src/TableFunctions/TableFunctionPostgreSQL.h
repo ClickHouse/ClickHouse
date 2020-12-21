@@ -5,11 +5,11 @@
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/StoragePostgreSQL.h>
 #include "pqxx/pqxx"
 
 namespace DB
 {
-using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -27,11 +27,9 @@ private:
     ColumnsDescription getActualTableStructure(const Context & context) const override;
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    DataTypePtr getDataType(std::string & type, bool is_nullable, uint16_t dimensions) const;
-
     String connection_str;
     String remote_table_name;
-    ConnectionPtr connection;
+    PGConnectionPtr connection;
 };
 
 }

@@ -32,9 +32,6 @@
             <null_value></null_value>
          </attribute>
       </structure>
-      <lifetime>
-          <min>1</min>
-          <max>1</max>
-      </lifetime>
+      <lifetime>1</lifetime>
   </dictionary>
 </yandex>

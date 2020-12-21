@@ -31,8 +31,7 @@ namespace ErrorCodes
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
     const String & remote_table_name_,
-    ConnectionPtr connection_,
-    const String connection_str_,
+    PGConnectionPtr connection_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
@@ -40,7 +39,6 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_name(remote_table_name_)
     , global_context(context_)
     , connection(std::move(connection_))
-    , connection_str(connection_str_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -74,22 +72,20 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    checkConnection(connection);
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(connection, query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), query, sample_block, max_block_size_)));
 }
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
 {
-    return std::make_shared<PostgreSQLBlockOutputStream>(*this, metadata_snapshot, connection, remote_table_name);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, connection->conn(), remote_table_name);
 }
 
 
 void PostgreSQLBlockOutputStream::writePrefix()
 {
-    storage.checkConnection(connection);
     work = std::make_unique<pqxx::work>(*connection);
 }
 
@@ -144,16 +140,6 @@ void PostgreSQLBlockOutputStream::writeSuffix()
 }
 
 
-void StoragePostgreSQL::checkConnection(ConnectionPtr & pg_connection) const
-{
-    if (!pg_connection->is_open())
-    {
-        pg_connection->close();
-        pg_connection = std::make_shared<pqxx::connection>(connection_str);
-    }
-}
-
-
 void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
@@ -178,9 +164,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
                 engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
-        auto connection = std::make_shared<pqxx::connection>(connection_str);
+        auto connection = std::make_shared<PGConnection>(connection_str);
         return StoragePostgreSQL::create(
-            args.table_id, remote_table, connection, connection_str, args.columns, args.constraints, args.context);
+            args.table_id, remote_table, connection, args.columns, args.constraints, args.context);
     },
     {
         .source_access_type = AccessType::POSTGRES,
