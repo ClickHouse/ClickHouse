@@ -583,7 +583,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, global_context);
     }
     catch (...)
     {
@@ -608,6 +608,7 @@ bool StorageBuffer::optimize(
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
+    const Names & /* deduplicate_by_columns */,
     const Context & /*context*/)
 {
     if (partition)
@@ -906,7 +907,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
