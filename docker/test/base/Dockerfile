@@ -55,11 +55,13 @@ RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/
   echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 
-# Some python2 packages deprecated in ubuntu 20.04, so install them using pip
-RUN add-apt-repository universe \
-    && apt install python2 \
-    && curl "https://bootstrap.pypa.io/get-pip.py" --output get-pip.py \
-    && python2 get-pip.py \
-    && pip install requests termcolor
+# Some python2 packages deprecated in ubuntu 20.04, so install them from 18.04
+RUN echo "deb http://mirror.yandex.ru/ubuntu bionic main universe" >> /etc/apt/sources.list \
+    && cat /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install \
+               python-requests \
+               python-termcolor \
+               --yes --no-install-recommends
 
 CMD sleep 1
