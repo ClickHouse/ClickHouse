@@ -33,6 +33,8 @@ public:
 
     StorageID getDatabaseTable() const;
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context & context_) const override;
+
 private:
     StoragePtr getTable(ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;

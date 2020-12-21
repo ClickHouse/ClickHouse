@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 
 CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml',
                 'configs/remote_servers.xml']
-CONFIG_FILES += ['configs/enable_dictionaries.xml']
+CONFIG_FILES += ['configs/enable_dictionaries.xml', 'configs/log_conf.xml']
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True)
 

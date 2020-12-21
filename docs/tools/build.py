@@ -185,7 +185,7 @@ def build(args):
         test.test_templates(args.website_dir)
 
     if not args.skip_docs:
-        generate_cmake_flags_files(os.path.join(os.path.dirname(__file__), '..', '..'))
+        generate_cmake_flags_files()
 
         build_docs(args)
         from github import build_releases
@@ -202,7 +202,11 @@ def build(args):
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
-    website_dir = os.path.join('..', 'website')
+
+    # A root path to ClickHouse source code.
+    src_dir = '..'
+
+    website_dir = os.path.join(src_dir, 'website')
 
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
@@ -210,6 +214,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
+    arg_parser.add_argument('--src-dir', default=src_dir)
     arg_parser.add_argument('--blog-dir', default=os.path.join(website_dir, 'blog'))
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')

@@ -1,5 +1,5 @@
 DROP DATABASE IF EXISTS dictdb;
-CREATE DATABASE dictdb Engine = Ordinary;
+CREATE DATABASE dictdb;
 
 CREATE TABLE dictdb.dicttbl(key Int64, value_default String, value_expression String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dictdb.dicttbl VALUES (12, 'hello', '55:66:77');
@@ -13,7 +13,7 @@ CREATE DICTIONARY dictdb.dict
 
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dicttbl' DB 'dictdb'))
 LAYOUT(FLAT())
 LIFETIME(1);
 

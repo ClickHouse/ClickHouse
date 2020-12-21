@@ -31,3 +31,10 @@ select maxMap(val, cnt) from values ('val Array(Date), cnt Array(Int16)',  ([1],
 select maxMap(val, cnt) from values ('val Array(DateTime(\'Europe/Moscow\')), cnt Array(Int32)',  ([1], [1]), ([1], [2]));
 select maxMap(val, cnt) from values ('val Array(Decimal(10, 2)), cnt Array(Int16)',  (['1.01'], [1]), (['1.01'], [2]));
 select maxMap(val, cnt) from values ('val Array(Enum16(\'a\'=1)), cnt Array(Int16)',  (['a'], [1]), (['a'], [2]));
+
+-- bugfix, minMap and maxMap should not remove values with zero and empty strings but this behavior should not affect sumMap
+select minMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
+select maxMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));
+select minMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
+select maxMap(val, cnt) from values ('val Array(String), cnt Array(String)',  (['A'], ['']), (['B'], ['']));
+select sumMap(val, cnt) from values ('val Array(UInt64), cnt Array(UInt64)',  ([1], [0]), ([2], [0]));

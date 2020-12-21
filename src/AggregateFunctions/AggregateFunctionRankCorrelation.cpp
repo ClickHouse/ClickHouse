@@ -21,23 +21,10 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & 
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);
 
-    AggregateFunctionPtr res;
-
-    if (isDecimal(argument_types[0]) || isDecimal(argument_types[1]))
-    {
+    if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
         throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
-    }
-    else
-    {
-        res.reset(createWithTwoNumericTypes<AggregateFunctionRankCorrelation>(*argument_types[0], *argument_types[1], argument_types));
-    }
 
-    if (!res)
-    {
-        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    return res;
+    return std::make_shared<AggregateFunctionRankCorrelation>(argument_types);
 }
 
 }
@@ -45,7 +32,7 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(const std::string & 
 
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation);
 }
 
 }

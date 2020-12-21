@@ -44,10 +44,12 @@ public:
 
         /// Information about different TTLs for part. Can be used by
         /// TTLSelector to assign merges with TTL.
-        const MergeTreeDataPartTTLInfos * ttl_infos;
+        const MergeTreeDataPartTTLInfos * ttl_infos = nullptr;
 
         /// Part compression codec definition.
         ASTPtr compression_codec_desc;
+
+        bool shall_participate_in_merges = true;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.

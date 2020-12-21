@@ -8,7 +8,8 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/graphite_rollup.xml'])
+                                main_configs=['configs/graphite_rollup.xml'],
+                                user_configs=["configs/users.xml"])
 q = instance.query
 
 
@@ -301,7 +302,7 @@ CREATE TABLE test.graphite2
                       "AND table='graphite2'"))
         if parts == 1:
             break
-        print('Parts', parts)
+        print(('Parts', parts))
 
     assert TSV(
         q("SELECT value, timestamp, date, updated FROM test.graphite2")

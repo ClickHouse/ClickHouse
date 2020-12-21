@@ -71,7 +71,8 @@ void checkColumn(
         std::unordered_map<UInt32, T> map;
         size_t num_collisions = 0;
 
-        std::stringstream collitions_str;
+        std::stringstream collisions_str;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        collisions_str.exceptions(std::ios::failbit);
 
         for (size_t i = 0; i < eq_class.size(); ++i)
         {
@@ -86,14 +87,14 @@ void checkColumn(
 
                 if (num_collisions <= max_collisions_to_print)
                 {
-                    collitions_str << "Collision:\n";
-                    collitions_str << print_for_row(it->second) << '\n';
-                    collitions_str << print_for_row(i) << std::endl;
+                    collisions_str << "Collision:\n";
+                    collisions_str << print_for_row(it->second) << '\n';
+                    collisions_str << print_for_row(i) << std::endl;
                 }
 
                 if (num_collisions > allowed_collisions)
                 {
-                    std::cerr << collitions_str.rdbuf();
+                    std::cerr << collisions_str.rdbuf();
                     break;
                 }
             }

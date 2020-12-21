@@ -3,6 +3,7 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
+#include <IO/WriteBufferFromOStream.h>
 
 
 int main(int, char **)
@@ -21,11 +22,12 @@ try
         " INTO OUTFILE 'test.out'"
         " FORMAT TabSeparated";
 
-    ParserQueryWithOutput parser;
+    ParserQueryWithOutput parser(input.data() + input.size());
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     std::cout << "Success." << std::endl;
-    formatAST(*ast, std::cerr);
+    WriteBufferFromOStream out(std::cerr, 4096);
+    formatAST(*ast, out);
     std::cout << std::endl;
 
     return 0;

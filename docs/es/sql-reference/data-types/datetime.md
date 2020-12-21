@@ -31,7 +31,7 @@ El [Casa de clics-cliente](../../interfaces/cli.md) aplica la zona horaria del s
 
 ClickHouse genera valores en `YYYY-MM-DD hh:mm:ss` formato de texto por defecto. Puede cambiar la salida con el [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) función.
 
-Al insertar datos en ClickHouse, puede usar diferentes formatos de cadenas de fecha y hora, dependiendo del valor de la [Date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) configuración.
+Al insertar datos en ClickHouse, puede usar diferentes formatos de cadenas de fecha y hora, dependiendo del valor de la [Date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) configuración.
 
 ## Ejemplos {#examples}
 

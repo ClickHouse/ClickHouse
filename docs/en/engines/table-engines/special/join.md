@@ -93,15 +93,16 @@ You cannot perform a `SELECT` query directly from the table. Instead, use one of
 
 When creating a table, the following settings are applied:
 
--   [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls)
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
--   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
--   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join)
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join)
+-   [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
+-   [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+-   [persistent](../../../operations/settings/settings.md#persistent)
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows use [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select/index.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+The `Join`-engine allows use [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select/index.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
 
 ## Data Storage {#data-storage}
 

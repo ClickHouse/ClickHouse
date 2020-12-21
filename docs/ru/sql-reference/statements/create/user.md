@@ -1,6 +1,6 @@
 ---
-toc_priority: 5
-toc_title: Пользователь
+toc_priority: 39
+toc_title: "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c"
 ---
 
 # CREATE USER {#create-user-statement}

@@ -35,6 +35,15 @@ if (NOT PARALLEL_LINK_JOBS AND AVAILABLE_PHYSICAL_MEMORY AND MAX_LINKER_MEMORY)
     endif ()
 endif ()
 
+# ThinLTO provides its own parallel linking
+# But use 2 parallel jobs, since:
+# - this is what llvm does
+# - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
+if (ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
+    message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
+    set (PARALLEL_LINK_JOBS 2)
+endif()
+
 if (PARALLEL_LINK_JOBS AND (NOT NUMBER_OF_LOGICAL_CORES OR PARALLEL_COMPILE_JOBS LESS NUMBER_OF_LOGICAL_CORES))
     set(CMAKE_JOB_POOL_LINK link_job_pool${CMAKE_CURRENT_SOURCE_DIR})
     string (REGEX REPLACE "[^a-zA-Z0-9]+" "_" CMAKE_JOB_POOL_LINK ${CMAKE_JOB_POOL_LINK})

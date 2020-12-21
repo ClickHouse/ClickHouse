@@ -113,16 +113,16 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         /// TODO Why not do SQLColumns instead?
         std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
-        std::stringstream ss;
+        WriteBufferFromOwnString buf;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
-        ParserQueryWithOutput parser;
+        ParserQueryWithOutput parser(input.data() + input.size());
         ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", context_settings.max_query_size, context_settings.max_parser_depth);
 
-        IAST::FormatSettings settings(ss, true);
+        IAST::FormatSettings settings(buf, true);
         settings.always_quote_identifiers = true;
         settings.identifier_quoting_style = getQuotingStyle(hdbc);
         select->format(settings);
-        std::string query = ss.str();
+        std::string query = buf.str();
 
         LOG_TRACE(log, "Inferring structure with query '{}'", query);
 

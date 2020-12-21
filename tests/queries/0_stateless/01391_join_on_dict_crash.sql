@@ -1,5 +1,5 @@
 DROP DATABASE IF EXISTS db_01391;
-CREATE DATABASE db_01391 Engine = Ordinary;
+CREATE DATABASE db_01391;
 USE db_01391;
 
 DROP TABLE IF EXISTS t;
@@ -14,7 +14,7 @@ INSERT INTO d_src VALUES (0, 0, 'n');
 
 CREATE DICTIONARY d (id UInt32, country_id UInt8, name String)
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' DB 'db_01391' table 'd_src'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DB 'db_01391' table 'd_src'))
 LIFETIME(MIN 1 MAX 1)
 LAYOUT(HASHED());
 
