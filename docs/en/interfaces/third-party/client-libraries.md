@@ -60,5 +60,7 @@ toc_title: Client Libraries
     -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+-   Haskell
+    -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
