@@ -409,7 +409,11 @@ static void appendBlock(const Block & from, Block & to)
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
                 if (!col_to)
+                {
                     col_to = std::move(last_col);
+                    /// Suppress clang-tidy [bugprone-use-after-move]
+                    last_col = {};
+                }
                 /// But if there is still nothing, abort
                 if (!col_to)
                     throw Exception("No column to rollback", ErrorCodes::LOGICAL_ERROR);
