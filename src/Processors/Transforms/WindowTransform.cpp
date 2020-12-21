@@ -38,7 +38,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
         {
             workspace.argument_column_indices.push_back(
                 input_header.getPositionByName(argument_name));
-
         }
 
         workspace.aggregate_function_state.reset(aggregate_function->sizeOfData(),
@@ -61,10 +60,10 @@ WindowTransform::WindowTransform(const Block & input_header_,
 WindowTransform::~WindowTransform()
 {
     // Some states may be not created yet if the creation failed.
-    for (auto & w : workspaces)
+    for (auto & ws : workspaces)
     {
-        w.window_function.aggregate_function->destroy(
-            w.aggregate_function_state.data());
+        ws.window_function.aggregate_function->destroy(
+            ws.aggregate_function_state.data());
     }
 }
 
@@ -73,43 +72,76 @@ void WindowTransform::transform(Chunk & chunk)
     const size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    for (auto & workspace : workspaces)
-    {
-        workspace.argument_columns.clear();
-        for (const auto column_index : workspace.argument_column_indices)
-        {
-            workspace.argument_columns.push_back(
-                block.getColumns()[column_index].get());
-        }
-    }
-
     for (auto & ws : workspaces)
     {
-        const auto & f = ws.window_function;
-        const auto * a = f.aggregate_function.get();
+        ws.argument_columns.clear();
+        for (const auto column_index : ws.argument_column_indices)
+        {
+            ws.argument_columns.push_back(block.getColumns()[column_index].get());
+        }
 
         // Create the resulting column.
-        ColumnWithTypeAndName column_with_type;
-        column_with_type.name = f.column_name;
-        column_with_type.type = a->getReturnType();
-        auto c = column_with_type.type->createColumn();
-        column_with_type.column.reset(c.get());
+        ColumnWithTypeAndName column_description;
+        column_description.name = ws.window_function.column_name;
+        column_description.type
+            = ws.window_function.aggregate_function->getReturnType();
+        ws.result_column = column_description.type->createColumn();
+        column_description.column.reset(ws.result_column.get());
 
-        for (size_t row = 0; row < num_rows; row++)
+        block.insert(column_description);
+    }
+
+    // We loop for all window functions for each row. Switching the loops might
+    // be more efficient, because we would run less code and access less data in
+    // the inner loop. If you change this, don't forget to fix the calculation of
+    // partition boundaries. Probably it has to be precalculated and stored as a
+    // UInt8 array. An interesting optimization would be to pass it as an extra
+    // column from the previous sorting step -- that step might need to make
+    // similar comparison anyway, if it's sorting only by the PARTITION BY columns.
+    for (size_t row = 0; row < num_rows; row++)
+    {
+        // Check whether the new partition has started. We have to reset the
+        // aggregate functions when the new partition starts.
+        assert(partition_start_columns.size() == partition_by_indices.size());
+        bool new_partition = false;
+        if (partition_start_columns.empty())
         {
-            // THIS IS BROKEN when we have multiple window functions.
-            // Have to switch the loops or track partition per-function.
-            //
-            // Check whether the new partition has started and reinitialize the
-            // aggregate function states.
-            assert(partition_start_columns.size() == partition_by_indices.size());
-            if (partition_start_columns.empty())
+            // No PARTITION BY at all, do nothing.
+        }
+        else if (partition_start_columns[0] == nullptr)
+        {
+            // This is the first partition.
+            new_partition = true;
+            partition_start_columns.clear();
+            for (const auto i : partition_by_indices)
             {
-                // No PARTITION BY at all, do nothing.
+                partition_start_columns.push_back(block.getColumns()[i]);
             }
-            else if (partition_start_columns[0] == nullptr)
+            partition_start_row = row;
+        }
+        else
+        {
+            // Check whether the new partition started, by comparing all the
+            // PARTITION BY columns.
+            size_t first_inequal_column = 0;
+            for (; first_inequal_column < partition_start_columns.size();
+                  ++first_inequal_column)
             {
-                // This is the first partition.
+                const auto * current_column = block.getColumns()[
+                    partition_by_indices[first_inequal_column]].get();
+
+                if (current_column->compareAt(row, partition_start_row,
+                    *partition_start_columns[first_inequal_column],
+                    1 /* nan_direction_hint */) != 0)
+                {
+                    break;
+                }
+            }
+
+            if (first_inequal_column < partition_start_columns.size())
+            {
+                // The new partition has started. Remember where.
+                new_partition = true;
                 partition_start_columns.clear();
                 for (const auto i : partition_by_indices)
                 {
@@ -117,56 +149,39 @@ void WindowTransform::transform(Chunk & chunk)
                 }
                 partition_start_row = row;
             }
-            else
+        }
+
+        for (auto & ws : workspaces)
+        {
+            const auto & f = ws.window_function;
+            const auto * a = f.aggregate_function.get();
+            auto * buf = ws.aggregate_function_state.data();
+
+            if (new_partition)
             {
-                // Check whether the new partition started, by comparing all the
-                // PARTITION BY columns.
-                size_t first_inequal_column = 0;
-                for (; first_inequal_column < partition_start_columns.size();
-                      ++first_inequal_column)
-                {
-                    const auto * current_column = block.getColumns()[
-                        partition_by_indices[first_inequal_column]].get();
-
-                    if (current_column->compareAt(row, partition_start_row,
-                        *partition_start_columns[first_inequal_column],
-                        1 /* nan_direction_hint */) != 0)
-                    {
-                        break;
-                    }
-                }
-
-                if (first_inequal_column < partition_start_columns.size())
-                {
-                    // The new partition has started.
-                    // 1) Remember it.
-                    partition_start_columns.clear();
-                    for (const auto i : partition_by_indices)
-                    {
-                        partition_start_columns.push_back(block.getColumns()[i]);
-                    }
-                    partition_start_row = row;
-
-                    // 2) Reset the aggregate function states.
-                    ws.window_function.aggregate_function->destroy(
-                        ws.aggregate_function_state.data());
-                    ws.window_function.aggregate_function->create(
-                        ws.aggregate_function_state.data());
-                }
+                // Reset the aggregate function states.
+                a->destroy(buf);
+                a->create(buf);
             }
 
             // Update the aggregate function state and save the result.
-            a->add(ws.aggregate_function_state.data(),
+            a->add(buf,
                 ws.argument_columns.data(),
                 row,
                 arena.get());
 
-            a->insertResultInto(ws.aggregate_function_state.data(),
-                *c,
+            a->insertResultInto(buf,
+                *ws.result_column,
                 arena.get());
         }
+    }
 
-        block.insert(column_with_type);
+    // We have to release the mutable reference to the result column before we
+    // return this block, or else extra copying may occur when the subsequent
+    // processors modify the block. Workspaces live longer than individual blocks.
+    for (auto & ws : workspaces)
+    {
+        ws.result_column.detach();
     }
 
     chunk.setColumns(block.getColumns(), num_rows);

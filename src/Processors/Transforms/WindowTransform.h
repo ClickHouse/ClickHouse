@@ -19,8 +19,10 @@ struct WindowFunctionWorkspace
     WindowFunctionDescription window_function;
     AlignedBuffer aggregate_function_state;
     std::vector<size_t> argument_column_indices;
-    // Be careful, this is per-chunk.
+
+    // Argument and result columns. Be careful, they are per-chunk.
     std::vector<const IColumn *> argument_columns;
+    MutableColumnPtr result_column;
 };
 
 /*
