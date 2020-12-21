@@ -28,7 +28,6 @@ if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-
 function run_tests()
 {
     # We can have several additional options so we path them as array because it's
