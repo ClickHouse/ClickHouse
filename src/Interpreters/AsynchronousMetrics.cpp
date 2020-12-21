@@ -219,7 +219,7 @@ void AsynchronousMetrics::update()
                 ReadableSize(amount),
                 ReadableSize(peak),
                 ReadableSize(new_peak),
-                ReadableSize(new_peak - peak)
+                ReadableSize(new_peak - amount)
             );
 
             total_memory_tracker.set(new_peak);
