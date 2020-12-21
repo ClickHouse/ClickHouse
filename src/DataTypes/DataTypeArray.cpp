@@ -454,7 +454,13 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
             }, true);
     }
     else
-        deserializeText(column, rb, settings);
+    {
+        deserializeTextImpl(column, rb,
+            [&](IColumn & nested_column)
+            {
+                nested->deserializeAsTextQuoted(nested_column, rb, settings);
+            }, true);
+    }
 }
 
 
