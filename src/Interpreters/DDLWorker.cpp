@@ -1146,7 +1146,11 @@ void DDLWorker::runMainThread()
         catch (const Coordination::Exception & e)
         {
             if (!Coordination::isHardwareError(e.code))
-                throw;  /// A logical error.
+            {
+                /// A logical error.
+                LOG_FATAL(log, "ZooKeeper error: {}. Failed to start DDLWorker.",getCurrentExceptionMessage(true));
+                abort();
+            }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
