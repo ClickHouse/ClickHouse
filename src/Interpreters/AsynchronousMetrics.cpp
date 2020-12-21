@@ -344,7 +344,7 @@ void AsynchronousMetrics::update()
                     new_values[name] = server.currentThreads();
             }
         }
-        
+
         if (servers)
         {
             for (const auto & server : *servers)
