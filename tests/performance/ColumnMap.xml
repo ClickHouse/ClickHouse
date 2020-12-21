@@ -26,7 +26,7 @@ FROM
         arrayMap(x -> toString(x), range(100)) AS keys,
         arrayMap(x -> toString(x * x), range(100)) AS values,
         cast((keys, values), 'Map(String, String)') AS map
-    FROM numbers(1000000)
+    FROM numbers(10000)
 )
     </create_query>
 
