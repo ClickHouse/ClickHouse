@@ -35,12 +35,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Function {} expect single String argument, got {}", getName(), arguments[0]->getName());
+
+        auto type = std::make_shared<DataTypeUInt64>();
         if constexpr (is_simhash)
-            return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
-        auto element = DataTypeFactory::instance().get("UInt64");
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+            return type;
+
+        return std::make_shared<DataTypeTuple>(DataTypes{type, type});
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -48,24 +50,24 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnPtr & column = arguments[0].column;
-        using ResultType = typename Impl::ResultType;
+
         if constexpr (is_simhash)
         {
             // non const string, const case is handled by useDefaultImplementationForConstants.
-            auto col_res = ColumnVector<ResultType>::create();
-            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+            auto col_res = ColumnVector<UInt64>::create();
+            auto & vec_res = col_res->getData();
             vec_res.resize(column->size());
             const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
             Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), vec_res);
-            return std::move(col_res);
+            return col_res;
         }
         else // Min hash
         {
             // non const string
-            auto col_h1 = ColumnVector<ResultType>::create();
-            auto col_h2 = ColumnVector<ResultType>::create();
-            typename ColumnVector<ResultType>::Container & vec_h1 = col_h1->getData();
-            typename ColumnVector<ResultType>::Container & vec_h2 = col_h2->getData();
+            auto col_h1 = ColumnVector<UInt64>::create();
+            auto col_h2 = ColumnVector<UInt64>::create();
+            auto & vec_h1 = col_h1->getData();
+            auto & vec_h2 = col_h2->getData();
             vec_h1.resize(column->size());
             vec_h2.resize(column->size());
             const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
