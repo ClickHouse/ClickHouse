@@ -22,7 +22,7 @@ AggregateFunctionPtr createAggregateFunctionArgMin(const std::string & name, con
 
 }
 
-void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory)
+void registerAggregateFunctionsMin(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
 
