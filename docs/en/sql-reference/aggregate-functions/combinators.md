@@ -53,6 +53,11 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Distinct {#agg-functions-combinator-distinct}
+
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
 Changes behavior of an aggregate function.
@@ -243,5 +248,6 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

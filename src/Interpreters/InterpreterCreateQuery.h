@@ -59,6 +59,8 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
+
 private:
     struct TableProperties
     {

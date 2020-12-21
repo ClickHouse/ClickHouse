@@ -785,17 +785,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP TestKeeper
-        createServer(listen_host, "test_keeper_server.tcp_port", listen_try, [&](UInt16 port)
+        const char * port_name = "test_keeper_server.tcp_port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
-            servers_to_start_before_tables.emplace_back(std::make_unique<Poco::Net::TCPServer>(
-                new TestKeeperTCPHandlerFactory(*this),
-                server_pool,
-                socket,
-                new Poco::Net::TCPServerParams));
+            servers_to_start_before_tables.emplace_back(
+                port_name,
+                std::make_unique<Poco::Net::TCPServer>(
+                    new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
             LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
         });
@@ -981,35 +981,37 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::vector<ProtocolServerAdapter> servers;
     {
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context,
-            config().getUInt("asynchronous_metrics_update_period_s", 60));
+        AsynchronousMetrics async_metrics(
+            *global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
         {
             /// HTTP
-            createServer(listen_host, "http_port", listen_try, [&](UInt16 port)
+            const char * port_name = "http_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
 
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://{}", address.toString());
             });
 
             /// HTTPS
-            createServer(listen_host, "https_port", listen_try, [&](UInt16 port)
+            port_name = "https_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
@@ -1021,13 +1023,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP
-            createServer(listen_host, "tcp_port", listen_try, [&](UInt16 port)
+            port_name = "tcp_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
                     new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
                     server_pool,
                     socket,
@@ -1037,13 +1040,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
-            createServer(listen_host, "tcp_with_proxy_port", listen_try, [&](UInt16 port)
+            port_name = "tcp_with_proxy_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
                     new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
                     server_pool,
                     socket,
@@ -1053,14 +1057,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// TCP with SSL
-            createServer(listen_host, "tcp_port_secure", listen_try, [&](UInt16 port)
+            port_name = "tcp_port_secure";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
                     new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                     server_pool,
                     socket,
@@ -1074,26 +1079,28 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// Interserver IO HTTP
-            createServer(listen_host, "interserver_http_port", listen_try, [&](UInt16 port)
+            port_name = "interserver_http_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
 
-            createServer(listen_host, "interserver_https_port", listen_try, [&](UInt16 port)
+            port_name = "interserver_https_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
@@ -1104,13 +1111,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
             });
 
-            createServer(listen_host, "mysql_port", listen_try, [&](UInt16 port)
+            port_name = "mysql_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
                     new MySQLHandlerFactory(*this),
                     server_pool,
                     socket,
@@ -1119,13 +1127,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
-            createServer(listen_host, "postgresql_port", listen_try, [&](UInt16 port)
+            port_name = "postgresql_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings.send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
                     new PostgreSQLHandlerFactory(*this),
                     server_pool,
                     socket,
@@ -1135,22 +1144,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
 #if USE_GRPC
-            createServer(listen_host, "grpc_port", listen_try, [&](UInt16 port)
+            port_name = "grpc_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::SocketAddress server_address(listen_host, port);
-                servers.emplace_back(std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, log)));
+                servers.emplace_back(port_name, std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, log)));
                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
             });
 #endif
 
             /// Prometheus (if defined and not setup yet with http_port)
-            createServer(listen_host, "prometheus.port", listen_try, [&](UInt16 port)
+            port_name = "prometheus.port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                servers.emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
@@ -1161,6 +1172,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+        /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
+        async_metrics.start();
         global_context->enableNamedSessions();
 
         for (auto & server : servers)
