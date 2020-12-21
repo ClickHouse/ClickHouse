@@ -3,7 +3,7 @@
   * (by terminating the program immediately).
   */
 
-/// It is only enabled in debug build (it's intended use is for CI checks).
+/// It is only enabled in debug build (its intended use is for CI checks).
 #if !defined(NDEBUG)
 
 #if defined(__clang__)
