@@ -39,6 +39,7 @@ start_clickhouse () {
     done
 }
 
+
 chmod 777 /
 
 dpkg -i package_folder/clickhouse-common-static_*.deb; \
@@ -47,16 +48,38 @@ dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb
 
-
 mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
-chmod 777 -R /var/lib/clickhouse
 chmod 777 -R /var/log/clickhouse-server/
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
 start_clickhouse
+
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+if ! /s3downloader --dataset-names $DATASETS; then
+    echo "Cannot download datatsets"
+    exit 1
+fi
+
+
+chmod 777 -R /var/lib/clickhouse
+
+
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW DATABASES"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "CREATE DATABASE test"
+
+kill_clickhouse
+start_clickhouse
+
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM datasets"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM test"
+
 
 if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
@@ -66,10 +89,17 @@ fi
 # more idiologically correct.
 read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
-LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 
 sleep 3
 
-cp /*.profraw /profraw ||:
+mkdir -p $COVERAGE_DIR
+mv /*.profraw $COVERAGE_DIR
+
+mkdir -p $SOURCE_DIR/obj-x86_64-linux-gnu
+cd $SOURCE_DIR/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
+llvm-profdata-11 merge -sparse ${COVERAGE_DIR}/* -o clickhouse.profdata
+llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov
+genhtml output.lcov --ignore-errors source --output-directory ${OUTPUT_DIR}
