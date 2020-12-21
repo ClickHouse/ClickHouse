@@ -199,7 +199,7 @@ Block RemoteQueryExecutor::read()
     }
 }
 
-std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> & read_context)
+std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> & read_context [[maybe_unused]])
 {
 
 #if defined(OS_LINUX)
