@@ -770,7 +770,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables;
+    auto servers_to_start_before_tables = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
@@ -978,7 +978,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
 #endif
 
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers;
+    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
     {
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
