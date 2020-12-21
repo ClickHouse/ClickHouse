@@ -35,7 +35,8 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , received(queue_size_)
 {
-    setupChannel();
+    if (consumer_channel)
+        setupChannel();
 }
 
 
@@ -144,6 +145,15 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
         channel_error.store(true);
         wait_subscription.store(false);
     });
+}
+
+
+bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
+{
+    if (wait_subscription)
+        return false;
+
+    return channel_error || !consumer_channel || !consumer_channel->usable();
 }
 
 

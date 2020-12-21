@@ -577,7 +577,7 @@ If a function captures ownership of an object created in the heap, make the argu
 
 **14.** Return values.
 
-In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
+In most cases, just use `return`. Do not write `return std::move(res)`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
@@ -671,7 +671,7 @@ Always use `#pragma once` instead of include guards.
 **24.** Do not use `trailing return type` for functions unless necessary.
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** Declaration and initialization of variables.

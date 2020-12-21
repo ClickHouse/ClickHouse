@@ -49,6 +49,7 @@ add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
 add_subdirectory (Storages)
 add_subdirectory (Parsers)
+add_subdirectory (Parsers/New)
 add_subdirectory (IO)
 add_subdirectory (Functions)
 add_subdirectory (Interpreters)
@@ -85,6 +86,10 @@ endif()
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
+endif()
+
+if (USE_HDFS)
+    add_headers_and_sources(dbms Storages/HDFS)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
@@ -129,8 +134,12 @@ endif ()
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
-target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+if (((SANITIZE STREQUAL "thread") OR (SANITIZE STREQUAL "address")) AND COMPILER_GCC)
+    message(WARNING "Memory tracking is disabled, due to gcc sanitizers")
+else()
+    add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+endif()
 
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
@@ -186,12 +195,12 @@ endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE clickhouse_parsers_new jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE clickhouse_parsers_new jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
@@ -253,7 +262,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ${DOUBLE_CONVERSION_LIBRARIES}
-            ryu
+            dragonbox_to_chars
 )
 
 if(RE2_LIBRARY)
@@ -388,8 +397,8 @@ if (USE_GRPC)
 endif()
 
 if (USE_HDFS)
-    target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
+    dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_AWS_S3)
@@ -413,6 +422,9 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 endif()
+
+target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})

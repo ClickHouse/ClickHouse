@@ -591,3 +591,7 @@ Result:
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->
+
+## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
+
+Returns the number of regular expression matches for a `pattern` in a `haystack`.
