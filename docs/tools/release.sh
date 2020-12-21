@@ -19,7 +19,7 @@ then
 
     # Will make a repository with website content as the only commit.
     git init
-    git remote add "${GIT_TEST_URI}"
+    git remote add origin "${GIT_TEST_URI}"
     git config user.email "robot-clickhouse@yandex-team.ru"
     git config user.name "robot-clickhouse"
 
