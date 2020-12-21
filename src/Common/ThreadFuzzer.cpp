@@ -10,6 +10,7 @@
 #include <common/sleep.h>
 
 #include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -101,6 +102,10 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(migrate_probability, "THREAD_FUZZER_MIGRATE_PROBABILITY");
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
+
+    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Sleep probability {}", sleep_probability);
+    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Cpu time period {}", cpu_time_period_us);
+    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Sleep time us {}", sleep_time_us);
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define INIT_WRAPPER_PARAMS(RET, NAME, ...) \

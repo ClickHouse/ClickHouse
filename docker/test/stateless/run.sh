@@ -18,7 +18,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US=100000
     # simpliest way to forward env variables to server
-    /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+    sudo -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
     sleep 5
 else
     service clickhouse-server start && sleep 5
