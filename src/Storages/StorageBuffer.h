@@ -87,6 +87,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     bool supportsSampling() const override { return true; }

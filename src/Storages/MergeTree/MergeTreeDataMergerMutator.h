@@ -15,6 +15,13 @@ namespace DB
 
 class MergeProgressCallback;
 
+enum class SelectPartsDecision
+{
+    SELECTED = 0,
+    CANNOT_SELECT = 1,
+    NOTHING_TO_MERGE = 2,
+};
+
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
 {
@@ -79,7 +86,7 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    bool selectPartsToMerge(
+    SelectPartsDecision selectPartsToMerge(
         FutureMergedMutatedPart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
@@ -88,15 +95,19 @@ public:
         String * out_disable_reason = nullptr);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to merge one part "with itself".
+      * final - choose to merge even a single part - that is, allow to merge one part "with itself",
+      * but if setting optimize_skip_merged_partitions is true than single part with level > 0
+      * and without expired TTL won't be merged with itself.
       */
-    bool selectAllPartsToMergeWithinPartition(
+    SelectPartsDecision selectAllPartsToMergeWithinPartition(
         FutureMergedMutatedPart & future_part,
         UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
-        String * out_disable_reason = nullptr);
+        const StorageMetadataPtr & metadata_snapshot,
+        String * out_disable_reason = nullptr,
+        bool optimize_skip_merged_partitions = false);
 
     /** Merge the parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
@@ -116,7 +127,8 @@ public:
         time_t time_of_merge,
         const Context & context,
         const ReservationPtr & space_reservation,
-        bool deduplicate);
+        bool deduplicate,
+        const Names & deduplicate_by_columns);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(

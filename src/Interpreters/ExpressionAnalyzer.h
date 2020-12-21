@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -16,6 +15,7 @@ namespace DB
 
 class Block;
 class Context;
+struct Settings;
 
 struct ExpressionActionsChain;
 class ExpressionActions;
@@ -49,7 +49,7 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
-    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
+    /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
     /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
     NamesAndTypesList columns_after_join;
@@ -80,10 +80,7 @@ private:
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
 
-        ExtractedSettings(const Settings & settings_)
-        :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
-            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
-        {}
+        ExtractedSettings(const Settings & settings_);
     };
 
 public:
