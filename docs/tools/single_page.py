@@ -111,10 +111,7 @@ def build_single_page_version(lang, args, nav, cfg):
                 if not args.test_only:
                     mkdocs.commands.build.build(cfg)
 
-                    if args.version_prefix:
-                        single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, args.version_prefix, lang, 'single')
-                    else:
-                        single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, lang, 'single')
+                    single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, lang, 'single')
 
                     if os.path.exists(single_page_output_path):
                         shutil.rmtree(single_page_output_path)
@@ -157,10 +154,9 @@ def build_single_page_version(lang, args, nav, cfg):
                     if args.save_raw_single_page:
                         shutil.copytree(test_dir, args.save_raw_single_page)
 
-                    if not args.version_prefix:  # maybe enable in future
-                        logging.info(f'Running tests for {lang}')
-                        test.test_single_page(
-                            os.path.join(test_dir, 'single', 'index.html'), lang)
+                    logging.info(f'Running tests for {lang}')
+                    test.test_single_page(
+                        os.path.join(test_dir, 'single', 'index.html'), lang)
 
                     if not args.skip_pdf:
                         single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
