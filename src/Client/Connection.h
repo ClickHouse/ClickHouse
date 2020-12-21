@@ -5,8 +5,9 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#include <Common/config.h>
-
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config.h>
+#endif
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
