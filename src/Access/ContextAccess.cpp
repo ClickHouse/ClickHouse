@@ -558,7 +558,7 @@ bool ContextAccess::checkAdminOptionImpl2(const Container & role_ids, const GetN
     if (!std::size(role_ids) || is_full_access)
         return true;
 
-    auto show_error = [this](const String & msg, int error_code)
+    auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
         UNUSED(this);
         if constexpr (throw_if_denied)
