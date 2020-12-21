@@ -2,41 +2,27 @@
 
 kill_clickhouse () {
     echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
-    pkill -f "clickhouse-server" 2>/dev/null
+    kill "$(pgrep -u clickhouse)" 2>/dev/null
 
-
-    for _ in {1..120}
+    for _ in {1..10}
     do
-        if ! pkill -0 -f "clickhouse-server" ; then break ; fi
-        echo "ClickHouse still alive" | ts '%Y-%m-%d %H:%M:%S'
-        sleep 1
+        if ! kill -0 "$(pgrep -u clickhouse)"; then
+            echo "No clickhouse process" | ts '%Y-%m-%d %H:%M:%S'
+            break
+        else
+            echo "Process $(pgrep -u clickhouse) still alive" | ts '%Y-%m-%d %H:%M:%S'
+            sleep 10
+        fi
     done
 
-    if pkill -0 -f "clickhouse-server"
-    then
-        pstree -apgT
-        jobs
-        echo "Failed to kill the ClickHouse server"  | ts '%Y-%m-%d %H:%M:%S'
-        return 1
-    fi
+    echo "Will try to send second kill signal for sure"
+    kill "$(pgrep -u clickhouse)" 2>/dev/null
+    sleep 5
+    echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
 }
 
 start_clickhouse () {
     LLVM_PROFILE_FILE='server_%h_%p_%m.profraw' sudo -Eu clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml &
-    counter=0
-    until clickhouse-client --query "SELECT 1"
-    do
-        if [ "$counter" -gt 120 ]
-        then
-            echo "Cannot start clickhouse-server"
-            cat /var/log/clickhouse-server/stdout.log
-            tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
-            break
-        fi
-        sleep 0.5
-        counter=$((counter + 1))
-    done
 }
 
 chmod 777 /
@@ -58,15 +44,14 @@ chmod 777 -R /var/log/clickhouse-server/
 
 start_clickhouse
 
+sleep 10
+
+
 if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-# We can have several additional options so we path them as array because it's
-# more idiologically correct.
-read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
-
-LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

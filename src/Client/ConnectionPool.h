@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/PoolBase.h>
+
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Core/Settings.h>
 
 namespace DB
 {

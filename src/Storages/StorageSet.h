@@ -2,7 +2,6 @@
 
 #include <ext/shared_ptr_helper.h>
 
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 
@@ -25,19 +24,18 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
 
 protected:
     StorageSetOrJoinBase(
-        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const Context & context_,
         bool persistent_);
 
-    DiskPtr disk;
+    String base_path;
     String path;
     bool persistent;
 
@@ -74,9 +72,6 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
-
 private:
     SetPtr set;
 
@@ -86,11 +81,11 @@ private:
 
 protected:
     StorageSet(
-        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const Context & context_,
         bool persistent_);
 };
 

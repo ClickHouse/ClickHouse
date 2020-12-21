@@ -129,8 +129,8 @@ struct ZooKeeperArgs
 
         std::vector<std::string> hosts_strings;
 
-        session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
-        operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
+        session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
+        operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT;
         implementation = "zookeeper";
         for (const auto & key : keys)
         {

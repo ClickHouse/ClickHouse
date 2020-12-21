@@ -36,14 +36,15 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, arguments[0].column->getName());
+        block.getByPosition(result).column
+            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & columns, const ColumnNumbers & arguments) const override
     {
-        return DataTypeString().createColumnConst(1, arguments[0].type->createColumn()->getName());
+        return DataTypeString().createColumnConst(1, columns[arguments[0]].type->createColumn()->getName());
     }
 };
 

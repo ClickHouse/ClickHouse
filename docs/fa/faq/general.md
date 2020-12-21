@@ -17,7 +17,7 @@ toc_title: "\u0633\u0648\u0627\u0644\u0627\u062A \u0639\u0645\u0648\u0645\u06CC"
 
 ## اگر من یک مشکل با کدگذاریها در هنگام استفاده از اوراکل از طریق ان بی سی دارند? {#oracle-odbc-encodings}
 
-اگر شما استفاده از اوراکل از طریق راننده او بی سی به عنوان یک منبع از لغت نامه های خارجی, شما نیاز به تنظیم مقدار صحیح برای `NLS_LANG` متغیر محیطی در `/etc/default/clickhouse`. برای کسب اطلاعات بیشتر, دیدن [اوراکل NLS_LANG پرسش و پاسخ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+اگر شما استفاده از اوراکل از طریق راننده او بی سی به عنوان یک منبع از لغت نامه های خارجی, شما نیاز به تنظیم مقدار صحیح برای `NLS_LANG` متغیر محیطی در `/etc/default/clickhouse`. برای کسب اطلاعات بیشتر, دیدن [اوراکل NLS\_LANG پرسش و پاسخ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
 **مثال**
 

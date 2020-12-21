@@ -205,13 +205,13 @@ struct Commit
 
     void writeTextWithoutNewline(WriteBuffer & out) const
     {
-        writeEscapedString(hash, out);
+        writeText(hash, out);
         writeChar('\t', out);
-        writeEscapedString(author, out);
+        writeText(author, out);
         writeChar('\t', out);
         writeText(time, out);
         writeChar('\t', out);
-        writeEscapedString(message, out);
+        writeText(message, out);
         writeChar('\t', out);
         writeText(files_added, out);
         writeChar('\t', out);
@@ -273,11 +273,11 @@ struct FileChange
     {
         writeText(change_type, out);
         writeChar('\t', out);
-        writeEscapedString(path, out);
+        writeText(path, out);
         writeChar('\t', out);
-        writeEscapedString(old_path, out);
+        writeText(old_path, out);
         writeChar('\t', out);
-        writeEscapedString(file_extension, out);
+        writeText(file_extension, out);
         writeChar('\t', out);
         writeText(lines_added, out);
         writeChar('\t', out);
@@ -399,17 +399,17 @@ struct LineChange
         writeChar('\t', out);
         writeText(hunk_lines_deleted, out);
         writeChar('\t', out);
-        writeEscapedString(hunk_context, out);
+        writeText(hunk_context, out);
         writeChar('\t', out);
-        writeEscapedString(line, out);
+        writeText(line, out);
         writeChar('\t', out);
         writeText(indent, out);
         writeChar('\t', out);
         writeText(line_type, out);
         writeChar('\t', out);
-        writeEscapedString(prev_commit_hash, out);
+        writeText(prev_commit_hash, out);
         writeChar('\t', out);
-        writeEscapedString(prev_author, out);
+        writeText(prev_author, out);
         writeChar('\t', out);
         writeText(prev_time, out);
     }

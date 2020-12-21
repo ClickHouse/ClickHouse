@@ -14,33 +14,7 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
-
-```
-sudo -H pip install \
-    PyMySQL \
-    aerospike \
-    avro \
-    cassandra-driver \
-    confluent-kafka \
-    dicttoxml \
-    docker \
-    docker-compose==1.22.0 \
-    grpcio \
-    grpcio-tools \
-    kafka-python \
-    kazoo \
-    minio \
-    protobuf \
-    psycopg2-binary==2.7.5 \
-    pymongo \
-    pytest \
-    pytest-timeout \
-    redis \
-    tzlocal \
-    urllib3 \
-    requests-kerberos
-```
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install urllib3==1.23 pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2==2.7.5 pymongo tzlocal kafka-python protobuf redis aerospike pytest-timeout minio confluent-kafka avro
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
 
@@ -71,7 +45,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --base-configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -136,13 +110,3 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
-
-### Troubleshooting
-
-If tests failing for misterious reasons, this may help:
-
-```
-sudo service docker stop
-sudo bash -c 'rm -rf /var/lib/docker/*'
-sudo service docker start
-```

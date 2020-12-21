@@ -83,22 +83,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * unit_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        const auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!unit_column)
             throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
         String unit = Poco::toLower(unit_column->getValue<String>());
 
-        const IColumn & x = *arguments[1].column;
-        const IColumn & y = *arguments[2].column;
+        const IColumn & x = *block.getByPosition(arguments[1]).column;
+        const IColumn & y = *block.getByPosition(arguments[2]).column;
 
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
-        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
-        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
+        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(block.data, arguments, 3, 1);
+        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(block.data, arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
             dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());
@@ -119,7 +119,7 @@ public:
         else
             throw Exception("Function " + getName() + " does not support '" + unit + "' unit", ErrorCodes::BAD_ARGUMENTS);
 
-        return res;
+        block.getByPosition(result).column = std::move(res);
     }
 
 private:

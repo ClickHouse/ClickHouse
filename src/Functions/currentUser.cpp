@@ -41,9 +41,9 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, user_name);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, user_name);
     }
 };
 

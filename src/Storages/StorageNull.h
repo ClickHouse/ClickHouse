@@ -4,6 +4,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
@@ -24,7 +25,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo &,
+        const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
@@ -45,11 +46,11 @@ public:
 
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override
+    std::optional<UInt64> totalRows() const override
     {
         return {0};
     }
-    std::optional<UInt64> totalBytes(const Settings &) const override
+    std::optional<UInt64> totalBytes() const override
     {
         return {0};
     }

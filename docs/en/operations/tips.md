@@ -57,7 +57,7 @@ When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
-When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
+When using RAID-5, RAID-6 or RAID-50, always increase stripe\_cache\_size, since the default value is usually not the best choice.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -90,23 +90,6 @@ If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
-
-## Hypervisor configuration
-
-If you are using OpenStack, set
-```
-cpu_mode=host-passthrough
-```
-in nova.conf.
-
-If you are using libvirt, set
-```
-<cpu mode='host-passthrough'/>
-```
-in XML configuration.
-
-This is important for ClickHouse to be able to get correct information with `cpuid` instruction.
-Otherwise you may get `Illegal instruction` crashes when hypervisor is run on old CPU models.
 
 ## ZooKeeper {#zookeeper}
 

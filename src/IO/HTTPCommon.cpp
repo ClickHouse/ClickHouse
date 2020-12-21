@@ -20,7 +20,6 @@
 #    include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #    include <Poco/Net/RejectCertificateHandler.h>
 #    include <Poco/Net/SSLManager.h>
-#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -69,26 +68,26 @@ namespace
             throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host=true)
     {
         HTTPSessionPtr session;
 
         if (https)
-        {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
-        }
         else
-        {
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
-            session = std::make_shared<Poco::Net::HTTPClientSession>(resolved_host, port);
-        }
+            session = std::make_shared<Poco::Net::HTTPClientSession>();
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
+
+        if (resolve_host)
+            session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        else
+            session->setHost(host);
+        session->setPort(port);
 
         /// doesn't work properly without patch
 #if defined(POCO_CLICKHOUSE_PATCH)
@@ -237,13 +236,9 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
 {
     auto status = response.getStatus();
 
-    if (!(status == Poco::Net::HTTPResponse::HTTP_OK
-        || status == Poco::Net::HTTPResponse::HTTP_CREATED
-        || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-        || (isRedirect(status) && allow_redirects)))
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
-        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        error_message.exceptions(std::ios::failbit);
+        std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
                       << response.getReason() << ", body: " << istr.rdbuf();
 

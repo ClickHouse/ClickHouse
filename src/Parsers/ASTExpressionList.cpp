@@ -1,5 +1,4 @@
 #include <Parsers/ASTExpressionList.h>
-#include <IO/Operators.h>
 
 
 namespace DB

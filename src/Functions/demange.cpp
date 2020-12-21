@@ -61,9 +61,9 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & column = arguments[0].column;
+        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnString * column_concrete = checkAndGetColumn<ColumnString>(column.get());
 
         if (!column_concrete)
@@ -85,7 +85,7 @@ public:
             }
         }
 
-        return result_column;
+        block.getByPosition(result).column = std::move(result_column);
     }
 };
 

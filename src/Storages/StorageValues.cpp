@@ -1,6 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Pipe.h>
 
@@ -23,7 +24,7 @@ StorageValues::StorageValues(
 Pipe StorageValues::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,

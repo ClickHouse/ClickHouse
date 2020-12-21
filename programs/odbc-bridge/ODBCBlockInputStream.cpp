@@ -79,18 +79,11 @@ namespace
                 assert_cast<ColumnString &>(column).insert(value.convert<String>());
                 break;
             case ValueType::vtDate:
-            {
-                Poco::DateTime date = value.convert<Poco::DateTime>();
-                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate(date.year(), date.month(), date.day()).getDayNum()});
+                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
                 break;
-            }
             case ValueType::vtDateTime:
-            {
-                Poco::DateTime datetime = value.convert<Poco::DateTime>();
-                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime(
-                    datetime.year(), datetime.month(), datetime.day(), datetime.hour(), datetime.minute(), datetime.second())});
+                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
                 break;
-            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
@@ -119,7 +112,6 @@ Block ODBCBlockInputStream::readImpl()
 
         for (const auto idx : ext::range(0, row.fieldCount()))
         {
-            /// TODO This is extremely slow.
             const Poco::Dynamic::Var & value = row[idx];
 
             if (!value.isEmpty())

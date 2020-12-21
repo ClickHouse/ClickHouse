@@ -10,7 +10,7 @@ toc_title: "\u0630\u062E\u06CC\u0631\u0647 \u0648\u0627\u0698\u0647\u0646\u0627\
 
 راه های مختلفی برای ذخیره لغت نامه ها در حافظه وجود دارد.
 
-ما توصیه می کنیم [تخت](#flat), [درهم](#dicts-external_dicts_dict_layout-hashed) و [_ساخت مجتمع](#complex-key-hashed). که سرعت پردازش بهینه را فراهم می کند.
+ما توصیه می کنیم [تخت](#flat), [درهم](#dicts-external_dicts_dict_layout-hashed) و [\_ساخت مجتمع](#complex-key-hashed). که سرعت پردازش بهینه را فراهم می کند.
 
 ذخیره سازی به دلیل عملکرد بالقوه ضعیف و مشکلات در انتخاب پارامترهای مطلوب توصیه نمی شود. ادامه مطلب در بخش “[نهانگاه](#cache)”.
 
@@ -59,8 +59,8 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [نهانگاه](#cache)
 -   [مستقیم](#direct)
 -   [رنگها](#range-hashed)
--   [_ساخت مجتمع](#complex-key-hashed)
--   [_پیچید_چهای پیچیده](#complex-key-cache)
+-   [\_ساخت مجتمع](#complex-key-hashed)
+-   [\_پیچید\_چهای پیچیده](#complex-key-cache)
 -   [شمال اروپا](#ip-trie)
 
 ### تخت {#flat}
@@ -123,7 +123,7 @@ LAYOUT(HASHED())
 LAYOUT(SPARSE_HASHED())
 ```
 
-### _ساخت مجتمع {#complex-key-hashed}
+### \_ساخت مجتمع {#complex-key-hashed}
 
 این نوع ذخیره سازی برای استفاده با کامپوزیت است [کلید](external-dicts-dict-structure.md). مشابه به `hashed`.
 
@@ -294,7 +294,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 !!! warning "اخطار"
     هنوز تاتر به عنوان یک منبع استفاده نمی, چرا که کند است برای پردازش نمایش داده شد با تصادفی می خواند.
 
-### _پیچید_چهای پیچیده {#complex-key-cache}
+### \_پیچید\_چهای پیچیده {#complex-key-cache}
 
 این نوع ذخیره سازی برای استفاده با کامپوزیت است [کلید](external-dicts-dict-structure.md). مشابه به `cache`.
 

@@ -10,8 +10,19 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     PingHandler.cpp
     SchemaAllowedHandler.cpp
     validateODBCConnectionString.cpp
-    odbc-bridge.cpp
 )
+set (CLICKHOUSE_ODBC_BRIDGE_LINK
+    PRIVATE
+        clickhouse_parsers
+        clickhouse_aggregate_functions
+        daemon
+        dbms
+        Poco::Data
+    PUBLIC
+        Poco::Data::ODBC
+)
+
+clickhouse_program_add_library(odbc-bridge)
 
 if (OS_LINUX)
     # clickhouse-odbc-bridge is always a separate binary.
@@ -19,17 +30,10 @@ if (OS_LINUX)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
 endif ()
 
-add_executable(clickhouse-odbc-bridge ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
-
-target_link_libraries(clickhouse-odbc-bridge PRIVATE
-    daemon
-    dbms
-    clickhouse_parsers
-    Poco::Data
-    Poco::Data::ODBC
-)
-
+add_executable(clickhouse-odbc-bridge odbc-bridge.cpp)
 set_target_properties(clickhouse-odbc-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
+
+clickhouse_program_link_split_binary(odbc-bridge)
 
 if (USE_GDB_ADD_INDEX)
     add_custom_command(TARGET clickhouse-odbc-bridge POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} ../clickhouse-odbc-bridge COMMENT "Adding .gdb-index to clickhouse-odbc-bridge" VERBATIM)

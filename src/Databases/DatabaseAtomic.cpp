@@ -35,8 +35,8 @@ public:
 };
 
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
     , path_to_table_symlinks(global_context.getPath() + "data/" + escapeForFileName(name_) + "/")
     , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
     , db_uuid(uuid)
@@ -44,11 +44,6 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     assert(db_uuid != UUIDHelpers::Nil);
     Poco::File(path_to_table_symlinks).createDirectories();
     tryCreateMetadataSymlink();
-}
-
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_)
-    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_)
-{
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -119,10 +114,9 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
         DatabaseWithDictionaries::detachTableUnlocked(table_name, lock);       /// Should never throw
         table_name_to_path.erase(table_name);
     }
-    if (table->storesDataOnDisk())
-        tryRemoveSymlink(table_name);
+    tryRemoveSymlink(table_name);
     /// Remove the inner table (if any) to avoid deadlock
-    /// (due to attempt to execute DROP from the worker thread)
+    /// (due to attemp to execute DROP from the worker thread)
     if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
         mv->dropInnerTable(no_delay);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
@@ -151,7 +145,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
-    auto detach = [](DatabaseAtomic & db, const String & table_name_, bool has_symlink)
+    auto detach = [](DatabaseAtomic & db, const String & table_name_)
     {
         auto it = db.table_name_to_path.find(table_name_);
         String table_data_path_saved;
@@ -161,7 +155,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         assert(!table_data_path_saved.empty() || db.dictionaries.find(table_name_) != db.dictionaries.end());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
-        if (has_symlink)
+        if (!table_data_path_saved.empty())
             db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
     };
@@ -172,8 +166,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         if (table_data_path_.empty())
             return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);
-        if (table_->storesDataOnDisk())
-            db.tryCreateSymlink(table_name_, table_data_path_);
+        db.tryCreateSymlink(table_name_, table_data_path_);
     };
 
     auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
@@ -217,9 +210,6 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     if (is_dictionary && !inside_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
 
-    if (!exchange)
-        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
-
     StoragePtr table = getTableUnlocked(table_name, db_lock);
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
@@ -238,9 +228,9 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         renameNoReplace(old_metadata_path, new_metadata_path);
 
     /// After metadata was successfully moved, the following methods should not throw (if them do, it's a logical error)
-    table_data_path = detach(*this, table_name, table->storesDataOnDisk());
+    table_data_path = detach(*this, table_name);
     if (exchange)
-        other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
+        other_table_data_path = detach(other_db, to_table_name);
 
     auto old_table_id = table->getStorageID();
 
@@ -271,33 +261,24 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
-    bool locked_uuid = false;
     try
     {
         std::unique_lock lock{mutex};
         if (query.database != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.database);
-        /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
-        /// We will get en exception if some table with the same UUID exists (even if it's detached table or table from another database)
-        DatabaseCatalog::instance().addUUIDMapping(query.uuid);
-        locked_uuid = true;
-        /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
-        renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
+        renameNoReplace(table_metadata_tmp_path, table_metadata_path);
         attachTableUnlocked(query.table, table, lock);   /// Should never throw
         table_name_to_path.emplace(query.table, table_data_path);
     }
     catch (...)
     {
         Poco::File(table_metadata_tmp_path).remove();
-        if (locked_uuid)
-            DatabaseCatalog::instance().removeUUIDMappingFinally(query.uuid);
         throw;
     }
-    if (table->storesDataOnDisk())
-        tryCreateSymlink(query.table, table_data_path);
+    tryCreateSymlink(query.table, table_data_path);
 }
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
@@ -394,18 +375,17 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
 
         Poco::File(path_to_table_symlinks).createDirectories();
         for (const auto & table : table_names)
-            tryCreateSymlink(table.first, table.second, true);
+            tryCreateSymlink(table.first, table.second);
     }
 }
 
-void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
+void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path)
 {
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        Poco::File data = Poco::Path(global_context.getPath()).makeAbsolute().toString() + actual_data_path;
-        if (!if_data_path_exist || data.exists())
-            data.linkTo(link, Poco::File::LINK_SYMBOLIC);
+        String data = Poco::Path(global_context.getPath()).makeAbsolute().toString() + actual_data_path;
+        Poco::File{data}.linkTo(link, Poco::File::LINK_SYMBOLIC);
     }
     catch (...)
     {

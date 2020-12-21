@@ -19,11 +19,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken open(TokenType::OpeningRoundBracket);
@@ -49,7 +44,6 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto func = std::make_shared<ASTFunction>();
     tryGetIdentifierNameInto(name, func->name);
-    // FIXME(ilezhankin): func->no_empty_args = true; ?
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -115,7 +109,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
-    index->name = name->as<ASTIdentifier &>().name();
+    index->name = name->as<ASTIdentifier &>().name;
     index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
@@ -144,7 +138,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
 
     auto constraint = std::make_shared<ASTConstraintDeclaration>();
-    constraint->name = name->as<ASTIdentifier &>().name();
+    constraint->name = name->as<ASTIdentifier &>().name;
     constraint->set(constraint->expr, expr);
     node = constraint;
 
@@ -156,12 +150,10 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
 {
     ParserKeyword s_index("INDEX");
     ParserKeyword s_constraint("CONSTRAINT");
-    ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
     ParserConstraintDeclaration constraint_p;
     ParserColumnDeclaration column_p{true, true};
-    ParserExpression primary_key_p;
 
     ASTPtr new_node = nullptr;
 
@@ -173,11 +165,6 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_constraint.ignore(pos, expected))
     {
         if (!constraint_p.parse(pos, new_node, expected))
-            return false;
-    }
-    else if (s_primary_key.ignore(pos, expected))
-    {
-        if (!primary_key_p.parse(pos, new_node, expected))
             return false;
     }
     else
@@ -214,7 +201,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
-    ASTPtr primary_key;
 
     for (const auto & elem : list->children)
     {
@@ -224,14 +210,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
-        else if (elem->as<ASTIdentifier>() || elem->as<ASTFunction>())
-        {
-            if (primary_key)
-            {
-                throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
-            }
-            primary_key = elem;
-        }
         else
             return false;
     }
@@ -244,8 +222,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->indices, indices);
     if (!constraints->children.empty())
         res->set(res->constraints, constraints);
-    if (primary_key)
-        res->set(res->primary_key, primary_key);
 
     node = res;
 
@@ -359,7 +335,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserCompoundIdentifier table_name_p(true);
-    ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
@@ -379,7 +354,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table;
     ASTPtr as_table_function;
     ASTPtr select;
-    ASTPtr from_path;
 
     String cluster_str;
     bool attach = false;
@@ -407,13 +381,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
-    if (attach && s_from.ignore(pos, expected))
-    {
-        ParserLiteral from_path_p;
-        if (!from_path_p.parse(pos, from_path, expected))
-            return false;
-    }
-
     if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -423,8 +390,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
-    bool short_attach = attach && !from_path;
-    if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+    if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
         auto query = std::make_shared<ASTCreateQuery>();
         node = query;
@@ -449,23 +415,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_rparen.ignore(pos, expected))
             return false;
 
-        auto storage_parse_result = storage_p.parse(pos, storage, expected);
-
-        if (storage_parse_result && s_as.ignore(pos, expected))
-        {
-            if (!select_p.parse(pos, select, expected))
-                return false;
-        }
-
-        if (!storage_parse_result && !is_temporary)
-        {
-            if (!s_as.ignore(pos, expected))
-                return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
-            {
-                return false;
-            }
-        }
+        if (!storage_p.parse(pos, storage, expected) && !is_temporary)
+            return false;
     }
     else
     {
@@ -516,21 +467,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
-    if (query->storage && query->columns_list && query->columns_list->primary_key)
-    {
-        if (query->storage->primary_key)
-        {
-            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
-        }
-        query->storage->primary_key = query->columns_list->primary_key;
-    }
-
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
-
-    if (from_path)
-        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
 
     return true;
 }

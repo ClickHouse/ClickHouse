@@ -250,7 +250,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix\_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix\_timestamp))’.
 
 Conversion between a date and date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -323,62 +323,6 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## reinterpretAsUUID {#reinterpretasuuid}
-
-This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
-
-**Syntax**
-
-``` sql
-reinterpretAsUUID(fixed_string)
-```
-
-**Parameters**
-
--   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
-
-**Returned value**
-
--   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
-
-**Examples**
-
-String to UUID.
-
-Query:
-
-``` sql
-SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
-```
-
-Result:
-
-``` text
-┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-Going back and forth from String to UUID.
-
-Query:
-
-``` sql
-WITH
-    generateUUIDv4() AS uuid,
-    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
-    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
-SELECT uuid = uuid2;
-```
-
-Result:
-
-``` text
-┌─equals(uuid, uuid2)─┐
-│                   1 │
-└─────────────────────┘
-```
-
 ## CAST(x, T) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
@@ -424,67 +368,6 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
-```
-
-**See also**
-
--   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
-
-## accurateCast(x, T) {#type_conversion_function-accurate-cast}
-
-Converts ‘x’ to the ‘t’ data type. The differente from cast(x, T) is that accurateCast
-does not allow overflow of numeric types during cast if type value x does not fit
-bounds of type T.
-
-Example
-``` sql
-SELECT cast(-1, 'UInt8') as uint8; 
-```
-
-
-``` text
-┌─uint8─┐
-│   255 │
-└───────┘
-```
-
-```sql
-SELECT accurateCast(-1, 'UInt8') as uint8;
-```
-
-``` text
-Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
-
-```
-
-## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
-
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
-if the casted value is not representable in the target type.
-
-Example:
-
-``` sql
-SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
-```
-
-``` text
-┌─uint8─┬─int8─┬─fixed_string─┐
-│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
-└───────┴──────┴──────────────┘┘
-```
-
-``` sql
-SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
-```
-
-``` text
-┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
-│ Nullable(UInt8)                            │
-└────────────────────────────────────────────┘
 ```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
@@ -891,44 +774,6 @@ Result:
 │ 2,"good"
                          │
 └──────────────────────────────────┘
-```
-
-## formatRowNoNewline {#formatrownonewline}
-
-Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
-
-**Syntax** 
-
-``` sql
-formatRowNoNewline(format, x, y, ...)
-```
-
-**Parameters**
-
--   `format` — Text format. For example, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Expressions.
-
-**Returned value**
-
--   A formatted string.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT formatRowNoNewline('CSV', number, 'good')
-FROM numbers(3)
-```
-
-Result:
-
-``` text
-┌─formatRowNoNewline('CSV', number, 'good')─┐
-│ 0,"good"                                  │
-│ 1,"good"                                  │
-│ 2,"good"                                  │
-└───────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

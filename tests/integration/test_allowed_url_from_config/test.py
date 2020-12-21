@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.hdfs_api import HDFSApi
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/config_with_hosts.xml'])
@@ -100,8 +101,9 @@ def test_table_function_remote(start_cluster):
 
 
 def test_redirect(start_cluster):
-    start_cluster.hdfs_api.write_data("/simple_storage", "1\t\n")
-    assert start_cluster.hdfs_api.read_data("/simple_storage") == "1\t\n"
+    hdfs_api = HDFSApi("root")
+    hdfs_api.write_data("/simple_storage", "1\t\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
     node7.query(
         "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)")
     assert "not allowed" in node7.query_and_get_error("SET max_http_get_redirects=1; SELECT * from table_test_7_1")

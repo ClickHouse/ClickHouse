@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
@@ -60,9 +61,11 @@ public:
         /// then we perform it.
 
         /// Create the arrays required by the transform function.
+        ColumnNumbers src_array_args;
         ColumnsWithTypeAndName src_array_elems;
         DataTypes src_array_types;
 
+        ColumnNumbers dst_array_args;
         ColumnsWithTypeAndName dst_array_elems;
         DataTypes dst_array_types;
 
@@ -70,31 +73,42 @@ public:
         {
             if (i % 2)
             {
-                src_array_elems.push_back(args[i]);
-                src_array_types.push_back(args[i].type);
+                src_array_args.push_back(args[i]);
+                src_array_elems.push_back(block.getByPosition(args[i]));
+                src_array_types.push_back(block.getByPosition(args[i]).type);
             }
             else
             {
-                dst_array_elems.push_back(args[i]);
-                dst_array_types.push_back(args[i].type);
+                dst_array_args.push_back(args[i]);
+                dst_array_elems.push_back(block.getByPosition(args[i]));
+                dst_array_types.push_back(block.getByPosition(args[i]).type);
             }
         }
 
         DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
         DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
-        ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
-        ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
+        ColumnsWithTypeAndName temp_block_columns = block.data;
+
+        size_t src_array_pos = temp_block_columns.size();
+        temp_block_columns.emplace_back(ColumnWithTypeAndName {nullptr, src_array_type, ""});
+
+        size_t dst_array_pos = temp_block_columns.size();
+        temp_block_columns.emplace_back(ColumnWithTypeAndName{nullptr, dst_array_type, ""});
 
         auto fun_array = FunctionFactory::instance().get("array", context);
 
-        src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count);
-        dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count);
+        fun_array->build(src_array_elems)->execute(temp_block_columns, src_array_args, src_array_pos, input_rows_count);
+        fun_array->build(dst_array_elems)->execute(temp_block_columns, dst_array_args, dst_array_pos, input_rows_count);
 
         /// Execute transform.
-        ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-        return FunctionFactory::instance().get("transform", context)->build(transform_args)
-            ->execute(transform_args, result_type, input_rows_count);
+        ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
+        FunctionFactory::instance().get("transform", context)->build(
+            ext::map<ColumnsWithTypeAndName>(transform_args, [&](auto i){ return temp_block_columns[i]; }))
+            ->execute(temp_block_columns, transform_args, result, input_rows_count);
+
+        /// Put the result into the original block.
+        block.getByPosition(result).column = std::move(temp_block_columns[result].column);
     }
 
 private:
