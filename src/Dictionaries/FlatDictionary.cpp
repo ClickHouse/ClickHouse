@@ -109,10 +109,9 @@ ColumnPtr FlatDictionary::getColumn(
         const std::string& attribute_name,
         const DataTypePtr &,
         const Columns & key_columns,
-        const DataTypes & key_types,
+        const DataTypes &,
         const ColumnPtr default_untyped) const
 {
-    dict_struct.validateKeyTypes(key_types);
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
@@ -263,8 +262,6 @@ ColumnPtr FlatDictionary::getColumn(
 
 ColumnUInt8::Ptr FlatDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
-    assert(!key_columns.empty());
-
     PaddedPODArray<Key> backup_storage;
     const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 

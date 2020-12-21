@@ -4,7 +4,8 @@
 #include "DictionaryFactory.h"
 #include "ClickHouseDictionarySource.h"
 #include <Core/Defines.h>
-
+#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnsNumber.h>
 
 namespace
 {
@@ -125,183 +126,185 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
     isInImpl(child_id, ancestor_ids, out);
 }
 
-
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) \
-        const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return null_value; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+ColumnPtr HashedDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr &,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_untyped) const
 {
+    // dict_struct.validateKeyTypes(key_types);
+    ColumnPtr result;
+
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
+    /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        auto size = ids.size();
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        ids,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsImpl<StringRef, StringRef>(
+                        attribute,
+                        ids,
+                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t) { return def; });
+                }
+            }
+            else
+            {
+                const auto & null_value = std::get<StringRef>(attribute.null_values);
+
+                getItemsImpl<StringRef, StringRef>(
+                    attribute,
+                    ids,
+                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+   
+    return result;
 }
 
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void HashedDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
+ColumnUInt8::Ptr HashedDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
-}
+    size_t ids_count = ext::size(ids);
 
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
 
-void HashedDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
-}
-
-void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
-{
     const auto & attribute = attributes.front();
 
-    switch (attribute.type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            has<UInt8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            has<UInt16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            has<UInt32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            has<UInt64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            has<UInt128>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            has<Int8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            has<Int16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            has<Int32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            has<Int64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            has<Float32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            has<Float64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utString:
-            has<StringRef>(attribute, ids, out);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        has<AttributeType>(attribute, ids, out);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            has<Decimal32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            has<Decimal64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            has<Decimal128>(attribute, ids, out);
-            break;
-    }
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    query_count.fetch_add(ids_count, std::memory_order_relaxed);
+
+    return result;
 }
 
 void HashedDictionary::createAttributes()
@@ -429,6 +432,13 @@ void HashedDictionary::resize(Attribute & attribute, size_t added_rows)
         map_ref->resize(added_rows);
     }
 }
+
+template <>
+void HashedDictionary::resize<String>(Attribute & attribute, size_t added_rows)
+{
+    resize<StringRef>(attribute, added_rows);
+}
+
 void HashedDictionary::resize(size_t added_rows)
 {
     if (!added_rows)
@@ -436,56 +446,14 @@ void HashedDictionary::resize(size_t added_rows)
 
     for (auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                resize<UInt8>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                resize<UInt16>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                resize<UInt32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                resize<UInt64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                resize<UInt128>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                resize<Int8>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                resize<Int16>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                resize<Int32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                resize<Int64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                resize<Float32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                resize<Float64>(attribute, added_rows);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            resize<AttributeType>(attribute, added_rows);
+        };
 
-            case AttributeUnderlyingType::utDecimal32:
-                resize<Decimal32>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                resize<Decimal64>(attribute, added_rows);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                resize<Decimal128>(attribute, added_rows);
-                break;
-
-            case AttributeUnderlyingType::utString:
-                resize<StringRef>(attribute, added_rows);
-                break;
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
@@ -562,66 +530,27 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
     }
 }
 
+template <>
+void HashedDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    addAttributeSize<StringRef>(attribute);
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void HashedDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
-
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
@@ -635,67 +564,32 @@ void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & 
         attribute.sparse_maps = std::make_unique<SparseCollectionType<T>>();
 }
 
+template <>
+void HashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+
+    if (!sparse)
+        attribute.maps = std::make_unique<CollectionType<StringRef>>();
+    else
+        attribute.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
+}
+
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     Attribute attr{type, {}, {}, {}, {}};
 
-    switch (type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            attr.null_values = null_value.get<String>();
-            if (!sparse)
-                attr.maps = std::make_unique<CollectionType<StringRef>>();
-            else
-                attr.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(type, type_call);
 
     return attr;
 }
@@ -811,8 +705,12 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
 
     for (const auto i : ext::range(0, rows))
         out[i] = attr.find(ids[i]) != nullptr;
+}
 
-    query_count.fetch_add(rows, std::memory_order_relaxed);
+template <>
+void HashedDictionary::has<String>(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+{
+    has<StringRef>(attribute, ids, out);
 }
 
 template <typename T, typename AttrType>
@@ -833,45 +731,27 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
     return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
+template <>
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds<String>(const Attribute & attribute) const
+{
+    return getIds<StringRef>(attribute);
+} 
+
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 {
     const auto & attribute = attributes.front();
+    PaddedPODArray<HashedDictionary::Key> result;
 
-    switch (attribute.type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return getIds<UInt8>(attribute);
-        case AttributeUnderlyingType::utUInt16:
-            return getIds<UInt16>(attribute);
-        case AttributeUnderlyingType::utUInt32:
-            return getIds<UInt32>(attribute);
-        case AttributeUnderlyingType::utUInt64:
-            return getIds<UInt64>(attribute);
-        case AttributeUnderlyingType::utUInt128:
-            return getIds<UInt128>(attribute);
-        case AttributeUnderlyingType::utInt8:
-            return getIds<Int8>(attribute);
-        case AttributeUnderlyingType::utInt16:
-            return getIds<Int16>(attribute);
-        case AttributeUnderlyingType::utInt32:
-            return getIds<Int32>(attribute);
-        case AttributeUnderlyingType::utInt64:
-            return getIds<Int64>(attribute);
-        case AttributeUnderlyingType::utFloat32:
-            return getIds<Float32>(attribute);
-        case AttributeUnderlyingType::utFloat64:
-            return getIds<Float64>(attribute);
-        case AttributeUnderlyingType::utString:
-            return getIds<StringRef>(attribute);
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        result = getIds<AttributeType>(attribute);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            return getIds<Decimal32>(attribute);
-        case AttributeUnderlyingType::utDecimal64:
-            return getIds<Decimal64>(attribute);
-        case AttributeUnderlyingType::utDecimal128:
-            return getIds<Decimal128>(attribute);
-    }
-    return PaddedPODArray<Key>();
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
