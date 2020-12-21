@@ -191,6 +191,16 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
 
+    /// Record entities accessed by current query, and store this information in system.query_log.
+    struct QueryAccessInfo
+    {
+        std::set<std::string> databases;
+        std::set<std::string> tables;
+        std::set<std::string> columns;
+    };
+
+    QueryAccessInfo query_access_info;
+
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
@@ -355,6 +365,9 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 

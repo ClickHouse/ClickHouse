@@ -45,16 +45,6 @@
         "name": "yandex/clickhouse-pvs-test",
         "dependent": []
     },
-    "docker/test/stateful": {
-        "name": "yandex/clickhouse-stateful-test",
-        "dependent": [
-            "docker/test/stress"
-        ]
-    },
-    "docker/test/stateful_with_coverage": {
-        "name": "yandex/clickhouse-stateful-test-with-coverage",
-        "dependent": []
-    },
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
@@ -70,6 +60,16 @@
         "dependent": [
             "docker/test/stateful_with_coverage"
         ]
+    },
+    "docker/test/stateful": {
+        "name": "yandex/clickhouse-stateful-test",
+        "dependent": [
+            "docker/test/stress"
+        ]
+    },
+    "docker/test/stateful_with_coverage": {
+        "name": "yandex/clickhouse-stateful-test-with-coverage",
+        "dependent": []
     },
     "docker/test/unit": {
         "name": "yandex/clickhouse-unit-test",
@@ -158,5 +158,9 @@
          "name": "yandex/clickhouse-stateless-unbundled-test",
          "dependent": [
          ]
+    },
+    "docker/test/integration/kerberized_hadoop": {
+        "name": "yandex/clickhouse-kerberized-hadoop",
+        "dependent": []
     }
 }
