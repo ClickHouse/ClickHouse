@@ -3,7 +3,6 @@ FROM yandex/clickhouse-test-base
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
-        python-pip \
         python-setuptools
 
 RUN pip install \
