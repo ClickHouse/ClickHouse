@@ -49,7 +49,7 @@ public:
     void finish();
 };
 #else
-class AsyncTaskQueue
+class PollingQueue
 {
 public:
     bool empty() { return true; }
