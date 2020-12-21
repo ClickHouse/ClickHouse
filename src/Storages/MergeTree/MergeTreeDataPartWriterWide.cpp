@@ -171,8 +171,18 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         if (rows_written_in_last_mark > 0)
         {
             size_t rows_left_in_last_mark = index_granularity.getMarkRows(getCurrentMark()) - rows_written_in_last_mark;
+            /// Previous granularity was much bigger than our new block's
+            /// granularity let's adjust it, because we want add new
+            /// heavy-weight blocks into small old granule.
             if (rows_left_in_last_mark > index_granularity_for_block)
-                adjustLastMarkIfNeedAndFlushToDisk();
+            {
+                /// We have already written more rows than granularity of our block.
+                /// adjust last mark rows and flush to disk.
+                if (rows_written_in_last_mark >= index_granularity_for_block)
+                    adjustLastMarkIfNeedAndFlushToDisk(rows_written_in_last_mark);
+                else /// We still can write some rows from new block into previous granule.
+                    adjustLastMarkIfNeedAndFlushToDisk(index_granularity_for_block - rows_written_in_last_mark);
+            }
         }
 
         fillIndexGranularity(index_granularity_for_block, block.rows());
@@ -476,7 +486,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
-        adjustLastMarkIfNeedAndFlushToDisk();
+        adjustLastMarkIfNeedAndFlushToDisk(rows_written_in_last_mark);
 
     bool write_final_mark = (with_final_mark && data_written);
 
@@ -572,7 +582,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
 }
 
 
-void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk()
+void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark)
 {
     /// We can adjust marks only if we computed granularity for blocks.
     /// Otherwise we cannot change granularity because it will differ from
@@ -584,7 +594,7 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk()
                             getCurrentMark(), index_granularity.getMarkRows(getCurrentMark()), rows_written_in_last_mark, index_granularity.getMarksCount());
 
         index_granularity.popMark();
-        index_granularity.appendMark(rows_written_in_last_mark);
+        index_granularity.appendMark(new_rows_in_last_mark);
     }
 
     /// Last mark should be filled, otherwise it's a bug
@@ -592,25 +602,28 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No saved marks for last mark {} having rows offset {}, total marks {}",
                         getCurrentMark(), rows_written_in_last_mark, index_granularity.getMarksCount());
 
-    for (const auto & [name, marks] : last_non_written_marks)
+    if (rows_written_in_last_mark == new_rows_in_last_mark)
     {
-        for (const auto & mark : marks)
-            flushMarkToFile(mark, index_granularity.getMarkRows(getCurrentMark()));
-    }
+        for (const auto & [name, marks] : last_non_written_marks)
+        {
+            for (const auto & mark : marks)
+                flushMarkToFile(mark, index_granularity.getMarkRows(getCurrentMark()));
+        }
 
-    last_non_written_marks.clear();
+        last_non_written_marks.clear();
 
-    if (compute_granularity && settings.can_use_adaptive_granularity)
-    {
-        /// Also we add mark to each skip index because all of them
-        /// already accumulated all rows from current adjusting mark
-        for (size_t i = 0; i < skip_indices.size(); ++i)
-            ++skip_index_accumulated_marks[i];
+        if (compute_granularity && settings.can_use_adaptive_granularity)
+        {
+            /// Also we add mark to each skip index because all of them
+            /// already accumulated all rows from current adjusting mark
+            for (size_t i = 0; i < skip_indices.size(); ++i)
+                ++skip_index_accumulated_marks[i];
 
-        /// This mark completed, go further
-        setCurrentMark(getCurrentMark() + 1);
-        /// Without offset
-        rows_written_in_last_mark = 0;
+            /// This mark completed, go further
+            setCurrentMark(getCurrentMark() + 1);
+            /// Without offset
+            rows_written_in_last_mark = 0;
+        }
     }
 }
 

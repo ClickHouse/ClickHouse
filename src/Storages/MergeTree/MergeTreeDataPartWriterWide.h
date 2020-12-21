@@ -99,12 +99,13 @@ private:
     /// in our index_granularity array.
     void shiftCurrentMark(const Granules & granules_written);
 
-    /// Change rows in the last mark in index_granularity to rows_written_in_last_mark.
-    /// Flush all marks from last_non_written_marks to disk and increment current mark.
+    /// Change rows in the last mark in index_granularity to new_rows_in_last_mark.
+    /// Flush all marks from last_non_written_marks to disk and increment current mark if already written rows
+    /// (rows_written_in_last_granule) equal to new_rows_in_last_mark.
     ///
     /// This function used when blocks change granularity drastically and we have unfinished mark.
     /// Also useful to have exact amount of rows in last (non-final) mark.
-    void adjustLastMarkIfNeedAndFlushToDisk();
+    void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns) const;
 
