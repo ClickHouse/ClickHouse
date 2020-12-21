@@ -11,9 +11,9 @@ ClickHouse provides a native command-line client: `clickhouse-client`. The clien
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 19.17.1.1579 (official build).
+ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```
@@ -126,6 +126,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
+Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 
 ### Configuration Files {#configuration_files}
 

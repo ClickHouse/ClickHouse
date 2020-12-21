@@ -376,7 +376,7 @@ bool ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... 
         return true;
     };
 
-    auto access_denied = [&](const String & error_msg, int error_code)
+    auto access_denied = [&](const String & error_msg, int error_code [[maybe_unused]])
     {
         if (trace_log)
             LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toString()),
@@ -558,7 +558,7 @@ bool ContextAccess::checkAdminOptionImpl2(const Container & role_ids, const GetN
     if (!std::size(role_ids) || is_full_access)
         return true;
 
-    auto show_error = [this](const String & msg, int error_code)
+    auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
         UNUSED(this);
         if constexpr (throw_if_denied)
