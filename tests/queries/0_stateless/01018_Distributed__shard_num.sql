@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS dist_3;
 
 -- make the order static
 SET max_threads = 1;
+SET max_distributed_connections = 1;
 
 -- remote(system.one)
 SELECT 'remote(system.one)';
