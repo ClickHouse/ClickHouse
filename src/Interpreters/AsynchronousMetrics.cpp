@@ -299,14 +299,14 @@ void AsynchronousMetrics::update()
                 if (table_merge_tree)
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
-                    const auto settings = global_context.getSettingsRef();
+                    const auto & settings = global_context.getSettingsRef();
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
                 if (table_replicated_merge_tree)
                 {
-                    const auto settings = global_context.getSettingsRef();
+                    const auto & settings = global_context.getSettingsRef();
                     total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
                     total_number_of_parts += table_replicated_merge_tree->getPartsCount();
