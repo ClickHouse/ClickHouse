@@ -47,7 +47,7 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t number_of_elements = arguments.size();
 
@@ -57,7 +57,7 @@ public:
         out_data.assign(input_rows_count, static_cast<ResultType>(0));
         for (size_t i = 0; i < number_of_elements; ++i)
         {
-            const auto & arg = block.getByPosition(arguments[i]);
+            const auto & arg = arguments[i];
             auto column_data = arg.column.get()->getRawData();
             auto size_per_element = arg.column.get()->sizeOfValueIfFixed();
             for (size_t j = 0; j < input_rows_count; ++j)
@@ -69,9 +69,9 @@ public:
                         number_of_elements,
                         arg.type);
             }
-
         }
-        block.getByPosition(result).column = std::move(out);
+
+        return out;
     }
 
     bool isInvertible() const override

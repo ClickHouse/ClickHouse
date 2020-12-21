@@ -1230,7 +1230,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
                             return false;
-                        chain.push_back(func_cast);
+                        monotonic_chain.push_back(func_cast);
                     }
                 }
             }
