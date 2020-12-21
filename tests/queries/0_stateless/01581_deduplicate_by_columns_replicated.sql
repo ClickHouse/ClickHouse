@@ -49,5 +49,5 @@ SELECT 'r1', id, val, count(), uniqExact(unique_value) FROM replicated_deduplica
 SELECT 'r2', id, val, count(), uniqExact(unique_value) FROM replicated_deduplicate_by_columns_r2 GROUP BY id, val ORDER BY id, val;
 
 -- cleanup the mess
---DROP TABLE replicated_deduplicate_by_columns_r1;
---DROP TABLE replicated_deduplicate_by_columns_r2;
+DROP TABLE replicated_deduplicate_by_columns_r1;
+DROP TABLE replicated_deduplicate_by_columns_r2;
