@@ -80,20 +80,27 @@ LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TA
 LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-client --query "SHOW TABLES FROM test"
 
+LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test -j 8 --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
-if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
-    SKIP_LIST_OPT="--use-skip-list"
-fi
-
-# We can have several additional options so we path them as array because it's
-# more idiologically correct.
-read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
-
-LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --testname --shard --zookeeper --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
 
 kill_clickhouse
 
 sleep 3
+
+if [[ -n "${FAILED_TESTS[*]}" ]]
+then
+    # Clean the data so that there is no interference from the previous test run.
+    rm -rf /var/lib/clickhouse/{{meta,}data,user_files} ||:
+
+    start_clickhouse
+
+    echo "Going to run again: ${FAILED_TESTS[*]}"
+
+    LLVM_PROFILE_FILE='client_coverage.profraw' clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "/test_result.txt"
+else
+    echo "No failed tests"
+fi
 
 mkdir -p $COVERAGE_DIR
 mv /*.profraw $COVERAGE_DIR
