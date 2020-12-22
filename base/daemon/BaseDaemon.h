@@ -48,28 +48,26 @@ public:
     BaseDaemon();
     ~BaseDaemon() override;
 
-    /// Загружает конфигурацию и "строит" логгеры на запись в файлы
+    /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
 
-    /// Читает конфигурацию
     void reloadConfiguration();
 
-    /// Определяет параметр командной строки
+    /// Process command line parameters
     void defineOptions(Poco::Util::OptionSet & new_options) override;
 
-    /// Завершение демона ("мягкое")
-    void terminate();
+    /// Graceful shutdown
+    static void terminate();
 
-    /// Завершение демона ("жёсткое")
+    /// Forceful shutdown
     void kill();
 
-    /// Получен ли сигнал на завершение?
+    /// Cancellation request has been received.
     bool isCancelled() const
     {
         return is_cancelled;
     }
 
-    /// Получение ссылки на экземпляр демона
     static BaseDaemon & instance()
     {
         return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
@@ -77,12 +75,6 @@ public:
 
     /// return none if daemon doesn't exist, reference to the daemon otherwise
     static std::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
-
-    /// Спит заданное количество секунд или до события wakeup
-    void sleep(double seconds);
-
-    /// Разбудить
-    void wakeup();
 
     /// В Graphite компоненты пути(папки) разделяются точкой.
     /// У нас принят путь формата root_path.hostname_yandex_ru.key
@@ -141,7 +133,6 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
 #if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
     override
@@ -161,10 +152,7 @@ protected:
 
     bool log_to_console = false;
 
-    /// Событие, чтобы проснуться во время ожидания
-    Poco::Event wakeup_event;
-
-    /// Поток, в котором принимается сигнал HUP/USR1 для закрытия логов.
+    /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
 

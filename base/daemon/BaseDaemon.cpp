@@ -485,17 +485,6 @@ void BaseDaemon::kill()
         throw Poco::SystemException("cannot kill process");
 }
 
-void BaseDaemon::sleep(double seconds)
-{
-    wakeup_event.reset();
-    wakeup_event.tryWait(seconds * 1000);
-}
-
-void BaseDaemon::wakeup()
-{
-    wakeup_event.set();
-}
-
 std::string BaseDaemon::getDefaultCorePath() const
 {
     return "/opt/cores/";
@@ -871,6 +860,7 @@ void BaseDaemon::onInterruptSignals(int signal_id)
 
 void BaseDaemon::waitForTerminationRequest()
 {
+    /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
