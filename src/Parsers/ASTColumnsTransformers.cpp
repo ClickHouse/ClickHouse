@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <algorithm>
 
 
 namespace DB
@@ -94,13 +95,26 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
     for (const auto & child : children)
-        expected_columns.insert(child->as<const ASTIdentifier &>().shortName());
+    {
+        const auto & ident = child->as<const ASTIdentifier &>();
+        String full_name = ident.name();
+        if (ident.compound())
+        {
+            if (count(full_name.begin(), full_name.end(),'.') == 2)
+                full_name = full_name.substr(full_name.find(".") + 1);
+        }
+        expected_columns.insert(full_name);
+    }
 
     for (auto it = nodes.begin(); it != nodes.end();)
     {
         if (const auto * id = it->get()->as<ASTIdentifier>())
         {
-            auto expected_column = expected_columns.find(id->shortName());
+            auto expected_column = expected_columns.find(id->name());
+
+            if (expected_column == expected_columns.end())
+                expected_column = expected_columns.find(id->shortName());
+
             if (expected_column != expected_columns.end())
             {
                 expected_columns.erase(expected_column);

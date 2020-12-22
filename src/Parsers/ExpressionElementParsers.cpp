@@ -1340,7 +1340,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto parse_id = [&identifiers, &pos, &expected]
         {
             ASTPtr identifier;
-            if (!ParserIdentifier(true).parse(pos, identifier, expected))
+            if (!ParserCompoundIdentifier(false, false).parse(pos, identifier, expected))
                 return false;
 
             identifiers.emplace_back(std::move(identifier));
