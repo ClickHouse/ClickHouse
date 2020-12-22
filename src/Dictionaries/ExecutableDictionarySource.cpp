@@ -173,7 +173,6 @@ namespace
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
     };
-
 }
 
 

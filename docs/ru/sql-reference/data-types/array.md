@@ -1,3 +1,8 @@
+---
+toc_priority: 52
+toc_title: Array(T)
+---
+
 # Array(T) {#data-type-array}
 
 Массив из элементов типа `T`.

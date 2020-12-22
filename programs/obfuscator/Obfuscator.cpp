@@ -23,6 +23,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Formats/registerFormats.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -1049,6 +1050,8 @@ try
 {
     using namespace DB;
     namespace po = boost::program_options;
+
+    registerFormats();
 
     po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()

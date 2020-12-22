@@ -56,9 +56,187 @@ When floating point numbers are sorted, NaNs are separate from the other values.
 
 ## Collation Support {#collation-support}
 
-For sorting by String values, you can specify collation (comparison). Example: `ORDER BY SearchPhrase COLLATE 'tr'` - for sorting by keyword in ascending order, using the Turkish alphabet, case insensitive, assuming that strings are UTF-8 encoded. `COLLATE` can be specified or not for each expression in ORDER BY independently. If `ASC` or `DESC` is specified, `COLLATE` is specified after it. When using `COLLATE`, sorting is always case-insensitive.
+For sorting by [String](../../../sql-reference/data-types/string.md) values, you can specify collation (comparison). Example: `ORDER BY SearchPhrase COLLATE 'tr'` - for sorting by keyword in ascending order, using the Turkish alphabet, case insensitive, assuming that strings are UTF-8 encoded. `COLLATE` can be specified or not for each expression in ORDER BY independently. If `ASC` or `DESC` is specified, `COLLATE` is specified after it. When using `COLLATE`, sorting is always case-insensitive.
+
+Collate is supported in [LowCardinality](../../../sql-reference/data-types/lowcardinality.md), [Nullable](../../../sql-reference/data-types/nullable.md), [Array](../../../sql-reference/data-types/array.md) and [Tuple](../../../sql-reference/data-types/tuple.md).
 
 We only recommend using `COLLATE` for final sorting of a small number of rows, since sorting with `COLLATE` is less efficient than normal sorting by bytes.
+
+## Collation Examples {#collation-examples}
+
+Example only with [String](../../../sql-reference/data-types/string.md) values:
+
+Input table:
+
+``` text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ABC  │
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+Query:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Result:
+
+``` text
+┌─x─┬─s────┐
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 2 │ ABC  │
+│ 1 │ bca  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+Example with [Nullable](../../../sql-reference/data-types/nullable.md):
+
+Input table:
+
+``` text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │ ABC  │
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 7 │ BCA  │
+└───┴──────┘
+```
+
+Query:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Result:
+
+``` text
+┌─x─┬─s────┐
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 3 │ ABC  │
+│ 1 │ bca  │
+│ 7 │ BCA  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 2 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+Example with [Array](../../../sql-reference/data-types/array.md):
+
+Input table:
+
+``` text
+┌─x─┬─s─────────────┐
+│ 1 │ ['Z']         │
+│ 2 │ ['z']         │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 7 │ ['']          │
+└───┴───────────────┘
+```
+
+Query:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Result:
+
+``` text
+┌─x─┬─s─────────────┐
+│ 7 │ ['']          │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 2 │ ['z']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 1 │ ['Z']         │
+└───┴───────────────┘
+```
+
+Example with [LowCardinality](../../../sql-reference/data-types/lowcardinality.md) string:
+
+Input table:
+
+```text
+┌─x─┬─s───┐
+│ 1 │ Z   │
+│ 2 │ z   │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 5 │ za  │
+│ 6 │ zaa │
+│ 7 │     │
+└───┴─────┘
+```
+
+Query:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Result:
+
+```text
+┌─x─┬─s───┐
+│ 7 │     │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 2 │ z   │
+│ 1 │ Z   │
+│ 5 │ za  │
+│ 6 │ zaa │
+└───┴─────┘
+```
+
+Example with [Tuple](../../../sql-reference/data-types/tuple.md):
+
+```text
+┌─x─┬─s───────┐
+│ 1 │ (1,'Z') │
+│ 2 │ (1,'z') │
+│ 3 │ (1,'a') │
+│ 4 │ (2,'z') │
+│ 5 │ (1,'A') │
+│ 6 │ (2,'Z') │
+│ 7 │ (2,'A') │
+└───┴─────────┘
+```
+
+Query:
+
+```sql
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+Result:
+
+```text
+┌─x─┬─s───────┐
+│ 3 │ (1,'a') │
+│ 5 │ (1,'A') │
+│ 2 │ (1,'z') │
+│ 1 │ (1,'Z') │
+│ 7 │ (2,'A') │
+│ 4 │ (2,'z') │
+│ 6 │ (2,'Z') │
+└───┴─────────┘
+```
 
 ## Implementation Details {#implementation-details}
 
@@ -221,3 +399,85 @@ returns
 │ 1970-03-12 │ 1970-01-08 │ original │
 └────────────┴────────────┴──────────┘
 ```
+
+## OFFSET FETCH Clause {#offset-fetch}
+
+`OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
+
+``` sql
+OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
+```
+
+The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals 1.
+
+`OFFSET` specifies the number of rows to skip before starting to return rows from the query.
+
+The `FETCH` specifies the maximum number of rows that can be in the result of a query.
+
+The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](../../../sql-reference/statements/select/limit.md) clause. For example, the following query
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+is identical to the query
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
+```
+
+The `WITH TIES` option is used to return any additional rows that tie for the last place in the result set according to the `ORDER BY` clause. For example, if `fetch_row_count` is set to 5 but two additional rows match the values of the `ORDER BY` columns in the fifth row, the result set will contain seven rows.
+
+!!! note "Note"
+    According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
+	
+### Examples {#examples}
+
+Input table:
+
+``` text
+┌─a─┬─b─┐
+│ 1 │ 1 │
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 1 │ 3 │
+│ 5 │ 4 │
+│ 0 │ 6 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+Usage of the `ONLY` option:
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+Result:
+
+``` text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+└───┴───┘
+```
+
+Usage of the `WITH TIES` option:
+
+``` sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
+```
+
+Result:
+
+``` text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

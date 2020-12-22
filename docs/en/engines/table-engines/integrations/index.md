@@ -13,4 +13,5 @@ List of supported integrations:
 -   [JDBC](../../../engines/table-engines/integrations/jdbc.md)
 -   [MySQL](../../../engines/table-engines/integrations/mysql.md)
 -   [HDFS](../../../engines/table-engines/integrations/hdfs.md)
+-   [S3](../../../engines/table-engines/integrations/s3.md)
 -   [Kafka](../../../engines/table-engines/integrations/kafka.md)

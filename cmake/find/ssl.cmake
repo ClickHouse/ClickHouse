@@ -1,3 +1,5 @@
+# Needed when securely connecting to an external server, e.g.
+# clickhouse-client --host ... --secure
 option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
 if(NOT ENABLE_SSL)
@@ -9,9 +11,9 @@ endif()
 
 option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/openssl/README")
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boringssl/README.md")
     if(USE_INTERNAL_SSL_LIBRARY)
-        message(WARNING "submodule contrib/openssl is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/boringssl is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal ssl library")
     endif()
     set(USE_INTERNAL_SSL_LIBRARY 0)
@@ -50,12 +52,12 @@ endif ()
 
 if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
     set (USE_INTERNAL_SSL_LIBRARY 1)
-    set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/openssl")
+    set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/boringssl")
 
     if (ARCH_AMD64)
-        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" "${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_x86_64/include")
+        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
     elseif (ARCH_AARCH64)
-        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" "${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_aarch64/include")
+        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
     endif ()
     set (OPENSSL_CRYPTO_LIBRARY crypto)
     set (OPENSSL_SSL_LIBRARY ssl)

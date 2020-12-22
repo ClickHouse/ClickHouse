@@ -18,7 +18,8 @@ if (NOT CCACHE_FOUND AND NOT DEFINED ENABLE_CCACHE AND NOT COMPILER_MATCHES_CCAC
             "Setting it up will significantly reduce compilation time for 2nd and consequent builds")
 endif()
 
-option(ENABLE_CCACHE "Speedup re-compilations using ccache" ${ENABLE_CCACHE_BY_DEFAULT})
+# https://ccache.dev/
+option(ENABLE_CCACHE "Speedup re-compilations using ccache (external tool)" ${ENABLE_CCACHE_BY_DEFAULT})
 
 if (NOT ENABLE_CCACHE)
     return()

@@ -494,6 +494,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(キー,値) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys_to_keep)(キー,値) {#summapfilteredkeys-to-keepkeys-values}
 
 と同じ動作 [サマップ](reference.md#agg_functions-summap) ただし、キーの配列はパラメータとして渡されます。 これは、キーの基数が高い場合に特に便利です。

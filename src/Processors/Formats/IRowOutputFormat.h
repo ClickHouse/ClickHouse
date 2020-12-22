@@ -9,6 +9,14 @@
 namespace DB
 {
 
+struct RowOutputFormatParams
+{
+    using WriteCallback = std::function<void(const Columns & columns,size_t row)>;
+
+    // Callback used to indicate that another row is written.
+    WriteCallback callback;
+};
+
 class WriteBuffer;
 
 /** Output format that writes data row by row.
@@ -17,6 +25,7 @@ class IRowOutputFormat : public IOutputFormat
 {
 protected:
     DataTypes types;
+    bool first_row = true;
 
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
@@ -24,8 +33,10 @@ protected:
     void finalize() override;
 
 public:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_, FormatFactory::WriteCallback callback)
-        : IOutputFormat(header, out_), types(header.getDataTypes()), write_single_row_callback(callback)
+    using Params = RowOutputFormatParams;
+
+    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
+        : IOutputFormat(header, out_), types(header.getDataTypes()), params(params_)
     {
     }
 
@@ -55,12 +66,10 @@ public:
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
 
 private:
-    bool first_row = true;
     bool prefix_written = false;
     bool suffix_written = false;
 
-    // Callback used to indicate that another row is written.
-    FormatFactory::WriteCallback write_single_row_callback;
+    Params params;
 
     void writePrefixIfNot()
     {

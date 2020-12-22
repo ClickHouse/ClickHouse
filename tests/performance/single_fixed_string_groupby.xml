@@ -1,0 +1,17 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_lc_fixed_str_groupby</create_query>
+    <create_query>CREATE TABLE perf_lc_fixed_str_groupby(
+            a LowCardinality(FixedString(14)),
+            b LowCardinality(FixedString(14))
+        ) ENGINE MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_lc_fixed_str_groupby SELECT ('number key ' || toString(number % 400)) AS a, ('number key ' || toString(number % 20)) AS b FROM numbers(30000000)
+    </fill_query>
+
+    <query short="1">SELECT count() FROM perf_lc_fixed_str_groupby GROUP BY a</query>
+    <query short="1">SELECT count() FROM perf_lc_fixed_str_groupby GROUP BY b</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_lc_fixed_str_groupby</drop_query>
+</test>

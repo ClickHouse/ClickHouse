@@ -97,13 +97,10 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
-    git -C right/ch diff --name-only "$base" pr | tee changed-tests.txt
-    if grep -vq '^tests/performance' changed-tests.txt
-    then
-        # Have some other changes besides the tests, so truncate the test list,
-        # meaning, run all tests.
-        : > changed-tests.txt
-    fi
+    git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
+    git -C right/ch diff --name-only "$base" pr -- tests/performance | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only "$base" pr -- docker/test/performance-comparison | tee changed-test-scripts.txt
+    git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
 # Set python output encoding so that we can print queries with Russian letters.
@@ -123,6 +120,9 @@ set +e
 # Use clickhouse-client and clickhouse-local from the right server.
 PATH="$(readlink -f right/)":"$PATH"
 export PATH
+
+export REF_PR
+export REF_SHA
 
 # Start the main comparison script.
 { \

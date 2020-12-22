@@ -1,6 +1,6 @@
 ---
-toc_priority: 9
-toc_title: Профиль настроек
+toc_priority: 43
+toc_title: "\u041f\u0440\u043e\u0444\u0438\u043b\u044c\u0020\u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a"
 ---
 
 # CREATE SETTINGS PROFILE {#create-settings-profile-statement}
