@@ -462,7 +462,7 @@ namespace
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
-    NamesAndTypesList available_columns = getColumns().getAllWithSubcolumns();
+    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
 
     const String list_of_columns = listOfColumns(available_columns);
