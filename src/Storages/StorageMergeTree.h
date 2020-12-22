@@ -107,7 +107,7 @@ private:
     BackgroundMovesExecutor background_moves_executor;
 
     /// For block numbers.
-    SimpleIncrement increment{0};
+    SimpleIncrement increment;
 
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
