@@ -314,7 +314,12 @@ public:
         if constexpr(op_case == OpCase::LeftConstant) static_assert(!IsDecimalNumber<A>);
         if constexpr(op_case == OpCase::RightConstant) static_assert(!IsDecimalNumber<B>);
 
-        const size_t size = a.size();
+        size_t size;
+
+        if constexpr(op_case == OpCase::LeftConstant)
+            size = b.size();
+        else
+            size = a.size();
 
         if constexpr (is_plus_minus_compare)
         {
@@ -390,11 +395,12 @@ private:
         Operation<NativeResultType, NativeResultType>>;
 
     template <OpCase op_case, OpCase target>
-    static auto unwrap(const auto& elem, int i)
+    static auto unwrap(const auto& elem, size_t i)
     {
         if constexpr(op_case == target)
             return undec(elem);
-        return undec(elem[i]);
+        else
+            return undec(elem[i]);
     }
 
     /// there's implicit type conversion here
@@ -1062,78 +1068,87 @@ public:
 
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
             return nullptr;
-
-        static_assert(!std::is_same_v<ResultDataType, InvalidType>);
-
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-        using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
-        using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
-        using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
-
-        const auto * const col_left_raw = arguments[0].column.get();
-        const auto * const col_right_raw = arguments[1].column.get();
-
-        const size_t col_left_size = col_left_raw->size();
-
-        const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
-        const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
-
-        const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
-        const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
-
-        if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
-            return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
-                left, right,
-                col_left_const, col_right_const,
-                col_left, col_right,
-                col_left_size);
-
-        using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
-
-        /// non-vector result
-        if (col_left_const && col_right_const)
+        else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
+             // and that would produce the compile error.
         {
-            const auto res = OpImpl::process(
-                col_left_const->template getValue<T0>(),
-                col_right_const->template getValue<T1>());
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ResultType = typename ResultDataType::FieldType;
+            using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
+            using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+            using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
-            return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
-        }
+            const auto * const col_left_raw = arguments[0].column.get();
+            const auto * const col_right_raw = arguments[1].column.get();
 
-        typename ColVecResult::MutablePtr col_res = ColVecResult::create();
-        auto & vec_res = col_res->getData();
-        vec_res.resize(col_left_size);
+            const size_t col_left_size = col_left_raw->size();
 
-        if (col_left && col_right)
-        {
-            OpImpl::template process<OpCase::Vector>(
-                col_left->getData().data(),
-                col_right->getData().data(),
-                vec_res.data(),
-                vec_res.size());
-        }
-        else if (col_left_const && col_right)
-        {
-            OpImpl::template process<OpCase::LeftConstant>(
-                col_left_const->template getValue<T0>(),
-                col_right->getData().data(),
-                vec_res.data(),
-                vec_res.size());
-        }
-        else if (col_left && col_right_const)
-        {
-            OpImpl::template process<OpCase::RightConstant>(
-                col_left->getData().data(),
-                col_right_const->template getValue<T1>(),
-                vec_res.data(),
-                vec_res.size());
-        }
-        else
-            return nullptr;
+            const ColumnConst * const col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw);
+            const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
 
-        return col_res;
+            const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
+            const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
+
+            if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
+                return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
+                    left, right,
+                    col_left_const, col_right_const,
+                    col_left, col_right,
+                    col_left_size);
+            else //can't avoid else and another indentation level, otherwise the compiler would try to instantiate
+                 // ColVecResult for Decimals which would lead to a compile error.
+            {
+                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
+
+                /// non-vector result
+                if (col_left_const && col_right_const)
+                {
+                    const auto res = OpImpl::process(
+                        col_left_const->template getValue<T0>(),
+                        col_right_const->template getValue<T1>());
+
+                    return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
+                }
+
+                typename ColVecResult::MutablePtr col_res = ColVecResult::create();
+
+                auto & vec_res = col_res->getData();
+                vec_res.resize(col_left_size);
+
+                if (col_left && col_right)
+                {
+                    OpImpl::template process<OpCase::Vector>(
+                        col_left->getData().data(),
+                        col_right->getData().data(),
+                        vec_res.data(),
+                        vec_res.size());
+                }
+                else if (col_left_const && col_right)
+                {
+                    const T0 value = col_left_const->template getValue<T0>();
+
+                    OpImpl::template process<OpCase::LeftConstant>(
+                        &value,
+                        col_right->getData().data(),
+                        vec_res.data(),
+                        vec_res.size());
+                }
+                else if (col_left && col_right_const)
+                {
+                    const T1 value = col_right_const->template getValue<T1>();
+
+                    OpImpl::template process<OpCase::RightConstant>(
+                        col_left->getData().data(),
+                        &value,
+                        vec_res.data(),
+                        vec_res.size());
+                }
+                else
+                    return nullptr;
+
+                return col_res;
+            }
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
