@@ -4,6 +4,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -12,7 +14,6 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <sys/resource.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -478,7 +479,7 @@ void BaseDaemon::terminate()
 void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
-    pid.reset();
+    pid_file.reset();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
 }
@@ -648,10 +649,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
     }
 
-    /// Create pid file.
-    if (config().has("pid"))
-        pid.emplace(config().getString("pid"), DB::StatusFile::write_pid);
-
     /// Change path for logging.
     if (!log_path.empty())
     {
@@ -667,8 +664,16 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    // sensitive data masking rules are not used here
+    /// sensitive data masking rules are not used here
     buildLoggers(config(), logger(), self.commandName());
+
+    /// After initialized loggers but before initialized signal handling.
+    if (should_setup_watchdog)
+        setupWatchdog();
+
+    /// Create pid file.
+    if (config().has("pid"))
+        pid_file.emplace(config().getString("pid"), DB::StatusFile::write_pid);
 
     if (is_daemon)
     {
@@ -704,54 +709,65 @@ void BaseDaemon::initialize(Application & self)
 }
 
 
+static void addSignalHandler(const std::vector<int> & signals, signal_function handler, std::vector<int> * out_handled_signals)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = handler;
+    sa.sa_flags = SA_SIGINFO;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sa.sa_mask);
+    for (auto signal : signals)
+        sigaddset(&sa.sa_mask, signal);
+#else
+    if (sigemptyset(&sa.sa_mask))
+        throw Poco::Exception("Cannot set signal handler.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sa.sa_mask, signal))
+            throw Poco::Exception("Cannot set signal handler.");
+#endif
+
+    for (auto signal : signals)
+        if (sigaction(signal, &sa, nullptr))
+            throw Poco::Exception("Cannot set signal handler.");
+
+    if (out_handled_signals)
+        std::copy(signals.begin(), signals.end(), std::back_inserter(*out_handled_signals));
+};
+
+
+static void blockSignals(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+        throw Poco::Exception("Cannot block signal.");
+};
+
+
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
-    {
-        sigset_t sig_set;
-        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-            throw Poco::Exception("Cannot block signal.");
-    }
+    blockSignals({SIGPIPE});
 
     /// Setup signal handlers.
-    auto add_signal_handler =
-        [this](const std::vector<int> & signals, signal_function handler)
-        {
-            struct sigaction sa;
-            memset(&sa, 0, sizeof(sa));
-            sa.sa_sigaction = handler;
-            sa.sa_flags = SA_SIGINFO;
-
-            {
-#if defined(OS_DARWIN)
-                sigemptyset(&sa.sa_mask);
-                for (auto signal : signals)
-                    sigaddset(&sa.sa_mask, signal);
-#else
-                if (sigemptyset(&sa.sa_mask))
-                    throw Poco::Exception("Cannot set signal handler.");
-
-                for (auto signal : signals)
-                    if (sigaddset(&sa.sa_mask, signal))
-                        throw Poco::Exception("Cannot set signal handler.");
-#endif
-
-                for (auto signal : signals)
-                    if (sigaction(signal, &sa, nullptr))
-                        throw Poco::Exception("Cannot set signal handler.");
-
-                std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
-            }
-        };
-
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
-    add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
-    add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler, &handled_signals);
+    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
@@ -863,7 +879,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     if (sigint_signals_counter >= 2)
     {
         LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
-        kill();
+        call_default_signal_handler(signal_id);
+        /// If the above did not help.
+        _exit(128 + signal_id);
     }
 }
 
@@ -872,4 +890,110 @@ void BaseDaemon::waitForTerminationRequest()
 {
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+}
+
+
+void BaseDaemon::shouldSetupWatchdog(char * argv0_)
+{
+    should_setup_watchdog = true;
+    argv0 = argv0_;
+}
+
+
+void BaseDaemon::setupWatchdog()
+{
+    std::string original_process_name;
+    if (argv0)
+        original_process_name = argv0;
+
+    while (true)
+    {
+        pid_t pid = fork();
+
+        if (-1 == pid)
+            throw Poco::Exception("Cannot fork");
+
+        if (0 == pid)
+        {
+            logger().information("Forked a child process to watch");
+            return;
+        }
+
+        /// Change short thread name and process name.
+        setThreadName("clckhouse-watch");   /// 15 characters
+
+        if (argv0)
+        {
+            const char * new_process_name = "clickhouse-watchdog";
+            memset(argv0, 0, original_process_name.size());
+            memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
+        }
+
+        logger().information(fmt::format("Will watch for the process with pid {}", pid));
+
+        /// Ignore signals that only need to be delivered to the child process.
+        addSignalHandler(
+            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
+            [](int, siginfo_t *, void *) {}, nullptr);
+
+        int status = 0;
+        do
+        {
+            if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
+            {
+                if (WIFSTOPPED(status))
+                    logger().warning(fmt::format("Child process was stopped by signal {}.", WSTOPSIG(status)));
+                else if (WIFCONTINUED(status))
+                    logger().warning(fmt::format("Child process was continued."));
+                else
+                    break;
+            }
+            else if (errno != EINTR)
+                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
+        } while (true);
+
+        if (errno == ECHILD)
+        {
+            logger().information("Child process no longer exists.");
+            _exit(status);
+        }
+
+        if (WIFEXITED(status))
+        {
+            logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
+            _exit(status);
+        }
+
+        if (WIFSIGNALED(status))
+        {
+            int sig = WTERMSIG(status);
+
+            if (sig == SIGKILL)
+            {
+                logger().fatal(fmt::format("Child process was terminated by signal {} (KILL)."
+                    " If it is not done by 'forcestop' command or manually,"
+                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).", sig));
+            }
+            else
+            {
+                logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
+
+                if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
+                    _exit(status);
+            }
+        }
+        else
+        {
+            logger().fatal("Child process was not exited normally by unknown reason.");
+        }
+
+        /// Automatic restart is not enabled but you can play with it.
+#if 1
+        _exit(status);
+#else
+        logger().information("Will restart.");
+        if (argv0)
+            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+#endif
+    }
 }
