@@ -33,10 +33,11 @@ class WindowTransform : public ISimpleTransform
 {
 public:
     WindowTransform(
-            const Block & input_header,
-            const Block & output_header,
-            const WindowDescription & window_description,
-            const std::vector<WindowFunctionDescription> & window_functions);
+            const Block & input_header_,
+            const Block & output_header_,
+            const WindowDescription & window_description_,
+            const std::vector<WindowFunctionDescription> &
+                window_functions_descriptions);
 
     ~WindowTransform() override;
 
