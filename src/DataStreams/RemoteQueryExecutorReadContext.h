@@ -28,12 +28,18 @@ public:
     std::exception_ptr exception;
     FiberStack stack;
     boost::context::fiber fiber;
+    /// This mutex for fiber is needed because fiber could be destroyed in cancel method from another thread.
     std::mutex fiber_lock;
 
     Poco::Timespan receive_timeout;
     MultiplexedConnections & connections;
     Poco::Net::Socket * last_used_socket = nullptr;
 
+    /// Here we have three descriptors we are going to wait:
+    /// * socket_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
+    /// * timer is a timerfd descriptor to manually check socket timeout
+    /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
+    /// We put those descriptors into our own epoll_fd which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     int socket_fd = -1;
     int epoll_fd;
@@ -67,7 +73,6 @@ public:
         }
 
         auto routine = Routine{connections, *this};
-        // connection_lock = routine.connection_lock.get();
         fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
     }
 
@@ -177,8 +182,10 @@ public:
     void cancel()
     {
         std::lock_guard guard(fiber_lock);
+        /// It is safe to just destroy fiber - we are not in the process of reading from socket.
         boost::context::fiber to_destroy = std::move(fiber);
 
+        /// Send something to pipe to cancel executor waiting.
         uint64_t buf = 0;
         while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
         {
