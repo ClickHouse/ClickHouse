@@ -315,26 +315,14 @@ FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current
         return applyFunctionForField(func, current_type, field);
 
     const String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & block = field.block;
-    size_t result_idx = block->columns();
+    if (field.block->has(result_name))
+        return {field.block, field.row_idx, field.block->getPositionByName(result_name)};
 
-    for (size_t i = 0; i < result_idx; ++i)
-    {
-        if (block->getColumnsWithTypeAndName()[i].name == result_name)
-            result_idx = i;
-    }
+    ColumnsWithTypeAndName args{field.block->getColumnsWithTypeAndName()[field.column_idx]};
+    auto result_column = func->execute(args, func->getResultType(), field.block->rows());
+    field.block->insert({result_column, func->getResultType(), result_name});
 
-    ColumnsWithTypeAndName args{block->getColumnsWithTypeAndName()[field.column_idx]};
-    /// TODO:
-/*
-    if (result_idx == block->columns())
-    {
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
-    }
-*/
-
-    return {field.block, field.row_idx, result_idx};
+    return {field.block, field.row_idx, field.block->columns() - 1};
 }
 
 }
