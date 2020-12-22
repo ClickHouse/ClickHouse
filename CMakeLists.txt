@@ -252,14 +252,14 @@ endif ()
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
 if (WITH_COVERAGE AND COMPILER_CLANG)
-    SET(COMPILER_COVERAGE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
+    set(COMPILER_COVERAGE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
     # If we want to disable coverage for specific translation units
     set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
 
 if (WITH_COVERAGE AND COMPILER_GCC)
     set(COVERAGE_OPTION "-lgcov")
-    SET(COMPILER_COVERAGE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
+    set(COMPILER_COVERAGE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
     set(WITH_COVERAGE "-fprofile-arcs -ftest-coverage")
 endif()
 
