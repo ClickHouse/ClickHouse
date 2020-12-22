@@ -11,7 +11,7 @@
  *
  * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macros will be removed and
- * USE_MUTLITARGE_CODE will be set to 0. Use #if USE_MUTLITARGE_CODE whenever you
+ * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
  * use anything from this namespaces.
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code

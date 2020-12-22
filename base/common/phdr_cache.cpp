@@ -14,7 +14,7 @@
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
-#define __msan_unpoison(X, Y)
+#define __msan_unpoison(X, Y) // NOLINT
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison
@@ -84,7 +84,7 @@ extern "C"
 #ifdef ADDRESS_SANITIZER
 void __lsan_ignore_object(const void *);
 #else
-void __lsan_ignore_object(const void *) {}
+void __lsan_ignore_object(const void *) {} // NOLINT
 #endif
 }
 

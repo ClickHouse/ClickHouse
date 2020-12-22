@@ -5,12 +5,14 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Core/Settings.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <ext/range.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
 {
@@ -45,6 +47,14 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
+void concatInsertPath(std::string & insert_path, const std::string & dir_name)
+{
+    if (insert_path.empty())
+        insert_path = dir_name;
+    else
+        insert_path += "," + dir_name;
+}
+
 }
 
 /// Implementation of Cluster::Address class
@@ -73,8 +83,16 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 
 
 Cluster::Address::Address(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_, UInt32 replica_index_)
-    : shard_index(shard_index_), replica_index(replica_index_)
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const String & cluster_,
+        const String & cluster_secret_,
+        UInt32 shard_index_,
+        UInt32 replica_index_)
+    : cluster(cluster_)
+    , cluster_secret(cluster_secret_)
+    , shard_index(shard_index_)
+    , replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
@@ -92,8 +110,15 @@ Cluster::Address::Address(
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_, Int64 priority_)
-    : user(user_), password(password_)
+Cluster::Address::Address(
+        const String & host_port_,
+        const String & user_,
+        const String & password_,
+        UInt16 clickhouse_port,
+        bool secure_,
+        Int64 priority_)
+    : user(user_)
+    , password(password_)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
     host_name = parsed_host_port.first;
@@ -219,9 +244,9 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
 {
-    updateClusters(config, settings, config_name);
+    updateClusters(config, settings, config_prefix);
 }
 
 
@@ -241,10 +266,10 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_name, config_keys);
+    config.keys(config_prefix, config_keys);
 
     std::lock_guard lock(mutex);
 
@@ -254,7 +279,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, 
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
-        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_prefix, key));
     }
 }
 
@@ -268,18 +293,25 @@ Clusters::Impl Clusters::getContainer() const
 
 /// Implementation of `Cluster` class
 
-Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
+Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
+                 const Settings & settings,
+                 const String & config_prefix_,
+                 const String & cluster_name)
 {
+    auto config_prefix = config_prefix_ + "." + cluster_name;
+
     Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(cluster_name, config_keys);
+    config.keys(config_prefix, config_keys);
+
+    config_prefix += ".";
+
+    secret = config.getString(config_prefix + "secret", "");
+    boost::range::remove_erase(config_keys, "secret");
 
     if (config_keys.empty())
-        throw Exception("No cluster elements (shard, node) specified in config at path " + cluster_name, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
-
-    const auto & config_prefix = cluster_name + ".";
+        throw Exception("No cluster elements (shard, node) specified in config at path " + config_prefix, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
 
     UInt32 current_shard_num = 1;
-
     for (const auto & key : config_keys)
     {
         if (startsWith(key, "node"))
@@ -291,7 +323,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
 
-            addresses.emplace_back(config, prefix, current_shard_num, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -305,6 +337,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
                 address.default_database, address.user, address.password,
+                address.cluster, address.cluster_secret,
                 "server", address.compression,
                 address.secure, address.priority);
 
@@ -334,9 +367,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
-            /// In case of internal_replication we will be appending names to dir_name_for_internal_replication
-            std::string dir_name_for_internal_replication;
-            std::string dir_name_for_internal_replication_with_local;
+            ShardInfoInsertPathForInternalReplication insert_paths;
 
             for (const auto & replica_key : replica_keys)
             {
@@ -345,23 +376,30 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
                 if (startsWith(replica_key, "replica"))
                 {
-                    replica_addresses.emplace_back(config, partial_prefix + replica_key, current_shard_num, current_replica_num);
+                    replica_addresses.emplace_back(config,
+                        partial_prefix + replica_key,
+                        cluster_name,
+                        secret,
+                        current_shard_num,
+                        current_replica_num);
                     ++current_replica_num;
 
                     if (internal_replication)
                     {
-                        auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
-                        if (!replica_addresses.back().is_local)
+                        /// use_compact_format=0
                         {
-                            if (dir_name_for_internal_replication.empty())
-                                dir_name_for_internal_replication = dir_name;
-                            else
-                                dir_name_for_internal_replication += "," + dir_name;
+                            auto dir_name = replica_addresses.back().toFullString(false /* use_compact_format */);
+                            if (!replica_addresses.back().is_local)
+                                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+                            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
                         }
-                        if (dir_name_for_internal_replication_with_local.empty())
-                            dir_name_for_internal_replication_with_local = dir_name;
-                        else
-                            dir_name_for_internal_replication_with_local += "," + dir_name;
+                        /// use_compact_format=1
+                        {
+                            auto dir_name = replica_addresses.back().toFullString(true /* use_compact_format */);
+                            if (!replica_addresses.back().is_local)
+                                concatInsertPath(insert_paths.prefer_localhost_replica_compact, dir_name);
+                            concatInsertPath(insert_paths.no_prefer_localhost_replica_compact, dir_name);
+                        }
                     }
                 }
                 else
@@ -379,6 +417,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password,
+                    replica.cluster, replica.cluster_secret,
                     "server", replica.compression,
                     replica.secure, replica.priority);
 
@@ -395,8 +434,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
             shards_info.push_back({
-                std::move(dir_name_for_internal_replication),
-                std::move(dir_name_for_internal_replication_with_local),
+                std::move(insert_paths),
                 current_shard_num,
                 weight,
                 std::move(shard_local_addresses),
@@ -442,6 +480,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
+                        replica.cluster, replica.cluster_secret,
                         "server", replica.compression, replica.secure, replica.priority);
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
@@ -454,8 +493,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({
-            {}, // dir_name_for_internal_replication
-            {}, // dir_name_for_internal_replication_with_local
+            {}, // insert_path_for_internal_replication
             current_shard_num,
             default_weight,
             std::move(shard_local_addresses),
@@ -546,6 +584,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 address.default_database,
                 address.user,
                 address.password,
+                address.cluster,
+                address.cluster_secret,
                 "server",
                 address.compression,
                 address.secure,
@@ -576,18 +616,43 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     initMisc();
 }
 
-const std::string & Cluster::ShardInfo::pathForInsert(bool prefer_localhost_replica) const
+const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
         throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
 
-    if (dir_name_for_internal_replication.empty() || dir_name_for_internal_replication_with_local.empty())
-        throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-
-    if (prefer_localhost_replica)
-        return dir_name_for_internal_replication;
+    const auto & paths = insert_path_for_internal_replication;
+    if (!use_compact_format)
+    {
+        if (prefer_localhost_replica)
+            return paths.prefer_localhost_replica;
+        else
+            return paths.no_prefer_localhost_replica;
+    }
     else
-        return dir_name_for_internal_replication_with_local;
+    {
+        if (prefer_localhost_replica)
+            return paths.prefer_localhost_replica_compact;
+        else
+            return paths.no_prefer_localhost_replica_compact;
+    }
+}
+
+bool Cluster::maybeCrossReplication() const
+{
+    /// Cluster can be used for cross-replication if some replicas have different default database names,
+    /// so one clickhouse-server instance can contain multiple replicas.
+
+    if (addresses_with_failover.empty())
+        return false;
+
+    const String & database_name = addresses_with_failover.front().front().default_database;
+    for (const auto & shard : addresses_with_failover)
+        for (const auto & replica : shard)
+            if (replica.default_database != database_name)
+                return true;
+
+    return false;
 }
 
 }

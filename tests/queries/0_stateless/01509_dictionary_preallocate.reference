@@ -1,0 +1,4 @@
+CREATE DICTIONARY db_01509.dict\n(\n    `key` UInt64,\n    `value` String DEFAULT \'-\'\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT tcpPort() USER \'default\' TABLE \'data\' PASSWORD \'\' DB \'db_01509\'))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(SPARSE_HASHED())
+-
+0
+1000

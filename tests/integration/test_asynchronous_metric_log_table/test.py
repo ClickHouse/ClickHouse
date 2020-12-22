@@ -39,7 +39,7 @@ def test_event_time_microseconds_field(started_cluster):
         node1.query(query_create)
         node1.query('''INSERT INTO replica.test VALUES (1, now())''')
         node1.query("SYSTEM FLUSH LOGS;")
-        #query assumes that the event_time field is accurate
+        # query assumes that the event_time field is accurate
         equals_query = '''WITH (
                             (
                                 SELECT event_time_microseconds

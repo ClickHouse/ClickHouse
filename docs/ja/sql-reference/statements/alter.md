@@ -208,7 +208,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` テーブルへのディレクトリ。
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) -コピーするデータを仕切りからテーブルにも置き換え.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition)-データ-パーティションをあるテーブルから別のテーブルに移動します。
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition)-データ-パーティションをあるテーブルから別のテーブルに移動します。
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) -パーティション内の指定された列の値をリセットします。
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) -リセットの指定された二次インデックス、パーティション
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -436,7 +436,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 -   からの値として `partition` の列 `system.parts` テーブル。 例えば, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   テーブル列からの式として。 定数と定数式がサポートされています。 例えば, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   パーティションIDの使用。 Partition IDは、ファイルシステムおよびZooKeeperのパーティションの名前として使用されるパーティションの文字列識別子(可能であれば人間が読める)です。 パーティションIDは、 `PARTITION ID` 一重引quotesで囲まれた句。 例えば, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   で [ALTER ATTACH PART](#alter_attach-partition) と [DROP DETACHED PART](#alter_drop-detached) パーツの名前を指定するには、文字列リテラルを使用します。 `name` の列 [システムdetached\_parts](../../operations/system-tables.md#system_tables-detached_parts) テーブル。 例えば, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   で [ALTER ATTACH PART](#alter_attach-partition) と [DROP DETACHED PART](#alter_drop-detached) パーツの名前を指定するには、文字列リテラルを使用します。 `name` の列 [システムdetached_parts](../../operations/system-tables.md#system_tables-detached_parts) テーブル。 例えば, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 ご利用の引用符を指定する場合、パーティションのエントランスは目を引く壁面緑化を表現。 例えば、 `String` その名前を引用符で指定する必要があります (`'`). のために `Date` と `Int*` 型引用符は必要ありません。
 

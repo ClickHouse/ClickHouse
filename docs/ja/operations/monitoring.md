@@ -35,7 +35,7 @@ ClickHouse serverには、自己状態の監視のための計測器が組み込
 -   異なるメトリクスのサーバがどのように利用計算資源です。
 -   クエリ処理に関する一般的な統計。
 
-メトリックは、次のとおりです。 [システムメトリック](../operations/system-tables.md#system_tables-metrics), [システムイベント](../operations/system-tables.md#system_tables-events),and [システムasynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル
+メトリックは、次のとおりです。 [システムメトリック](../operations/system-tables.md#system_tables-metrics), [システムイベント](../operations/system-tables.md#system_tables-events),and [システムasynchronous_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル
 
 を設定することができClickHouse輸出の指標に [黒鉛](https://github.com/graphite-project). を参照。 [グラファイト部](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) ClickHouseサーバー設定ファイル内。 指標のエクスポートを設定する前に、公式に従ってGraphiteを設定する必要があります [ガイド](https://graphite.readthedocs.io/en/latest/install.html).
 
@@ -43,4 +43,4 @@ ClickHouse serverには、自己状態の監視のための計測器が組み込
 
 さらに、HTTP APIを使用してサーバーの可用性を監視できます。 送信 `HTTP GET` リクエスト先 `/ping`. サーバーが利用可能な場合は、次のように応答します `200 OK`.
 
-監視サーバーにクラスター構成設定してください [max\_replica\_delay\_for\_distributed\_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries) パラメータとHTTPリソースの使用 `/replicas_status`. への要求 `/replicas_status` ﾂづｩﾂ。 `200 OK` レプリカが使用可能で、他のレプリカより遅れていない場合。 レプリカが遅延すると、次のようになります `503 HTTP_SERVICE_UNAVAILABLE` ギャップについての情報と。
+監視サーバーにクラスター構成設定してください [max_replica_delay_for_distributed_queries](settings/settings.md#settings-max_replica_delay_for_distributed_queries) パラメータとHTTPリソースの使用 `/replicas_status`. への要求 `/replicas_status` ﾂづｩﾂ。 `200 OK` レプリカが使用可能で、他のレプリカより遅れていない場合。 レプリカが遅延すると、次のようになります `503 HTTP_SERVICE_UNAVAILABLE` ギャップについての情報と。

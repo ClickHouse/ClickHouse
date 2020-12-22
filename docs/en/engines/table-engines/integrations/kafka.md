@@ -134,7 +134,7 @@ Example:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -165,6 +165,22 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
+### Kerberos support {#kafka-kerberos-support}
+
+To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
+
+Example:
+
+``` xml
+  <!-- Kerberos-aware Kafka -->
+  <kafka>
+    <security_protocol>SASL_PLAINTEXT</security_protocol>
+	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+  </kafka>
+```
+
 ## Virtual Columns {#virtual-columns}
 
 -   `_topic` — Kafka topic.
@@ -176,6 +192,6 @@ For a list of possible configuration options, see the [librdkafka configuration 
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

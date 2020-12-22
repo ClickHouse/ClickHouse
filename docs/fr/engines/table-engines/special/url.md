@@ -24,7 +24,7 @@ en-têtes supplémentaires pour obtenir une réponse du serveur.
 respectivement. Pour le traitement `POST` demandes, le serveur distant doit prendre en charge
 [Encodage de transfert en morceaux](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-Vous pouvez limiter le nombre maximal de sauts de redirection HTTP GET en utilisant [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) paramètre.
+Vous pouvez limiter le nombre maximal de sauts de redirection HTTP GET en utilisant [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) paramètre.
 
 **Exemple:**
 

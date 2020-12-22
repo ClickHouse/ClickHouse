@@ -214,6 +214,9 @@ public:
     void clear() { c_end = c_start; }
 
     template <typename ... TAllocatorParams>
+#if defined(__clang__)
+    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+#endif
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())

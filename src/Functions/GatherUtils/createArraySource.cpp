@@ -7,6 +7,9 @@ namespace DB::GatherUtils
 {
 /// Creates IArraySource from ColumnArray
 
+namespace
+{
+
 template <typename... Types>
 struct ArraySourceCreator;
 
@@ -50,6 +53,8 @@ struct ArraySourceCreator<>
         return std::make_unique<GenericArraySource>(col);
     }
 };
+
+}
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows)
 {

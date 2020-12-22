@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -16,10 +17,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+enum FormatVersion : UInt8
+{
+    FORMAT_WITH_CREATE_TIME = 2,
+    FORMAT_WITH_BLOCK_ID = 3,
+    FORMAT_WITH_DEDUPLICATE = 4,
+    FORMAT_WITH_UUID = 5,
+    FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
+
+    FORMAT_LAST
+};
+
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {
-    out << "format version: 4\n"
+    UInt8 format_version = FORMAT_WITH_DEDUPLICATE;
+
+    if (!deduplicate_by_columns.empty())
+        format_version = std::max<UInt8>(format_version, FORMAT_WITH_DEDUPLICATE_BY_COLUMNS);
+
+    /// Conditionally bump format_version only when uuid has been assigned.
+    /// If some other feature requires bumping format_version to >= 5 then this code becomes no-op.
+    if (new_part_uuid != UUIDHelpers::Nil)
+        format_version = std::max<UInt8>(format_version, FORMAT_WITH_UUID);
+
+    out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
@@ -36,8 +58,24 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
+
             if (merge_type != MergeType::REGULAR)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
+
+            if (new_part_uuid != UUIDHelpers::Nil)
+                out << "\ninto_uuid: " << new_part_uuid;
+
+            if (!deduplicate_by_columns.empty())
+            {
+                out << "\ndeduplicate_by_columns: ";
+                for (size_t i = 0; i < deduplicate_by_columns.size(); ++i)
+                {
+                    out << quote << deduplicate_by_columns[i];
+                    if (i != deduplicate_by_columns.size() - 1)
+                        out << ",";
+                }
+            }
+
             break;
 
         case DROP_RANGE:
@@ -74,6 +112,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
+
+            if (new_part_uuid != UUIDHelpers::Nil)
+                out << "\nto_uuid\n"
+                    << new_part_uuid;
 
             if (isAlterMutation())
                 out << "\nalter_version\n" << alter_version;
@@ -113,10 +155,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "format version: " >> format_version >> "\n";
 
-    if (format_version < 1 || format_version > 4)
+    if (format_version < 1 || format_version >= FORMAT_LAST)
         throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
-    if (format_version >= 2)
+    if (format_version >= FORMAT_WITH_CREATE_TIME)
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
@@ -125,7 +167,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> "source replica: " >> source_replica >> "\n";
 
-    if (format_version >= 3)
+    if (format_version >= FORMAT_WITH_BLOCK_ID)
     {
         in >> "block_id: " >> escape >> block_id >> "\n";
     }
@@ -151,20 +193,40 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         }
         in >> new_part_name;
 
-        if (format_version >= 4)
+        if (format_version >= FORMAT_WITH_DEDUPLICATE)
         {
             in >> "\ndeduplicate: " >> deduplicate;
 
             /// Trying to be more backward compatible
-            in >> "\n";
-            if (checkString("merge_type: ", in))
+            while (!trailing_newline_found)
             {
-                UInt64 value;
-                in >> value;
-                merge_type = checkAndGetMergeType(value);
+                in >> "\n";
+
+                if (checkString("merge_type: ", in))
+                {
+                    UInt64 value;
+                    in >> value;
+                    merge_type = checkAndGetMergeType(value);
+                }
+                else if (checkString("into_uuid: ", in))
+                    in >> new_part_uuid;
+                else if (checkString("deduplicate_by_columns: ", in))
+                {
+                    Strings new_deduplicate_by_columns;
+                    for (;;)
+                    {
+                        String tmp_column_name;
+                        in >> quote >> tmp_column_name;
+                        new_deduplicate_by_columns.emplace_back(std::move(tmp_column_name));
+                        if (!checkString(",", in))
+                            break;
+                    }
+
+                    deduplicate_by_columns = std::move(new_deduplicate_by_columns);
+                }
+                else
+                    trailing_newline_found = true;
             }
-            else
-                trailing_newline_found = true;
         }
     }
     else if (type_str == "drop" || type_str == "detach")
@@ -198,12 +260,17 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> new_part_name;
         source_parts.push_back(source_part);
 
-        in >> "\n";
+        while (!trailing_newline_found)
+        {
+            in >> "\n";
 
-        if (in.eof())
-            trailing_newline_found = true;
-        else if (checkString("alter_version\n", in))
-            in >> alter_version;
+            if (checkString("alter_version\n", in))
+                in >> alter_version;
+            else if (checkString("to_uuid\n", in))
+                in >> new_part_uuid;
+            else
+                trailing_newline_found = true;
+        }
     }
     else if (type_str == "alter")
     {

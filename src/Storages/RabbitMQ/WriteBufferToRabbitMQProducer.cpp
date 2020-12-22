@@ -1,7 +1,9 @@
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
-#include "Core/Block.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
+
+#include <Core/Block.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 #include <common/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
@@ -25,7 +27,7 @@ namespace ErrorCodes
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
-        Context & global_context,
+        const Context & global_context,
         const std::pair<String, String> & login_password_,
         const Names & routing_keys_,
         const String & exchange_name_,

@@ -182,6 +182,10 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
     for (auto ttl_entry_it = descriptions.begin(); ttl_entry_it != descriptions.end(); ++ttl_entry_it)
     {
         auto ttl_info_it = ttl_info_map.find(ttl_entry_it->result_column);
+
+        if (ttl_info_it == ttl_info_map.end())
+            continue;
+
         time_t ttl_time;
 
         if (use_max)
@@ -190,8 +194,7 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
             ttl_time = ttl_info_it->second.min;
 
         /// Prefer TTL rule which went into action last.
-        if (ttl_info_it != ttl_info_map.end()
-                && ttl_time <= current_time
+        if (ttl_time <= current_time
                 && best_ttl_time <= ttl_time)
         {
             best_entry_it = ttl_entry_it;

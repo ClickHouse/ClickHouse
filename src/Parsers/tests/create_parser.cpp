@@ -4,6 +4,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <IO/WriteBufferFromOStream.h>
 
 
 int main(int, char **)
@@ -14,7 +15,8 @@ int main(int, char **)
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
-    formatAST(*ast, std::cerr);
+    WriteBufferFromOStream out(std::cerr, 4096);
+    formatAST(*ast, out);
     std::cerr << std::endl;
 
     return 0;

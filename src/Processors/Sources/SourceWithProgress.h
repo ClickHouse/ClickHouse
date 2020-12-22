@@ -17,6 +17,9 @@ public:
     /// Set limitations that checked on each chunk.
     virtual void setLimits(const StreamLocalLimits & limits_) = 0;
 
+    /// Set limitations that checked on each chunk for distributed queries on leaf nodes.
+    virtual void setLeafLimits(const SizeLimits & leaf_limits_) = 0;
+
     /// Set the quota. If you set a quota on the amount of raw data,
     /// then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
     virtual void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) = 0;
@@ -46,6 +49,7 @@ public:
     SourceWithProgress(Block header, bool enable_auto_progress);
 
     void setLimits(const StreamLocalLimits & limits_) final { limits = limits_; }
+    void setLeafLimits(const SizeLimits & leaf_limits_) final {leaf_limits = leaf_limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
@@ -59,6 +63,7 @@ protected:
 
 private:
     StreamLocalLimits limits;
+    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;

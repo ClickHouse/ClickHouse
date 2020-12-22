@@ -1,8 +1,8 @@
-#include <gtest/gtest.h>
-
 #include <Functions/abtesting.h>
-#include <iostream>
-#include <stdio.h>
+
+#if !defined(ARCADIA_BUILD) && USE_STATS
+
+#    include <gtest/gtest.h>
 
 using namespace DB;
 
@@ -10,39 +10,44 @@ Variants test_bayesab(std::string dist, PODArray<Float64> xs, PODArray<Float64> 
 {
     Variants variants;
 
-    std::cout << std::fixed;
+    //std::cout << std::fixed;
     if (dist == "beta")
     {
-        std::cout << dist << "\nclicks: ";
-        for (auto x : xs) std::cout << x << " ";
+/*        std::cout << dist << "\nclicks: ";
+        for (auto x : xs)
+            std::cout << x << " ";
 
         std::cout <<"\tconversions: ";
-        for (auto y : ys) std::cout << y << " ";
+        for (auto y : ys)
+            std::cout << y << " ";
 
-        std::cout << "\n";
+        std::cout << "\n";*/
 
         variants = bayesian_ab_test<true>(dist, xs, ys);
     }
     else if (dist == "gamma")
     {
-        std::cout << dist << "\nclicks: ";
-        for (auto x : xs) std::cout << x << " ";
+/*        std::cout << dist << "\nclicks: ";
+        for (auto x : xs)
+            std::cout << x << " ";
 
         std::cout <<"\tcost: ";
-        for (auto y : ys) std::cout << y << " ";
+        for (auto y : ys)
+            std::cout << y << " ";
 
-        std::cout << "\n";
+        std::cout << "\n";*/
+
         variants = bayesian_ab_test<true>(dist, xs, ys);
     }
 
-    for (size_t i = 0; i < variants.size(); ++i)
+/*    for (size_t i = 0; i < variants.size(); ++i)
         std::cout << i << " beats 0: " << variants[i].beats_control << std::endl;
 
     for (size_t i = 0; i < variants.size(); ++i)
         std::cout << i << " to be best: " << variants[i].best << std::endl;
 
     std::cout << convertToJson({"0", "1", "2"}, variants) << std::endl;
-
+*/
     Float64 max_val = 0.0, min_val = 2.0;
     for (size_t i = 0; i < variants.size(); ++i)
     {
@@ -97,3 +102,4 @@ TEST(BayesAB, gamma)
     ASSERT_EQ(0, max);
 }
 
+#endif
