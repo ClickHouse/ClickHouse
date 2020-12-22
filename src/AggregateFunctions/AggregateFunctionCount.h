@@ -44,11 +44,11 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, size_t num_arguments) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             data(place).count += countBytesInFilter(flags);
         }
         else
@@ -63,11 +63,11 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
-        size_t num_arguments) const override
+        ssize_t if_argument_pos) const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             data(place).count += countBytesInFilterWithNull(flags, null_map);
         }
         else
