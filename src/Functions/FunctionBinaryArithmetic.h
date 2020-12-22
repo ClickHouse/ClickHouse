@@ -342,6 +342,32 @@ public:
                 return;
             }
         }
+        else if constexpr(is_multiply)
+        {
+            if (scale_a != 1)
+            {
+                scale_a = 1 / scale_a; // see scale_a initialization for detail
+
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<true, false>(
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        scale_a);
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                scale_b = 1 / scale_b;
+
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<false, false>(
+                        unwrap<op_case, OpCase::LeftConstant>(a, i),
+                        unwrap<op_case, OpCase::RightConstant>(b, i),
+                        scale_b);
+                return;
+            }
+
+        }
         else if constexpr (is_division && is_decimal_b)
         {
             for (size_t i = 0; i < size; ++i)
@@ -417,13 +443,13 @@ private:
             return Op::template apply<NativeResultType>(a, b);
     }
 
-    template <bool scale_left>
+    template <bool scale_left, bool may_check_overflow = true>
     static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
-        static_assert(is_plus_minus_compare);
+        static_assert(is_plus_minus_compare || is_multiply);
         NativeResultType res;
 
-        if constexpr (check_overflow)
+        if constexpr (check_overflow && may_check_overflow)
         {
             bool overflow = false;
 
@@ -778,22 +804,26 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultType scale_a = [&] {
             if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
-                return right.getScaleMultiplier();
+                return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
                 return type.scaleFactorFor(left, is_multiply);
-            else if constexpr(left_is_decimal)
-                return left.getScale();
+            else if constexpr(left_is_decimal) // needed for e.g. multiply(Decimal, Float) to scale the arguments
+                // scale multiplier = 10^scale, so we need to get this value divided by 10^0 -> 2nd arg is 0 as
+                // the convertTo basically divides the given value on the second arg.
+                // Note we are using the scale factor instead of 1 / scale factor, it will be correctly processed in
+                // the impl.
+                return DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
             else
-                return 1; //won't be used, just to silence the warning
+                return 1; // the default value which won't cause any re-scale
         }();
 
         const ResultType scale_b = [&] {
             if constexpr (result_is_decimal)
                 return type.scaleFactorFor(right, is_multiply || is_division);
             else if constexpr(right_is_decimal)
-                return right.getScale();
+                return DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
             else
-                return 1; //same
+                return 1;
         }();
 
         /// non-vector result
@@ -803,8 +833,9 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             const ResultType res = check_decimal_overflow
-                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
-                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
+                // the arguments are already scaled after conversion
+                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1)
+                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1);
 
             if constexpr (result_is_decimal)
                 return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -831,14 +862,14 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                const_a, col_right->getData(), vec_res, scale_a, scale_b);
+                const_a, col_right->getData(), vec_res, 1, scale_b);
         }
         else if (col_left && col_right_const)
         {
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), const_b, vec_res, scale_a, scale_b);
+                col_left->getData(), const_b, vec_res, scale_a, 1);
         }
         else
             return nullptr;
