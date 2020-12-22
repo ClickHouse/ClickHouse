@@ -432,17 +432,6 @@ def test_in_memory_wal(start_cluster):
     # Check file exists
     node11.exec_in_container(['bash', '-c', 'test -f {}'.format(broken_wal_file)])
 
-    # Data is lost without WAL
-    node11.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
-    with PartitionManager() as pm:
-        pm.partition_instances(node11, node12)
-
-        insert_random_data('wal_table', node11, 50)
-        check(node11, 350, 7)
-
-        node11.restart_clickhouse(kill=True)
-        check(node11, 300, 6)
-
 
 def test_in_memory_wal_rotate(start_cluster):
     # Write every part to single wal
