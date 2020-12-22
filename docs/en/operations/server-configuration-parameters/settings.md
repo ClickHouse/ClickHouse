@@ -82,15 +82,24 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 ## core_dump
 
-Configures soft limit for core dump file size, one gigabyte by default.
+Configures soft limit for core dump file size.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1073741824`.
+
+!!! info "Note"
+    Hard limit is configured via system tools
+
+**Example**
+
 ```xml
 <core_dump>
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
-
-(Hard limit is configured via system tools)
-
 
 ## default_database {#default-database}
 
