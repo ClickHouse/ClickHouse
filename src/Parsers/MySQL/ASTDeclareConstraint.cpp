@@ -63,7 +63,7 @@ bool ParserDeclareConstraint::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     declare_constraint->check_expression = index_check_expression;
 
     if (constraint_symbol)
-        declare_constraint->constraint_name = constraint_symbol->as<ASTIdentifier>()->name;
+        declare_constraint->constraint_name = constraint_symbol->as<ASTIdentifier>()->name();
 
     node = declare_constraint;
     return true;

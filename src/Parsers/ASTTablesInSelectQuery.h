@@ -30,7 +30,7 @@ namespace DB
   *  , (comma)
   *
   * In all kinds except cross and comma, there are join condition in one of following forms:
-  *  USING (a, b c)
+  *  USING (a, b, c)
   *  USING a, b, c
   *  ON expr...
   *
@@ -56,6 +56,7 @@ struct ASTTableExpression : public IAST
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 
@@ -108,6 +109,7 @@ struct ASTTableJoin : public IAST
     void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 inline bool isLeft(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Left; }
@@ -139,6 +141,7 @@ struct ASTArrayJoin : public IAST
     String getID(char) const override { return "ArrayJoin"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
 

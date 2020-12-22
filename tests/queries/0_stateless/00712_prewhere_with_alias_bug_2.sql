@@ -4,7 +4,7 @@ CREATE TABLE table (a UInt32,  date Date, b UInt64,  c UInt64, str String, d Int
 
 SELECT alias2 AS alias3
 FROM table 
-ARRAY JOIN 
+ARRAY JOIN
     arr_alias AS alias2, 
     arrayEnumerateUniq(arr_alias) AS _uniq_Event
 WHERE (date = toDate('2010-10-10')) AND (a IN (2, 3)) AND (str NOT IN ('z', 'x')) AND (d != -1)

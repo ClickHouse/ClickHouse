@@ -1,13 +1,17 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <array>
+#include <vector>
 
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
+
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType
 {
@@ -42,6 +46,7 @@ enum class AccessType
     M(ALTER_COLUMN, "", GROUP, ALTER_TABLE) /* allow to execute ALTER {ADD|DROP|MODIFY...} COLUMN */\
     \
     M(ALTER_ORDER_BY, "ALTER MODIFY ORDER BY, MODIFY ORDER BY", TABLE, ALTER_INDEX) \
+    M(ALTER_SAMPLE_BY, "ALTER MODIFY SAMPLE BY, MODIFY SAMPLE BY", TABLE, ALTER_INDEX) \
     M(ALTER_ADD_INDEX, "ADD INDEX", TABLE, ALTER_INDEX) \
     M(ALTER_DROP_INDEX, "DROP INDEX", TABLE, ALTER_INDEX) \
     M(ALTER_MATERIALIZE_INDEX, "MATERIALIZE INDEX", TABLE, ALTER_INDEX) \
@@ -122,6 +127,7 @@ enum class AccessType
     M(SYSTEM_DROP_COMPILED_EXPRESSION_CACHE, "SYSTEM DROP COMPILED EXPRESSION, DROP COMPILED EXPRESSION CACHE, DROP COMPILED EXPRESSIONS", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_CACHE, "DROP CACHE", GROUP, SYSTEM) \
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
+    M(SYSTEM_RELOAD_SYMBOLS, "RELOAD SYMBOLS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARIES, RELOAD DICTIONARY, RELOAD DICTIONARIES", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD, "", GROUP, SYSTEM) \

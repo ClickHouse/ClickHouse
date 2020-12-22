@@ -31,8 +31,8 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test/dst_1', '1') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test/dst_1', '2') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00626/dst_1', '1') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/test_00626/dst_1', '2') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (0, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
@@ -74,14 +74,14 @@ query_with_retry "ALTER TABLE dst_r1 DROP PARTITION 1;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO dst_r1 VALUES (1, '1', 2), (1, '2', 2);"
 
 $CLICKHOUSE_CLIENT --query="CREATE table test_block_numbers (m UInt64) ENGINE MergeTree() ORDER BY tuple();"
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 
 query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database=currentDatabase() AND  table='dst_r1' AND active AND name LIKE '1_%';"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='$CLICKHOUSE_DATABASE' AND  table='dst_r1' AND active AND name LIKE '1_%';"
 $CLICKHOUSE_CLIENT --query="SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_block_numbers;"
 

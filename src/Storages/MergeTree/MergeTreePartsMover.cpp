@@ -121,6 +121,8 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     time_t time_of_move = time(nullptr);
 
+    auto metadata_snapshot = data->getInMemoryMetadataPtr();
+
     for (const auto & part : data_parts)
     {
         String reason;
@@ -128,14 +130,15 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        auto ttl_entry = data->selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
+        auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->ttl_infos.moves_ttl, time_of_move, true);
+
         auto to_insert = need_to_move.find(part->volume->getDisk());
         ReservationPtr reservation;
         if (ttl_entry)
         {
-            auto destination = data->getDestinationForTTL(*ttl_entry);
+            auto destination = data->getDestinationForMoveTTL(*ttl_entry);
             if (destination && !data->isPartInTTLDestination(*ttl_entry, *part))
-                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForTTL(*ttl_entry));
+                reservation = data->tryReserveSpace(part->getBytesOnDisk(), data->getDestinationForMoveTTL(*ttl_entry));
         }
 
         if (reservation) /// Found reservation by TTL rule.
@@ -192,11 +195,13 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
     LOG_TRACE(log, "Cloning part {}", moving_part.part->name);
-    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
+    const String directory_to_move = "moving";
+    moving_part.part->makeCloneOnDisk(moving_part.reserved_space->getDisk(), directory_to_move);
+
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr cloned_part =
-        data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
+        data->createPart(moving_part.part->name, single_disk_volume, directory_to_move + '/' + moving_part.part->name);
     LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);

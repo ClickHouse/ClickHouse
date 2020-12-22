@@ -6,8 +6,8 @@
 
 #if USE_MYSQL
 
-#include <Core/Types.h>
-#include <Core/MySQLReplication.h>
+#include <common/types.h>
+#include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -32,18 +32,22 @@ struct MaterializeMetadata
     String binlog_ignore_db;
     String executed_gtid_set;
 
-    size_t version = 1;
+    size_t data_version = 1;
+    size_t meta_version = 2;
+    String binlog_checksum = "CRC32";
     std::unordered_map<String, String> need_dumping_tables;
 
     void fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection);
 
-    bool checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection, const String & mysql_version) const;
+    void fetchMasterVariablesValue(const mysqlxx::PoolWithFailover::Entry & connection);
+
+    bool checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const;
 
     void transaction(const MySQLReplication::Position & position, const std::function<void()> & fun);
 
     MaterializeMetadata(
         mysqlxx::PoolWithFailover::Entry & connection, const String & path
-        , const String & database, bool & opened_transaction, const String & mysql_version);
+        , const String & database, bool & opened_transaction);
 };
 
 }

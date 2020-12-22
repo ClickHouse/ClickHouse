@@ -1,5 +1,3 @@
-set multiple_joins_rewriter_version = 2;
-
 select
     arrayMap(x, y -> floor((y - x) / x, 3), l, r) diff_percent,
     test, query

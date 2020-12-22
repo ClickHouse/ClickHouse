@@ -1,3 +1,8 @@
+---
+toc_priority: 51
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438\u0020\u043f\u0441\u0435\u0432\u0434\u043e\u0441\u043b\u0443\u0447\u0430\u0439\u043d\u044b\u0445\u0020\u0447\u0438\u0441\u0435\u043b"
+---
+
 # Функции генерации псевдослучайных чисел {#functions-for-generating-pseudo-random-numbers}
 
 Используются не криптографические генераторы псевдослучайных чисел.
@@ -53,6 +58,53 @@ FROM numbers(3)
 │ 2938880146 │ 1267722397 │   4154983056 │     2740811946 │      4229401477 │           1924032898 │
 │  956619638 │ 4238287282 │   1104342490 │     2740811946 │      4229401477 │           1924032898 │
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
+```
+
+# Случайные функции для работы со строками {#random-functions-for-working-with-strings}
+
+## randomString {#random-string}
+
+## randomFixedString {#random-fixed-string}
+
+## randomPrintableASCII {#random-printable-ascii}
+
+## randomStringUTF8 {#random-string-utf8}
+
+## fuzzBits {#fuzzbits}
+
+**Синтаксис**
+
+``` sql
+fuzzBits([s], [prob])
+```
+Инвертирует каждый бит `s` с вероятностью `prob`.
+
+**Параметры**
+
+- `s` — `String` or `FixedString`
+- `prob` — constant `Float32/64`
+
+**Возвращаемое значение**
+
+Измененная случайным образом строка с тем же типом, что и `s`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT fuzzBits(materialize('abacaba'), 0.1)
+FROM numbers(3)
+```
+
+Результат:
+
+``` text
+┌─fuzzBits(materialize('abacaba'), 0.1)─┐
+│ abaaaja                               │
+│ a*cjab+                               │
+│ aeca2A                                │
+└───────────────────────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/random_functions/) <!--hide-->

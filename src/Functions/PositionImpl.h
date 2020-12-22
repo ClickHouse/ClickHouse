@@ -1,10 +1,11 @@
+#pragma once
 #include "FunctionsStringSearch.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
-
 
 namespace DB
 {
@@ -42,6 +43,11 @@ struct PositionCaseSensitiveASCII
         return MultiSearcherInBigHaystack(needles);
     }
 
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
+        return std::min(pos + n, end);
+    }
+
     /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
 
@@ -73,6 +79,11 @@ struct PositionCaseInsensitiveASCII
         return MultiSearcherInBigHaystack(needles);
     }
 
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
+        return std::min(pos + n, end);
+    }
+
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
 
     static void toLowerIfNeed(std::string & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
@@ -98,6 +109,20 @@ struct PositionCaseSensitiveUTF8
     static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
+    }
+
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
+        for (auto it = pos; it != end; ++it)
+        {
+            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
+            {
+                if (n == 0)
+                    return it;
+                n--;
+            }
+        }
+        return end;
     }
 
     static size_t countChars(const char * begin, const char * end)
@@ -134,13 +159,16 @@ struct PositionCaseInsensitiveUTF8
         return MultiSearcherInBigHaystack(needles);
     }
 
+    static const char * advancePos(const char * pos, const char * end, size_t n)
+    {
+        // reuse implementation that doesn't depend on case
+        return PositionCaseSensitiveUTF8::advancePos(pos, end, n);
+    }
+
     static size_t countChars(const char * begin, const char * end)
     {
-        size_t res = 0;
-        for (auto it = begin; it != end; ++it)
-            if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
-                ++res;
-        return res;
+        // reuse implementation that doesn't depend on case
+        return PositionCaseSensitiveUTF8::countChars(begin, end);
     }
 
     static void toLowerIfNeed(std::string & s) { Poco::UTF8::toLowerInPlace(s); }
@@ -151,12 +179,17 @@ template <typename Impl>
 struct PositionImpl
 {
     static constexpr bool use_default_implementation_for_constants = false;
+    static constexpr bool supports_start_pos = true;
 
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<UInt64> & res)
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        const std::string & needle,
+        const ColumnPtr & start_pos,
+        PaddedPODArray<UInt64> & res)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
@@ -176,13 +209,26 @@ struct PositionImpl
                 res[i] = 0;
                 ++i;
             }
+            auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
-                res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
+            {
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                if (res_pos < start)
+                {
+                    pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
+                        reinterpret_cast<const char *>(pos),
+                        reinterpret_cast<const char *>(begin + offsets[i]),
+                        start - res_pos));
+                    continue;
+                }
+                res[i] = res_pos;
+            }
             else
+            {
                 res[i] = 0;
-
+            }
             pos = begin + offsets[i];
             ++i;
         }
@@ -192,16 +238,59 @@ struct PositionImpl
     }
 
     /// Search for substring in string.
-    static void constantConstant(std::string data, std::string needle, UInt64 & res)
+    static void constantConstantScalar(
+        std::string data,
+        std::string needle,
+        UInt64 start_pos,
+        UInt64 & res)
     {
-        Impl::toLowerIfNeed(data);
-        Impl::toLowerIfNeed(needle);
+        auto start = std::max(start_pos, UInt64(1));
 
-        res = data.find(needle);
+        if (needle.size() == 0)
+        {
+            size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
+            res = start <= haystack_size + 1 ? start : 0;
+            return;
+        }
+
+        size_t start_byte = Impl::advancePos(data.data(), data.data() + data.size(), start - 1) - data.data();
+        res = data.find(needle, start_byte);
         if (res == std::string::npos)
             res = 0;
         else
             res = 1 + Impl::countChars(data.data(), data.data() + res);
+    }
+
+    /// Search for substring in string starting from different positions.
+    static void constantConstant(
+        std::string data,
+        std::string needle,
+        const ColumnPtr & start_pos,
+        PaddedPODArray<UInt64> & res)
+    {
+        Impl::toLowerIfNeed(data);
+        Impl::toLowerIfNeed(needle);
+
+        if (start_pos == nullptr)
+        {
+            constantConstantScalar(data, needle, 0, res[0]);
+            return;
+        }
+
+        size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
+
+        size_t size = start_pos != nullptr ? start_pos->size() : 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto start = start_pos->getUInt(i);
+
+            if (start > haystack_size + 1)
+            {
+                res[i] = 0;
+                continue;
+            }
+            constantConstantScalar(data, needle, start, res[i]);
+        }
     }
 
     /// Search each time for a different single substring inside each time different string.
@@ -210,6 +299,7 @@ struct PositionImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
+        const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
         ColumnString::Offset prev_haystack_offset = 0;
@@ -222,10 +312,16 @@ struct PositionImpl
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
 
-            if (0 == needle_size)
+            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+
+            if (start > haystack_size + 1)
             {
-                /// An empty string is always at the very beginning of `haystack`.
-                res[i] = 1;
+                res[i] = 0;
+            }
+            else if (0 == needle_size)
+            {
+                /// An empty string is always at any position in `haystack`.
+                res[i] = start;
             }
             else
             {
@@ -234,8 +330,12 @@ struct PositionImpl
                     reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                     needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
 
+                const char * beg = Impl::advancePos(
+                    reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+                    reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i] - 1]),
+                    start - 1);
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
-                size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
+                size_t pos = searcher.search(reinterpret_cast<const UInt8 *>(beg), &haystack_data[haystack_offsets[i] - 1])
                     - &haystack_data[prev_haystack_offset];
 
                 if (pos != haystack_size)
@@ -259,9 +359,10 @@ struct PositionImpl
         const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
+        const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        // NOTE You could use haystack indexing. But this is a rare case.
+        /// NOTE You could use haystack indexing. But this is a rare case.
 
         ColumnString::Offset prev_needle_offset = 0;
 
@@ -271,17 +372,24 @@ struct PositionImpl
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
-            if (0 == needle_size)
+            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+
+            if (start > haystack.size() + 1)
             {
-                res[i] = 1;
+                res[i] = 0;
+            }
+            else if (0 == needle_size)
+            {
+                res[i] = start;
             }
             else
             {
                 typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
                     reinterpret_cast<const char *>(&needle_data[prev_needle_offset]), needle_offsets[i] - prev_needle_offset - 1);
 
+                const char * beg = Impl::advancePos(haystack.data(), haystack.data() + haystack.size(), start - 1);
                 size_t pos = searcher.search(
-                                 reinterpret_cast<const UInt8 *>(haystack.data()),
+                                reinterpret_cast<const UInt8 *>(beg),
                                  reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size())
                     - reinterpret_cast<const UInt8 *>(haystack.data());
 

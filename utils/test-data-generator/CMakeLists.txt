@@ -9,4 +9,10 @@ if (USE_PROTOBUF)
     target_link_libraries (ProtobufDelimitedMessagesSerializer PRIVATE ${Protobuf_LIBRARY} boost::program_options)
     get_filename_component(ProtobufDelimitedMessagesSerializer_OutputDir "${CMAKE_CURRENT_LIST_DIR}/../../tests/queries/0_stateless" REALPATH)
     target_compile_definitions(ProtobufDelimitedMessagesSerializer PRIVATE OUTPUT_DIR="${ProtobufDelimitedMessagesSerializer_OutputDir}")
+
+    # Protoc generates substandard code.
+    check_cxx_compiler_flag("-Wsuggest-destructor-override" HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
+    if (HAS_SUGGEST_OVERRIDE)
+        target_compile_options(ProtobufDelimitedMessagesSerializer PRIVATE -Wno-suggest-destructor-override)
+    endif()
 endif ()

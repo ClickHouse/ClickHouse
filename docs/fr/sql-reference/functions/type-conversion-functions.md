@@ -246,7 +246,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-À titre d'exception, si vous convertissez des types numériques UInt32, Int32, UInt64 ou Int64 à Date, et si le nombre est supérieur ou égal à 65536, le nombre est interprété comme un horodatage Unix (et non comme le nombre de jours) et est arrondi à la date. Cela permet de prendre en charge l'occurrence commune de l'écriture ‘toDate(unix\_timestamp)’, qui autrement serait une erreur et nécessiterait d'écrire le plus lourd ‘toDate(toDateTime(unix\_timestamp))’.
+À titre d'exception, si vous convertissez des types numériques UInt32, Int32, UInt64 ou Int64 à Date, et si le nombre est supérieur ou égal à 65536, le nombre est interprété comme un horodatage Unix (et non comme le nombre de jours) et est arrondi à la date. Cela permet de prendre en charge l'occurrence commune de l'écriture ‘toDate(unix_timestamp)’, qui autrement serait une erreur et nécessiterait d'écrire le plus lourd ‘toDate(toDateTime(unix_timestamp))’.
 
 La Conversion entre une date et une date avec l'heure est effectuée de manière naturelle: en ajoutant une heure nulle ou en supprimant l'heure.
 

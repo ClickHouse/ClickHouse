@@ -27,8 +27,14 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
 
         /// Skip lambda, tuple and other special functions
-        if (function && function->isStateful())
-            data.is_stateful_function = true;
+        if (function)
+        {
+            if (function->isStateful())
+                data.is_stateful_function = true;
+
+            if (!function->isDeterministicInScopeOfQuery())
+                data.is_deterministic_function = false;
+        }
     }
 }
 
@@ -41,7 +47,7 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
             const auto & table = data.tables[index];
 
             // TODO: make sure no collision ever happens
-            if (table.hasColumn(identifier.name))
+            if (table.hasColumn(identifier.name()))
             {
                 data.unique_reference_tables_pos.emplace(index);
                 break;

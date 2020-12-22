@@ -147,16 +147,17 @@ public:
     {
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
-        auto counter = findCounter(key, hash);
-        if (counter)
+
+        if (auto counter = findCounter(key, hash); counter)
         {
             counter->count += increment;
             counter->error += error;
             percolate(counter);
             return;
         }
+
         // Key doesn't exist, but can fit in the top K
-        else if (unlikely(size() < capacity()))
+        if (unlikely(size() < capacity()))
         {
             auto c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);
@@ -352,6 +353,7 @@ private:
     void destroyLastElement()
     {
         auto last_element = counter_list.back();
+        counter_map.erase(last_element->key);
         arena.free(last_element->key);
         delete last_element;
         counter_list.pop_back();

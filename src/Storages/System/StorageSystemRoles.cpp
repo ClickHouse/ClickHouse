@@ -49,7 +49,7 @@ void StorageSystemRoles::fillData(MutableColumns & res_columns, const Context & 
         if (!role)
             continue;
 
-        const auto * storage = access_control.findStorage(id);
+        auto storage = access_control.findStorage(id);
         if (!storage)
             continue;
 

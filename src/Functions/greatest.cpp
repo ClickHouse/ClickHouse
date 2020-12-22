@@ -16,7 +16,8 @@ struct GreatestBaseImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
+        return bigint_cast<Result>(a) > bigint_cast<Result>(b) ?
+               bigint_cast<Result>(a) : bigint_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -36,7 +37,7 @@ struct GreatestBaseImpl
 template <typename A, typename B>
 struct GreatestSpecialImpl
 {
-    using ResultType = std::make_unsigned_t<A>;
+    using ResultType = make_unsigned_t<A>;
     static const constexpr bool allow_fixed_string = false;
 
     template <typename Result = ResultType>

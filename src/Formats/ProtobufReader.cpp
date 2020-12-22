@@ -38,26 +38,29 @@ namespace
     // Those inequations helps checking conditions in ProtobufReader::SimpleReader.
     constexpr Int64 END_OF_VARINT = -1;
     constexpr Int64 END_OF_GROUP = -2;
+    constexpr Int64 END_OF_FILE = -3;
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 
-    [[noreturn]] void throwUnknownFormat()
-    {
-        throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
-    }
 }
 
 
 // SimpleReader is an utility class to deserialize protobufs.
 // Knows nothing about protobuf schemas, just provides useful functions to deserialize data.
-ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_)
+ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_, const bool use_length_delimiters_)
     : in(in_)
     , cursor(0)
     , current_message_level(0)
     , current_message_end(0)
     , field_end(0)
     , last_string_pos(-1)
+    , use_length_delimiters(use_length_delimiters_)
 {
+}
+
+[[noreturn]] void ProtobufReader::SimpleReader::throwUnknownFormat() const
+{
+    throw Exception(std::string("Protobuf messages are corrupted or don't match the provided schema.") + (use_length_delimiters ? " Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint." : ""), ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
 }
 
 bool ProtobufReader::SimpleReader::startMessage()
@@ -66,8 +69,16 @@ bool ProtobufReader::SimpleReader::startMessage()
     assert(!current_message_level);
     if (unlikely(in.eof()))
         return false;
-    size_t size_of_message = readVarint();
-    current_message_end = cursor + size_of_message;
+
+    if (use_length_delimiters)
+    {
+        size_t size_of_message = readVarint();
+        current_message_end = cursor + size_of_message;
+    }
+    else
+    {
+        current_message_end = END_OF_FILE;
+    }
     ++current_message_level;
     field_end = cursor;
     return true;
@@ -150,8 +161,23 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
             throwUnknownFormat();
     }
 
-    if ((cursor >= current_message_end) && (current_message_end != END_OF_GROUP))
-        return false;
+    if (cursor >= current_message_end)
+    {
+        if (current_message_end == END_OF_FILE)
+        {
+            if (unlikely(in.eof()))
+            {
+                current_message_end = cursor;
+                return false;
+            }
+        }
+        else if (current_message_end == END_OF_GROUP)
+        {
+            /// We'll check for the `GROUP_END` marker later.
+        }
+        else
+            return false;
+    }
 
     UInt64 varint = readVarint();
     if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
@@ -455,6 +481,10 @@ public:
         cannotConvertType("UInt128");
     }
 
+    bool readInt128(Int128 &) override { cannotConvertType("Int128"); }
+    bool readInt256(Int256 &) override { cannotConvertType("Int256"); }
+    bool readUInt256(UInt256 &) override { cannotConvertType("UInt256"); }
+
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");
@@ -512,6 +542,12 @@ public:
     {
         cannotConvertType("Decimal128");
     }
+
+    bool readDecimal256(Decimal256 &, UInt32, UInt32) override
+    {
+        cannotConvertType("Decimal256");
+    }
+
 
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) override
     {
@@ -641,6 +677,7 @@ public:
     bool readDecimal32(Decimal32 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal64(Decimal64 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
     bool readDecimal128(Decimal128 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
+    bool readDecimal256(Decimal256 & decimal, UInt32 precision, UInt32 scale) override { return readDecimal(decimal, precision, scale); }
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) override
     {
@@ -797,7 +834,7 @@ private:
     template<typename EnumType>
     bool readEnum(EnumType & value)
     {
-        if constexpr (!is_integral_v<FromType>)
+        if constexpr (!is_integer_v<FromType>)
             cannotConvertType("Enum"); // It's not correct to convert floating point to enum.
         FromType number;
         if (!readField(number))
@@ -1066,8 +1103,8 @@ std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<goog
 
 
 ProtobufReader::ProtobufReader(
-    ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names)
-    : simple_reader(in_)
+    ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_)
+    : simple_reader(in_, use_length_delimiters_)
 {
     root_message = ProtobufColumnMatcher::matchColumns<ColumnMatcherTraits>(column_names, message_type);
     setTraitsDataAfterMatchingColumns(root_message.get());

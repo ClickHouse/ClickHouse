@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --query "
         key UInt64,
         value String
     )
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/mutation_table', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01414/mutation_table', '1')
     ORDER BY tuple()
     PARTITION BY date
 "

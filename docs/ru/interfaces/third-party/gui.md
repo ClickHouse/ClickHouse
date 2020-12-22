@@ -1,3 +1,9 @@
+---
+toc_priority: 28
+toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u044b\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+---
+
+
 # Визуальные интерфейсы от сторонних разработчиков {#vizualnye-interfeisy-ot-storonnikh-razrabotchikov}
 
 ## С открытым исходным кодом {#s-otkrytym-iskhodnym-kodom}
@@ -88,6 +94,14 @@
 ### clickhouse-flamegraph {#clickhouse-flamegraph}
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) — специализированный инструмент для визуализации `system.trace_log` в виде [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
+### clickhouse-plantuml {#clickhouse-plantuml}
+
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) — скрипт, генерирующий [PlantUML](https://plantuml.com/) диаграммы схем таблиц.
+
+### xeus-clickhouse {#xeus-clickhouse}
+
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) — это ядро Jupyter для ClickHouse, которое поддерживает запрос ClickHouse-данных с использованием SQL в Jupyter.
 
 ## Коммерческие {#kommercheskie}
 

@@ -3,8 +3,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -27,12 +30,13 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 
     writeChar('(', ostr);
-    for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
-    {
-        if (it != arguments->children.begin())
-            writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
-    }
+    if (arguments)
+        for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        {
+            if (it != arguments->children.begin())
+                writeCString(", ", ostr);
+            (*it)->appendColumnName(ostr);
+        }
     writeChar(')', ostr);
 }
 
@@ -51,6 +55,43 @@ ASTPtr ASTFunction::clone() const
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
     return res;
+}
+
+
+void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
+
+ASTPtr ASTFunction::toLiteral() const
+{
+    if (!arguments) return {};
+
+    if (name == "array")
+    {
+        Array array;
+
+        for (const auto & arg : arguments->children)
+        {
+            if (auto * literal = arg->as<ASTLiteral>())
+                array.push_back(literal->value);
+            else if (auto * func = arg->as<ASTFunction>())
+            {
+                if (auto func_literal = func->toLiteral())
+                    array.push_back(func_literal->as<ASTLiteral>()->value);
+            }
+            else
+                /// Some of the Array arguments is not literal
+                return {};
+        }
+
+        return std::make_shared<ASTLiteral>(array);
+    }
+
+    return {};
 }
 
 
@@ -102,13 +143,36 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
 }
 
 
+ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
+{
+    if (arguments && arguments->children.size() == 1)
+    {
+        return arguments->children[0]->as<ASTSelectWithUnionQuery>();
+    }
+    return nullptr;
+}
+
+
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.expression_list_prepend_whitespace = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
 
+    if (auto * query = tryGetQueryArgument())
+    {
+        std::string nl_or_nothing = settings.one_line ? "" : "\n";
+        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
+        FormatStateStacked frame_nested = frame;
+        frame_nested.need_parens = false;
+        ++frame_nested.indent;
+        query->formatImpl(settings, state, frame_nested);
+        settings.ostr << nl_or_nothing << indent_str << ")";
+        return;
+    }
     /// Should this function to be written as operator?
     bool written = false;
     if (arguments && !parameters)
@@ -332,6 +396,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
+
+        if (!written && 0 == strcmp(name.c_str(), "map"))
+        {
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i != 0)
+                    settings.ostr << ", ";
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            }
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            written = true;
+        }
     }
 
     if (!written)
@@ -345,12 +422,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             settings.ostr << (settings.hilite ? hilite_function : "") << ')';
         }
 
-        if (arguments)
-        {
+        if ((arguments && !arguments->children.empty()) || !no_empty_args)
             settings.ostr << '(' << (settings.hilite ? hilite_none : "");
 
+        if (arguments)
+        {
             bool special_hilite_regexp = settings.hilite
-                && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne" || name == "replaceRegexpAll");
+                && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
+                    || name == "replaceRegexpAll");
 
             for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
             {
@@ -364,9 +443,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (!special_hilite)
                     arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
         }
+
+        if ((arguments && !arguments->children.empty()) || !no_empty_args)
+            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
 
         settings.ostr << (settings.hilite ? hilite_none : "");
     }

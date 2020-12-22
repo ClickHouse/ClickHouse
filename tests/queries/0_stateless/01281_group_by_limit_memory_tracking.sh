@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Regression for MemoryTracker that had been incorrectly accounted
-# (it was reseted before deallocation)
+# (it was reset before deallocation)
 #
 # For this will be used:
 # - two-level group by

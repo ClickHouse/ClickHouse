@@ -1,25 +1,24 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 16
-toc_title: "\u30CB\u30E5\u30FC\u30E8\u30FC\u30AF\u30BF\u30AF\u30B7"
+toc_title: "ニューヨークタクシー"
 ---
 
-# ニューヨークタクシ {#new-york-taxi-data}
+# ニューヨークタクシー {#new-york-taxi-data}
 
 このデータセットは二つの方法で取得できます:
 
 -   生データからインポート
--   ダウンロード調の間仕切り
+-   パーティション済みデータのダウンロード
 
 ## 生データのインポート方法 {#how-to-import-the-raw-data}
 
-参照https://github.com/toddwschneider/nyc-taxi-data そしてhttp://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html データセットの説明とダウンロード手順。
+データセットの説明とダウンロード方法については、https://github.com/toddwschneider/nyc-taxi-data と http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html を参照してください。
 
-ダウンロードすると、CSVファイルで約227GBの非圧縮データが生成されます。 ダウンロードには約1Gbitの接続時間がかかります（からの並列ダウンロードs3.amazonaws.com 1Gbitチャネルの少なくとも半分を回復する）。
-一部のファイルがダウンロードす。 チェックのファイルサイズを再ダウンロードのように見えた。
+ダウンロードすると、CSVファイルで約227GBの非圧縮データが生成されます。ダウンロードは約1Gbitの回線で1時間以上かかります。(s3.amazonaws.com からの並列ダウンロードは1Gbitチャネルの少なくとも半分を回復します)。
 
-一部のファイルが含無効にされています。 次のように修正できます:
+一部のファイルは完全にダウンロードできない場合があります。ファイルサイズを確認し、疑わしいと思われるものは再ダウンロードしてください。
+
+ファイルの中には、無効な行が含まれている場合があり、以下のように修正することができます。
 
 ``` bash
 sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
@@ -28,13 +27,13 @@ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
-その後、PostgreSQLでデータを前処理する必要があります。 これにより、ポリゴン内のポイントの選択が作成され（マップ上のポイントとニューヨーク市の自治区を一致させるため）、結合を使用してすべてのデータを これを行うには、PostgisサポートでPostgreSQLをインストールする必要があります。
+その後、PostgreSQLでデータを前処理する必要があります。これにより、(地図上の点とニューヨーク市の行政区を一致させるために) ポリゴン内の点の選択を作成し、JOINを使用してすべてのデータを単一の非正規化されたフラットテーブルに結合します。これを行うには、PostGISをサポートしたPostgreSQLをインストールする必要があります。
 
-の際はご注意ください走行 `initialize_database.sh` すべてのテーブルが正しく作成されたことを手動で再確認します。
+`inititialize_database.sh` を実行する際には注意が必要で、すべてのテーブルが正しく作成されていることを手動で再確認してください。
 
-PostgreSQLで毎月のデータを処理するのに約20-30分、合計で約48時間かかります。
+1ヶ月分のデータをPostgreSQLで処理するのに約20～30分、合計で約48時間かかります。
 
-ダウンロードした行数は、次のように確認できます:
+ダウンロードした行数は以下のように確認できます:
 
 ``` bash
 $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
@@ -45,11 +44,12 @@ $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
 real    7m9.164s
 ```
 
-（これは、一連のブログ記事でMark Litwintschikによって報告された11億行よりもわずかに多い。)
+(これはMark Litwintschik氏が一連のブログ記事で報告した11億行をわずかに上回っています)
 
-PostgreSQLのデータは370GBのスペースを使用します。
 
-PostgreSQLからデータのエクスポート:
+PostgreSQLのデータは370GBの容量を使用します。
+
+PostgreSQLからデータをエクスポート:
 
 ``` sql
 COPY
@@ -121,10 +121,10 @@ COPY
 ) TO '/opt/milovidov/nyc-taxi-data/trips.tsv';
 ```
 
-データスナップショットは、毎秒約50MBの速度で作成されます。 スナップショットの作成中、PostgreSQLは毎秒28MB程度の速度でディスクから読み取ります。
-これには約5時間かかります。 結果のTSVファイルは590612904969バイトです。
+データのスナップショットは、毎秒約50MBの速度で作成されます。スナップショットを作成している間、PostgreSQLは毎秒約28MBの速度でディスクから読み込みます。
+これには約5時間かかります。結果として得られるTSVファイルは 590612904969 バイトです。
 
-ClickHouseで一時テーブルを作成する:
+ClickHouseで一時テーブルを作成します:
 
 ``` sql
 CREATE TABLE trips
@@ -183,7 +183,7 @@ dropoff_puma            Nullable(String)
 ) ENGINE = Log;
 ```
 
-フィールドをより正確なデータ型に変換し、可能であればNullを除去するために必要です。
+これは、フィールドをより正しいデータ型に変換したり、可能であればNULLを排除したりするために必要です。
 
 ``` bash
 $ time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
@@ -191,17 +191,17 @@ $ time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips
 real    75m56.214s
 ```
 
-データは112-140Mb/秒の速度で読み取られます。
-データの読み込みログタイプテーブルに一流した76分です。
-この表のデータは142GBを使用します。
+データの読み込み速度は 112～140Mb/秒です。
+1ストリームで、Log型のテーブルにデータをロードするのに76分かかりました。
+このテーブルのデータは 142GB を使用します。
 
-（Postgresから直接データをインポートすることもできます `COPY ... TO PROGRAM`.)
+(Postgresから直接データをインポートするには、`COPY ... TO PROGRAM`)を使用しても可能です。
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+残念ながら、天気に関連するフィールド(降水量...平均風速)はすべてNULLで埋め尽くされていました。このため、最終的なデータセットから削除します。
 
-まず、単一のサーバー上にテーブルを作成します。 後でテーブルを配布します。
+まず、一つのサーバにテーブルを作成します。そのあとで、テーブルを分散させます。
 
-サマリーテーブルの作成と設定:
+サマリーテーブルを作成します:
 
 ``` sql
 CREATE TABLE trips_mergetree
@@ -265,10 +265,11 @@ toUInt16(ifNull(dropoff_puma, '0')) AS dropoff_puma
 FROM trips
 ```
 
-これには3030秒の速度で約428,000行/秒かかります。
-それをより速くロードするには、テーブルを作成します。 `Log` 代わりにエンジン `MergeTree`. この場合、ダウンロードは200秒よりも速く動作します。
+これは1秒間に約428,000行の速度で3030秒かかります。
+より速くロードするには、`MergeTree`の代わりに`Log`エンジンでテーブルを作成します。この場合、ダウンロードは200秒よりも速く動作します。
 
-テーブルには126GBのディスク領域が使用されます。
+テーブルは126GBのディスク領域を使用します。
+
 
 ``` sql
 SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mergetree' AND active
@@ -280,12 +281,12 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 └────────────────────────────────┘
 ```
 
-とりわけ、MERGETREEでOPTIMIZEクエリを実行できます。 でも必要ないからさま、おめでとうございますどのくらい実装されているか。
+その他に、MergeTree で OPTIMIZE クエリを実行することができます。しかし、これがなくてもうまく動作するので、必須ではありません。
 
-## ダウンロード調の間仕切り {#download-of-prepared-partitions}
+## パーティションされたデータのダウンロード {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -293,7 +294,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
 !!! info "情報"
-    以下で説明するクエリを実行する場合は、完全なテーブル名を使用する必要があります, `datasets.trips_mergetree`.
+    以下で説明するクエリを実行する場合は、`datasets.trips_mergetree` のように完全なテーブル名を使用する必要があります。
 
 ## 単一サーバーでの結果 {#results-on-single-server}
 
@@ -303,7 +304,7 @@ Q1:
 SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type
 ```
 
-0.490秒。
+0.490秒
 
 Q2:
 
@@ -332,15 +333,15 @@ ORDER BY year, count(*) DESC
 
 3.593秒
 
-以下のサーバーが使用されました:
+使用したサーバは以下の通りです。
 
-二つのインテル(R)Xeon(R)CPU E5-2650v2@2.60GHzの,16物理カーネルの合計,128GiBのRAM,ハードウェアRAID上の8x6TBのHD-5
+Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz が2つ、合計16個の物理カーネル、128GiB RAM、RAID-5 の 8 x 6 TB HDD。
 
-実行時間は、三つの実行の中で最高です。 だから、クエリからデータを読み込むためのファイルシステムます。 データは各実行で読み出され、処理されます。
+実行時間は、3回実行した中で最もよい結果です。しかし、2回目の実行からは、クエリはファイルシステムのキャッシュからデータを読み込みます。それ以上のキャッシュは発生しません：データは読み出され、各実行で処理されます。
 
-三つのサーバー上のテーブルの作成:
+3台のサーバーにテーブルを作成する:
 
-各サーバーで:
+各サーバー上で:
 
 ``` sql
 CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192)
@@ -352,7 +353,7 @@ CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1
 CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand())
 ```
 
-次のクエリは、データを再配布します:
+次のクエリで、データを再配布します:
 
 ``` sql
 INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
@@ -360,26 +361,26 @@ INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
 
 これには2454秒かかります。
 
-三つのサーバー上で:
+三つのサーバー上でクエリを実行すると:
 
-Q1:0.212秒。
-Q2:0.438秒。
-Q3:0.733秒。
-Q4:1.241秒。
+Q1:0.212秒
+Q2:0.438秒
+Q3:0.733秒
+Q4:1.241秒
 
-詳細ここでは、以降のクエリはスケール直線.
+クエリは線形にスケーリングされているので、ここでは予想通りです。
 
 また、140台のサーバーのクラスタからの結果も得られます:
 
-Q1:0.028秒。
-Q2:0.043秒。
-Q3:0.051秒。
-Q4:0.072秒。
+Q1:0.028秒
+Q2:0.043秒
+Q3:0.051秒
+Q4:0.072秒
 
-この場合、クエリ処理時間は、とりわけネットワーク遅延によって決定されます。
-またクエリをクライアントに位置すYandexデータセンター、フィンランドスキーロシアで、約20msの待ち時間をゼロにすることに
+この場合、クエリの処理時間は、ネットワークのレイテンシによって決定されます。
+フィンランドのYandexデータセンターにあるクライアントをロシアのクラスター上に置いてクエリを実行したところ、約20ミリ秒のレイテンシが追加されました。
 
-## 概要 {#summary}
+## サマリ {#summary}
 
 | サーバ | Q1    | Q2    | Q3    | Q4    |
 |--------|-------|-------|-------|-------|

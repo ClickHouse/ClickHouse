@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "PocoHTTPClientFactory.h"
 
 #include <IO/S3/PocoHTTPClient.h>
@@ -32,3 +36,5 @@ std::shared_ptr<Aws::Http::HttpRequest> PocoHTTPClientFactory::CreateHttpRequest
 }
 
 }
+
+#endif

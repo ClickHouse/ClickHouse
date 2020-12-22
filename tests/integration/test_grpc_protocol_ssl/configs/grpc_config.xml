@@ -1,0 +1,27 @@
+<yandex>
+    <grpc_port>9100</grpc_port>
+    <grpc replace="replace">
+        <enable_ssl>true</enable_ssl>
+
+        <!-- The following two files are used only if enable_ssl=1 -->
+        <ssl_cert_file>/etc/clickhouse-server/config.d/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/etc/clickhouse-server/config.d/server-key.pem</ssl_key_file>
+
+        <!-- Whether server will request client for a certificate -->
+        <ssl_require_client_auth>true</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=1 -->
+        <ssl_ca_cert_file>/etc/clickhouse-server/config.d/ca-cert.pem</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>gzip</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level).
+             Supported levels: none, low, medium, high -->
+        <compression_level>high</compression_level>
+
+        <!-- Enable if you want very detailed logs -->
+        <verbose_logs>false</verbose_logs>
+    </grpc>
+</yandex>

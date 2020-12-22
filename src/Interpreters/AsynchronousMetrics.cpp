@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -43,7 +44,8 @@ AsynchronousMetrics::~AsynchronousMetrics()
         }
 
         wait_cond.notify_one();
-        thread.join();
+        if (thread)
+            thread->join();
     }
     catch (...)
     {
@@ -169,7 +171,7 @@ void AsynchronousMetrics::update()
     AsynchronousMetricValues new_values;
 
     {
-        if (auto mark_cache = context.getMarkCache())
+        if (auto mark_cache = global_context.getMarkCache())
         {
             new_values["MarkCacheBytes"] = mark_cache->weight();
             new_values["MarkCacheFiles"] = mark_cache->count();
@@ -177,7 +179,7 @@ void AsynchronousMetrics::update()
     }
 
     {
-        if (auto uncompressed_cache = context.getUncompressedCache())
+        if (auto uncompressed_cache = global_context.getUncompressedCache())
         {
             new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
             new_values["UncompressedCacheCells"] = uncompressed_cache->count();
@@ -186,12 +188,12 @@ void AsynchronousMetrics::update()
 
 #if USE_EMBEDDED_COMPILER
     {
-        if (auto compiled_expression_cache = context.getCompiledExpressionCache())
+        if (auto compiled_expression_cache = global_context.getCompiledExpressionCache())
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
     }
 #endif
 
-    new_values["Uptime"] = context.getUptimeSeconds();
+    new_values["Uptime"] = global_context.getUptimeSeconds();
 
     /// Process memory usage according to OS
 #if defined(OS_LINUX)
@@ -207,8 +209,22 @@ void AsynchronousMetrics::update()
         /// We must update the value of total_memory_tracker periodically.
         /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
         /// See https://github.com/ClickHouse/ClickHouse/issues/10293
-        total_memory_tracker.set(data.resident);
-        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
+        {
+            Int64 amount = total_memory_tracker.get();
+            Int64 peak = total_memory_tracker.getPeak();
+            Int64 new_peak = data.resident;
+
+            LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
+                "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                ReadableSize(amount),
+                ReadableSize(peak),
+                ReadableSize(new_peak),
+                ReadableSize(new_peak - peak)
+            );
+
+            total_memory_tracker.set(new_peak);
+            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_peak);
+        }
     }
 #endif
 
@@ -233,10 +249,10 @@ void AsynchronousMetrics::update()
 
         for (const auto & db : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            if (db.second->getEngineName() == "Lazy")
+            /// Check if database can contain MergeTree tables
+            if (!db.second->canContainMergeTreeTables())
                 continue;
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(global_context); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 const auto & table = iterator->table();
@@ -298,6 +314,39 @@ void AsynchronousMetrics::update()
 
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
+
+        auto get_metric_name = [](const String & name) -> const char *
+        {
+            static std::map<String, const char *> metric_map = {
+                {"tcp_port", "TCPThreads"},
+                {"tcp_port_secure", "TCPSecureThreads"},
+                {"http_port", "HTTPThreads"},
+                {"https_port", "HTTPSecureThreads"},
+                {"interserver_http_port", "InterserverThreads"},
+                {"interserver_https_port", "InterserverSecureThreads"},
+                {"mysql_port", "MySQLThreads"},
+                {"postgresql_port", "PostgreSQLThreads"},
+                {"grpc_port", "GRPCThreads"},
+                {"prometheus.port", "PrometheusThreads"}
+            };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return nullptr;
+            else
+                return it->second;
+        };
+
+        for (const auto & server : servers_to_start_before_tables)
+        {
+            if (const auto * name = get_metric_name(server.getPortName()))
+                new_values[name] = server.currentThreads();
+        }
+
+        for (const auto & server : servers)
+        {
+            if (const auto * name = get_metric_name(server.getPortName()))
+                new_values[name] = server.currentThreads();
+        }
     }
 
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
@@ -332,7 +381,7 @@ void AsynchronousMetrics::update()
         ReadBufferFromFile buf("/proc/cpuinfo", 32768 /* buf_size */);
 
         // We need the following lines:
-        // core id : 4
+        // processor : 4
         // cpu MHz : 4052.941
         // They contain tabs and are interspersed with other info.
         int core_id = 0;
@@ -346,7 +395,7 @@ void AsynchronousMetrics::update()
             // It doesn't read the EOL itself.
             ++buf.position();
 
-            if (s.rfind("core id", 0) == 0)
+            if (s.rfind("processor", 0) == 0)
             {
                 if (auto colon = s.find_first_of(':'))
                 {
@@ -372,7 +421,7 @@ void AsynchronousMetrics::update()
     /// Add more metrics as you wish.
 
     // Log the new metrics.
-    if (auto log = context.getAsynchronousMetricLog())
+    if (auto log = global_context.getAsynchronousMetricLog())
     {
         log->addValues(new_values);
     }

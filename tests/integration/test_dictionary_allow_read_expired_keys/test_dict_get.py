@@ -1,19 +1,18 @@
-from __future__ import print_function
-import pytest
-import time
-import os
-from contextlib import contextmanager
 
+
+import time
+
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
-from helpers.network import PartitionManagerDisabler
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/dictionaries/cache_ints_dictionary.xml'])
+main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml',
+                                                            'configs/dictionaries/cache_ints_dictionary.xml'])
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -39,14 +38,14 @@ def test_simple_dict_get(started_cluster):
     assert None != dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
 
     def test_helper():
-        assert '7' == main_node.query("select dictGet('anime_dict', 'i8',  toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'i16', toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'i32', toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'i64', toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'u8',  toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'u16', toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'u32', toUInt64(7));").rstrip(), "Wrong answer."
-        assert '7' == main_node.query("select dictGet('anime_dict', 'u64', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'i8',  toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'i16', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'i32', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'i64', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'u8',  toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'u16', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'u32', toUInt64(7));").rstrip(), "Wrong answer."
+        assert '7' == main_node.query("select dictGet('experimental_dict', 'u64', toUInt64(7));").rstrip(), "Wrong answer."
 
     test_helper()
 

@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("revoke role")
@@ -50,7 +50,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk(name="role0")
                 node.query("REVOKE role0 FROM user0", exitcode=exitcode, message=message)
 
-    # With nonexistent object name, REVOKE assumes type role (treats user0 as role)
+    # with nonexistent object name, REVOKE assumes type role (treats user0 as role)
     with Scenario("I revoke a role from a nonexistent user", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role("1.0")]):
         with setup(0,1):
@@ -58,7 +58,7 @@ def feature(self, node="clickhouse1"):
                 exitcode, message = errors.role_not_found_in_disk(name="user0")
                 node.query("REVOKE role0 FROM user0", exitcode=exitcode, message=message)
 
-    # With nonexistent object name, REVOKE assumes type role (treats user0 as role)
+    # with nonexistent object name, REVOKE assumes type role (treats user0 as role)
     with Scenario("I revoke a role from ALL EXCEPT nonexistent user", requirements=[
             RQ_SRS_006_RBAC_Revoke_Role("1.0")]):
         with setup(0,1):

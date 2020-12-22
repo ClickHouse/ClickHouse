@@ -1,10 +1,8 @@
-
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/MongoDB/Connection.h>
 
@@ -29,15 +27,14 @@ public:
         const std::string & username_,
         const std::string & password_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const Context & context_);
+        const ConstraintsDescription & constraints_);
 
     std::string getName() const override { return "MongoDB"; }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -52,7 +49,6 @@ private:
     std::string username;
     std::string password;
 
-    Context global_context;
     std::shared_ptr<Poco::MongoDB::Connection> connection;
 };
 

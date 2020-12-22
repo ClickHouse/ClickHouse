@@ -11,9 +11,10 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
+#include <memory>
 
 #include <ext/bit_cast.h>
-#include <Core/Types.h>
+#include <common/extended_types.h>
 #include <Core/Defines.h>
 
 
@@ -34,16 +35,16 @@
 
 /** Used as a template parameter. See below.
   */
-struct RadixSortMallocAllocator
+struct RadixSortAllocator
 {
     void * allocate(size_t size)
     {
-        return malloc(size);
+        return ::operator new(size);
     }
 
-    void deallocate(void * ptr, size_t /*size*/)
+    void deallocate(void * ptr, size_t size)
     {
-        return free(ptr);
+        ::operator delete(ptr, size);
     }
 };
 
@@ -99,7 +100,7 @@ struct RadixSortFloatTraits
     /// An object with the functions allocate and deallocate.
     /// Can be used, for example, to allocate memory for a temporary array on the stack.
     /// To do this, the allocator itself is created on the stack.
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
@@ -138,7 +139,7 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -167,12 +168,12 @@ struct RadixSortIntTraits
     using Result = Element;
     using Key = Element;
     using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Key>;
+    using KeyBits = make_unsigned_t<Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -186,7 +187,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integral_v<T>,
+    is_integer_v<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 

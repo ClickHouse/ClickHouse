@@ -1,10 +1,13 @@
 #include "AvroRowInputFormat.h"
+#include "DataTypes/DataTypeLowCardinality.h"
 #if USE_AVRO
 
 #include <numeric>
 
 #include <Core/Defines.h>
 #include <Core/Field.h>
+
+#include <Common/LRUCache.h>
 
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -72,6 +75,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 class InputStreamReadBufferAdapter : public avro::InputStream
@@ -158,7 +162,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 
 static std::string nodeToJson(avro::NodePtr root_node)
 {
-    std::ostringstream ss;
+    std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss.exceptions(std::ios::failbit);
     root_node->printJson(ss, 0);
     return ss.str();
 }
@@ -173,7 +178,8 @@ static std::string nodeName(avro::NodePtr node)
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    WhichDataType target(target_type);
+    const WhichDataType target = removeLowCardinality(target_type);
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING: [[fallthrough]];
@@ -383,7 +389,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
+        + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -639,11 +646,21 @@ private:
                 request.setHost(url.getHost());
 
                 auto session = makePooledHTTPSession(url, timeouts, 1);
-                session->sendRequest(request);
+                std::istream * response_body{};
+                try
+                {
+                    session->sendRequest(request);
 
-                Poco::Net::HTTPResponse response;
-                auto * response_body = receiveResponse(*session, request, response, false);
-
+                    Poco::Net::HTTPResponse response;
+                    response_body = receiveResponse(*session, request, response, false);
+                }
+                catch (const Poco::Exception & e)
+                {
+                    /// We use session data storage as storage for exception text
+                    /// Depend on it we can deduce to reconnect session or reresolve session host
+                    session->attachSessionData(e.message());
+                    throw;
+                }
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
@@ -697,8 +714,21 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     uint8_t magic;
     uint32_t schema_id;
 
-    readBinaryBigEndian(magic, in);
-    readBinaryBigEndian(schema_id, in);
+    try
+    {
+        readBinaryBigEndian(magic, in);
+        readBinaryBigEndian(schema_id, in);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+        {
+            /* empty or incomplete message without Avro Confluent magic number or schema id */
+            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+        }
+        else
+            throw;
+    }
 
     if (magic != 0x00)
     {
