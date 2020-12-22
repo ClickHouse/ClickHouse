@@ -751,7 +751,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
     result.aggregates = getAggregates(query, *select_query);
-    result.window_functions = getWindowFunctions(query, *select_query);
+    result.window_function_asts = getWindowFunctions(query, *select_query);
     result.collectUsedColumns(query, true);
     result.ast_join = select_query->join();
 

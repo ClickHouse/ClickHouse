@@ -39,6 +39,11 @@ public:
 
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 
+    void appendWindowDescription(const FormatSettings & settings,
+        FormatState & state, FormatStateStacked frame) const;
+
+    std::string getWindowDescription() const;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

@@ -475,22 +475,20 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
 {
     // Convenient to check here because at least we have the Context.
-    if (!windowFunctions().empty() &&
+    if (!syntax->window_function_asts.empty() &&
         !context.getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Window functions are not implemented (while processing '{}')",
-            windowFunctions()[0]->formatForErrorMessage());
+            syntax->window_function_asts[0]->formatForErrorMessage());
     }
 
-    int next_window_index = 1;
-    for (const ASTFunction * function_node : windowFunctions())
+    for (const ASTFunction * function_node : syntax->window_function_asts)
     {
         assert(function_node->is_window_function);
 
         WindowDescription window_description;
-        window_description.window_name = fmt::format("window_{}",
-            next_window_index++);
+        window_description.window_name = function_node->getWindowDescription();
 
         if (function_node->window_partition_by)
         {
@@ -581,12 +579,28 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                 window_function.argument_types,
                 window_function.function_parameters, properties);
 
-        window_descriptions.insert({window_description.window_name,
-            window_description});
-        window_functions.push_back(window_function);
+        window_function_descriptions.push_back(window_function);
+
+        if (auto it = window_descriptions.find(window_description.window_name);
+            it != window_descriptions.end())
+        {
+            assert(it->second.full_sort_description
+                == window_description.full_sort_description);
+        }
+        else
+        {
+            window_descriptions.insert({window_description.window_name,
+                window_description});
+        }
     }
 
-    return !windowFunctions().empty();
+    // Populate the reverse map.
+    for (const auto & f : window_function_descriptions)
+    {
+        window_descriptions[f.window_name].window_functions.push_back(f);
+    }
+
+    return !window_function_descriptions.empty();
 }
 
 
@@ -965,7 +979,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
 {
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    for (const auto & f : window_functions)
+    for (const auto & f : window_function_descriptions)
     {
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
@@ -982,7 +996,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     }
 
     // 2) mark the columns that are really required:
-    for (const auto & f : window_functions)
+    for (const auto & f : window_function_descriptions)
     {
         for (const auto & a : f.function_node->arguments->children)
         {

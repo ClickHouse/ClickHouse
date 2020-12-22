@@ -1754,10 +1754,8 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
 
 void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 {
-    for (const auto & f : query_analyzer->window_functions)
+    for (const auto & [_, w] : query_analyzer->window_descriptions)
     {
-        const auto & w = query_analyzer->window_descriptions[f.window_name];
-
         const Settings & settings = context->getSettingsRef();
 
         auto partial_sorting = std::make_unique<PartialSortingStep>(
@@ -1784,7 +1782,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             + w.window_name + "'");
         query_plan.addStep(std::move(merge_sorting_step));
 
-        // First MergeSorted, now MergingSorted......
+        // First MergeSorted, now MergingSorted.
         auto merging_sorted = std::make_unique<MergingSortedStep>(
             query_plan.getCurrentDataStream(),
             w.full_sort_description,
@@ -1797,9 +1795,9 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         auto window_step = std::make_unique<WindowStep>(
             query_plan.getCurrentDataStream(),
             w,
-            std::vector<WindowFunctionDescription>(1, f));
-        window_step->setStepDescription("Window step for function '"
-            + f.column_name + "'");
+            w.window_functions);
+        window_step->setStepDescription("Window step for window '"
+            + w.window_name + "'");
 
         query_plan.addStep(std::move(window_step));
     }

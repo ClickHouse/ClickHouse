@@ -62,6 +62,11 @@ struct WindowDescription
 
     // No frame info as of yet.
 
+
+    // Reverse map to function descriptions, for convenience of building the
+    // plan. Just copy them because it's more convenient.
+    std::vector<WindowFunctionDescription> window_functions;
+
     std::string dump() const;
 };
 

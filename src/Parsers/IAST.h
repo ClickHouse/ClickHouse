@@ -158,6 +158,7 @@ public:
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
+        // Newline or whitespace.
         char nl_or_ws;
 
         FormatSettings(WriteBuffer & ostr_, bool one_line_)
