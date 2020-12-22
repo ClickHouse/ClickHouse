@@ -1754,7 +1754,7 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
 
 void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 {
-    for (const auto & [_, w] : query_analyzer->window_descriptions)
+    for (const auto & [_, w] : query_analyzer->windowDescriptions())
     {
         const Settings & settings = context->getSettingsRef();
 

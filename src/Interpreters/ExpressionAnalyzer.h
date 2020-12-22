@@ -62,7 +62,6 @@ struct ExpressionAnalyzerData
 
     bool has_window = false;
     WindowDescriptions window_descriptions;
-    WindowFunctionDescriptions window_function_descriptions;
     NamesAndTypesList window_columns;
 
     bool has_global_subqueries = false;
@@ -76,7 +75,7 @@ struct ExpressionAnalyzerData
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
-class ExpressionAnalyzer : public ExpressionAnalyzerData, private boost::noncopyable
+class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable
 {
 private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
@@ -120,6 +119,9 @@ public:
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
+
+    /// A list of windows for window functions.
+    const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
 protected:
     ExpressionAnalyzer(

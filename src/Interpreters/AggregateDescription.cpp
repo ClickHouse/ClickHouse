@@ -104,7 +104,7 @@ std::string WindowFunctionDescription::dump() const
 {
     WriteBufferFromOwnString ss;
 
-    ss << "window function '" << column_name << "' over '" << window_name <<"\n";
+    ss << "window function '" << column_name << "\n";
     ss << "function node " << function_node->dumpTree() << "\n";
     ss << "aggregate function '" << aggregate_function->getName() << "'\n";
     if (!function_parameters.empty())
