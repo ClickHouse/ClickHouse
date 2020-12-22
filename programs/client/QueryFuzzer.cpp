@@ -336,7 +336,7 @@ struct ScopedIncrement
 {
     size_t & counter;
 
-    ScopedIncrement(size_t & counter_) : counter(counter_) { ++counter; }
+    explicit ScopedIncrement(size_t & counter_) : counter(counter_) { ++counter; }
     ~ScopedIncrement() { --counter; }
 };
 
