@@ -295,12 +295,12 @@ class FixedHeap
 public:
     FixedHeap() = delete;
 
-    explicit FixedHeap(F f_) : f(f_), data_t(std::make_shared<std::vector<size_t>>(K, v))
+    explicit FixedHeap(F f_) : f(f_), data_t(std::make_shared<std::vector<UInt64>>(K, v))
     {
         std::make_heap(data_t->begin(), data_t->end(), f);
     }
 
-    void insertAndReplace(size_t new_v)
+    void insertAndReplace(UInt64 new_v)
     {
         data_t->push_back(new_v);
         std::push_heap(data_t->begin(), data_t->end(), f);
@@ -308,11 +308,11 @@ public:
         data_t->pop_back();
     }
 
-    const size_t * data() { return data_t->data(); }
+    const UInt64 * data() { return data_t->data(); }
 
 private:
     F f;
-    std::shared_ptr<std::vector<size_t>> data_t;
+    std::shared_ptr<std::vector<UInt64>> data_t;
 };
 
 
