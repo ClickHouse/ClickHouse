@@ -731,12 +731,18 @@ static void blockSignals(const std::vector<int> & signals)
 {
     sigset_t sig_set;
 
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
     if (sigemptyset(&sig_set))
         throw Poco::Exception("Cannot block signal.");
 
     for (auto signal : signals)
         if (sigaddset(&sig_set, signal))
             throw Poco::Exception("Cannot block signal.");
+#endif
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
