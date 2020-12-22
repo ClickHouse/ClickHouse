@@ -41,13 +41,13 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
 
 static ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & name_and_type)
 {
-    auto storage_name = name_and_type.getStorageName();
+    auto storage_name = name_and_type.getNameInStorage();
     if (!block.has(storage_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found column '{}' in block", storage_name);
 
     const auto & column = block.getByName(storage_name).column;
     if (name_and_type.isSubcolumn())
-        return name_and_type.getStorageType()->getSubcolumn(name_and_type.getSubcolumnName(), *column);
+        return name_and_type.getTypeInStorage()->getSubcolumn(name_and_type.getSubcolumnName(), *column);
 
     return column;
 }

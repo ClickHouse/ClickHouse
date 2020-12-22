@@ -18,27 +18,27 @@ namespace ErrorCodes
 }
 
 NameAndTypePair::NameAndTypePair(
-    const String & storage_name_, const String & subcolumn_name_,
-    const DataTypePtr & storage_type_, const DataTypePtr & subcolumn_type_)
-    : name(storage_name_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
+    const String & name_in_storage_, const String & subcolumn_name_,
+    const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_)
+    : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
-    , storage_type(storage_type_)
-    , subcolumn_delimiter_position(storage_name_.size()) {}
+    , type_in_storage(type_in_storage_)
+    , subcolumn_delimiter_position(name_in_storage_.size()) {}
 
-String NameAndTypePair::getStorageName() const
+String NameAndTypePair::getNameInStorage() const
 {
-    if (subcolumn_delimiter_position == -1)
+    if (!subcolumn_delimiter_position)
         return name;
 
-    return name.substr(0, subcolumn_delimiter_position);
+    return name.substr(0, *subcolumn_delimiter_position);
 }
 
 String NameAndTypePair::getSubcolumnName() const
 {
-    if (subcolumn_delimiter_position == -1)
+    if (!subcolumn_delimiter_position)
         return "";
 
-    return name.substr(subcolumn_delimiter_position + 1, name.size() - subcolumn_delimiter_position);
+    return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
 }
 
 void NamesAndTypesList::readText(ReadBuffer & buf)

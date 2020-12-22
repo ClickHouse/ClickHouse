@@ -17,15 +17,17 @@ struct NameAndTypePair
 {
 public:
     NameAndTypePair() = default;
-    NameAndTypePair(const String & name_, const DataTypePtr & type_) : name(name_), type(type_), storage_type(type_) {}
-    NameAndTypePair(const String & storage_name_, const String & subcolumn_name_,
-        const DataTypePtr & storage_type_, const DataTypePtr & subcolumn_type_);
+    NameAndTypePair(const String & name_, const DataTypePtr & type_)
+        : name(name_), type(type_), type_in_storage(type_) {}
 
-    String getStorageName() const;
+    NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
+        const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
+
+    String getNameInStorage() const;
     String getSubcolumnName() const;
 
-    bool isSubcolumn() const { return subcolumn_delimiter_position != -1; }
-    DataTypePtr getStorageType() const { return storage_type; }
+    bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
+    DataTypePtr getTypeInStorage() const { return type_in_storage; }
 
     bool operator<(const NameAndTypePair & rhs) const
     {
@@ -41,11 +43,13 @@ public:
     DataTypePtr type;
 
 private:
-    DataTypePtr storage_type;
-    ssize_t subcolumn_delimiter_position = -1;
+    DataTypePtr type_in_storage;
+    std::optional<size_t> subcolumn_delimiter_position;
 };
 
-template<int I>
+/// This needed to use structured bindings for NameAndTypePair
+/// const auto & [name, type] = name_and_type
+template <int I>
 decltype(auto) get(const NameAndTypePair & name_and_type)
 {
     if constexpr (I == 0)

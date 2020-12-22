@@ -38,13 +38,13 @@ bool injectRequiredColumnsRecursively(
     if (storage_columns.hasPhysicalOrSubcolumn(column_name))
     {
         auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name);
-        auto column_name_in_part = column_in_storage.getStorageName();
+        auto column_name_in_part = column_in_storage.getNameInStorage();
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
             column_name_in_part, column_in_storage.getSubcolumnName(),
-            column_in_storage.getStorageType(), column_in_storage.type);
+            column_in_storage.getTypeInStorage(), column_in_storage.type);
 
         /// column has files and hence does not require evaluation
         if (part->hasColumnFiles(column_in_part))

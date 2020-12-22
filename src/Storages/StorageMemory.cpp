@@ -70,9 +70,9 @@ protected:
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
         {
-            auto current_column = src.getByName(elem.getStorageName()).column;
+            auto current_column = src.getByName(elem.getNameInStorage()).column;
             if (elem.isSubcolumn())
-                columns.emplace_back(elem.getStorageType()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
                 columns.emplace_back(std::move(current_column));
         }
