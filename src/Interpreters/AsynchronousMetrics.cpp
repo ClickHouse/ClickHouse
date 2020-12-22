@@ -355,16 +355,22 @@ void AsynchronousMetrics::update()
                 return it->second;
         };
 
-        for (const auto & server : servers_to_start_before_tables)
+        if (servers_to_start_before_tables)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers_to_start_before_tables)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
 
-        for (const auto & server : servers)
+        if (servers)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
     }
 
