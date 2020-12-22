@@ -6,12 +6,12 @@ toc_priority: 10
 
 # Что обозначает название “ClickHouse”? {#what-does-clickhouse-mean}
 
-It’s a combination of “**Click**stream” and “Data ware**House**”. It comes from the original use case at Yandex.Metrica, where ClickHouse was supposed to keep records of all clicks by people from all over the Internet and it still does the job. You can read more about this use case on [ClickHouse history](../../introduction/history.md) page.
+Это комбинация терминов “**Click**stream” и “Data ware**House**”. Происходит из первоначального использования Яндекс.Метрики, гдеe ClickHouse должен был сохранять записи обо всех пользовательских кликах по всему Интернету. Кстати, он все еще выполняет эту работу. Побольше об этом вы можете прочитать на странице [истории ClickHouse](../../introduction/history.md).
 
-This two-part meaning has two consequences:
+У такого составного значения есть последствия:
 
--   The only correct way to write Click**H**ouse is with capital H.
--   If you need to abbreviate it, use **CH**. For some historical reasons, abbreviating as CK is also popular in China, mostly because one of the first talks about ClickHouse in Chinese used this form.
+-   Единственно корректный способ написать название — Click**H**ouse — с заглавной буквой H.
+-   Если нужна аббревиатура, пишите **CH**. По некоторым историческим причинам в Китае также популярно сокращение CK. В основном из-за первых упоминаний ClickHouse в таком виде.
 
-!!! info "Fun fact"
-    Many years after ClickHouse got its name, this approach of combining two words that are meaningful on their own has been highlighted as the best way to name a database in a [research by Andy Pavlo](https://www.cs.cmu.edu/~pavlo/blog/2020/03/on-naming-a-database-management-system.html), an Associate Professor of Databases at Carnegie Mellon University. ClickHouse shared his “best database name of all time” award with Postgres.
+!!! info "Забавный факт"
+    Много лет после того, как ClickHouse получил свое имя, подход с комбинированием двух слов признали лучшим способом называть базу данных в [исследовании Andy Pavlo](https://www.cs.cmu.edu/~pavlo/blog/2020/03/on-naming-a-database-management-system.html), an Associate Professor of Databases at Carnegie Mellon University. ClickHouse shared his “best database name of all time” award with Postgres.
