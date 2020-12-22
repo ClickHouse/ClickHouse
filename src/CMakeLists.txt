@@ -193,8 +193,6 @@ if ((NOT USE_LIBCXX) AND COMPILER_CLANG AND OS_LINUX)
     list (APPEND DBMS_COMMON_LIBRARIES atomic)
 endif()
 
-set_source_files_properties(${dbms_sources} PROPERTIES COMPILE_FLAGS ${WITH_COVERAGE})
-
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PRIVATE clickhouse_parsers_new jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
