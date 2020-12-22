@@ -35,6 +35,13 @@ public:
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        IAggregateFunction * sub = this;
+        while ((sub = sub->getNestedFunction().get()))
+        {
+            if (dynamic_cast<AggregateFunctionIf *>(sub))
+                throw Exception("Cannot nest -If combinator", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
         if (!isUInt8(types.back()))
             throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -86,15 +93,15 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
-        size_t) const override
+        ssize_t) const override
     {
-        nested_func->addBatch(batch_size, places, place_offset, columns, arena, num_arguments);
+        nested_func->addBatch(batch_size, places, place_offset, columns, arena, num_arguments - 1);
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, size_t) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
     {
-        nested_func->addBatchSinglePlace(batch_size, place, columns, arena, num_arguments);
+        nested_func->addBatchSinglePlace(batch_size, place, columns, arena, num_arguments - 1);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -103,9 +110,9 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        size_t) const override
+        ssize_t) const override
     {
-        nested_func->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, num_arguments);
+        nested_func->addBatchSinglePlaceNotNull(batch_size, place, columns, null_map, arena, num_arguments - 1);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override

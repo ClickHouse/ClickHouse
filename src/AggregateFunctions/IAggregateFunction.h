@@ -147,12 +147,12 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
-        size_t num_arguments = 0) const = 0;
+        ssize_t if_argument_pos = -1) const = 0;
 
     /** The same for single place.
       */
     virtual void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, size_t num_arguments = 0) const = 0;
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       */
@@ -162,10 +162,10 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        size_t num_arguments = 0) const = 0;
+        ssize_t if_argument_pos = -1) const = 0;
 
     virtual void addBatchSinglePlaceFromInterval(
-        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, size_t num_arguments = 0)
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
         const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
@@ -242,11 +242,11 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
-        size_t num_arguments = 0) const override
+        ssize_t if_argument_pos = -1) const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
                 if (flags[i])
@@ -261,11 +261,11 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, size_t num_arguments = 0) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
                 if (flags[i])
@@ -285,11 +285,11 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        size_t num_arguments = 0) const override
+        ssize_t if_argument_pos = -1) const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
                 if (!null_map[i] && flags[i])
                     static_cast<const Derived *>(this)->add(place, columns, i, arena);
@@ -303,12 +303,12 @@ public:
     }
 
     void addBatchSinglePlaceFromInterval(
-        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, size_t num_arguments = 0)
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
         const override
     {
-        if (num_arguments > 0)
+        if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = batch_begin; i < batch_end; ++i)
             {
                 if (flags[i])
