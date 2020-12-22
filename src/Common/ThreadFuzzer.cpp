@@ -103,12 +103,6 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
 
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Sleep probability {}", sleep_probability);
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Yield probability {}", yield_probability);
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Migrate probability {}", migrate_probability);
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "CPU time period {}", cpu_time_period_us);
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "Sleep time us {}", sleep_time_us);
-
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
         initFromEnv(NAME##_before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
@@ -125,7 +119,6 @@ void ThreadFuzzer::initConfiguration()
 
 #    undef INIT_WRAPPER_PARAMS
 #endif
-    LOG_DEBUG(&Poco::Logger::get("ThreadFuzzer"), "pthread_mutex_lock_before_migrate_probability {}", pthread_mutex_lock_before_migrate_probability);
 }
 
 
