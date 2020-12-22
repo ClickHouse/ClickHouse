@@ -1609,7 +1609,7 @@ tcpPort()
 
 Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
 
-**Example**
+**Пример**
 
 Запрос:
 
