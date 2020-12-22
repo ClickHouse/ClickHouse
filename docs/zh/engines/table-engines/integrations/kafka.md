@@ -103,7 +103,7 @@ Kafka 特性：
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-为了提高性能，接受的消息被分组为 [max\_insert\_block\_size](../../../operations/settings/settings.md#settings-max_insert_block_size) 大小的块。如果未在 [stream\_flush\_interval\_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) 毫秒内形成块，则不关心块的完整性，都会将数据刷新到表中。
+为了提高性能，接受的消息被分组为 [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size) 大小的块。如果未在 [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms) 毫秒内形成块，则不关心块的完整性，都会将数据刷新到表中。
 
 停止接收主题数据或更改转换逻辑，请 detach 物化视图：
 

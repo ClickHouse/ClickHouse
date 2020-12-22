@@ -2,17 +2,14 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/syscall.h>
 
 #include <emmintrin.h>
 
-#include <utility>
-
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <Common/getMappedArea.h>
 #include <Common/Exception.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
+#include <fmt/format.h>
 
 #include "remapExecutable.h"
 
@@ -22,55 +19,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
 namespace
 {
-
-uintptr_t readAddressHex(DB::ReadBuffer & in)
-{
-    uintptr_t res = 0;
-    while (!in.eof())
-    {
-        if (isHexDigit(*in.position()))
-        {
-            res *= 16;
-            res += unhex(*in.position());
-            ++in.position();
-        }
-        else
-            break;
-    }
-    return res;
-}
-
-
-/** Find the address and size of the mapped memory region pointed by ptr.
-  */
-std::pair<void *, size_t> getMappedArea(void * ptr)
-{
-    using namespace DB;
-
-    uintptr_t uintptr = reinterpret_cast<uintptr_t>(ptr);
-    ReadBufferFromFile in("/proc/self/maps");
-
-    while (!in.eof())
-    {
-        uintptr_t begin = readAddressHex(in);
-        assertChar('-', in);
-        uintptr_t end = readAddressHex(in);
-        skipToNextLineOrEOF(in);
-
-        if (begin <= uintptr && uintptr < end)
-            return {reinterpret_cast<void *>(begin), end - begin};
-    }
-
-    throw Exception("Cannot find mapped area for pointer", ErrorCodes::LOGICAL_ERROR);
-}
-
 
 __attribute__((__noinline__)) int64_t our_syscall(...)
 {

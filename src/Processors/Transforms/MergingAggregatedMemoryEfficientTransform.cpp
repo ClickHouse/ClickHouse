@@ -511,7 +511,7 @@ void addMergingAggregatedMemoryEfficientTransform(
     /// --> GroupingAggregated --> ResizeProcessor --> MergingAggregatedBucket --> SortingAggregated -->
     /// -->                                        --> MergingAggregatedBucket -->
 
-    pipe.addTransform(std::make_shared<ResizeProcessor>(Block(), 1, num_merging_processors));
+    pipe.resize(num_merging_processors);
 
     pipe.addSimpleTransform([params](const Block &)
     {

@@ -3,11 +3,11 @@ machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
 
-# 系统。trace\_log {#system_tables-trace_log}
+# 系统。trace_log {#system_tables-trace_log}
 
 包含采样查询探查器收集的堆栈跟踪。
 
-ClickHouse创建此表时 [trace\_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) 服务器配置部分被设置。 也是 [query\_profiler\_real\_time\_period\_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) 和 [query\_profiler\_cpu\_time\_period\_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) 应设置设置。
+ClickHouse创建此表时 [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) 服务器配置部分被设置。 也是 [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) 和 [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) 应设置设置。
 
 要分析日志，请使用 `addressToLine`, `addressToSymbol` 和 `demangle` 内省功能。
 
@@ -30,7 +30,7 @@ ClickHouse创建此表时 [trace\_log](../../operations/server-configuration-par
 
 -   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) 系统表.
+-   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) 系统表.
 
 -   `trace` ([数组(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 

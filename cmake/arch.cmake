@@ -16,8 +16,4 @@ endif ()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ppc64le.*|PPC64LE.*)")
     set (ARCH_PPC64LE 1)
-    # FIXME: move this check into tools.cmake
-    if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
-        message(FATAL_ERROR "Only gcc-8 or higher is supported for powerpc architecture")
-    endif ()
 endif ()
