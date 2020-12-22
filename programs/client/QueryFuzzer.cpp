@@ -327,11 +327,44 @@ void QueryFuzzer::fuzz(ASTs & asts)
     }
 }
 
+struct ScopedIncrement
+{
+    size_t & counter;
+
+    ScopedIncrement(size_t & counter_) : counter(counter_) { ++counter; }
+    ~ScopedIncrement() { --counter; }
+};
+
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
     if (!ast)
         return;
 
+    // Check for exceeding max depth.
+    ScopedIncrement depth_increment(current_ast_depth);
+    if (current_ast_depth > 1000)
+    {
+        // The AST is too deep (see the comment for current_ast_depth). Probably
+        // we don't have to print the tree because it's slow...
+        fmt::print(stderr, "The AST is too deep (depth {}, {} visited nodes)"
+            " :\n{}\n", current_ast_depth, debug_visited_nodes.size(),
+            (*debug_top_ast)->dumpTree());
+
+        return;
+    }
+
+    // Check for loops.
+    auto [_, inserted] = debug_visited_nodes.insert(ast.get());
+    if (!inserted)
+    {
+        fmt::print(stderr, "The AST node '{}' was already visited before."
+            " Depth {}, {} visited nodes, current top AST:\n{}\n",
+            static_cast<void *>(ast.get()), current_ast_depth,
+            debug_visited_nodes.size(), (*debug_top_ast)->dumpTree());
+        assert(false);
+    }
+
+    // The fuzzing.
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
@@ -365,13 +398,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        fuzz(fn->children);
-
         if (fn->is_window_function)
         {
             fuzzColumnLikeExpressionList(fn->window_partition_by);
             fuzzOrderByList(fn->window_order_by);
         }
+
+        fuzz(fn->children);
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
@@ -502,6 +535,10 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
+    current_ast_depth = 0;
+    debug_visited_nodes.clear();
+    debug_top_ast = &ast;
+
     collectFuzzInfoMain(ast);
     fuzz(ast);
 

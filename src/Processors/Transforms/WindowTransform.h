@@ -37,7 +37,7 @@ public:
             const Block & output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
-                window_functions_descriptions);
+                window_function_descriptions);
 
     ~WindowTransform() override;
 

@@ -26,6 +26,13 @@ struct QueryFuzzer
 {
     pcg64 fuzz_rand{randomSeed()};
 
+    // We add elements to expression lists with fixed probability. Some elements
+    // are so large, that the expected number of elements we add to them is
+    // one or higher, hence this process might never finish. Put some limit on the
+    // total depth of AST to prevent this.
+    // This field is reset for each fuzzMain() call.
+    size_t current_ast_depth = 0;
+
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
@@ -38,6 +45,12 @@ struct QueryFuzzer
 
     std::unordered_map<std::string, ASTPtr> table_like_map;
     std::vector<ASTPtr> table_like;
+
+    // Some debug fields for detecting problematic ASTs with loops.
+    // These are reset for each fuzzMain call.
+    std::unordered_set<const IAST *> debug_visited_nodes;
+    ASTPtr * debug_top_ast;
+
 
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
