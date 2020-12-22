@@ -456,7 +456,7 @@ ParsingException::ParsingException()
 }
 
 ParsingException::ParsingException(const std::string & msg, int code)
-    : Exception(msg, code) 
+    : Exception(msg, code)
 {
     Exception::message(Exception::message() + "{}");
 }
