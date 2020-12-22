@@ -618,15 +618,15 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT countMatches('foobar.com', 'o')
+SELECT countMatches('foobar.com', 'o+')
 ```
 
 Result:
 
 ``` text
-┌─countMatches('foobar.com', 'o')─┐
-│                               3 │
-└─────────────────────────────────┘
+┌─countMatches('foobar.com', 'o+')─┐
+│                                2 │
+└──────────────────────────────────┘
 ```
 
 Query:
