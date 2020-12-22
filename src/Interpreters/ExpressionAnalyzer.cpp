@@ -535,7 +535,6 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
             window_description.order_by.end());
 
         WindowFunctionDescription window_function;
-        window_function.window_name = window_description.window_name;
         window_function.function_node = function_node;
         window_function.column_name
             = window_function.function_node->getColumnName();
@@ -579,28 +578,19 @@ bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
                 window_function.argument_types,
                 window_function.function_parameters, properties);
 
-        window_function_descriptions.push_back(window_function);
+        auto [it, inserted] = window_descriptions.insert(
+            {window_description.window_name, window_description});
 
-        if (auto it = window_descriptions.find(window_description.window_name);
-            it != window_descriptions.end())
+        if (!inserted)
         {
             assert(it->second.full_sort_description
                 == window_description.full_sort_description);
         }
-        else
-        {
-            window_descriptions.insert({window_description.window_name,
-                window_description});
-        }
+
+        it->second.window_functions.push_back(window_function);
     }
 
-    // Populate the reverse map.
-    for (const auto & f : window_function_descriptions)
-    {
-        window_descriptions[f.window_name].window_functions.push_back(f);
-    }
-
-    return !window_function_descriptions.empty();
+    return !syntax->window_function_asts.empty();
 }
 
 
@@ -979,37 +969,53 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
 {
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
-    for (const auto & f : window_function_descriptions)
-    {
-        // Requiring a constant reference to a shared pointer to non-const AST
-        // doesn't really look sane, but the visitor does indeed require it.
-        getRootActionsNoMakeSet(f.function_node->clone(), true, step.actions());
-
-        // Add empty INPUT with window function name.
-        // It is an aggregate function, so it won't be added by getRootActions.
-        ColumnWithTypeAndName col;
-        col.type = f.aggregate_function->getReturnType();
-        col.column = col.type->createColumn();
-        col.name = f.column_name;
-
-        step.actions()->addInput(col);
-    }
-
-    // 2) mark the columns that are really required:
-    for (const auto & f : window_function_descriptions)
-    {
-        for (const auto & a : f.function_node->arguments->children)
-        {
-            // 2.1) function arguments,
-            step.required_output.push_back(a->getColumnName());
-        }
-        // 2.2) function result,
-        step.required_output.push_back(f.column_name);
-    }
-
-    // 2.3) PARTITION BY and ORDER BY columns.
+    // 1) Add actions for window functions and their arguments;
+    // 2) Mark the columns that are really required.
     for (const auto & [_, w] : window_descriptions)
     {
+        for (const auto & f : w.window_functions)
+        {
+            // 1.1) arguments of window functions;
+            // Requiring a constant reference to a shared pointer to non-const AST
+            // doesn't really look sane, but the visitor does indeed require it.
+            getRootActionsNoMakeSet(f.function_node->clone(),
+                true /* no_subqueries */, step.actions());
+
+            // 1.2) result of window function: an empty INPUT.
+            // It is an aggregate function, so it won't be added by getRootActions.
+            // This is something of a hack. Other options:
+            //  a] do it like aggregate function -- break the chain of actions
+            //     and manually add window functions to the starting list of
+            //     input columns. Logically this is similar to what we're doing
+            //     now, but would require to split the window function processing
+            //     into a full-fledged step after plain functions. This would be
+            //     somewhat cumbersome. With INPUT hack we can avoid a separate
+            //     step and pretend that window functions are almost "normal"
+            //     select functions. The limitation of both these ways is that
+            //     we can't reference window functions in other SELECT
+            //     expressions.
+            //  b] add a WINDOW action type, then sort, then split the chain on
+            //     each WINDOW action and insert the Window pipeline between the
+            //     Expression pipelines. This is a "proper" way that would allow
+            //     us to depend on window functions in other functions. But it's
+            //     complicated so I avoid doing it for now.
+            ColumnWithTypeAndName col;
+            col.type = f.aggregate_function->getReturnType();
+            col.column = col.type->createColumn();
+            col.name = f.column_name;
+
+            step.actions()->addInput(col);
+
+            for (const auto & a : f.function_node->arguments->children)
+            {
+                // 2.1) function arguments;
+                step.required_output.push_back(a->getColumnName());
+            }
+            // 2.2) function result;
+            step.required_output.push_back(f.column_name);
+        }
+
+        // 2.3) PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
             step.required_output.push_back(c.column_name);

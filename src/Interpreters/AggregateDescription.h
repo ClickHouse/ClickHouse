@@ -29,12 +29,6 @@ using AggregateDescriptions = std::vector<AggregateDescription>;
 
 struct WindowFunctionDescription
 {
-    // According to the standard, a window function can refer to a window declared
-    // elsewhere, using its name. We haven't implemented this yet: all windows
-    // are declared in OVER clause, but they still get an auto-generated name,
-    // and this name is used to find the window that corresponds to a function.
-    std::string window_name;
-
     std::string column_name;
     const ASTFunction * function_node;
     AggregateFunctionPtr aggregate_function;
@@ -62,9 +56,7 @@ struct WindowDescription
 
     // No frame info as of yet.
 
-
-    // Reverse map to function descriptions, for convenience of building the
-    // plan. Just copy them because it's more convenient.
+    // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
 
     std::string dump() const;
