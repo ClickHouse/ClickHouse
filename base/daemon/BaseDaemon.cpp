@@ -6,6 +6,9 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
+#if defined(__linux__)
+    #include <sys/prctl.h>
+#endif
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -908,7 +911,8 @@ void BaseDaemon::setupWatchdog()
 
     while (true)
     {
-        pid_t pid = fork();
+        static pid_t pid = -1;
+        pid = fork();
 
         if (-1 == pid)
             throw Poco::Exception("Cannot fork");
@@ -916,6 +920,10 @@ void BaseDaemon::setupWatchdog()
         if (0 == pid)
         {
             logger().information("Forked a child process to watch");
+#if defined(__linux__)
+            if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
+                logger().warning("Cannot do prctl to ask termination with parent.");
+#endif
             return;
         }
 
@@ -931,10 +939,20 @@ void BaseDaemon::setupWatchdog()
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
-        /// Ignore signals that only need to be delivered to the child process.
+        /// Forward signals to the child process.
         addSignalHandler(
             {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
-            [](int, siginfo_t *, void *) {}, nullptr);
+            [](int sig, siginfo_t *, void *)
+            {
+                /// Forward all signals except INT as it is send by shell to both processes when user press Ctrl+C.
+                if (sig == SIGINT)
+                    return;
+
+                const char * error_message = "Cannot forward signal to the child process.\n";
+                if (0 != ::kill(pid, sig))
+                    (void)write(STDERR_FILENO, error_message, strlen(error_message));
+            },
+            nullptr);
 
         int status = 0;
         do
