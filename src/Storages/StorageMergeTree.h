@@ -134,6 +134,10 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
+    /// Make part state outdated and queue it to remove without timeout
+    /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
+    /// It not force, then take merges selector and check that part is not participating in background operations.
+    MergeTreeDataPartPtr outdatePart(const String & part_name, bool force);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
