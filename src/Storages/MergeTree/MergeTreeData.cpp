@@ -1281,19 +1281,6 @@ void MergeTreeData::dropAllData()
 
     DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
 
-    size_t committed_parts_count = 0;
-    for (const auto & parts_info : all_parts)
-    {
-        if (parts_info->state == DataPartState::Committed)
-        {
-            committed_parts_count++;
-        }
-    }
-
-    CurrentMetrics::sub(CurrentMetrics::Parts, all_parts.size());
-    CurrentMetrics::sub(CurrentMetrics::PartsActive, committed_parts_count);
-    CurrentMetrics::sub(CurrentMetrics::PartsInactive, all_parts.size() - committed_parts_count);
-
     data_parts_indexes.clear();
     column_sizes.clear();
 
