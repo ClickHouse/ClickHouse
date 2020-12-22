@@ -26,55 +26,78 @@ namespace ErrorCodes
 
 struct Hash
 {
-    static ALWAYS_INLINE inline UInt64 ngramASCIIHash(const UInt8 * code_points [[maybe_unused]])
+    static UInt64 crc32u64(UInt64 crc [[maybe_unused]], UInt64 val [[maybe_unused]])
     {
 #ifdef __SSE4_2__
-        return _mm_crc32_u64(-1ULL, unalignedLoad<UInt32>(code_points));
+        return _mm_crc32_u64(crc, val);
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+        return __crc32cd(crc, val);
 #else
-        throw Exception("ngramASCIIHash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 
-    static ALWAYS_INLINE inline UInt64 ngramUTF8Hash(const UInt32 * code_points [[maybe_unused]])
+    static UInt64 crc32u32(UInt64 crc [[maybe_unused]], UInt32 val [[maybe_unused]])
+    {
+#ifdef __SSE4_2__
+        return _mm_crc32_u32(crc, val);
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+        return __crc32cw(crc, val);
+#else
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+    }
+
+    static UInt64 crc32u8(UInt64 crc [[maybe_unused]], UInt8 val [[maybe_unused]])
+    {
+#ifdef __SSE4_2__
+        return _mm_crc32_u8(crc, val);
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
+        return __crc32cb(crc, val);
+#else
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
+#endif
+    }
+
+    static ALWAYS_INLINE inline UInt64 ngramASCIIHash(const UInt8 * code_points)
+    {
+        return crc32u64(-1ULL, unalignedLoad<UInt32>(code_points));
+    }
+
+    static ALWAYS_INLINE inline UInt64 ngramUTF8Hash(const UInt32 * code_points)
     {
         UInt64 crc = -1ULL;
-#ifdef __SSE4_2__
-        crc = _mm_crc32_u64(crc, code_points[0]);
-        crc = _mm_crc32_u64(crc, code_points[1]);
-        crc = _mm_crc32_u64(crc, code_points[2]);
-#else
-        throw Exception("ngramUTF8Hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+        crc = crc32u64(crc, code_points[0]);
+        crc = crc32u64(crc, code_points[1]);
+        crc = crc32u64(crc, code_points[2]);
         return crc;
     }
 
-    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes [[maybe_unused]], size_t size [[maybe_unused]], size_t offset [[maybe_unused]])
+    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes, size_t size, size_t offset)
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
-#ifdef __SSE4_2__
+
         for (size_t i = offset; i < size; i += 2)
-            crc1 = _mm_crc32_u64(crc1, hashes[i]);
+            crc1 = crc32u64(crc1, hashes[i]);
         for (size_t i = offset + 1; i < size; i += 2)
-            crc2 = _mm_crc32_u64(crc2, hashes[i]);
+            crc2 = crc32u64(crc2, hashes[i]);
 
         if ((size - offset) & 1)
         {
             for (size_t i = 0; i < offset; i += 2)
-                crc2 = _mm_crc32_u64(crc2, hashes[i]);
+                crc2 = crc32u64(crc2, hashes[i]);
             for (size_t i = 1; i < offset; i += 2)
-                crc1 = _mm_crc32_u64(crc1, hashes[i]);
+                crc1 = crc32u64(crc1, hashes[i]);
         }
         else
         {
             for (size_t i = 0; i < offset; i += 2)
-                crc1 = _mm_crc32_u64(crc1, hashes[i]);
+                crc1 = crc32u64(crc1, hashes[i]);
             for (size_t i = 1; i < offset; i += 2)
-                crc2 = _mm_crc32_u64(crc2, hashes[i]);
+                crc2 = crc32u64(crc2, hashes[i]);
         }
-#else
-        throw Exception("wordShinglesHash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+
         return crc1 | (crc2 << 32u);
     }
 
@@ -82,14 +105,12 @@ struct Hash
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
-#ifdef __SSE4_2__
+
         for (size_t i = 0; i < K; i += 2)
-            crc1 = _mm_crc32_u8(crc1, hashes[i]);
+            crc1 = crc32u8(crc1, hashes[i]);
         for (size_t i = 1; i < K; i += 2)
-            crc2 = _mm_crc32_u8(crc2, hashes[i]);
-#else
-        throw Exception("hashSum is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+            crc2 = crc32u8(crc2, hashes[i]);
+
         return crc1 | (crc2 << 32u);
     }
 
@@ -97,29 +118,25 @@ struct Hash
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
-#ifdef __SSE4_2__
+
         for (size_t i = 0; i < K; i += 2)
-            crc1 = _mm_crc32_u32(crc1, hashes[i]);
+            crc1 = crc32u32(crc1, hashes[i]);
         for (size_t i = 1; i < K; i += 2)
-            crc2 = _mm_crc32_u32(crc2, hashes[i]);
-#else
-        throw Exception("hashSum is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+            crc2 = crc32u32(crc2, hashes[i]);
+
         return crc1 | (crc2 << 32u);
     }
 
-    static ALWAYS_INLINE inline UInt64 hashSum(const UInt64 * hashes [[maybe_unused]], size_t K [[maybe_unused]])
+    static ALWAYS_INLINE inline UInt64 hashSum(const UInt64 * hashes, size_t K)
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
-#ifdef __SSE4_2__
+
         for (size_t i = 0; i < K; i += 2)
-            crc1 = _mm_crc32_u64(crc1, hashes[i]);
+            crc1 = crc32u64(crc1, hashes[i]);
         for (size_t i = 1; i < K; i += 2)
-            crc2 = _mm_crc32_u64(crc2, hashes[i]);
-#else
-        throw Exception("hashSum is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
-#endif
+            crc2 = crc32u64(crc2, hashes[i]);
+
         return crc1 | (crc2 << 32u);
     }
 };
