@@ -104,6 +104,7 @@ namespace CurrentMetrics
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+    app.shouldSetupWatchdog(argc ? argv[0] : nullptr);
     try
     {
         return app.run(argc, argv);
