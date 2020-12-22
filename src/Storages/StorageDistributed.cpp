@@ -895,7 +895,6 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 
 size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shards)
 {
-    std::lock_guard lock(rng_mutex);
 
     UInt32 total_weight = 0;
     for (const auto & shard : shards)
@@ -903,7 +902,11 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
 
     assert(total_weight > 0);
 
-    auto res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
+    size_t res;
+    {
+        std::lock_guard lock(rng_mutex);
+        res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
+    }
 
     for (auto i = 0ul, s = shards.size(); i < s; ++i)
     {
