@@ -127,9 +127,6 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
-    /// Copy the file from `from_path` to `to_path`.
-    virtual void copyFile(const String & from_path, const String & to_path) = 0;
-
     /// Recursively copy data containing at `from_path` to `to_path` located at `to_disk`.
     virtual void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 

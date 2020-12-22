@@ -314,11 +314,6 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path*/)
-{
-    throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
 {
     std::lock_guard lock(mutex);
