@@ -137,7 +137,7 @@ private:
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
-    /// It not force, then take merges selector and check that part is not participating in background operations.
+    /// If not force, then take merges selector and check that part is not participating in background operations.
     MergeTreeDataPartPtr outdatePart(const String & part_name, bool force);
     ActionLock stopMergesAndWait();
 
