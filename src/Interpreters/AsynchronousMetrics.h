@@ -26,7 +26,8 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 class AsynchronousMetrics
 {
 public:
-    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia). 
+#if defined(ARCADIA_BUILD)
+    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
     /// Never use this in the ClickHouse codebase.
     AsynchronousMetrics(
         Context & global_context_,
@@ -35,6 +36,8 @@ public:
         , update_period(update_period_seconds)
     {
     }
+#endif
+
     /// The default value of update_period_seconds is for ClickHouse-over-YT
     /// in Arcadia -- it uses its own server implementation that also uses these
     /// metrics.
