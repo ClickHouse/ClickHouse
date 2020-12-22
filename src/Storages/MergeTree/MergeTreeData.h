@@ -357,6 +357,8 @@ public:
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
+    bool supportsSubcolumns() const override { return true; }
+
     bool supportsSettings() const override { return true; }
     NamesAndTypesList getVirtuals() const override;
 
