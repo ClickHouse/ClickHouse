@@ -26,7 +26,6 @@
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/PatternFormatter.h>
-#include <Poco/TaskManager.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Message.h>
@@ -474,7 +473,6 @@ BaseDaemon::~BaseDaemon()
 
 void BaseDaemon::terminate()
 {
-    getTaskManager().cancelAll();
     if (::raise(SIGTERM) != 0)
         throw Poco::SystemException("cannot terminate process");
 }
@@ -568,7 +566,6 @@ void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
 
-    task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
@@ -805,23 +802,6 @@ void BaseDaemon::logRevision() const
         + ", PID " + std::to_string(getpid()));
 }
 
-/// Makes server shutdown if at least one Poco::Task have failed.
-void BaseDaemon::exitOnTaskError()
-{
-    Poco::Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
-    getTaskManager().addObserver(obs);
-}
-
-/// Used for exitOnTaskError()
-void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
-{
-    task_failed = true;
-    Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
-    Poco::Logger * lg = &(logger());
-    LOG_ERROR(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
-    ServerApplication::terminate();
-}
-
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 {
     new_options.addOption(
@@ -905,6 +885,9 @@ void BaseDaemon::shouldSetupWatchdog(char * argv0_)
 
 void BaseDaemon::setupWatchdog()
 {
+    /// Initialize in advance to avoid double initialization in forked processes.
+    DateLUT::instance();
+
     std::string original_process_name;
     if (argv0)
         original_process_name = argv0;

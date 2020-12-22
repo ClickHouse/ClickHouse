@@ -12,7 +12,6 @@
 #include <chrono>
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
-#include <Poco/TaskNotification.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -24,9 +23,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/StatusFile.h>
 #include <loggers/Loggers.h>
-
-
-namespace Poco { class TaskManager; }
 
 
 /// \brief Base class for applications that can run as daemons.
@@ -60,9 +56,6 @@ public:
 
     /// Определяет параметр командной строки
     void defineOptions(Poco::Util::OptionSet & new_options) override;
-
-    /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
-    void exitOnTaskError();
 
     /// Завершение демона ("мягкое")
     void terminate();
@@ -137,15 +130,7 @@ public:
     void shouldSetupWatchdog(char * argv0_);
 
 protected:
-    /// Возвращает TaskManager приложения
-    /// все методы task_manager следует вызывать из одного потока
-    /// иначе возможен deadlock, т.к. joinAll выполняется под локом, а любой метод тоже берет лок
-    Poco::TaskManager & getTaskManager() { return *task_manager; }
-
     virtual void logRevision() const;
-
-    /// Используется при exitOnTaskError()
-    void handleNotification(Poco::TaskFailedNotification *);
 
     /// thread safe
     virtual void handleSignal(int signal_id);
@@ -170,14 +155,9 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
-    std::unique_ptr<Poco::TaskManager> task_manager;
-
     std::optional<DB::StatusFile> pid_file;
 
     std::atomic_bool is_cancelled{false};
-
-    /// Флаг устанавливается по сообщению из Task (при аварийном завершении).
-    bool task_failed = false;
 
     bool log_to_console = false;
 
