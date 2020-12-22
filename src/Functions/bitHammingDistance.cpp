@@ -98,7 +98,8 @@ public:
         const auto * left_generic = arguments[0].type.get();
         const auto * right_generic = arguments[1].type.get();
         ColumnPtr result_column;
-        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
+        {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
