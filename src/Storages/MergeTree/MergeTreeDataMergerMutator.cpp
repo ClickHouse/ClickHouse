@@ -652,7 +652,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     time_t time_of_merge,
     const Context & context,
     const ReservationPtr & space_reservation,
-    bool deduplicate)
+    bool deduplicate,
+    const Names & deduplicate_by_columns)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -667,6 +668,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
     LOG_DEBUG(log, "Merging {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, future_part.type.toString());
+    if (deduplicate)
+    {
+        if (deduplicate_by_columns.empty())
+            LOG_DEBUG(log, "DEDUPLICATE BY all columns");
+        else
+            LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
+    }
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
@@ -891,7 +899,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     BlockInputStreamPtr merged_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     if (deduplicate)
-        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, Names());
+        merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, deduplicate_by_columns);
 
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
