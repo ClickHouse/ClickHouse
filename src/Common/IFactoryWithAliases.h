@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Poco/String.h>
 
 #include <unordered_map>
@@ -104,6 +104,11 @@ public:
     bool isAlias(const String & name) const
     {
         return aliases.count(name) || case_insensitive_aliases.count(name);
+    }
+
+    bool hasNameOrAlias(const String & name) const
+    {
+        return getMap().count(name) || getCaseInsensitiveMap().count(name) || isAlias(name);
     }
 
     virtual ~IFactoryWithAliases() override {}

@@ -3,6 +3,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct TransformToNano
 {
@@ -11,6 +13,8 @@ struct TransformToNano
     using SourceDataType = DataTypeDateTime64;
     using ResultDataType = DataTypeInt64;
 };
+
+}
 
 void registerToUnixTimestamp64Nano(FunctionFactory & factory)
 {

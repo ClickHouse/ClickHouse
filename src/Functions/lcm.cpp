@@ -27,6 +27,13 @@ constexpr T abs(T value) noexcept
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
 
 template <typename A, typename B>
 struct LCMImpl
@@ -34,9 +41,16 @@ struct LCMImpl
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
 
+    template <typename Result = ResultType>
+    static inline std::enable_if_t<is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>, Result>
+    apply([[maybe_unused]] A a, [[maybe_unused]] B b)
+    {
+        throw Exception("LCM is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static inline std::enable_if_t<!is_big_int_v<A> && !is_big_int_v<B> && !is_big_int_v<Result>, Result>
+    apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
@@ -49,7 +63,7 @@ struct LCMImpl
           */
 
         using Int = typename NumberTraits::ToInteger<Result>::Type;
-        using Unsigned = std::make_unsigned_t<Int>;
+        using Unsigned = make_unsigned_t<Int>;
 
         Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
         Unsigned val2 = abs<Int>(b);
@@ -64,7 +78,9 @@ struct LCMImpl
 };
 
 struct NameLCM { static constexpr auto name = "lcm"; };
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
+using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false>;
+
+}
 
 void registerFunctionLCM(FunctionFactory & factory)
 {

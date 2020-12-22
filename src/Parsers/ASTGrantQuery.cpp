@@ -1,6 +1,7 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -144,4 +145,5 @@ void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_na
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
+
 }

@@ -59,7 +59,7 @@ ZooKeeperクラスタのアドレスを設定する例:
 
 場合飼育係な設定コンフィグファイルを創り上げられないんで再現しテーブル、および既存の複製のテーブル読み取り専用になります。
 
-飼育係はで使用されていません `SELECT` レプリケーションのパフォーマン `SELECT` また、クエリは非レプリケートテーブルの場合と同様に高速に実行されます。 時の照会に配布再現し、テーブルClickHouse行動制御の設定 [max\_replica\_delay\_for\_distributed\_queries](../../../operations/settings/settings.md#settings-max_replica_delay_for_distributed_queries) と [フォールバック\_to\_stale\_replicas\_for\_distributed\_queries](../../../operations/settings/settings.md#settings-fallback_to_stale_replicas_for_distributed_queries).
+飼育係はで使用されていません `SELECT` レプリケーションのパフォーマン `SELECT` また、クエリは非レプリケートテーブルの場合と同様に高速に実行されます。 時の照会に配布再現し、テーブルClickHouse行動制御の設定 [max_replica_delay_for_distributed_queries](../../../operations/settings/settings.md#settings-max_replica_delay_for_distributed_queries) と [フォールバック_to_stale_replicas_for_distributed_queries](../../../operations/settings/settings.md#settings-fallback_to_stale_replicas_for_distributed_queries).
 
 それぞれのため `INSERT` クエリー、契約時に応募を追加飼育係を務取引等 （より正確には、これは挿入されたデータの各ブロックに対するものです。 `max_insert_block_size = 1048576` 行。)これは、 `INSERT` 非レプリケートテーブルと比較します。 しかし、推奨事項に従ってデータを複数のバッチで挿入する場合 `INSERT` 毎秒、それは問題を作成しません。 一つのZooKeeperクラスターを調整するために使用されるClickHouseクラスター全体の合計は数百です `INSERTs` 毎秒 データ挿入のスループット(秒あたりの行数)は、レプリケートされていないデータの場合と同じくらい高くなります。
 
@@ -71,7 +71,7 @@ ZooKeeperクラスタのアドレスを設定する例:
 
 データの各ブロックは原子的に書き込まれます。 挿入クエリは、次のブロックに分割されます `max_insert_block_size = 1048576` 行。 言い換えれば、 `INSERT` クエリには1048576行未満があり、アトミックに作成されます。
 
-データブロックは重複排除されます。 同じデータブロック（同じ順序で同じ行を含む同じサイズのデータブロック）の複数の書き込みの場合、ブロックは一度だけ書き込まれます。 この理由は、クライアントアプリケーションがデータがDBに書き込まれたかどうかを知らないときにネットワーク障害が発生した場合です。 `INSERT` クエリーするだけで簡単に繰り返します。 どのレプリカ挿入が同一のデータで送信されたかは関係ありません。 `INSERTs` 冪等である。 重複排除圧縮パラメータの制御 [merge\_tree](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree) サーバー設定。
+データブロックは重複排除されます。 同じデータブロック（同じ順序で同じ行を含む同じサイズのデータブロック）の複数の書き込みの場合、ブロックは一度だけ書き込まれます。 この理由は、クライアントアプリケーションがデータがDBに書き込まれたかどうかを知らないときにネットワーク障害が発生した場合です。 `INSERT` クエリーするだけで簡単に繰り返します。 どのレプリカ挿入が同一のデータで送信されたかは関係ありません。 `INSERTs` 冪等である。 重複排除圧縮パラメータの制御 [merge_tree](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree) サーバー設定。
 
 複製時に、元のデータの挿入には転送されます。 さらなるデータ変換(マージ)は、すべてのレプリカで同じ方法で調整され、実行されます。 つまり、レプリカが異なるデータセンターに存在する場合、レプリケーションは適切に機能します。 レプリケーションの主な目的は、異なるデータセンターでデータを複製することです。)
 

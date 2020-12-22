@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS deduplication_by_partition;
 CREATE TABLE deduplication_by_partition(d Date, x UInt32) ENGINE =
-    ReplicatedMergeTree('/clickhouse/tables/test/deduplication_by_partition', 'r1', d, x, 8192);
+    ReplicatedMergeTree('/clickhouse/tables/test_00516/deduplication_by_partition', 'r1', d, x, 8192);
 
 INSERT INTO deduplication_by_partition VALUES ('2000-01-01', 1);
 INSERT INTO deduplication_by_partition VALUES ('2000-01-01', 2), ('2000-01-01', 3);

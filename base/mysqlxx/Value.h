@@ -254,7 +254,23 @@ template <> inline std::string          Value::get<std::string          >() cons
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }
 template <> inline LocalDateTime        Value::get<LocalDateTime        >() const { return getDateTime(); }
 
-template <typename T> inline T          Value::get()                        const { return T(*this); }
+
+namespace details
+{
+// To avoid stack overflow when converting to type with no appropriate c-tor,
+// resulting in endless recursive calls from `Value::get<T>()` to `Value::operator T()` to `Value::get<T>()` to ...
+template <typename T, typename std::enable_if_t<std::is_constructible_v<T, Value>>>
+inline T contructFromValue(const Value & val)
+{
+    return T(val);
+}
+}
+
+template <typename T>
+inline T Value::get() const
+{
+    return details::contructFromValue<T>(*this);
+}
 
 
 inline std::ostream & operator<< (std::ostream & ostr, const Value & x)

@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_FSYNC;
@@ -1120,6 +1121,8 @@ void SSDComplexKeyCacheStorage::update(
     AbsentIdHandler && on_key_not_found,
     const DictionaryLifetime lifetime)
 {
+    assert(key_columns.size() == key_types.size());
+
     auto append_block = [&key_types, this](
         const Columns & new_keys,
         const SSDComplexKeyCachePartition::Attributes & new_attributes,
@@ -1264,8 +1267,23 @@ void SSDComplexKeyCacheStorage::update(
             {
                 /// TODO: use old values.
 
-                /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-                std::rethrow_exception(last_update_exception);
+                // We don't have expired data for that `id` so all we can do is
+                // to rethrow `last_exception`. We might have to throw the same
+                // exception for different callers of dictGet() in different
+                // threads, which might then modify the exception object, so we
+                // have to throw a copy.
+                try
+                {
+                    std::rethrow_exception(last_update_exception);
+                }
+                catch (...)
+                {
+                    throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+                        "Update failed for dictionary '{}': {}",
+                        getPath(),
+                        getCurrentExceptionMessage(true /*with stack trace*/,
+                            true /*check embedded stack trace*/));
+                }
             }
 
             std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
@@ -1447,6 +1465,11 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     const Columns & key_columns, const DataTypes & key_types,
     ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
+    assert(dict_struct.key);
+    assert(key_columns.size() == key_types.size());
+
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;
@@ -1527,6 +1550,8 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     ColumnString * out,
     DefaultGetter && get_default) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     TemporalComplexKeysPool not_found_pool;

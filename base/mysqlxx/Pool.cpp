@@ -21,21 +21,20 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
-    ++data->ref_count;
-    if (data->ref_count == 1)
+    /// First reference, initialize thread
+    if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
 }
+
 
 void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-    if (data->ref_count > 0)
-    {
-        --data->ref_count;
-        if (data->ref_count == 0)
-            mysql_thread_end();
-    }
+
+    /// We were the last user of this thread, deinitialize it
+    if (data->ref_count.fetch_sub(1) == 1)
+        mysql_thread_end();
 }
 
 
@@ -152,27 +151,38 @@ Pool::Entry Pool::tryGet()
 
     initialize();
 
-    /// Searching for connection which was established but wasn't used.
-    for (auto & connection : connections)
+    /// Try to pick an idle connection from already allocated
+    for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
-        if (connection->ref_count == 0)
+        Connection * connection_ptr = *connection_it;
+        /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
+        if (connection_ptr->ref_count == 0)
         {
-            Entry res(connection, this);
-            return res.tryForceConnected() ? res : Entry();
+            Entry res(connection_ptr, this);
+            if (res.tryForceConnected())  /// Tries to reestablish connection as well
+                return res;
+
+            auto & logger = Poco::Util::Application::instance().logger();
+            logger.information("Idle connection to mysql server cannot be recovered, dropping it.");
+
+            /// This one is disconnected, cannot be reestablished and so needs to be disposed of.
+            connection_it = connections.erase(connection_it);
+            ::delete connection_ptr;  /// TODO: Manual memory management is awkward (matches allocConnection() method)
         }
+        else
+            ++connection_it;
     }
 
-    /// Throws if pool is overflowed.
     if (connections.size() >= max_connections)
         throw Poco::Exception("mysqlxx::Pool is full");
 
-    /// Allocates new connection.
-    Connection * conn = allocConnection(true);
-    if (conn)
-        return Entry(conn, this);
+    Connection * connection_ptr = allocConnection(true);
+    if (connection_ptr)
+        return {connection_ptr, this};
 
-    return Entry();
+    return {};
 }
+
 
 void Pool::removeConnection(Connection* connection)
 {
@@ -201,11 +211,9 @@ void Pool::Entry::forceConnected() const
         throw Poco::RuntimeException("Tried to access NULL database connection.");
 
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    if (data->conn.ping())
-        return;
 
     bool first = true;
-    do
+    while (!tryForceConnected())
     {
         if (first)
             first = false;
@@ -227,7 +235,26 @@ void Pool::Entry::forceConnected() const
             pool->rw_timeout,
             pool->enable_local_infile);
     }
-    while (!data->conn.ping());
+}
+
+
+bool Pool::Entry::tryForceConnected() const
+{
+    auto * const mysql_driver = data->conn.getDriver();
+    const auto prev_connection_id = mysql_thread_id(mysql_driver);
+    if (data->conn.ping())  /// Attempts to reestablish lost connection
+    {
+        const auto current_connection_id = mysql_thread_id(mysql_driver);
+        if (prev_connection_id != current_connection_id)
+        {
+            auto & logger = Poco::Util::Application::instance().logger();
+            logger.information("Connection to mysql server has been reestablished. Connection id changed: %lu -> %lu",
+                                prev_connection_id, current_connection_id);
+        }
+        return true;
+    }
+
+    return false;
 }
 
 

@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 import datetime
 import os
@@ -145,24 +145,9 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         if self.skip_git_log:
             return markdown
         src_path = page.file.abs_src_path
-        try:
-            git_log = subprocess.check_output(f'git log --follow --date=iso8601 "{src_path}"', shell=True)
-        except subprocess.CalledProcessError:
-            return markdown
-        max_date = None
-        min_date = None
-        for line in git_log.decode('utf-8').split('\n'):
-            if line.startswith('Date:'):
-                line = line.replace('Date:', '').strip().replace(' ', 'T', 1).replace(' ', '')
-                current_date = datetime.datetime.fromisoformat(line[:-2] + ':' + line[-2:])
-                if (not max_date) or current_date > max_date:
-                    max_date = current_date
-                if (not min_date) or current_date < min_date:
-                    min_date = current_date
-        if min_date:
-            page.meta['published_date'] = min_date
-        if max_date:
-            page.meta['modified_date'] = max_date
+
+        # There was a code that determined the minimum and maximum modification dates for a page.
+        # It was removed due to being obnoxiously slow.
         return markdown
 
     def render_impl(self, markdown):

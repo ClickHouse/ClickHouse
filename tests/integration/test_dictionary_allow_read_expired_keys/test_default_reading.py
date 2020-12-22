@@ -1,18 +1,18 @@
-from __future__ import print_function
-import pytest
-import time
-import os
-from contextlib import contextmanager
 
+
+import time
+
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+cluster = ClickHouseCluster(__file__)
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/dictionaries/cache_ints_dictionary.xml'])
+main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml',
+                                                            'configs/dictionaries/cache_ints_dictionary.xml'])
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -32,6 +32,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 # @pytest.mark.skip(reason="debugging")
 def test_default_reading(started_cluster):
     assert None != dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
@@ -39,14 +40,14 @@ def test_default_reading(started_cluster):
     # Key 0 is not in dictionary, so default value will be returned
 
     def test_helper():
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'i8',  toUInt64(13),  toInt8(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'i16', toUInt64(13),  toInt16(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'i32', toUInt64(13),  toInt32(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'i64', toUInt64(13),  toInt64(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'u8',  toUInt64(13),  toUInt8(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'u16', toUInt64(13),  toUInt16(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'u32', toUInt64(13),  toUInt32(42));").rstrip()
-        assert '42' == main_node.query("select dictGetOrDefault('anime_dict', 'u64', toUInt64(13),  toUInt64(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'i8',  toUInt64(13),  toInt8(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'i16', toUInt64(13),  toInt16(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'i32', toUInt64(13),  toInt32(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'i64', toUInt64(13),  toInt64(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'u8',  toUInt64(13),  toUInt8(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'u16', toUInt64(13),  toUInt16(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'u32', toUInt64(13),  toUInt32(42));").rstrip()
+        assert '42' == main_node.query("select dictGetOrDefault('experimental_dict', 'u64', toUInt64(13),  toUInt64(42));").rstrip()
 
     test_helper()
 
@@ -61,4 +62,3 @@ def test_default_reading(started_cluster):
         time.sleep(3)
 
         test_helper()
-

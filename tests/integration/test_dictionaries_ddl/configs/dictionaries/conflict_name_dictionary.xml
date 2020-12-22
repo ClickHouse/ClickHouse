@@ -1,0 +1,41 @@
+<yandex>
+<dictionary>
+    <name>test.conflicting_dictionary</name>
+    <source>
+        <clickhouse>
+            <host>localhost</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>test</db>
+            <table>xml_dictionary_table</table>
+        </clickhouse>
+    </source>
+
+    <lifetime>
+        <min>0</min>
+        <max>0</max>
+    </lifetime>
+
+    <layout>
+        <cache><size_in_cells>128</size_in_cells></cache>
+    </layout>
+
+    <structure>
+        <id>
+            <name>id</name>
+        </id>
+        <attribute>
+            <name>SomeValue1</name>
+            <type>UInt8</type>
+            <null_value>1</null_value>
+        </attribute>
+
+        <attribute>
+            <name>SomeValue2</name>
+            <type>String</type>
+            <null_value>''</null_value>
+        </attribute>
+    </structure>
+</dictionary>
+</yandex>

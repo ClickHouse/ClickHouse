@@ -1,4 +1,4 @@
-SELECT 
+SELECT
     'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ' AS orig,
     hex(convertCharset(orig, 'utf-8', 'cp1251') AS cp1251) AS cp1251_hex,
     hex(convertCharset(orig, 'utf-8', 'utf-7')) AS utf7_hex,
@@ -13,7 +13,7 @@ SELECT
     convertCharset(broken3, 'utf-8', 'koi8-r') AS restored3
 FORMAT Vertical;
 
-SELECT 
+SELECT
     materialize('абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ') AS orig,
     hex(convertCharset(orig, 'utf-8', 'cp1251') AS cp1251) AS cp1251_hex,
     hex(convertCharset(orig, 'utf-8', 'utf-7')) AS utf7_hex,

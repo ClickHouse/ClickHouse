@@ -18,6 +18,7 @@
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
+#include <Core/BigInt.h>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
@@ -134,11 +135,22 @@ public:
         }
     }
 
-    /// NOTE: std::has_unique_object_representations is only available since clang 6. As of Mar 2017 we still use clang 5 sometimes.
     template <typename T>
-    std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, void> update(const T & x)
+    std::enable_if_t<std::has_unique_object_representations_v<T>, void> update(const T & x)
     {
         update(reinterpret_cast<const char *>(&x), sizeof(x));
+    }
+
+    template <typename T>
+    std::enable_if_t<(std::is_floating_point_v<T> || std::is_same_v<T, CityHash_v1_0_2::uint128>), void> update(const T & x)
+    {
+        update(reinterpret_cast<const char *>(&x), sizeof(x));
+    }
+
+    template <typename T>
+    std::enable_if_t<is_big_int_v<T> && !std::has_unique_object_representations_v<T>, void> update(const T & x)
+    {
+        update(DB::BigInt<T>::serialize(x));
     }
 
     void update(const std::string & x)
@@ -193,11 +205,25 @@ inline UInt64 sipHash64(const char * data, const size_t size)
 }
 
 template <typename T>
-std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, UInt64> sipHash64(const T & x)
+std::enable_if_t<std::has_unique_object_representations_v<T>, UInt64> sipHash64(const T & x)
 {
     SipHash hash;
     hash.update(x);
     return hash.get64();
+}
+
+template <typename T>
+std::enable_if_t<(std::is_floating_point_v<T> || (is_big_int_v<T> && !std::has_unique_object_representations_v<T>)), UInt64> sipHash64(const T & x)
+{
+    SipHash hash;
+    hash.update(x);
+    return hash.get64();
+}
+
+template <typename T>
+std::enable_if_t<DB::IsDecimalNumber<T>, UInt64> sipHash64(const T & x)
+{
+    return sipHash64(x.value);
 }
 
 inline UInt64 sipHash64(const std::string & s)

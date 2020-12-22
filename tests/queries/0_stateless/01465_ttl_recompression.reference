@@ -1,0 +1,24 @@
+CREATE TABLE default.recompression_table\n(\n    `dt` DateTime,\n    `key` UInt64,\n    `value` String\n)\nENGINE = MergeTree\nPARTITION BY key\nORDER BY tuple()\nTTL dt + toIntervalMonth(1) RECOMPRESS CODEC(ZSTD(17)), dt + toIntervalYear(1) RECOMPRESS CODEC(LZ4HC(10))\nSETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity = 8192
+3000
+1_1_1	LZ4
+2_2_2	LZ4
+3_3_3	LZ4
+1_1_1	LZ4
+2_2_2	ZSTD(17)
+3_3_3	LZ4HC(10)
+CREATE TABLE default.recompression_table\n(\n    `dt` DateTime,\n    `key` UInt64,\n    `value` String\n)\nENGINE = MergeTree\nPARTITION BY key\nORDER BY tuple()\nTTL dt + toIntervalDay(1) RECOMPRESS CODEC(ZSTD(12))\nSETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity = 8192
+1_1_1	LZ4
+2_2_2	ZSTD(17)
+3_3_3	LZ4HC(10)
+1_1_1	LZ4
+2_2_2	ZSTD(12)
+3_3_3	ZSTD(12)
+1_1_1	['plus(dt, toIntervalDay(1))']
+2_2_2	['plus(dt, toIntervalDay(1))']
+3_3_3	['plus(dt, toIntervalDay(1))']
+1_1_1	LZ4
+2_2_2	LZ4
+3_3_3	LZ4
+1_1_1	LZ4
+2_2_2	ZSTD(12)
+3_3_3	ZSTD(12)

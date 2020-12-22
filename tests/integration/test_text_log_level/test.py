@@ -2,13 +2,13 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
-
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', config_dir='configs')
+node = cluster.add_instance('node', main_configs=["configs/config.d/text_log.xml"])
+
 
 @pytest.fixture(scope='module')
 def start_cluster():
@@ -18,6 +18,7 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_basic(start_cluster):
     with pytest.raises(QueryRuntimeException):

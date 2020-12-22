@@ -61,7 +61,7 @@ String StorageID::getNameForLogs() const
 {
     assertNotEmpty();
     return (database_name.empty() ? "" : backQuoteIfNeed(database_name) + ".") + backQuoteIfNeed(table_name)
-           + (hasUUID() ? " (UUID " + toString(uuid) + ")" : "");
+           + (hasUUID() ? " (" + toString(uuid) + ")" : "");
 }
 
 bool StorageID::operator<(const StorageID & rhs) const

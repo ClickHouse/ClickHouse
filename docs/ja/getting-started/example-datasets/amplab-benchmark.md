@@ -1,15 +1,15 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
-toc_title: "AMPLab Big Data\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF"
+toc_title: "AMPLab Big Data ベンチマーク"
 ---
 
-# AMPLab Big Dataベンチマーク {#amplab-big-data-benchmark}
+# AMPLab Big Data ベンチマーク {#amplab-big-data-benchmark}
 
-参照https://amplab.cs.berkeley.edu/benchmark/
+https://amplab.cs.berkeley.edu/benchmark/ を参照して下さい。
 
-で無料アカウントにサインアップhttps://aws.amazon.com.それはクレジットカード、電子メール、および電話番号が必要です。 新しいアクセスキーを取得するhttps://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+https://aws.amazon.com で無料アカウントにサインアップしてください。クレジットカード、電子メール、電話番号が必要です。
+https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential で新しいアクセスキーを取得します。
+
 
 コンソールで以下を実行します:
 
@@ -90,7 +90,7 @@ CREATE TABLE uservisits_5nodes_on_single
 ) ENGINE = MergeTree(visitDate, visitDate, 8192);
 ```
 
-コンソールに戻る:
+コンソールに戻って以下を実行します:
 
 ``` bash
 $ for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
@@ -101,7 +101,7 @@ $ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | 
 $ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
-クエリデータの取得サンプル:
+データの取得サンプルクエリ:
 
 ``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000

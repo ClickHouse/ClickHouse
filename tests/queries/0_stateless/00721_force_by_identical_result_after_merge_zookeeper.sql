@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS byte_identical_r1;
 DROP TABLE IF EXISTS byte_identical_r2;
 
-CREATE TABLE byte_identical_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/byte_identical', 'r1') ORDER BY x;
-CREATE TABLE byte_identical_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/byte_identical', 'r2') ORDER BY x;
+CREATE TABLE byte_identical_r1(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00721/byte_identical', 'r1') ORDER BY x;
+CREATE TABLE byte_identical_r2(x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00721/byte_identical', 'r2') ORDER BY x;
 
 INSERT INTO byte_identical_r1(x) VALUES (1), (2), (3);
 SYSTEM SYNC REPLICA byte_identical_r2;

@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -51,19 +52,24 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
     }
 }
 
-const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
+const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num)
 {
     if (arguments.size() == time_zone_arg_num + 1)
-        return DateLUT::instance(extractTimeZoneNameFromColumn(*block.getByPosition(arguments[time_zone_arg_num]).column));
+    {
+        std::string time_zone = extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
+        if (time_zone.empty())
+            throw Exception("Provided time zone must be non-empty and be a valid time zone", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return DateLUT::instance(time_zone);
+    }
     else
     {
         if (arguments.empty())
             return DateLUT::instance();
 
         /// If time zone is attached to an argument of type DateTime.
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(block.getByPosition(arguments[datetime_arg_num]).type.get()))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone();
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(block.getByPosition(arguments[datetime_arg_num]).type.get()))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone();
 
         return DateLUT::instance();

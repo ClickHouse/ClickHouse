@@ -11,6 +11,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
@@ -29,6 +30,8 @@ void registerTableFunctions()
 
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
+
+    registerTableFunctionView(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

@@ -29,9 +29,7 @@ namespace ErrorCodes
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
-    std::stringstream ss;
-    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
-    return ss.str();
+    return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
 
@@ -64,7 +62,7 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
     if (!tryReadDecimalText(istr, x, precision, unread_scale))
         return false;
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         return false;
 
     return true;
@@ -79,7 +77,7 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
     else
         readDecimalText(istr, x, precision, unread_scale);
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
@@ -107,7 +105,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
 
-    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+    if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
@@ -183,6 +181,7 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
     factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::CaseInsensitive);
 
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
@@ -194,5 +193,6 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 template class DataTypeDecimal<Decimal32>;
 template class DataTypeDecimal<Decimal64>;
 template class DataTypeDecimal<Decimal128>;
+template class DataTypeDecimal<Decimal256>;
 
 }

@@ -15,9 +15,9 @@ toc_title: "\u69CB\u6587"
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-その `INSERT INTO t VALUES` フラグメントは完全なパーサーによって解析され、データは `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 高速ストリームパーサーによって解析されます。 また、データの完全なパーサーをオンにするには [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) 設定。 とき `input_format_values_interpret_expressions = 1`,ClickHouseはまず、高速ストリームパーサーで値を解析しようとします。 失敗した場合、ClickHouseはデータに対して完全なパーサーを使用し、SQLのように扱います [式](#syntax-expressions).
+その `INSERT INTO t VALUES` フラグメントは完全なパーサーによって解析され、データは `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` 高速ストリームパーサーによって解析されます。 また、データの完全なパーサーをオンにするには [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) 設定。 とき `input_format_values_interpret_expressions = 1`,ClickHouseはまず、高速ストリームパーサーで値を解析しようとします。 失敗した場合、ClickHouseはデータに対して完全なパーサーを使用し、SQLのように扱います [式](#syntax-expressions).
 
-データの形式は任意です。 クエリが受信されると、サーバーは以下の値を計算しません [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) 要求のバイトはRAM(デフォルトでは1MB)で、残りはストリーム解析されます。
+データの形式は任意です。 クエリが受信されると、サーバーは以下の値を計算しません [max_query_size](../operations/settings/settings.md#settings-max_query_size) 要求のバイトはRAM(デフォルトでは1MB)で、残りはストリーム解析されます。
 これを回避する問題の大き `INSERT` クエリ。
 
 を使用する場合 `Values` フォーマット `INSERT` これは、データがaの式と同じように解析されるように見えるかもしれません `SELECT` クエリが、これは真実ではありません。 その `Values` 形式ははるかに限られています。

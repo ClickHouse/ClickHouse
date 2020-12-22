@@ -1,11 +1,7 @@
-import os
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-
 
 CLICKHOUSE_DATABASE = 'test'
 
@@ -37,7 +33,7 @@ def start_cluster():
         initialize_database([node1, node2], 1)
         yield cluster
     except Exception as ex:
-        print ex
+        print(ex)
     finally:
         cluster.shutdown()
 
@@ -46,13 +42,14 @@ def test_consistent_part_after_move_partition(start_cluster):
     # insert into all replicas
     for i in range(100):
         node1.query('INSERT INTO `{database}`.src VALUES ({value} % 2, {value})'.format(database=CLICKHOUSE_DATABASE,
-                                                                                       value=i))
+                                                                                        value=i))
     query_source = 'SELECT COUNT(*) FROM `{database}`.src'.format(database=CLICKHOUSE_DATABASE)
     query_dest = 'SELECT COUNT(*) FROM `{database}`.dest'.format(database=CLICKHOUSE_DATABASE)
     assert_eq_with_retry(node2, query_source, node1.query(query_source))
     assert_eq_with_retry(node2, query_dest, node1.query(query_dest))
 
-    node1.query('ALTER TABLE `{database}`.src MOVE PARTITION 1 TO TABLE `{database}`.dest'.format(database=CLICKHOUSE_DATABASE))
+    node1.query(
+        'ALTER TABLE `{database}`.src MOVE PARTITION 1 TO TABLE `{database}`.dest'.format(database=CLICKHOUSE_DATABASE))
 
     assert_eq_with_retry(node2, query_source, node1.query(query_source))
     assert_eq_with_retry(node2, query_dest, node1.query(query_dest))

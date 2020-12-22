@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 toc_title: JOIN
 ---
 
@@ -29,7 +27,7 @@ FROM <left_table>
 -   `FULL OUTER JOIN`，除了匹配的行之外，还会返回两个表中的非匹配行。
 -   `CROSS JOIN`，产生整个表的笛卡尔积, “join keys” 是 **不** 指定。
 
-`JOIN` 没有指定类型暗示 `INNER`. 关键字 `OUTER` 可以安全地省略。 替代语法 `CROSS JOIN` 在指定多个表 [FROM条款](../../../sql-reference/statements/select/from.md) 用逗号分隔。
+`JOIN` 没有指定类型暗指 `INNER`. 关键字 `OUTER` 可以安全地省略。 替代语法 `CROSS JOIN` 在指定多个表 [FROM](../../../sql-reference/statements/select/from.md) 用逗号分隔。
 
 ClickHouse中提供的其他联接类型:
 
@@ -41,7 +39,7 @@ ClickHouse中提供的其他联接类型:
 ## 严格 {#join-settings}
 
 !!! note "注"
-    可以使用以下方式复盖默认的严格性值 [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) 设置。
+    可以使用以下方式复盖默认的严格性值 [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) 设置。
 
     Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
@@ -53,7 +51,7 @@ ClickHouse中提供的其他联接类型:
 
 -   必须包含有序序列。
 -   可以是以下类型之一: [Int*，UInt*](../../../sql-reference/data-types/int-uint.md), [浮动\*](../../../sql-reference/data-types/float.md), [日期](../../../sql-reference/data-types/date.md), [日期时间](../../../sql-reference/data-types/datetime.md), [十进制\*](../../../sql-reference/data-types/decimal.md).
--   不能是唯一的列 `JOIN` 条款
+-   不能是唯一的列 `JOIN` 
 
 语法 `ASOF JOIN ... ON`:
 
@@ -108,7 +106,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 ### 处理空单元格或空单元格 {#processing-of-empty-or-null-cells}
 
-在连接表时，可能会出现空单元格。 设置 [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) 定义ClickHouse如何填充这些单元格。
+在连接表时，可能会出现空单元格。 设置 [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) 定义ClickHouse如何填充这些单元格。
 
 如果 `JOIN` 键是 [可为空](../../../sql-reference/data-types/nullable.md) 字段，其中至少有一个键具有值的行 [NULL](../../../sql-reference/syntax.md#null-literal) 没有加入。
 
@@ -145,12 +143,12 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 如果需要限制联接操作内存消耗，请使用以下设置:
 
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-当任何这些限制达到，ClickHouse作为 [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) 设置指示。
+当任何这些限制达到，ClickHouse作为 [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) 设置指示。
 
-## 例 {#examples}
+## 例子 {#examples}
 
 示例:
 

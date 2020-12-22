@@ -13,7 +13,6 @@ inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
     return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
 }
 
-
 /** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
   *  returns nanoseconds instead of microseconds, and also by other minor differencies.
   */

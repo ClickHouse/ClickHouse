@@ -1,6 +1,6 @@
 SELECT toTimeZone(N, \'UTC\')
 
-Code: 43: Illegal type Date of argument of function toTimeZone. Should be DateTime or DateTime64.
+Code: 43
 "DateTime('UTC')","2019-09-16 16:20:11"
 "DateTime64(3, 'UTC')","2019-09-16 16:20:11.234"
 ------------------------------------------
@@ -36,24 +36,25 @@ SELECT toDayOfWeek(N)
 ------------------------------------------
 SELECT toHour(N)
 
-Code: 43: Illegal type Date of argument for function toHour.
+Code: 43
 "UInt8",19
 "UInt8",19
 ------------------------------------------
 SELECT toMinute(N)
 
-Code: 43: Illegal type Date of argument for function toMinute.
+Code: 43
 "UInt8",20
 "UInt8",20
 ------------------------------------------
 SELECT toSecond(N)
 
-Code: 43: Illegal type Date of argument for function toSecond.
+Code: 43
 "UInt8",11
 "UInt8",11
 ------------------------------------------
 SELECT toUnixTimestamp(N)
-"UInt32",18155
+
+Code: 44
 "UInt32",1568650811
 "UInt32",1568650811
 ------------------------------------------
@@ -94,31 +95,31 @@ SELECT toStartOfDay(N)
 ------------------------------------------
 SELECT toStartOfHour(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfHour.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
 SELECT toStartOfMinute(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfMinute.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFiveMinute(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfFiveMinute.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfTenMinutes(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfTenMinutes.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFifteenMinutes(N)
 
-Code: 43: Illegal type Date of argument for function toStartOfFifteenMinutes.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
@@ -139,13 +140,34 @@ SELECT toStartOfInterval(N, INTERVAL 1 day)
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 15 minute)
 
-Code: 43: Illegal type Date of argument for function toStartOfInterval.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
+SELECT date_trunc(\'year\', N)
+"Date","2019-01-01"
+"Date","2019-01-01"
+"Date","2019-01-01"
+------------------------------------------
+SELECT date_trunc(\'month\', N)
+"Date","2019-09-01"
+"Date","2019-09-01"
+"Date","2019-09-01"
+------------------------------------------
+SELECT date_trunc(\'day\', N)
+"DateTime","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+------------------------------------------
+SELECT date_trunc(\'minute\', N)
+
+Code: 43
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+------------------------------------------
 SELECT toTime(N)
 
-Code: 43: Illegal type Date of argument for function toTime.
+Code: 43
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
 ------------------------------------------
@@ -211,7 +233,7 @@ SELECT toYearWeek(N)
 ------------------------------------------
 SELECT timeSlot(N)
 
-Code: 43: Illegal type Date of argument for function timeSlot.
+Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
@@ -354,15 +376,15 @@ SELECT N -  N
 "Int32",0
 "Int32",0
 
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
+Code: 43
 ------------------------------------------
 SELECT N +  N
 
-Code: 43: Illegal types Date and Date of arguments of function plus.
+Code: 43
 
-Code: 43: Illegal types DateTime('Europe/Minsk') and DateTime('Europe/Minsk') of arguments of function plus.
+Code: 43
 
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function plus.
+Code: 43
 ------------------------------------------
 SELECT N != N
 "UInt8",0
@@ -396,17 +418,47 @@ SELECT N >= N
 ------------------------------------------
 SELECT N - DT
 
-Code: 43: Illegal types Date and DateTime('Europe/Minsk') of arguments of function minus.
+Code: 43
 "Int32",0
 
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime('Europe/Minsk') of arguments of function minus.
+Code: 43
 ------------------------------------------
 SELECT DT - N
 
-Code: 43: Illegal types DateTime('Europe/Minsk') and Date of arguments of function minus.
+Code: 43
 "Int32",0
 
-Code: 43: Illegal types DateTime('Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
+Code: 43
+------------------------------------------
+SELECT N - D
+"Int32",0
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT D - N
+"Int32",0
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N - DT64
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT DT64 - N
+
+Code: 43
+
+Code: 43
+
+Code: 43
 ------------------------------------------
 SELECT N != DT
 "UInt8",1
@@ -418,70 +470,6 @@ SELECT DT != N
 "UInt8",0
 "UInt8",1
 ------------------------------------------
-SELECT N == DT
-"UInt8",0
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT DT == N
-"UInt8",0
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT N <  DT
-"UInt8",1
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT DT <  N
-"UInt8",0
-"UInt8",0
-"UInt8",1
-------------------------------------------
-SELECT N <= DT
-"UInt8",1
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT DT <= N
-"UInt8",0
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  DT
-"UInt8",0
-"UInt8",0
-"UInt8",1
-------------------------------------------
-SELECT DT >  N
-"UInt8",1
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= DT
-"UInt8",0
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT DT >= N
-"UInt8",1
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT N - D
-"Int32",0
-
-Code: 43: Illegal types DateTime('Europe/Minsk') and Date of arguments of function minus.
-
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Date of arguments of function minus.
-------------------------------------------
-SELECT D - N
-"Int32",0
-
-Code: 43: Illegal types Date and DateTime('Europe/Minsk') of arguments of function minus.
-
-Code: 43: Illegal types Date and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
-------------------------------------------
 SELECT N != D
 "UInt8",0
 "UInt8",1
@@ -491,6 +479,26 @@ SELECT D != N
 "UInt8",0
 "UInt8",1
 "UInt8",1
+------------------------------------------
+SELECT N != DT64
+"UInt8",1
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT DT64 != N
+"UInt8",1
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT N == DT
+"UInt8",0
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT DT == N
+"UInt8",0
+"UInt8",1
+"UInt8",0
 ------------------------------------------
 SELECT N == D
 "UInt8",1
@@ -502,12 +510,52 @@ SELECT D == N
 "UInt8",0
 "UInt8",0
 ------------------------------------------
+SELECT N == DT64
+"UInt8",0
+"UInt8",0
+"UInt8",1
+------------------------------------------
+SELECT DT64 == N
+"UInt8",0
+"UInt8",0
+"UInt8",1
+------------------------------------------
+SELECT N <  DT
+"UInt8",1
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT DT <  N
+"UInt8",0
+"UInt8",0
+"UInt8",1
+------------------------------------------
 SELECT N <  D
 "UInt8",0
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT D <  N
+"UInt8",0
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  DT64
+"UInt8",1
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT DT64 <  N
+"UInt8",0
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N <= DT
+"UInt8",1
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT DT <= N
 "UInt8",0
 "UInt8",1
 "UInt8",1
@@ -522,72 +570,6 @@ SELECT D <= N
 "UInt8",1
 "UInt8",1
 ------------------------------------------
-SELECT N >  D
-"UInt8",0
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT D >  N
-"UInt8",0
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= D
-"UInt8",1
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT D >= N
-"UInt8",1
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N - DT64
-
-Code: 43: Illegal types Date and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
-
-Code: 43: Illegal types DateTime('Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
-
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
-------------------------------------------
-SELECT DT64 - N
-
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and Date of arguments of function minus.
-
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime('Europe/Minsk') of arguments of function minus.
-
-Code: 43: Illegal types DateTime64(3, 'Europe/Minsk') and DateTime64(3, 'Europe/Minsk') of arguments of function minus.
-------------------------------------------
-SELECT N != DT64
-"UInt8",1
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT DT64 != N
-"UInt8",1
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT N == DT64
-"UInt8",0
-"UInt8",0
-"UInt8",1
-------------------------------------------
-SELECT DT64 == N
-"UInt8",0
-"UInt8",0
-"UInt8",1
-------------------------------------------
-SELECT N <  DT64
-"UInt8",1
-"UInt8",1
-"UInt8",0
-------------------------------------------
-SELECT DT64 <  N
-"UInt8",0
-"UInt8",0
-"UInt8",0
-------------------------------------------
 SELECT N <= DT64
 "UInt8",1
 "UInt8",1
@@ -598,6 +580,26 @@ SELECT DT64 <= N
 "UInt8",0
 "UInt8",1
 ------------------------------------------
+SELECT N >  DT
+"UInt8",0
+"UInt8",0
+"UInt8",1
+------------------------------------------
+SELECT DT >  N
+"UInt8",1
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  D
+"UInt8",0
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT D >  N
+"UInt8",0
+"UInt8",0
+"UInt8",0
+------------------------------------------
 SELECT N >  DT64
 "UInt8",0
 "UInt8",0
@@ -606,6 +608,26 @@ SELECT N >  DT64
 SELECT DT64 >  N
 "UInt8",1
 "UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT N >= DT
+"UInt8",0
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT DT >= N
+"UInt8",1
+"UInt8",1
+"UInt8",0
+------------------------------------------
+SELECT N >= D
+"UInt8",1
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT D >= N
+"UInt8",1
+"UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= DT64
@@ -628,91 +650,6 @@ SELECT toUInt8(1) +  N
 "DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
-SELECT N -  toUInt8(1)
-"Date","2019-09-15"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT toUInt8(1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt8(1) == N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt8(1) != N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt8(1) <  N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt8(1) <= N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt8(1) >  N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toUInt8(1)
-
-Code: 43: Illegal types of arguments (Date, UInt8) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt8(1) >= N
-
-Code: 43: Illegal types of arguments (UInt8, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
 SELECT N +  toInt8(-1)
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
@@ -722,91 +659,6 @@ SELECT toInt8(-1) +  N
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT N -  toInt8(-1)
-"Date","2019-09-17"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
-------------------------------------------
-SELECT toInt8(-1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt8(-1) == N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt8(-1) != N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt8(-1) <  N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt8(-1) <= N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt8(-1) >  N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toInt8(-1)
-
-Code: 43: Illegal types of arguments (Date, Int8) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt8(-1) >= N
-
-Code: 43: Illegal types of arguments (Int8, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
 ------------------------------------------
 SELECT N +  toUInt16(1)
 "Date","2019-09-17"
@@ -818,91 +670,6 @@ SELECT toUInt16(1) +  N
 "DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
-SELECT N -  toUInt16(1)
-"Date","2019-09-15"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT toUInt16(1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt16(1) == N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt16(1) != N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt16(1) <  N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt16(1) <= N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt16(1) >  N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toUInt16(1)
-
-Code: 43: Illegal types of arguments (Date, UInt16) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt16(1) >= N
-
-Code: 43: Illegal types of arguments (UInt16, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
 SELECT N +  toInt16(-1)
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
@@ -912,91 +679,6 @@ SELECT toInt16(-1) +  N
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT N -  toInt16(-1)
-"Date","2019-09-17"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
-------------------------------------------
-SELECT toInt16(-1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt16(-1) == N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt16(-1) != N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt16(-1) <  N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt16(-1) <= N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt16(-1) >  N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toInt16(-1)
-
-Code: 43: Illegal types of arguments (Date, Int16) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt16(-1) >= N
-
-Code: 43: Illegal types of arguments (Int16, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
 ------------------------------------------
 SELECT N +  toUInt32(1)
 "Date","2019-09-17"
@@ -1008,91 +690,6 @@ SELECT toUInt32(1) +  N
 "DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
-SELECT N -  toUInt32(1)
-"Date","2019-09-15"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT toUInt32(1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt32(1) == N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt32(1) != N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt32(1) <  N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt32(1) <= N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt32(1) >  N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toUInt32(1)
-
-Code: 43: Illegal types of arguments (Date, UInt32) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt32(1) >= N
-
-Code: 43: Illegal types of arguments (UInt32, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
 SELECT N +  toInt32(-1)
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
@@ -1102,91 +699,6 @@ SELECT toInt32(-1) +  N
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT N -  toInt32(-1)
-"Date","2019-09-17"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
-------------------------------------------
-SELECT toInt32(-1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt32(-1) == N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt32(-1) != N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt32(-1) <  N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toInt32(-1) <= N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt32(-1) >  N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toInt32(-1)
-
-Code: 43: Illegal types of arguments (Date, Int32) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toInt32(-1) >= N
-
-Code: 43: Illegal types of arguments (Int32, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
 ------------------------------------------
 SELECT N +  toUInt64(1)
 "Date","2019-09-17"
@@ -1198,91 +710,6 @@ SELECT toUInt64(1) +  N
 "DateTime('Europe/Minsk')","2019-09-16 19:20:12"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
-SELECT N -  toUInt64(1)
-"Date","2019-09-15"
-"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
-"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
-------------------------------------------
-SELECT toUInt64(1) -  N
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
-------------------------------------------
-SELECT N == toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt64(1) == N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function equals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N != toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt64(1) != N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function notEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <  toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function less.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt64(1) <  N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function less.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N <= toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function lessOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT toUInt64(1) <= N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function lessOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT N >  toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function greater.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt64(1) >  N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function greater.
-"UInt8",0
-"UInt8",0
-------------------------------------------
-SELECT N >= toUInt64(1)
-
-Code: 43: Illegal types of arguments (Date, UInt64) of function greaterOrEquals.
-"UInt8",1
-"UInt8",1
-------------------------------------------
-SELECT toUInt64(1) >= N
-
-Code: 43: Illegal types of arguments (UInt64, Date) of function greaterOrEquals.
-"UInt8",0
-"UInt8",0
-------------------------------------------
 SELECT N +  toInt64(-1)
 "Date","2019-09-15"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
@@ -1293,6 +720,97 @@ SELECT toInt64(-1) +  N
 "DateTime('Europe/Minsk')","2019-09-16 19:20:10"
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
+SELECT N -  toUInt8(1)
+"Date","2019-09-15"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
+------------------------------------------
+SELECT toUInt8(1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toInt8(-1)
+"Date","2019-09-17"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
+------------------------------------------
+SELECT toInt8(-1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toUInt16(1)
+"Date","2019-09-15"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
+------------------------------------------
+SELECT toUInt16(1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toInt16(-1)
+"Date","2019-09-17"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
+------------------------------------------
+SELECT toInt16(-1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toUInt32(1)
+"Date","2019-09-15"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
+------------------------------------------
+SELECT toUInt32(1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toInt32(-1)
+"Date","2019-09-17"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
+------------------------------------------
+SELECT toInt32(-1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
+SELECT N -  toUInt64(1)
+"Date","2019-09-15"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
+------------------------------------------
+SELECT toUInt64(1) -  N
+
+Code: 43
+
+Code: 43
+
+Code: 43
+------------------------------------------
 SELECT N -  toInt64(-1)
 "Date","2019-09-17"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:12"
@@ -1300,81 +818,585 @@ SELECT N -  toInt64(-1)
 ------------------------------------------
 SELECT toInt64(-1) -  N
 
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
+Code: 43
 
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
+Code: 43
 
-Code: 43: Wrong order of arguments for function minus: argument of type Interval cannot be first..
+Code: 43
+------------------------------------------
+SELECT N == toUInt8(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt8(1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toInt8(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt8(-1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toUInt16(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt16(1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toInt16(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt16(-1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toUInt32(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt32(1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toInt32(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt32(-1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N == toUInt64(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt64(1) == N
+
+Code: 43
+"UInt8",0
+"UInt8",0
 ------------------------------------------
 SELECT N == toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function equals.
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) == N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function equals.
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
+SELECT N != toUInt8(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt8(1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toInt8(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt8(-1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toUInt16(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt16(1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toInt16(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt16(-1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toUInt32(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt32(1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toInt32(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt32(-1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N != toUInt64(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt64(1) != N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
 SELECT N != toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function notEquals.
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) != N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function notEquals.
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toUInt8(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt8(1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toInt8(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt8(-1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toUInt16(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt16(1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toInt16(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt16(-1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toUInt32(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt32(1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toInt32(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt32(-1) <  N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <  toUInt64(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt64(1) <  N
+
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function less.
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) <  N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function less.
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toUInt8(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt8(1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toInt8(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt8(-1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toUInt16(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt16(1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toInt16(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt16(-1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toUInt32(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt32(1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toInt32(-1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toInt32(-1) <= N
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT N <= toUInt64(1)
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT toUInt64(1) <= N
+
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function lessOrEquals.
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) <= N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function lessOrEquals.
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
+SELECT N >  toUInt8(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt8(1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toInt8(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt8(-1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toUInt16(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt16(1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toInt16(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt16(-1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toUInt32(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt32(1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toInt32(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt32(-1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >  toUInt64(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt64(1) >  N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
 SELECT N >  toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function greater.
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) >  N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function greater.
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toUInt8(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt8(1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toInt8(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt8(-1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toUInt16(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt16(1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toInt16(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt16(-1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toUInt32(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt32(1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toInt32(-1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toInt32(-1) >= N
+
+Code: 43
+"UInt8",0
+"UInt8",0
+------------------------------------------
+SELECT N >= toUInt64(1)
+
+Code: 43
+"UInt8",1
+"UInt8",1
+------------------------------------------
+SELECT toUInt64(1) >= N
+
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toInt64(-1)
 
-Code: 43: Illegal types of arguments (Date, Int64) of function greaterOrEquals.
+Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) >= N
 
-Code: 43: Illegal types of arguments (Int64, Date) of function greaterOrEquals.
+Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------

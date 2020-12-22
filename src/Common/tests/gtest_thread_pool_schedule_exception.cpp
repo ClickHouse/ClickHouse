@@ -20,7 +20,7 @@ static bool check()
             /// as soon as the throwing thread executed.
 
             /// This innocent thread may or may not be executed, the following possibilities exist:
-            /// 1. The throwing thread has already throwed exception and the attempt to schedule the innocent thread will rethrow it.
+            /// 1. The throwing thread has already thrown exception and the attempt to schedule the innocent thread will rethrow it.
             /// 2. The throwing thread has not executed, the innocent thread will be scheduled and executed.
             /// 3. The throwing thread has not executed, the innocent thread will be scheduled but before it will be executed,
             ///    the throwing thread will be executed and throw exception and it will prevent starting of execution of the innocent thread
