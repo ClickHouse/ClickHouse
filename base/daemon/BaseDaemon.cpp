@@ -944,13 +944,17 @@ void BaseDaemon::setupWatchdog()
             {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
             [](int sig, siginfo_t *, void *)
             {
-                /// Forward all signals except INT as it is send by shell to both processes when user press Ctrl+C.
+                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                /// and we process double delivery of this signal as immediate termination.
                 if (sig == SIGINT)
                     return;
 
                 const char * error_message = "Cannot forward signal to the child process.\n";
                 if (0 != ::kill(pid, sig))
-                    (void)write(STDERR_FILENO, error_message, strlen(error_message));
+                {
+                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                    (void)res;
+                }
             },
             nullptr);
 
