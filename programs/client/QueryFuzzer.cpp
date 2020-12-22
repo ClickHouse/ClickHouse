@@ -29,6 +29,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_DEEP_RECURSION;
+}
+
 Field QueryFuzzer::getRandomField(int type)
 {
     switch (type)
@@ -342,15 +347,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
     // Check for exceeding max depth.
     ScopedIncrement depth_increment(current_ast_depth);
-    if (current_ast_depth > 1000)
+    if (current_ast_depth > 500)
     {
-        // The AST is too deep (see the comment for current_ast_depth). Probably
-        // we don't have to print the tree because it's slow...
-        fmt::print(stderr, "The AST is too deep (depth {}, {} visited nodes)"
-            " :\n{}\n", current_ast_depth, debug_visited_nodes.size(),
-            (*debug_top_ast)->dumpTree());
-
-        return;
+        // The AST is too deep (see the comment for current_ast_depth). Throw
+        // an exception to fail fast and not use this query as an etalon, or we'll
+        // end up in a very slow and useless loop. It also makes sense to set it
+        // lower than the default max parse depth on the server (1000), so that
+        // we don't get the useless error about parse depth from the server either.
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "AST depth exceeded while fuzzing ({})", current_ast_depth);
     }
 
     // Check for loops.
