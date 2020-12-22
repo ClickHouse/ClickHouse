@@ -252,12 +252,12 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
 #endif
 }
 
-NO_SANITIZE_THREAD StackTrace::StackTrace()
+StackTrace::StackTrace()
 {
     tryCapture();
 }
 
-NO_SANITIZE_THREAD StackTrace::StackTrace(const ucontext_t & signal_context)
+StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     tryCapture();
 
@@ -295,17 +295,17 @@ void StackTrace::tryCapture()
 #endif
 }
 
-size_t NO_SANITIZE_THREAD StackTrace::getSize() const
+size_t StackTrace::getSize() const
 {
     return size;
 }
 
-size_t NO_SANITIZE_THREAD StackTrace::getOffset() const
+size_t StackTrace::getOffset() const
 {
     return offset;
 }
 
-const NO_SANITIZE_THREAD StackTrace::FramePointers & StackTrace::getFramePointers() const
+const StackTrace::FramePointers & StackTrace::getFramePointers() const
 {
     return frame_pointers;
 }
