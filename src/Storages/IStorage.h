@@ -87,7 +87,6 @@ public:
         : storage_id(std::move(storage_id_))
         , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
-    virtual ~IStorage() override = default;
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
