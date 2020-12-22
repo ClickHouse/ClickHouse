@@ -247,6 +247,10 @@ void AsynchronousMetrics::update()
         size_t number_of_databases = databases.size();
         size_t total_number_of_tables = 0;
 
+        size_t total_number_of_bytes = 0;
+        size_t total_number_of_rows = 0;
+        size_t total_number_of_parts = 0;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -295,6 +299,17 @@ void AsynchronousMetrics::update()
                 if (table_merge_tree)
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    const auto & settings = global_context.getSettingsRef();
+                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_merge_tree->getPartsCount();
+                }
+                if (table_replicated_merge_tree)
+                {
+                    const auto & settings = global_context.getSettingsRef();
+                    total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_replicated_merge_tree->getPartsCount();
                 }
             }
         }
@@ -314,6 +329,10 @@ void AsynchronousMetrics::update()
 
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
+
+        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
+        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
+        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
 
         auto get_metric_name = [](const String & name) -> const char *
         {
