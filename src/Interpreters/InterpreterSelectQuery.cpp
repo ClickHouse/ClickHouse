@@ -952,7 +952,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.need_aggregate)
             {
-               executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
                 /// We need to reset input order info, so that executeOrder can't use  it
                 query_info.input_order_info.reset();
             }
