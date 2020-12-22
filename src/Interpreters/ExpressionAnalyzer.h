@@ -62,7 +62,7 @@ struct ExpressionAnalyzerData
 
     bool has_window = false;
     WindowDescriptions window_descriptions;
-    WindowFunctionDescriptions window_functions;
+    WindowFunctionDescriptions window_function_descriptions;
     NamesAndTypesList window_columns;
 
     bool has_global_subqueries = false;
@@ -141,7 +141,6 @@ protected:
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
-    const std::vector<const ASTFunction *> & windowFunctions() const { return syntax->window_functions; }
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
 

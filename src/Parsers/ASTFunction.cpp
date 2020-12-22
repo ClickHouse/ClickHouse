@@ -475,21 +475,44 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     }
 
     settings.ostr << " OVER (";
+    appendWindowDescription(settings, state, nested_dont_need_parens);
+    settings.ostr << ")";
+}
+
+std::string ASTFunction::getWindowDescription() const
+{
+    WriteBufferFromOwnString ostr;
+    FormatSettings settings{ostr, true /* one_line */};
+    FormatState state;
+    FormatStateStacked frame;
+    appendWindowDescription(settings, state, frame);
+    return ostr.str();
+}
+
+void ASTFunction::appendWindowDescription(const FormatSettings & settings,
+    FormatState & state, FormatStateStacked frame) const
+{
+    if (!is_window_function)
+    {
+        return;
+    }
+
     if (window_partition_by)
     {
         settings.ostr << "PARTITION BY ";
-        window_partition_by->formatImpl(settings, state, nested_dont_need_parens);
+        window_partition_by->formatImpl(settings, state, frame);
     }
+
     if (window_partition_by && window_order_by)
     {
         settings.ostr << " ";
     }
+
     if (window_order_by)
     {
         settings.ostr << "ORDER BY ";
-        window_order_by->formatImpl(settings, state, nested_dont_need_parens);
+        window_order_by->formatImpl(settings, state, frame);
     }
-    settings.ostr << ")";
 }
 
 }
