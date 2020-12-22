@@ -195,14 +195,19 @@ public:
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** You may call this method if 'prepare' returned Async.
+    /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
-      * This method should return instantly and fire an event (or many events) when asynchronous job will be done.
-      * When the job is not done, method 'prepare' will return Wait and the user may block and wait for next event before checking again.
+      * This method should instantly return epollable file descriptor which will be readable when asynchronous job is done.
+      * When descriptor is readable, method `work` is called to continue data processing.
       *
-      * Note that it can fire many events in EventCounter while doing its job,
-      *  and you have to wait for next event (or do something else) every time when 'prepare' returned Wait.
+      * NOTE: it would be more logical to let `work()` return ASYNC status instead of prepare. This will get
+      * prepare() -> work() -> schedule() -> work() -> schedule() -> .. -> work() -> prepare()
+      * chain instead of
+      * prepare() -> work() -> prepare() -> schedule() -> work() -> prepare() -> schedule() -> .. -> work() -> prepare()
+      *
+      * It is expected that executor epoll using level-triggered notifications.
+      * Read all available data from descriptor before returning ASYNC.
       */
     virtual int schedule()
     {
