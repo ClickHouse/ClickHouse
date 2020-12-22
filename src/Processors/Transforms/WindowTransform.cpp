@@ -70,34 +70,28 @@ WindowTransform::~WindowTransform()
 void WindowTransform::transform(Chunk & chunk)
 {
     const size_t num_rows = chunk.getNumRows();
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto columns = chunk.detachColumns();
 
     for (auto & ws : workspaces)
     {
         ws.argument_columns.clear();
         for (const auto column_index : ws.argument_column_indices)
         {
-            ws.argument_columns.push_back(block.getColumns()[column_index].get());
+            ws.argument_columns.push_back(columns[column_index].get());
         }
 
-        // Create the resulting column.
-        ColumnWithTypeAndName column_description;
-        column_description.name = ws.window_function.column_name;
-        column_description.type
-            = ws.window_function.aggregate_function->getReturnType();
-        ws.result_column = column_description.type->createColumn();
-        column_description.column.reset(ws.result_column.get());
-
-        block.insert(column_description);
+        ws.result_column = ws.window_function.aggregate_function->getReturnType()
+            ->createColumn();
     }
 
     // We loop for all window functions for each row. Switching the loops might
     // be more efficient, because we would run less code and access less data in
     // the inner loop. If you change this, don't forget to fix the calculation of
-    // partition boundaries. Probably it has to be precalculated and stored as a
-    // UInt8 array. An interesting optimization would be to pass it as an extra
-    // column from the previous sorting step -- that step might need to make
-    // similar comparison anyway, if it's sorting only by the PARTITION BY columns.
+    // partition boundaries. Probably it has to be precalculated and stored as
+    // an array of offsets. An interesting optimization would be to pass it as
+    // an extra column from the previous sorting step -- that step might need to
+    // make similar comparison anyway, if it's sorting only by the PARTITION BY
+    // columns.
     for (size_t row = 0; row < num_rows; row++)
     {
         // Check whether the new partition has started. We have to reset the
@@ -115,7 +109,7 @@ void WindowTransform::transform(Chunk & chunk)
             partition_start_columns.clear();
             for (const auto i : partition_by_indices)
             {
-                partition_start_columns.push_back(block.getColumns()[i]);
+                partition_start_columns.push_back(columns[i]);
             }
             partition_start_row = row;
         }
@@ -127,7 +121,7 @@ void WindowTransform::transform(Chunk & chunk)
             for (; first_inequal_column < partition_start_columns.size();
                   ++first_inequal_column)
             {
-                const auto * current_column = block.getColumns()[
+                const auto * current_column = columns[
                     partition_by_indices[first_inequal_column]].get();
 
                 if (current_column->compareAt(row, partition_start_row,
@@ -145,7 +139,7 @@ void WindowTransform::transform(Chunk & chunk)
                 partition_start_columns.clear();
                 for (const auto i : partition_by_indices)
                 {
-                    partition_start_columns.push_back(block.getColumns()[i]);
+                    partition_start_columns.push_back(columns[i]);
                 }
                 partition_start_row = row;
             }
@@ -181,10 +175,10 @@ void WindowTransform::transform(Chunk & chunk)
     // processors modify the block. Workspaces live longer than individual blocks.
     for (auto & ws : workspaces)
     {
-        ws.result_column.detach();
+        columns.push_back(std::move(ws.result_column));
     }
 
-    chunk.setColumns(block.getColumns(), num_rows);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

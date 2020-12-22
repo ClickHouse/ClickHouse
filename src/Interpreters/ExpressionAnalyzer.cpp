@@ -988,7 +988,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         // Add empty INPUT with window function name.
         // It is an aggregate function, so it won't be added by getRootActions.
         ColumnWithTypeAndName col;
-        col.type = std::make_shared<DataTypeInt64>();
+        col.type = f.aggregate_function->getReturnType();
         col.column = col.type->createColumn();
         col.name = f.column_name;
 

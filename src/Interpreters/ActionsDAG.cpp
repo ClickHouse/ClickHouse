@@ -624,7 +624,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column '" + backQuote(res_elem.name) + "' in source stream",
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                                     ErrorCodes::THERE_IS_NO_COLUMN);
 
                 src_node = actions_dag->inputs[input.front()];
