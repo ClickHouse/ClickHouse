@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 struct Hash
 {
-    static ALWAYS_INLINE inline UInt64 ngramASCIIHash(const UInt8 * code_points)
+    static ALWAYS_INLINE inline UInt64 ngramASCIIHash(const UInt8 * code_points [[maybe_unused]])
     {
 #ifdef __SSE4_2__
         return _mm_crc32_u64(-1ULL, unalignedLoad<UInt32>(code_points));
@@ -35,7 +35,7 @@ struct Hash
 #endif
     }
 
-    static ALWAYS_INLINE inline UInt64 ngramUTF8Hash(const UInt32 * code_points)
+    static ALWAYS_INLINE inline UInt64 ngramUTF8Hash(const UInt32 * code_points [[maybe_unused]])
     {
         UInt64 crc = -1ULL;
 #ifdef __SSE4_2__
@@ -48,7 +48,7 @@ struct Hash
         return crc;
     }
 
-    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes, size_t size, size_t offset)
+    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes [[maybe_unused]], size_t size [[maybe_unused]], size_t offset [[maybe_unused]])
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
@@ -78,7 +78,7 @@ struct Hash
         return crc1 | (crc2 << 32u);
     }
 
-    static ALWAYS_INLINE inline UInt64 hashSum(const UInt8 * hashes, size_t K)
+    static ALWAYS_INLINE inline UInt64 hashSum(const UInt8 * hashes [[maybe_unused]], size_t K [[maybe_unused]])
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
@@ -93,7 +93,7 @@ struct Hash
         return crc1 | (crc2 << 32u);
     }
 
-    static ALWAYS_INLINE inline UInt64 hashSum(const UInt32 * hashes, size_t K)
+    static ALWAYS_INLINE inline UInt64 hashSum(const UInt32 * hashes [[maybe_unused]], size_t K [[maybe_unused]])
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
@@ -108,7 +108,7 @@ struct Hash
         return crc1 | (crc2 << 32u);
     }
 
-    static ALWAYS_INLINE inline UInt64 hashSum(const UInt64 * hashes, size_t K)
+    static ALWAYS_INLINE inline UInt64 hashSum(const UInt64 * hashes [[maybe_unused]], size_t K [[maybe_unused]])
     {
         UInt64 crc1 = -1ULL;
         UInt64 crc2 = -1ULL;
