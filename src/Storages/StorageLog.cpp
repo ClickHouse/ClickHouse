@@ -216,7 +216,7 @@ Chunk LogSource::generate()
         try
         {
             column = name_type.type->createColumn();
-            readData(name_type, column, max_rows_to_read, caches[name_type.getStorageName()]);
+            readData(name_type, column, max_rows_to_read, caches[name_type.getNameInStorage()]);
         }
         catch (Exception & e)
         {

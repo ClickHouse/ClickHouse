@@ -203,7 +203,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
 {
-    auto name_in_storage = required_column.getStorageName();
+    auto name_in_storage = required_column.getNameInStorage();
 
     decltype(columns_from_part.begin()) it;
     if (alter_conversions.isColumnRenamed(name_in_storage))

@@ -155,7 +155,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                 size_t column_size_before_reading = column->size();
 
                 readData(column_from_part, column, from_mark, *column_positions[pos],
-                    rows_to_read, read_only_offsets[pos], caches[column_from_part.getStorageName()]);
+                    rows_to_read, read_only_offsets[pos], caches[column_from_part.getNameInStorage()]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column < rows_to_read)
@@ -215,12 +215,12 @@ void MergeTreeReaderCompact::readData(
 
     if (name_and_type.isSubcolumn())
     {
-        const auto & storage_type = name_and_type.getStorageType();
-        ColumnPtr temp_column = storage_type->createColumn();
+        auto type_in_storage = name_and_type.getTypeInStorage();
+        ColumnPtr temp_column = type_in_storage->createColumn();
 
-        storage_type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        storage_type->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
-        column = storage_type->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+        type_in_storage->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type_in_storage->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
+        column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
     }
     else
     {

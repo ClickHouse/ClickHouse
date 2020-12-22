@@ -119,9 +119,9 @@ protected:
 
         for (const auto & elem : column_names_and_types)
         {
-            const auto & current_column = buffer.data.getByName(elem.getStorageName()).column;
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
             if (elem.isSubcolumn())
-                columns.emplace_back(elem.getStorageType()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
             else
                 columns.emplace_back(std::move(current_column));
         }

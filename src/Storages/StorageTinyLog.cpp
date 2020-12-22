@@ -201,7 +201,7 @@ Chunk TinyLogSource::generate()
         try
         {
             column = name_type.type->createColumn();
-            readData(name_type, column, block_size, caches[name_type.getStorageName()]);
+            readData(name_type, column, block_size, caches[name_type.getNameInStorage()]);
         }
         catch (Exception & e)
         {

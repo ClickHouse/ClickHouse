@@ -89,7 +89,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_from_part.getStorageName()];
+                auto & cache = caches[column_from_part.getNameInStorage()];
 
                 readData(column_from_part, column, from_mark, continue_reading, max_rows_to_read, cache);
 

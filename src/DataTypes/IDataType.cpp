@@ -199,13 +199,13 @@ static String getNameForSubstreamPath(
 
 String IDataType::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
 {
-    auto storage_name = column.getStorageName();
-    auto nested_storage_name = Nested::extractTableName(column.getStorageName());
+    auto name_in_storage = column.getNameInStorage();
+    auto nested_storage_name = Nested::extractTableName(name_in_storage);
 
-    if (storage_name != nested_storage_name && (path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes))
-        storage_name = nested_storage_name;
+    if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes))
+        name_in_storage = nested_storage_name;
 
-    auto stream_name = escapeForFileName(storage_name);
+    auto stream_name = escapeForFileName(name_in_storage);
     return getNameForSubstreamPath(std::move(stream_name), path, true);
 }
 
