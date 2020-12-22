@@ -3,4 +3,4 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-python $CURDIR/00991_live_view_watch_http.python
+python3 $CURDIR/00991_live_view_watch_http.python

@@ -17,12 +17,12 @@ ClickHouse soutient le travail avec plusieurs géobases alternatives (hiérarchi
 
 Le ‘clickhouse-server’ config spécifie le fichier avec l'échelon régional::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Outre ce fichier, il recherche également les fichiers à proximité qui ont le symbole \_ et tout suffixe ajouté au nom (avant l'extension de fichier).
+Outre ce fichier, il recherche également les fichiers à proximité qui ont le symbole _ et tout suffixe ajouté au nom (avant l'extension de fichier).
 Par exemple, il trouvera également le fichier `/opt/geo/regions_hierarchy_ua.txt` si présente.
 
 `ua` est appelée la clé du dictionnaire. Pour un dictionnaire sans suffixe, la clé est une chaîne vide.
 
-Tous les dictionnaires sont rechargés dans l'exécution (une fois toutes les secondes, comme défini dans le paramètre de configuration builtin\_dictionaries\_reload\_interval, ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles est définie une fois, lorsque le serveur démarre.
+Tous les dictionnaires sont rechargés dans l'exécution (une fois toutes les secondes, comme défini dans le paramètre de configuration builtin_dictionaries_reload_interval, ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles est définie une fois, lorsque le serveur démarre.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Exemple:
@@ -107,7 +107,7 @@ Exemple: `regionToCountry(toUInt32(213)) = 225` convertit Moscou (213) en Russie
 Convertit une région en continent. Dans tous les autres cas, cette fonction est la même que ‘regionToCity’.
 Exemple: `regionToContinent(toUInt32(213)) = 10001` convertit Moscou (213) en Eurasie (10001).
 
-### regionToTopContinent (\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
 Trouve le continent le plus élevé dans la hiérarchie de la région.
 

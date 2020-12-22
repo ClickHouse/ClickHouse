@@ -17,6 +17,7 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
@@ -31,20 +32,30 @@ void callSelectMemberFunctionWithTupleArgument(Tuple & tuple, Args && ... args)
         callSelectMemberFunctionWithTupleArgument<Base, Tuple, index + 1>(tuple, args ..., std::get<index>(tuple));
 }
 
-template <typename Base, typename ... Args>
-struct ArraySourceSelectorVisitor : public ArraySourceVisitorImpl<ArraySourceSelectorVisitor<Base, Args ...>>
+template <typename Base, typename Tuple, int index, typename ... Args>
+void callSelectSource(bool is_const, bool is_nullable, Tuple & tuple, Args && ... args)
 {
-    explicit ArraySourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
+    if constexpr (index == std::tuple_size<Tuple>::value)
+        Base::selectSource(is_const, is_nullable, args ...);
+    else
+        callSelectSource<Base, Tuple, index + 1>(is_const, is_nullable, tuple, args ..., std::get<index>(tuple));
+}
+
+template <typename Base, typename ... Args>
+struct ArraySourceSelectorVisitor final : public ArraySourceVisitorImpl<ArraySourceSelectorVisitor<Base, Args ...>>
+{
+    explicit ArraySourceSelectorVisitor(IArraySource & source, Args && ... args) : packed_args(args ...), array_source(source) {}
 
     using Tuple = std::tuple<Args && ...>;
 
     template <typename Source>
     void visitImpl(Source & source)
     {
-        callSelectMemberFunctionWithTupleArgument<Base, Tuple, 0>(packed_args, source);
+        callSelectSource<Base, Tuple, 0>(array_source.isConst(), array_source.isNullable(), packed_args, source);
     }
 
     Tuple packed_args;
+    IArraySource & array_source;
 };
 
 template <typename Base>
@@ -53,14 +64,14 @@ struct ArraySourceSelector
     template <typename ... Args>
     static void select(IArraySource & source, Args && ... args)
     {
-        ArraySourceSelectorVisitor<Base, Args ...> visitor(args ...);
+        ArraySourceSelectorVisitor<Base, Args ...> visitor(source, args ...);
         source.accept(visitor);
     }
 };
 
 
 template <typename Base, typename ... Args>
-struct ArraySinkSelectorVisitor : public ArraySinkVisitorImpl<ArraySinkSelectorVisitor<Base, Args ...>>
+struct ArraySinkSelectorVisitor final : public ArraySinkVisitorImpl<ArraySinkSelectorVisitor<Base, Args ...>>
 {
     explicit ArraySinkSelectorVisitor(Args && ... args) : packed_args(args ...) {}
 
@@ -86,56 +97,6 @@ struct ArraySinkSelector
     }
 };
 
-
-template <typename Base, typename ... Args>
-struct ValueSourceSelectorVisitor : public ValueSourceVisitorImpl<ValueSourceSelectorVisitor<Base, Args ...>>
-{
-    explicit ValueSourceSelectorVisitor(Args && ... args) : packed_args(args ...) {}
-
-    using Tuple = std::tuple<Args && ...>;
-
-    template <typename Source>
-    void visitImpl(Source & source)
-    {
-        callSelectMemberFunctionWithTupleArgument<Base, Tuple, 0>(packed_args, source);
-    }
-
-    Tuple packed_args;
-};
-
-template <typename Base>
-struct ValueSourceSelector
-{
-    template <typename ... Args>
-    static void select(IValueSource & source, Args && ... args)
-    {
-        ValueSourceSelectorVisitor<Base, Args ...> visitor(args ...);
-        source.accept(visitor);
-    }
-};
-
-template <typename Base>
-struct ArraySinkSourceSelector
-{
-    template <typename ... Args>
-    static void select(IArraySource & source, IArraySink & sink, Args && ... args)
-    {
-        ArraySinkSelector<Base>::select(sink, source, args ...);
-    }
-
-    template <typename Sink, typename ... Args>
-    static void selectImpl(Sink && sink, IArraySource & source, Args && ... args)
-    {
-        ArraySourceSelector<Base>::select(source, sink, args ...);
-    }
-
-    template <typename Source, typename Sink, typename ... Args>
-    static void selectImpl(Source && source, Sink && sink, Args && ... args)
-    {
-        Base::selectSourceSink(source, sink, args ...);
-    }
-};
-
 template <typename Base>
 struct ArraySourcePairSelector
 {
@@ -146,15 +107,17 @@ struct ArraySourcePairSelector
     }
 
     template <typename FirstSource, typename ... Args>
-    static void selectImpl(FirstSource && first, IArraySource & second, Args && ... args)
+    static void selectSource(bool is_const, bool is_nullable, FirstSource && first, IArraySource & second, Args && ... args)
     {
-        ArraySourceSelector<Base>::select(second, first, args ...);
+        ArraySourceSelector<Base>::select(second, is_const, is_nullable, first, args ...);
     }
 
     template <typename SecondSource, typename FirstSource, typename ... Args>
-    static void selectImpl(SecondSource && second, FirstSource && first, Args && ... args)
+    static void selectSource(bool is_second_const, bool is_second_nullable, SecondSource && second,
+                             bool is_first_const, bool is_first_nullable, FirstSource && first, Args && ... args)
     {
-        Base::selectSourcePair(first, second, args ...);
+        Base::selectSourcePair(is_first_const, is_first_nullable, first,
+                               is_second_const, is_second_nullable, second, args ...);
     }
 };
 
@@ -201,6 +164,7 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
     }
 };
 
+#pragma GCC visibility pop
 }
 
 }

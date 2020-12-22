@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <re2/re2.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -30,8 +31,15 @@ void ASTColumnsMatcher::updateTreeHashImpl(SipHash & hash_state) const
 
 void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "("
-                  << quoteString(original_pattern) << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    if (column_list)
+    {
+        frame.expression_list_prepend_whitespace = false;
+        column_list->formatImpl(settings, state, frame);
+    }
+    else
+        settings.ostr << quoteString(original_pattern);
+    settings.ostr << ")";
     for (ASTs::const_iterator it = children.begin() + 1; it != children.end(); ++it)
     {
         settings.ostr << ' ';

@@ -2,8 +2,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <iomanip>
-#include <sstream>
 
 namespace DB
 {
@@ -95,7 +93,7 @@ void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, settings); });
 }
 

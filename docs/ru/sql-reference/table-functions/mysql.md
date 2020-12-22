@@ -1,3 +1,8 @@
+---
+toc_priority: 42
+toc_title: mysql
+---
+
 # mysql {#mysql}
 
 Позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.

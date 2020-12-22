@@ -16,12 +16,12 @@ toc_title: "\u5BFC\u8A00"
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
--   [创建表为\<table\_function()\>](../statements/create.md#create-table-query) 查询。
+-   [创建表为\<table_function()\>](../statements/create.md#create-table-query) 查询。
 
         It's one of the methods of creating a table.
 
 !!! warning "警告"
-    你不能使用表函数，如果 [allow\_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) 设置被禁用。
+    你不能使用表函数，如果 [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) 设置被禁用。
 
 | 功能               | 产品描述                                                                                               |
 |--------------------|--------------------------------------------------------------------------------------------------------|

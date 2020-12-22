@@ -10,11 +10,11 @@
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <DataStreams/BlocksListBlockInputStream.h>
+
 
 namespace DB
 {
@@ -180,12 +180,16 @@ class MergeJoinCursor
 public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
         : impl(SortCursorImpl(block, desc_))
-    {}
+    {
+        /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
+        if (impl.permutation)
+            throw Exception("Logical error: MergeJoinCursor doesn't support permutation", ErrorCodes::LOGICAL_ERROR);
+    }
 
-    size_t position() const { return impl.pos; }
+    size_t position() const { return impl.getRow(); }
     size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.pos >= impl.rows; }
-    void nextN(size_t num) { impl.pos += num; }
+    bool atEnd() const { return impl.getRow() >= impl.rows; }
+    void nextN(size_t num) { impl.getPosRef() += num; }
 
     void setCompareNullability(const MergeJoinCursor & rhs)
     {
@@ -254,10 +258,10 @@ private:
             else if (cmp > 0)
                 rhs.impl.next();
             else if (!cmp)
-                return Range{impl.pos, rhs.impl.pos, getEqualLength(), rhs.getEqualLength()};
+                return Range{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return Range{impl.pos, rhs.impl.pos, 0, 0};
+        return Range{impl.getRow(), rhs.impl.getRow(), 0, 0};
     }
 
     template <bool left_nulls, bool right_nulls>
@@ -268,7 +272,7 @@ private:
             const auto * left_column = impl.sort_columns[i];
             const auto * right_column = rhs.impl.sort_columns[i];
 
-            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.pos, rhs.impl.pos);
+            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
             if (res)
                 return res;
         }
@@ -278,11 +282,11 @@ private:
     /// Expects !atEnd()
     size_t getEqualLength()
     {
-        size_t pos = impl.pos + 1;
+        size_t pos = impl.getRow() + 1;
         for (; pos < impl.rows; ++pos)
             if (!samePrev(pos))
                 break;
-        return pos - impl.pos;
+        return pos - impl.getRow();
     }
 
     /// Expects lhs_pos > 0
@@ -516,7 +520,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     pipeline.init(std::move(source));
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
-    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0));
+    pipeline.addTransform(std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
     auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
@@ -602,7 +606,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     {
         JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
         materializeBlockInplace(block);
-        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft());
+        JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
 
         sortBlock(block, left_sort_description);
 
@@ -636,6 +640,8 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     /// Back thread even with no data. We have some unfinished data in buffer.
     if (!not_processed && left_blocks_buffer)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
+
+    JoinCommon::restoreLowCardinalityInplace(block);
 }
 
 template <bool in_memory, bool is_all>

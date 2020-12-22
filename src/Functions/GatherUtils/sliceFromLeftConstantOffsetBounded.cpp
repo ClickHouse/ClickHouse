@@ -6,19 +6,54 @@
 
 namespace DB::GatherUtils
 {
-struct SliceFromLeftConstantOffsetBoundedSelectArraySource
-    : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetBoundedSelectArraySource>
+
+namespace
 {
-    template <typename Source, typename Sink>
-    static void selectSourceSink(Source && source, Sink && sink, size_t & offset, ssize_t & length)
+
+struct SliceFromLeftConstantOffsetBoundedSelectArraySource
+    : public ArraySourceSelector<SliceFromLeftConstantOffsetBoundedSelectArraySource>
+{
+    template <typename Source>
+    static void selectSource(bool is_const, bool is_nullable, Source && source, size_t & offset, ssize_t & length, ColumnArray::MutablePtr & result)
     {
-        sliceFromLeftConstantOffsetBounded(source, sink, offset, length);
+        using SourceType = typename std::decay<Source>::type;
+        using Sink = typename SourceType::SinkType;
+
+        if (is_nullable)
+        {
+            using NullableSource = NullableArraySource<SourceType>;
+            using NullableSink = typename NullableSource::SinkType;
+
+            auto & nullable_source = static_cast<NullableSource &>(source);
+
+            result = ColumnArray::create(nullable_source.createValuesColumn());
+            NullableSink sink(result->getData(), result->getOffsets(), source.getColumnSize());
+
+            if (is_const)
+                sliceFromLeftConstantOffsetBounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset, length);
+            else
+                sliceFromLeftConstantOffsetBounded(static_cast<NullableSource &>(source), sink, offset, length);
+        }
+        else
+        {
+            result = ColumnArray::create(source.createValuesColumn());
+            Sink sink(result->getData(), result->getOffsets(), source.getColumnSize());
+
+            if (is_const)
+                sliceFromLeftConstantOffsetBounded(static_cast<ConstSource<SourceType> &>(source), sink, offset, length);
+            else
+                sliceFromLeftConstantOffsetBounded(source, sink, offset, length);
+        }
     }
 };
 
-void sliceFromLeftConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length)
+}
+
+ColumnArray::MutablePtr sliceFromLeftConstantOffsetBounded(IArraySource & src, size_t offset, ssize_t length)
 {
-    SliceFromLeftConstantOffsetBoundedSelectArraySource::select(src, sink, offset, length);
+    ColumnArray::MutablePtr res;
+    SliceFromLeftConstantOffsetBoundedSelectArraySource::select(src, offset, length, res);
+    return res;
 }
 }
 

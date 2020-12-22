@@ -303,9 +303,9 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
                 OptionDescribe("ENABLE KEYS", "enable_keys", std::make_shared<ParserAlwaysTrue>()),
                 OptionDescribe("DISABLE KEYS", "enable_keys", std::make_shared<ParserAlwaysFalse>()),
                 /// TODO: with collate
-                OptionDescribe("CONVERT TO CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
-                OptionDescribe("CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
-                OptionDescribe("DEFAULT CHARACTER SET", "charset", std::make_shared<ParserCharsetName>()),
+                OptionDescribe("CONVERT TO CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
+                OptionDescribe("CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
+                OptionDescribe("DEFAULT CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
                 OptionDescribe("LOCK", "lock", std::make_shared<ParserIdentifier>())
             }
         };

@@ -16,7 +16,7 @@ class InDepthNodeVisitor
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitor(Data & data_, std::ostream * ostr_ = nullptr)
+    InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
@@ -29,7 +29,15 @@ public:
         if constexpr (!_top_to_bottom)
             visitChildren(ast);
 
-        Matcher::visit(ast, data);
+        try
+        {
+            Matcher::visit(ast, data);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While processing {}", ast->formatForErrorMessage());
+            throw;
+        }
 
         if constexpr (_top_to_bottom)
             visitChildren(ast);
@@ -38,7 +46,7 @@ public:
 private:
     Data & data;
     size_t visit_depth;
-    std::ostream * ostr;
+    WriteBuffer * ostr;
 
     void visitChildren(T & ast)
     {

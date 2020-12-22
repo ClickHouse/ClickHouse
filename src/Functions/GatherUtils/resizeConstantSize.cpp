@@ -7,6 +7,9 @@
 namespace DB::GatherUtils
 {
 
+namespace
+{
+
 struct ArrayResizeConstant : public ArrayAndValueSourceSelectorBySink<ArrayResizeConstant>
 {
     template <typename ArraySource, typename ValueSource, typename Sink>
@@ -17,6 +20,7 @@ struct ArrayResizeConstant : public ArrayAndValueSourceSelectorBySink<ArrayResiz
     }
 };
 
+}
 
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size)
 {

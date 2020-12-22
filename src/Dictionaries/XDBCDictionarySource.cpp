@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -120,7 +121,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
     , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
 {
     bridge_url = bridge_helper->getMainURI();
 

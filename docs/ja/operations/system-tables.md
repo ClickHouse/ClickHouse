@@ -13,7 +13,7 @@ toc_title: "\u30B7\u30B9\u30C6\u30E0\u8868"
 システムテーブルは読み取り専用です。
 彼らはに位置しています ‘system’ データベース。
 
-## システムasynchronous\_metrics {#system_tables-asynchronous_metrics}
+## システムasynchronous_metrics {#system_tables-asynchronous_metrics}
 
 バックグラウンドで定期的に計算される指標が含まれます。 例えば、使用中のRAMの量。
 
@@ -48,7 +48,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [監視](monitoring.md) — Base concepts of ClickHouse monitoring.
 -   [システムメトリック](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [システムイベント](#system_tables-events) — Contains a number of events that have occurred.
--   [システムmetric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [システムmetric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## システムクラスタ {#system-clusters}
 
@@ -72,8 +72,8 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 **も参照。**
 
 -   [分散テーブルエンジン](../engines/table-engines/special/distributed.md)
--   [distributed\_replica\_error\_cap設定](settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life設定](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [distributed_replica_error_cap設定](settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed_replica_error_half_life設定](settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## システム列 {#system-columns}
 
@@ -145,7 +145,7 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 各データベースのサーバーについて知っていて対応するエントリの表に示す。
 このシステムテーブルは、 `SHOW DATABASES` クエリ。
 
-## システムdetached\_parts {#system_tables-detached_parts}
+## システムdetached_parts {#system_tables-detached_parts}
 
 についての情報が含まれて外部 [メルゲツリー](../engines/table-engines/mergetree-family/mergetree.md) テーブル その `reason` column部品が切り離された理由を指定します。 ユーザーが取り外した部品の場合、その理由は空です。 このような部品は、 [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) コマンド その他の列の説明については、 [システム部品](#system_tables-parts). パーツ名が無効な場合、一部のカラムの値は次のようになります `NULL`. このような部分は、以下で削除できます [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
@@ -239,9 +239,9 @@ SELECT * FROM system.events LIMIT 5
 
 **も参照。**
 
--   [システムasynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [システムasynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [システムメトリック](#system_tables-metrics) — Contains instantly calculated metrics.
--   [システムmetric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [システムmetric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [監視](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## システム関数 {#system-functions}
@@ -253,9 +253,9 @@ SELECT * FROM system.events LIMIT 5
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## システムgraphite\_retentions {#system-graphite-retentions}
+## システムgraphite_retentions {#system-graphite-retentions}
 
-パラメ [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) テーブルで使用される [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) エンジンだ
+パラメ [graphite_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) テーブルで使用される [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) エンジンだ
 
 列:
 
@@ -324,12 +324,12 @@ SELECT * FROM system.metrics LIMIT 10
 
 **も参照。**
 
--   [システムasynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [システムasynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [システムイベント](#system_tables-events) — Contains a number of events that occurred.
--   [システムmetric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [システムmetric_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [監視](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## システムmetric\_log {#system_tables-metric_log}
+## システムmetric_log {#system_tables-metric_log}
 
 を含む履歴メトリクスの値からテーブル `system.metrics` と `system.events`、定期的にディスクにフラッシュ。
 メトリック履歴の収集を有効にするには `system.metric_log`,作成 `/etc/clickhouse-server/config.d/metric_log.xml` 次の内容を使って:
@@ -380,7 +380,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **も参照。**
 
--   [システムasynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [システムasynchronous_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
 -   [システムイベント](#system_tables-events) — Contains a number of events that occurred.
 -   [システムメトリック](#system_tables-metrics) — Contains instantly calculated metrics.
 -   [監視](monitoring.md) — Base concepts of ClickHouse monitoring.
@@ -391,7 +391,7 @@ CurrentMetric_ReplicatedChecks:                             0
 このテーブルは、テストのため、またはブルートフォース検索を行う必要がある場合に使用できます。
 この表からの読み取りは並列化されません。
 
-## システムnumbers\_mt {#system-numbers-mt}
+## システムnumbers_mt {#system-numbers-mt}
 
 と同じ ‘system.numbers’ しかし、読み取りは並列処理されます。 番号は任意の順序で返すことができます。
 テストに使用されます。
@@ -483,9 +483,9 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
-## システムpart\_log {#system_tables-part-log}
+## システムpart_log {#system_tables-part-log}
 
-その `system.part_log` テーブルが作成されるのは、 [part\_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) サーバ設定を指定します。
+その `system.part_log` テーブルが作成されるのは、 [part_log](server-configuration-parameters/settings.md#server_configuration_parameters-part-log) サーバ設定を指定します。
 
 このテーブルについての情報が含まれてイベントが発生した [データパーツ](../engines/table-engines/mergetree-family/custom-partitioning-key.md) で [メルゲツリー](../engines/table-engines/mergetree-family/mergetree.md) データの追加やマージなどのファミリテーブル。
 
@@ -528,11 +528,11 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) 設定。
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max_memory_usage](../operations/settings/query-complexity.md#settings_max_memory_usage) 設定。
 -   `query` (String) – The query text. For `INSERT`,挿入するデータは含まれません。
 -   `query_id` (String) – Query ID, if defined.
 
-## システムtext\_log {#system_tables-text_log}
+## システムtext_log {#system_tables-text_log}
 
 を含むログイン作品の応募がありました。 ログレベルがこのテーブルで限定 `text_log.level` サーバー設定。
 
@@ -559,16 +559,16 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `source_file` (`LowCardinality(String)`)-ロギングが行われたソースファイル。
 -   `source_line` (`UInt64`)-ロギングが行われたソース行。
 
-## システムquery\_log {#system_tables-query_log}
+## システムquery_log {#system_tables-query_log}
 
 クエリの実行に関する情報が含まれます。 クエリごとに、処理開始時間、処理時間、エラーメッセージおよびその他の情報を確認できます。
 
 !!! note "注"
     テーブルには以下の入力データは含まれません `INSERT` クエリ。
 
-ClickHouseはこのテーブルを作成します。 [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) serverパラメータを指定します。 このパラメーターは、クエリがログインするテーブルのログ間隔や名前などのログルールを設定します。
+ClickHouseはこのテーブルを作成します。 [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) serverパラメータを指定します。 このパラメーターは、クエリがログインするテーブルのログ間隔や名前などのログルールを設定します。
 
-クエリロギングを有効にするには、 [log\_queries](settings/settings.md#settings-log-queries) パラメータは1。 詳細については、 [設定](settings/settings.md) セクション
+クエリロギングを有効にするには、 [log_queries](settings/settings.md#settings-log-queries) パラメータは1。 詳細については、 [設定](settings/settings.md) セクション
 
 その `system.query_log` テーブルレジスタの種類は問合せ:
 
@@ -636,22 +636,22 @@ ClickHouseはこのテーブルを作成します。 [query\_log](server-configu
 2.  クエリ処理中にエラーが発生した場合は、タイプ1と4のイベントが作成されます。
 3.  クエリを起動する前にエラーが発生した場合は、タイプ3の単一のイベントが作成されます。
 
-既定では、ログは7.5秒間隔でテーブルに追加されます。 この間隔は [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバ設定(参照 `flush_interval_milliseconds` 変数）。 ログをメモリバッファからテーブルに強制的にフラッシュするには、 `SYSTEM FLUSH LOGS` クエリ。
+既定では、ログは7.5秒間隔でテーブルに追加されます。 この間隔は [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバ設定(参照 `flush_interval_milliseconds` 変数）。 ログをメモリバッファからテーブルに強制的にフラッシュするには、 `SYSTEM FLUSH LOGS` クエリ。
 
 テーブルを手動で削除すると、その場で自動的に作成されます。 以前のログはすべて削除されます。
 
 !!! note "注"
     ログの保存期間は無制限です。 ログはテーブルから自動的には削除されません。 古いログの削除を自分で整理する必要があります。
 
-パーティショニングキーを指定できます。 `system.query_log` のテーブル [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバ設定(参照 `partition_by` 変数）。
+パーティショニングキーを指定できます。 `system.query_log` のテーブル [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバ設定(参照 `partition_by` 変数）。
 
-## システムquery\_thread\_log {#system_tables-query-thread-log}
+## システムquery_thread_log {#system_tables-query-thread-log}
 
 のテーブルについての情報が含まれてそれぞれの検索キーワード実行スレッド.
 
-ClickHouseはこのテーブルを作成します。 [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) serverパラメータを指定します。 このパラメーターは、クエリがログインするテーブルのログ間隔や名前などのログルールを設定します。
+ClickHouseはこのテーブルを作成します。 [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) serverパラメータを指定します。 このパラメーターは、クエリがログインするテーブルのログ間隔や名前などのログルールを設定します。
 
-クエリロギングを有効にするには、 [log\_query\_threads](settings/settings.md#settings-log-query-threads) パラメータは1。 詳細については、 [設定](settings/settings.md) セクション
+クエリロギングを有効にするには、 [log_query_threads](settings/settings.md#settings-log-query-threads) パラメータは1。 詳細については、 [設定](settings/settings.md) セクション
 
 列:
 
@@ -701,20 +701,20 @@ ClickHouseはこのテーブルを作成します。 [query\_thread\_log](server
 -   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [システムイベント](#system_tables-events)
 -   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` 列。
 
-既定では、ログは7.5秒間隔でテーブルに追加されます。 この間隔は [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバ設定(参照 `flush_interval_milliseconds` 変数）。 ログをメモリバッファからテーブルに強制的にフラッシュするには、 `SYSTEM FLUSH LOGS` クエリ。
+既定では、ログは7.5秒間隔でテーブルに追加されます。 この間隔は [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバ設定(参照 `flush_interval_milliseconds` 変数）。 ログをメモリバッファからテーブルに強制的にフラッシュするには、 `SYSTEM FLUSH LOGS` クエリ。
 
 テーブルを手動で削除すると、その場で自動的に作成されます。 以前のログはすべて削除されます。
 
 !!! note "注"
     ログの保存期間は無制限です。 ログはテーブルから自動的には削除されません。 古いログの削除を自分で整理する必要があります。
 
-パーティショニングキーを指定できます。 `system.query_thread_log` のテーブル [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバ設定(参照 `partition_by` 変数）。
+パーティショニングキーを指定できます。 `system.query_thread_log` のテーブル [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバ設定(参照 `partition_by` 変数）。
 
-## システムtrace\_log {#system_tables-trace_log}
+## システムtrace_log {#system_tables-trace_log}
 
 を含むスタックトレースの収集、サンプリングクロファイラ.
 
-ClickHouseはこのテーブルを作成します。 [trace\_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバの設定が設定されます。 また、 [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) と [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) 設定は設定する必要があります。
+ClickHouseはこのテーブルを作成します。 [trace_log](server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) サーバの設定が設定されます。 また、 [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) と [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) 設定は設定する必要があります。
 
 ログを分析するには、 `addressToLine`, `addressToSymbol` と `demangle` イントロスペクション関数。
 
@@ -737,7 +737,7 @@ ClickHouseはこのテーブルを作成します。 [trace\_log](server-configu
 
 -   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id` ([文字列](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) システムテーブル。
+-   `query_id` ([文字列](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) システムテーブル。
 
 -   `trace` ([配列(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
@@ -824,7 +824,7 @@ active_replicas:            2
 -   `parts_to_check` (`UInt32`)-検証のためのキュー内のデータ部分の数。 破損の疑いがある場合は、部品を検証キューに入れます。
 -   `zookeeper_path` (`String`）-ZooKeeperのテーブルデータへのパス。
 -   `replica_name` (`String`）-飼育係のレプリカ名。 同じテーブルの異なるレプリカの名前は異なります。
--   `replica_path` (`String`）-ZooKeeperのレプリカデータへのパス。 連結と同じ ‘zookeeper\_path/replicas/replica\_path’.
+-   `replica_path` (`String`）-ZooKeeperのレプリカデータへのパス。 連結と同じ ‘zookeeper_path/replicas/replica_path’.
 -   `columns_version` (`Int32`)-テーブル構造のバージョン番号。 変更が実行された回数を示します。 場合にレプリカは異なるバージョンで一部のレプリカさんのすべての変更はまだない。
 -   `queue_size` (`UInt32`)-実行待ちの操作のキューのサイズ。 操作には、データのブロックの挿入、マージ、その他の特定の操作が含まれます。 それは通常と一致します `future_parts`.
 -   `inserts_in_queue` (`UInt32`)-必要なデータブロックの挿入数。 挿入は通常、かなり迅速に複製されます。 この数が大きい場合は、何かが間違っていることを意味します。
@@ -845,7 +845,7 @@ active_replicas:            2
 -   `active_replicas` (`UInt8`)-ZooKeeperにセッションがあるこのテーブルのレプリカの数(つまり、機能しているレプリカの数)。
 
 すべての列を要求すると、ZooKeeperからのいくつかの読み取りが行ごとに行われるため、テーブルは少し遅く動作する可能性があります。
-最後の4つの列（log\_max\_index、log\_pointer、total\_replicas、active\_replicas）を要求しないと、テーブルはすぐに機能します。
+最後の4つの列（log_max_index、log_pointer、total_replicas、active_replicas）を要求しないと、テーブルはすぐに機能します。
 
 たとえば、次のようにすべてが正常に動作していることを確認できます:
 
@@ -932,7 +932,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [クエリの権限](settings/permissions-for-queries.md#settings_readonly)
 -   [設定の制約](settings/constraints-on-settings.md)
 
-## システムtable\_engines {#system.table_engines}
+## システムtable_engines {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐
@@ -943,7 +943,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 └────────────────────────┴─────────────┘
 ```
 
-## システムmerge\_tree\_settings {#system-merge_tree_settings}
+## システムmerge_tree_settings {#system-merge_tree_settings}
 
 の設定に関する情報が含まれます `MergeTree` テーブル
 
@@ -955,7 +955,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-## システムtable\_engines {#system-table-engines}
+## システムtable_engines {#system-table-engines}
 
 を含むの記述のテーブルエンジンをサポートサーバーとその特徴を支援す。
 
@@ -1118,25 +1118,25 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 **データ**, **テーブル** -突然変異が適用されたデータベースとテーブルの名前。
 
-**mutation\_id** -突然変異のID。 レプリケートされたテーブルの場合、これらのIdは `<table_path_in_zookeeper>/mutations/` 飼育係のディレクトリ。 未複製テーブルの場合、Idはテーブルのデータディレクトリ内のファイル名に対応します。
+**mutation_id** -突然変異のID。 レプリケートされたテーブルの場合、これらのIdは `<table_path_in_zookeeper>/mutations/` 飼育係のディレクトリ。 未複製テーブルの場合、Idはテーブルのデータディレクトリ内のファイル名に対応します。
 
 **コマンド** -突然変異コマンド文字列（後のクエリの部分 `ALTER TABLE [db.]table`).
 
-**create\_time** -この突然変異コマンドが実行のために提出されたとき。
+**create_time** -この突然変異コマンドが実行のために提出されたとき。
 
-**ブロック番号partition\_id**, **ブロック番号番号** -入れ子になった列。 パーティションIDと、その変異によって取得されたブロック番号(各パーティションでは、そのパーティション内の変異によって取得されたブロック番号 非複製のテーブル、ブロック番号の全ての仕切りがひとつのシーケンスです。 こないということを意味している変異体再現し、テーブルの列として展開しているのが記録するとともにシングルブロック番号の取得による突然変異が原因です。
+**ブロック番号partition_id**, **ブロック番号番号** -入れ子になった列。 パーティションIDと、その変異によって取得されたブロック番号(各パーティションでは、そのパーティション内の変異によって取得されたブロック番号 非複製のテーブル、ブロック番号の全ての仕切りがひとつのシーケンスです。 こないということを意味している変異体再現し、テーブルの列として展開しているのが記録するとともにシングルブロック番号の取得による突然変異が原因です。
 
-**parts\_to\_do** -突然変異が完了するために突然変異する必要があるデータ部分の数。
+**parts_to_do** -突然変異が完了するために突然変異する必要があるデータ部分の数。
 
-**is\_done** -突然変異は？ たとえ `parts_to_do = 0` 変更する必要がある新しいデータパーツを作成する長時間実行されるINSERTのために、複製されたテーブルの突然変異がまだ行われていない可能性があり
+**is_done** -突然変異は？ たとえ `parts_to_do = 0` 変更する必要がある新しいデータパーツを作成する長時間実行されるINSERTのために、複製されたテーブルの突然変異がまだ行われていない可能性があり
 
 一部のパーツの変更に問題がある場合は、次の列に追加情報が含まれています:
 
-**latest\_failed\_part** -変異することができなかった最新の部分の名前。
+**latest_failed_part** -変異することができなかった最新の部分の名前。
 
-**latest\_fail\_time** -最も最近の部分突然変異の失敗の時間。
+**latest_fail_time** -最も最近の部分突然変異の失敗の時間。
 
-**latest\_fail\_reason** -最新の部品突然変異の失敗を引き起こした例外メッセージ。
+**latest_fail_reason** -最新の部品突然変異の失敗を引き起こした例外メッセージ。
 
 ## システムディスク {#system_tables-disks}
 

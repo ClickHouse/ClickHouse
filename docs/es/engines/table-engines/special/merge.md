@@ -31,7 +31,7 @@ La forma típica de usar el `Merge` para trabajar con un gran número de `TinyLo
 
 Ejemplo 2:
 
-Digamos que tiene una tabla antigua (WatchLog\_old) y decidió cambiar la partición sin mover datos a una nueva tabla (WatchLog\_new) y necesita ver datos de ambas tablas.
+Digamos que tiene una tabla antigua (WatchLog_old) y decidió cambiar la partición sin mover datos a una nueva tabla (WatchLog_new) y necesita ver datos de ambas tablas.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
