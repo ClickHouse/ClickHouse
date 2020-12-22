@@ -1679,7 +1679,7 @@ UNSUPPORTED_METHOD
 
 ## tcpPort {#tcpPort}
 
-Returns TCP port number listened by this server.
+Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
 
 **Syntax**
 
