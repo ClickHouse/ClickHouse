@@ -286,6 +286,17 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
         {
             new_elements.push_back(elem);
         }
+        else
+        {
+            ASTFunction * func = elem->as<ASTFunction>();
+            if (func && func->name == "untuple")
+                for (const auto & col : required_result_columns)
+                    if (col.rfind("_ut_", 0) == 0)
+                    {
+                        new_elements.push_back(elem);
+                        break;
+                    }
+        }
     }
 
     elements = std::move(new_elements);

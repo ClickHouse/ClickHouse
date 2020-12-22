@@ -349,7 +349,7 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
 
 
 template <typename Reader>
-static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested)
+static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested, bool allow_unenclosed)
 {
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -357,7 +357,12 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     IColumn & nested_column = column_array.getData();
 
     size_t size = 0;
-    assertChar('[', istr);
+
+    bool has_braces = false;
+    if (checkChar('[', istr))
+        has_braces = true;
+    else if (!allow_unenclosed)
+        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
 
     try
     {
@@ -369,7 +374,9 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
                 if (*istr.position() == ',')
                     ++istr.position();
                 else
-                    throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                    throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                        "Cannot read array from text, expected comma or end of array, found '{}'",
+                        *istr.position());
             }
 
             first = false;
@@ -384,7 +391,11 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
 
             skipWhitespaceIfAny(istr);
         }
-        assertChar(']', istr);
+
+        if (has_braces)
+            assertChar(']', istr);
+        else /// If array is not enclosed in braces, we read until EOF.
+            assertEOF(istr);
     }
     catch (...)
     {
@@ -413,7 +424,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
         [&](IColumn & nested_column)
         {
             nested->deserializeAsTextQuoted(nested_column, istr, settings);
-        });
+        }, false);
 }
 
 void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -439,7 +450,11 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeAsTextJSON(nested_column, istr, settings); });
+    deserializeTextImpl(column, istr,
+        [&](IColumn & nested_column)
+        {
+            nested->deserializeAsTextJSON(nested_column, istr, settings);
+        }, false);
 }
 
 
@@ -478,7 +493,23 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     String s;
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
-    deserializeText(column, rb, settings);
+
+    if (settings.csv.input_format_arrays_as_nested_csv)
+    {
+        deserializeTextImpl(column, rb,
+            [&](IColumn & nested_column)
+            {
+                nested->deserializeAsTextCSV(nested_column, rb, settings);
+            }, true);
+    }
+    else
+    {
+        deserializeTextImpl(column, rb,
+            [&](IColumn & nested_column)
+            {
+                nested->deserializeAsTextQuoted(nested_column, rb, settings);
+            }, true);
+    }
 }
 
 
