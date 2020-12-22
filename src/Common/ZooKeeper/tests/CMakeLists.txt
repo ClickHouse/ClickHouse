@@ -4,9 +4,6 @@ target_link_libraries(zkutil_test_commands PRIVATE clickhouse_common_zookeeper)
 add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
 target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zookeeper string_utils)
 
-add_executable(zkutil_expiration_test zkutil_expiration_test.cpp)
-target_link_libraries(zkutil_expiration_test PRIVATE clickhouse_common_zookeeper)
-
 add_executable(zkutil_test_async zkutil_test_async.cpp)
 target_link_libraries(zkutil_test_async PRIVATE clickhouse_common_zookeeper)
 
