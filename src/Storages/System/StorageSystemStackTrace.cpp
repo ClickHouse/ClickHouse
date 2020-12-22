@@ -39,6 +39,7 @@ namespace
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
     std::atomic<int> data_ready_num = 0;
+    std::atomic<bool> signal_latch = 0;   /// Only need for thread sanitizer.
 
     /** Notes:
       * Only one query from the table can be processed at the moment of time.
@@ -71,6 +72,10 @@ namespace
         if (notification_num != sequence_num.load(std::memory_order_acquire))
             return;
 
+        bool expected = false;
+        if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
+            return;
+
         /// All these methods are signal-safe.
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace = StackTrace(signal_context);
@@ -81,7 +86,7 @@ namespace
             memcpy(query_id_data, query_id.data, query_id_size);
 
         /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
-        data_ready_num.store(sequence_num, std::memory_order_release);
+        data_ready_num.store(notification_num, std::memory_order_release);
 
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
 
@@ -89,6 +94,8 @@ namespace
         (void)res;
 
         errno = saved_errno;
+
+        signal_latch.store(false, std::memory_order_release);
     }
 
     /// Wait for data in pipe and read it.
