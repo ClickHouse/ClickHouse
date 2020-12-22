@@ -60,8 +60,6 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyFile(const String & from_path, const String & to_path) override;
-
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
