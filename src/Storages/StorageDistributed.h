@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>
 
@@ -24,9 +25,6 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -127,7 +125,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    size_t getRandomShardIndex(size_t shard_num);
+    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 
     String remote_database;
     String remote_table;

@@ -143,7 +143,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
 
     if (random_shard_insert)
     {
-        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo().size()));
+        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
     }
     else
     {
@@ -371,7 +371,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     size_t start = 0, end = shards_info.size();
     if (random_shard_insert)
     {
-        start = storage.getRandomShardIndex(end);
+        start = storage.getRandomShardIndex(shards_info);
         end = start + 1;
     }
     size_t num_shards = end - start;
