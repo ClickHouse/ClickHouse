@@ -104,7 +104,7 @@ public:
     ParsingException();
     ParsingException(const std::string & msg, int code);
     ParsingException(int code, const std::string & message);
-    
+
     // Format message with fmt::format, like the logging functions.
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
