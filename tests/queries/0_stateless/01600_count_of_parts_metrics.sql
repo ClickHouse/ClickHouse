@@ -1,5 +1,5 @@
 
-DROP TABLE IF EXISTS test_table SYNC;
+DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;
 
 INSERT INTO test_table VALUES ('1992-01-01');
@@ -51,4 +51,4 @@ FROM system.metrics) as a INNER JOIN
 FROM system.parts
 ) as b USING (Parts,PartsActive,PartsInactive);
 
-DROP TABLE test_table SYNC;
+DROP TABLE test_table;
