@@ -380,6 +380,7 @@ public:
         const ASTPtr & /*partition*/,
         bool /*final*/,
         bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
         const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
