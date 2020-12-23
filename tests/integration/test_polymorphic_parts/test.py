@@ -431,9 +431,9 @@ def test_in_memory_wal(start_cluster):
     node11.exec_in_container(['bash', '-c', 'test -s {}'.format(wal_file)])
     # Check file exists
     node11.exec_in_container(['bash', '-c', 'test -f {}'.format(broken_wal_file)])
+    
     # Data is lost without WAL
     node11.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
-    
     with PartitionManager() as pm:
         pm.partition_instances(node11, node12)
 
