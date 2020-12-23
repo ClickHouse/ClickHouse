@@ -123,6 +123,7 @@ SRCS(
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
+    QueryPlan/WindowStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
     Sources/RemoteSource.cpp
@@ -155,6 +156,7 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
+    Transforms/WindowTransform.cpp
     printPipeline.cpp
 
 )

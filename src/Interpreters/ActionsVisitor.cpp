@@ -735,6 +735,28 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    if (node.is_window_function)
+    {
+        // Also add columns from PARTITION BY and ORDER BY of window functions.
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        if (node.window_partition_by)
+        {
+            visit(node.window_partition_by->clone(), data);
+        }
+        if (node.window_order_by)
+        {
+            visit(node.window_order_by->clone(), data);
+        }
+
+        // Don't need to do anything more for window functions here -- the
+        // resulting column is added in ExpressionAnalyzer, similar to the
+        // aggregate functions.
+        return;
+    }
+
+    // An aggregate function can also be calculated as a window function, but we
+    // checked for it above, so no need to do anything more.
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
