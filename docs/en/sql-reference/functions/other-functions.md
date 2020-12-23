@@ -1172,7 +1172,7 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (finalized state). Useful with using [-State](../../sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state) combinator.
+Takes state of aggregate function. Returns result of aggregation (finalized state). Useful with using [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator.
 
 **Syntax** 
 
@@ -1182,13 +1182,13 @@ finalizeAggregation(state)
 
 **Parameters**
 
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction.md).
 
 **Returned value(s)**
 
 -   Value/values that was aggregated.
 
-Type: Value of any types that was aggregated. [See](../../sql-reference/data-types/aggregatefunction/) 
+Type: Value of any types that was aggregated. [See](../../sql-reference/data-types/aggregatefunction.md) 
 
 **Examples**
 
@@ -1268,9 +1268,9 @@ Result:
 
 **See Also** 
 
-[arrayReduce](../../sql-reference/functions/array-functions/#arrayreduce)
+[arrayReduce](../../sql-reference/functions/array-functions.md/#arrayreduce)
 
-[initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation)
+[initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
