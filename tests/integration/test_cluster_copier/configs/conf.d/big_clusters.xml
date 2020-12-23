@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <remote_servers>
-        <anime_source>
+        <big_source>
             <shard>
                 <internal_replication>true</internal_replication>    
                 <replica>
@@ -57,15 +57,15 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </anime_source>
+        </big_source>
 
-        <anime_destination>
+        <big_destination>
             <shard> 
                 <replica>
                     <host>s1_0_0</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </anime_destination>
+        </big_destination>
     </remote_servers>
 </yandex>
