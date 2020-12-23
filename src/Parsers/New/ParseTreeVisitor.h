@@ -5,9 +5,13 @@
 
 namespace DB {
 
+class Context;
+
 class ParseTreeVisitor : public ClickHouseParserVisitor
 {
+    const Context* context;
 public:
+    explicit ParseTreeVisitor(const Context* context_) : ClickHouseParserVisitor(), context(context_) {}
     virtual ~ParseTreeVisitor() override = default;
 
     // Top-level statements
