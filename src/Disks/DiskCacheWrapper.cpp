@@ -139,7 +139,7 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
         {
             try
             {
-                auto dir_path = getDirectoryPath(path);
+                auto dir_path = directoryPath(path);
                 if (!cache_disk->exists(dir_path))
                     cache_disk->createDirectories(dir_path);
 
@@ -182,7 +182,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
 
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write file {} to cache", backQuote(path));
 
-    auto dir_path = getDirectoryPath(path);
+    auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
         cache_disk->createDirectories(dir_path);
 
@@ -217,7 +217,7 @@ void DiskCacheWrapper::moveFile(const String & from_path, const String & to_path
 {
     if (cache_disk->exists(from_path))
     {
-        auto dir_path = getDirectoryPath(to_path);
+        auto dir_path = directoryPath(to_path);
         if (!cache_disk->exists(dir_path))
             cache_disk->createDirectories(dir_path);
 
@@ -230,7 +230,7 @@ void DiskCacheWrapper::replaceFile(const String & from_path, const String & to_p
 {
     if (cache_disk->exists(from_path))
     {
-        auto dir_path = getDirectoryPath(to_path);
+        auto dir_path = directoryPath(to_path);
         if (!cache_disk->exists(dir_path))
             cache_disk->createDirectories(dir_path);
 
@@ -257,7 +257,7 @@ void DiskCacheWrapper::createHardLink(const String & src_path, const String & ds
 {
     if (cache_disk->exists(src_path))
     {
-        auto dir_path = getDirectoryPath(dst_path);
+        auto dir_path = directoryPath(dst_path);
         if (!cache_disk->exists(dir_path))
             cache_disk->createDirectories(dir_path);
 
@@ -276,11 +276,6 @@ void DiskCacheWrapper::createDirectories(const String & path)
 {
     cache_disk->createDirectories(path);
     DiskDecorator::createDirectories(path);
-}
-
-inline String DiskCacheWrapper::getDirectoryPath(const String & path)
-{
-    return Poco::Path{path}.setFileName("").toString();
 }
 
 /// TODO: Current reservation mechanism leaks IDisk abstraction details.

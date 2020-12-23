@@ -10,6 +10,7 @@
 #include <aws/s3/model/ListObjectsV2Result.h>
 
 #include <Poco/DirectoryIterator.h>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -137,16 +138,22 @@ private:
     Metadata createMeta(const String & path) const;
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
-    String revisionToString(UInt64 revision);
-    bool checkObjectExists(const String & prefix);
+    static String revisionToString(UInt64 revision);
 
+    bool checkObjectExists(const String & prefix);
     Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key);
     void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback);
-    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 revision);
-    void processRestoreFiles(const String & source_bucket, std::vector<String> keys);
-    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 revision);
-    UInt64 extractRevisionFromKey(const String & key);
-    String extractOperationFromKey(const String & key);
+    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
+
+    void readRestoreInformation(RestoreInformation & restore_information);
+    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
+    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision);
+
+    /// Remove 'path' prefix from 'key' to get relative key.
+    /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
+    static String shrinkKey(const String & path, const String & key);
+    std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
 
 private:
     const String name;
@@ -165,6 +172,8 @@ private:
     std::mutex reservation_mutex;
 
     std::atomic<UInt64> revision_counter;
+    /// Key has format: ../../r{revision}-{operation}
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
 };
 
 }

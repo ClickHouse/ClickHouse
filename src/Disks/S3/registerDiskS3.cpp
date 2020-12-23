@@ -160,6 +160,9 @@ void registerDiskS3(DiskFactory & factory)
             checkRemoveAccess(*s3disk);
         }
 
+        s3disk->restore();
+        s3disk->startup();
+
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
         if (cache_enabled)
