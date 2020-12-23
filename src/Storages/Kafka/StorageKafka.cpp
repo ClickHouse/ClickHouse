@@ -216,6 +216,8 @@ StorageKafka::StorageKafka(
     , semaphore(0, num_consumers)
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
+    , sasl_user(kafka_settings->kafka_sasl_username.value)
+    , sasl_password(kafka_settings->kafka_sasl_password.value)
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
@@ -465,6 +467,14 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
     conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
+
+    if (sasl_user != "")
+    {
+      conf.set("security.protocol", "sasl_plaintext");
+      conf.set("sasl.mechanism", "PLAIN");
+      conf.set("sasl.username", sasl_user);
+      conf.set("sasl.password", sasl_password);
+    }
 
     // Create a consumer and subscribe to topics
     auto consumer = std::make_shared<cppkafka::Consumer>(conf);
@@ -838,6 +848,8 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_sasl_username, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_sasl_password, 0)
         }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT

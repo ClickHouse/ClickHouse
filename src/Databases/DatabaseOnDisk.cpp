@@ -690,6 +690,17 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     if (ast)
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        if (ast_create_query.storage &&
+            ast_create_query.storage->engine->name == "Kafka")
+        {
+          for (auto &it : ast_create_query.storage->settings->changes)
+          {
+            if (it.name == "kafka_sasl_password")
+            {
+              it.value.assignString("xxxxx",5);
+            }
+          }
+        }
         ast_create_query.attach = false;
         ast_create_query.setDatabase(getDatabaseName());
     }

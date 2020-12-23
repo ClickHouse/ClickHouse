@@ -586,6 +586,21 @@ public:
         return !(*this == rhs);
     }
 
+    template <typename CharT>
+    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
+    {
+        assert(which == Types::String);
+        String * ptr = reinterpret_cast<String *>(&storage);
+        ptr->assign(reinterpret_cast<const char *>(data), size);
+    }
+
+    void assignString(String && str)
+    {
+        assert(which == Types::String);
+        String * ptr = reinterpret_cast<String *>(&storage);
+        ptr->assign(std::move(str));
+    }
+
     /// Field is template parameter, to allow universal reference for field,
     /// that is useful for const and non-const .
     template <typename F, typename FieldRef>
@@ -667,22 +682,6 @@ private:
         assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void assignString(const CharT * data, size_t size)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(reinterpret_cast<const char *>(data), size);
-    }
-
-    void assignString(String && str)
-    {
-        assert(which == Types::String);
-        String * ptr = reinterpret_cast<String *>(&storage);
-        ptr->assign(std::move(str));
     }
 
     void create(const Field & x)
