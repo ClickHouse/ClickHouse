@@ -1182,13 +1182,13 @@ finalizeAggregation(state)
 
 **Parameters**
 
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction.md).
+-   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
 **Returned value(s)**
 
 -   Value/values that was aggregated.
 
-Type: Value of any types that was aggregated. [See](../../sql-reference/data-types/aggregatefunction.md) 
+Type: Value of any types that was aggregated. 
 
 **Examples**
 
@@ -1268,7 +1268,7 @@ Result:
 
 **See Also** 
 
-[arrayReduce](../../sql-reference/functions/array-functions.md/#arrayreduce)
+[arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 
 [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
