@@ -662,10 +662,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             auto * right_arg = const_cast<Node *>(&actions_dag->addColumn(std::move(column), true));
             auto * left_arg = src_node;
 
-            CastOverloadResolver::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
+            FunctionCast::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
             FunctionOverloadResolverPtr func_builder_cast =
                     std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver::createImpl(false, std::move(diagnostic)));
+                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
 
             Inputs children = { left_arg, right_arg };
             src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
