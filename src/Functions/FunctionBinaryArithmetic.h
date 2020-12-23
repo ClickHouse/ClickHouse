@@ -311,12 +311,12 @@ public:
     static void NO_INLINE process(const A & a, const B & b, ResultContainerType & c,
         NativeResultType scale_a, NativeResultType scale_b)
     {
-        if constexpr(op_case == OpCase::LeftConstant) static_assert(!IsDecimalNumber<A>);
-        if constexpr(op_case == OpCase::RightConstant) static_assert(!IsDecimalNumber<B>);
+        if constexpr (op_case == OpCase::LeftConstant) static_assert(!IsDecimalNumber<A>);
+        if constexpr (op_case == OpCase::RightConstant) static_assert(!IsDecimalNumber<B>);
 
         size_t size;
 
-        if constexpr(op_case == OpCase::LeftConstant)
+        if constexpr (op_case == OpCase::LeftConstant)
             size = b.size();
         else
             size = a.size();
@@ -342,12 +342,10 @@ public:
                 return;
             }
         }
-        else if constexpr(is_multiply)
+        else if constexpr (is_multiply)
         {
             if (scale_a != 1)
             {
-                scale_a = 1 / scale_a; // see scale_a initialization for detail
-
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true, false>(
                         unwrap<op_case, OpCase::LeftConstant>(a, i),
@@ -357,8 +355,6 @@ public:
             }
             else if (scale_b != 1)
             {
-                scale_b = 1 / scale_b;
-
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
                         unwrap<op_case, OpCase::LeftConstant>(a, i),
@@ -423,7 +419,7 @@ private:
     template <OpCase op_case, OpCase target>
     static auto unwrap(const auto& elem, size_t i)
     {
-        if constexpr(op_case == target)
+        if constexpr (op_case == target)
             return undec(elem);
         else
             return undec(elem[i]);
@@ -807,12 +803,10 @@ class FunctionBinaryArithmetic : public IFunction
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
                 return type.scaleFactorFor(left, is_multiply);
-            else if constexpr(left_is_decimal) // needed for e.g. multiply(Decimal, Float) to scale the arguments
+            else if constexpr (left_is_decimal) // needed for e.g. multiply(Decimal, Float) to scale the arguments
                 // scale multiplier = 10^scale, so we need to get this value divided by 10^0 -> 2nd arg is 0 as
                 // the convertTo basically divides the given value on the second arg.
-                // Note we are using the scale factor instead of 1 / scale factor, it will be correctly processed in
-                // the impl.
-                return DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
+                return 1 / DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
             else
                 return 1; // the default value which won't cause any re-scale
         }();
@@ -820,8 +814,8 @@ class FunctionBinaryArithmetic : public IFunction
         const ResultType scale_b = [&] {
             if constexpr (result_is_decimal)
                 return type.scaleFactorFor(right, is_multiply || is_division);
-            else if constexpr(right_is_decimal)
-                return DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
+            else if constexpr (right_is_decimal)
+                return 1 / DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
             else
                 return 1;
         }();
