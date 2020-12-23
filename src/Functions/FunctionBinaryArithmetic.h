@@ -804,14 +804,21 @@ class FunctionBinaryArithmetic : public IFunction
             else if constexpr (result_is_decimal)
             {
                 if constexpr (is_multiply)
+                    // the decimal impl uses scales, but if the result is decimal, both of the arguments are decimal,
+                    // so they would multiply correctly, so we need to scale the result to the neutral element (1).
+                    // The explicit type is needed as the int (in contrast with float) can't be implicitly converted
+                    // to decimal.
                     return ResultType{1};
                 else
                     return type.scaleFactorFor(left, false);
             }
             else if constexpr (left_is_decimal)
             {
-                const ResultType scale = DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
-                return col_left_const ? scale : (1 / scale);
+                if (col_left_const)
+                    // the column will be converted to native type later, no need to scale it twice.
+                    return 1;
+
+                return 1 / DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
             }
             else
                 return 1; // the default value which won't cause any re-scale
@@ -827,8 +834,10 @@ class FunctionBinaryArithmetic : public IFunction
             }
             else if constexpr (right_is_decimal)
             {
-                const ResultType scale = DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
-                return col_right_const ? scale : (1 / scale);
+                if (col_right_const)
+                    return 1;
+
+                return 1 / DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
             }
             else
                 return 1;
