@@ -1124,41 +1124,71 @@ ActionLock StorageMergeTree::stopMergesAndWait()
 }
 
 
+MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, bool force)
+{
+
+    if (force)
+    {
+        /// Forcefully stop merges and make part outdated
+        auto merge_blocker = stopMergesAndWait();
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        if (!part)
+            throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
+        removePartsFromWorkingSet({part}, true);
+        return part;
+    }
+    else
+    {
+
+        /// Wait merges selector
+        std::unique_lock lock(currently_processing_in_background_mutex);
+
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        /// It's okay, part was already removed
+        if (!part)
+            return nullptr;
+
+        /// Part will be "removed" by merge or mutation, it's OK in case of some
+        /// background cleanup processes like removing of empty parts.
+        if (currently_merging_mutating_parts.count(part))
+            return nullptr;
+
+        removePartsFromWorkingSet({part}, true);
+        return part;
+    }
+}
+
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop)
 {
     {
-        /// Asks to complete merges and does not allow them to start.
-        /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = stopMergesAndWait();
-
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-
         MergeTreeData::DataPartsVector parts_to_remove;
+        auto metadata_snapshot = getInMemoryMetadataPtr();
 
         if (drop_part)
         {
-            String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-            auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
-
-            if (part)
-                parts_to_remove.push_back(part);
-            else if (throw_if_noop)
-                throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
-            else
+            auto part = outdatePart(partition->as<ASTLiteral &>().value.safeGet<String>(), throw_if_noop);
+            /// Nothing to do, part was removed in some different way
+            if (!part)
                 return;
+
+            parts_to_remove.push_back(part);
         }
         else
         {
+            /// Asks to complete merges and does not allow them to start.
+            /// This protects against "revival" of data for a removed partition after completion of merge.
+            auto merge_blocker = stopMergesAndWait();
             String partition_id = getPartitionIDFromQuery(partition, context);
             parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-        }
 
-        // TODO should we throw an exception if parts_to_remove is empty?
-        removePartsFromWorkingSet(parts_to_remove, true);
+            /// TODO should we throw an exception if parts_to_remove is empty?
+            removePartsFromWorkingSet(parts_to_remove, true);
+        }
 
         if (detach)
         {
             /// If DETACH clone parts to detached/ directory
+            /// NOTE: no race with background cleanup until we hold pointers to parts
             for (const auto & part : parts_to_remove)
             {
                 LOG_INFO(log, "Detaching {}", part->relative_path);
