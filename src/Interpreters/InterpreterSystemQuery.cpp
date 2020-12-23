@@ -404,23 +404,28 @@ void InterpreterSystemQuery::restoreReplica()
 
     /// If there exists the path zk_path + /replicas/ *, we have at least one working replica,
     /// no need to restore anything.
-    // TODO check if these is no /replicas path or it is empty
-    // TODO Add the ZKPATH option to restore the table metadata on a certain replica,
-    // now suggest to launch create table
-
-    const String replica_zk_path = status.zookeeper_path; // + "/replicas/" + query. replica ?
+    const String& zk_root_path = status.zookeeper_path;
+    const String replica_zk_path = zk_root_path + "/replicas";
 
     if (zookeeper->exists(replica_zk_path))
-        throw Exception(
-            "Replica's metadata is present at " + replica_zk_path + " -- nothing to restore",
-            ErrorCodes::NO_AVAILABLE_DATA);
+    {
+        Strings replicas_present;
+        zookeeper->tryGetChildren(replica_zk_path, replicas_present);
+
+        if (!replicas_present.empty())
+            // TODO Add the ZKPATH option to restore the table metadata on a certain replica,
+            throw Exception(
+                "The metadata for " + replica_zk_path + " is present at some of the replicas -- nothing to restore,"
+                " try creating a new replica with the CREATE TABLE query",
+                ErrorCodes::NO_AVAILABLE_DATA);
+    }
 
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
     const String new_table_name = old_table_name + "_" + std::to_string(thread_local_rng());
 
-    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk path at " + replica_zk_path);
+    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk root path at " + zk_root_path);
 
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     {
