@@ -35,6 +35,12 @@ endif ()
 
 add_library (common ${SRCS})
 
+if (CLICKHOUSE_HARDWARE_INFO_FROM_ENV)
+    target_compile_definitions(common PUBLIC CLICKHOUSE_HARDWARE_INFO_FROM_ENV=1)
+else ()
+    target_compile_definitions(common PUBLIC CLICKHOUSE_HARDWARE_INFO_FROM_ENV=0)
+endif ()
+
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
 else ()

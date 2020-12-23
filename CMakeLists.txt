@@ -79,6 +79,8 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
+option (CLICKHOUSE_HARDWARE_INFO_FROM_ENV "Set to TRUE to use hardware info in env" OFF)
+
 option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
 option(MAKE_STATIC_LIBRARIES "Disable to make shared libraries" ${USE_STATIC_LIBRARIES})
 

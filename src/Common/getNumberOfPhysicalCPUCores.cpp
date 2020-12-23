@@ -9,6 +9,15 @@
 
 unsigned getNumberOfPhysicalCPUCores()
 {
+#if CLICKHOUSE_HARDWARE_INFO_FROM_ENV
+    const char * raw_env_cores = std::getenv("CLICKHOUSE_CPU_CORES");
+    unsigned env_cores = raw_env_cores == nullptr ? 0 : atoi(raw_env_cores);
+
+    if (env_cores != 0)
+    {
+        return env_cores;
+    }
+#endif
     static const unsigned number = []
     {
 #       if USE_CPUID
