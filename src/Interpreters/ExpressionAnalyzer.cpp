@@ -50,6 +50,9 @@
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+
 namespace DB
 {
 
@@ -58,12 +61,14 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int UNKNOWN_IDENTIFIER;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_PREWHERE;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int UNKNOWN_TYPE_OF_AST_NODE;
 }
 
 namespace
@@ -283,6 +288,8 @@ void ExpressionAnalyzer::analyzeAggregation()
     {
         aggregated_columns = temp_actions->getNamesAndTypesList();
     }
+
+    has_window = makeWindowDescriptions(temp_actions);
 }
 
 
@@ -444,7 +451,11 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 
             auto it = index.find(name);
             if (it == index.end())
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in aggregate function '{}'): {}", node->name, name);
+            {
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Unknown identifier '{}' in aggregate function '{}'",
+                    name, node->formatForErrorMessage());
+            }
 
             types[i] = (*it)->result_type;
             aggregate.argument_names[i] = name;
@@ -458,6 +469,128 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
     }
 
     return !aggregates().empty();
+}
+
+
+bool ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr & actions)
+{
+    // Convenient to check here because at least we have the Context.
+    if (!syntax->window_function_asts.empty() &&
+        !context.getSettingsRef().allow_experimental_window_functions)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window functions are not implemented (while processing '{}')",
+            syntax->window_function_asts[0]->formatForErrorMessage());
+    }
+
+    for (const ASTFunction * function_node : syntax->window_function_asts)
+    {
+        assert(function_node->is_window_function);
+
+        WindowDescription window_description;
+        window_description.window_name = function_node->getWindowDescription();
+
+        if (function_node->window_partition_by)
+        {
+            for (const auto & column_ast
+                : function_node->window_partition_by->children)
+            {
+                const auto * with_alias = dynamic_cast<const ASTWithAlias *>(
+                    column_ast.get());
+                if (!with_alias)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Expected a column in PARTITION BY for window '{}',"
+                        " got '{}'", window_description.window_name,
+                        column_ast->formatForErrorMessage());
+                }
+                window_description.partition_by.push_back(
+                    SortColumnDescription(
+                        with_alias->getColumnName(), 1 /* direction */,
+                        1 /* nulls_direction */));
+            }
+        }
+
+        if (function_node->window_order_by)
+        {
+            for (const auto & column_ast
+                : function_node->window_order_by->children)
+            {
+                // Parser should have checked that we have a proper element here.
+                const auto & order_by_element
+                    = column_ast->as<ASTOrderByElement &>();
+                // Ignore collation for now.
+                window_description.order_by.push_back(
+                    SortColumnDescription(
+                        order_by_element.children.front()->getColumnName(),
+                        order_by_element.direction,
+                        order_by_element.nulls_direction));
+            }
+        }
+
+        window_description.full_sort_description = window_description.partition_by;
+        window_description.full_sort_description.insert(
+            window_description.full_sort_description.end(),
+            window_description.order_by.begin(),
+            window_description.order_by.end());
+
+        WindowFunctionDescription window_function;
+        window_function.function_node = function_node;
+        window_function.column_name
+            = window_function.function_node->getColumnName();
+        window_function.function_parameters
+            = window_function.function_node->parameters
+                ? getAggregateFunctionParametersArray(
+                    window_function.function_node->parameters)
+                : Array();
+
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        // Hence we clone the node (not very sane either, I know).
+        getRootActionsNoMakeSet(window_function.function_node->clone(),
+            true, actions);
+
+        const ASTs & arguments
+            = window_function.function_node->arguments->children;
+        window_function.argument_types.resize(arguments.size());
+        window_function.argument_names.resize(arguments.size());
+        const auto & index = actions->getIndex();
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const std::string & name = arguments[i]->getColumnName();
+
+            auto it = index.find(name);
+            if (it == index.end())
+            {
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "Unknown identifier '{}' in window function '{}'",
+                    name, window_function.function_node->formatForErrorMessage());
+            }
+
+            window_function.argument_types[i] = (*it)->result_type;
+            window_function.argument_names[i] = name;
+        }
+
+        AggregateFunctionProperties properties;
+        window_function.aggregate_function
+            = AggregateFunctionFactory::instance().get(
+                window_function.function_node->name,
+                window_function.argument_types,
+                window_function.function_parameters, properties);
+
+        auto [it, inserted] = window_descriptions.insert(
+            {window_description.window_name, window_description});
+
+        if (!inserted)
+        {
+            assert(it->second.full_sort_description
+                == window_description.full_sort_description);
+        }
+
+        it->second.window_functions.push_back(window_function);
+    }
+
+    return !syntax->window_function_asts.empty();
 }
 
 
@@ -831,6 +964,65 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
                 getRootActions(argument, only_types, step.actions());
 }
 
+void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
+    ExpressionActionsChain & chain, bool /* only_types */)
+{
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+
+    // 1) Add actions for window functions and their arguments;
+    // 2) Mark the columns that are really required.
+    for (const auto & [_, w] : window_descriptions)
+    {
+        for (const auto & f : w.window_functions)
+        {
+            // 1.1) arguments of window functions;
+            // Requiring a constant reference to a shared pointer to non-const AST
+            // doesn't really look sane, but the visitor does indeed require it.
+            getRootActionsNoMakeSet(f.function_node->clone(),
+                true /* no_subqueries */, step.actions());
+
+            // 1.2) result of window function: an empty INPUT.
+            // It is an aggregate function, so it won't be added by getRootActions.
+            // This is something of a hack. Other options:
+            //  a] do it like aggregate function -- break the chain of actions
+            //     and manually add window functions to the starting list of
+            //     input columns. Logically this is similar to what we're doing
+            //     now, but would require to split the window function processing
+            //     into a full-fledged step after plain functions. This would be
+            //     somewhat cumbersome. With INPUT hack we can avoid a separate
+            //     step and pretend that window functions are almost "normal"
+            //     select functions. The limitation of both these ways is that
+            //     we can't reference window functions in other SELECT
+            //     expressions.
+            //  b] add a WINDOW action type, then sort, then split the chain on
+            //     each WINDOW action and insert the Window pipeline between the
+            //     Expression pipelines. This is a "proper" way that would allow
+            //     us to depend on window functions in other functions. But it's
+            //     complicated so I avoid doing it for now.
+            ColumnWithTypeAndName col;
+            col.type = f.aggregate_function->getReturnType();
+            col.column = col.type->createColumn();
+            col.name = f.column_name;
+
+            step.actions()->addInput(col);
+
+            for (const auto & a : f.function_node->arguments->children)
+            {
+                // 2.1) function arguments;
+                step.required_output.push_back(a->getColumnName());
+            }
+            // 2.2) function result;
+            step.required_output.push_back(f.column_name);
+        }
+
+        // 2.3) PARTITION BY and ORDER BY columns.
+        for (const auto & c : w.full_sort_description)
+        {
+            step.required_output.push_back(c.column_name);
+        }
+    }
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -855,7 +1047,9 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
     getRootActions(select_query->select(), only_types, step.actions());
 
     for (const auto & child : select_query->select()->children)
+    {
         step.required_output.push_back(child->getColumnName());
+    }
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
@@ -1076,6 +1270,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
+    , has_window(query_analyzer.hasWindow())
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -1225,6 +1420,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
+
+        query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+
         selected_columns = chain.getLastStep().required_output;
         has_order_by = query.orderBy() != nullptr;
         before_order_and_select = query_analyzer.appendOrderBy(
@@ -1319,6 +1517,77 @@ void ExpressionAnalysisResult::checkActions() const
         check_actions(prewhere_info->alias_actions);
         check_actions(prewhere_info->remove_columns_actions);
     }
+}
+
+std::string ExpressionAnalysisResult::dump() const
+{
+    WriteBufferFromOwnString ss;
+
+    ss << "need_aggregate " << need_aggregate << "\n";
+    ss << "has_order_by " << has_order_by << "\n";
+    ss << "has_window " << has_window << "\n";
+
+    if (before_array_join)
+    {
+        ss << "before_array_join " << before_array_join->dumpDAG() << "\n";
+    }
+
+    if (array_join)
+    {
+        ss << "array_join " << "FIXME doesn't have dump" << "\n";
+    }
+
+    if (before_join)
+    {
+        ss << "before_join " << before_join->dumpDAG() << "\n";
+    }
+
+    if (before_where)
+    {
+        ss << "before_where " << before_where->dumpDAG() << "\n";
+    }
+
+    if (prewhere_info)
+    {
+        ss << "prewhere_info " << prewhere_info->dump() << "\n";
+    }
+
+    if (filter_info)
+    {
+        ss << "filter_info " << filter_info->dump() << "\n";
+    }
+
+    if (before_aggregation)
+    {
+        ss << "before_aggregation " << before_aggregation->dumpDAG() << "\n";
+    }
+
+    if (before_having)
+    {
+        ss << "before_having " << before_having->dumpDAG() << "\n";
+    }
+
+    if (before_window)
+    {
+        ss << "before_window " << before_window->dumpDAG() << "\n";
+    }
+
+    if (before_order_and_select)
+    {
+        ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
+    }
+
+    if (before_limit_by)
+    {
+        ss << "before_limit_by " << before_limit_by->dumpDAG() << "\n";
+    }
+
+    if (final_projection)
+    {
+        ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    return ss.str();
 }
 
 }
