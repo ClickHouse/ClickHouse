@@ -79,7 +79,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     size_t sum_rows = 0;
     size_t sum_bytes_uncompressed = 0;
-    MergeTreeDataPartType future_part_type;
+    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::UNKNOWN;
     for (const auto & part : parts_)
     {
         sum_rows += part->rows_count;
