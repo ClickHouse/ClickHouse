@@ -24,9 +24,6 @@ namespace DB
 class DiskS3 : public IDisk
 {
 public:
-    /// File contains restore information
-    const String restore_file = "restore";
-
     using ObjectMetadata = std::map<std::string, std::string>;
 
     friend class DiskS3Reservation;
@@ -45,7 +42,9 @@ public:
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
-        bool send_metadata_);
+        bool send_metadata_,
+        int thread_pool_size_,
+        int list_object_keys_size_);
 
     const String & getName() const override { return name; }
 
@@ -172,6 +171,13 @@ private:
     std::mutex reservation_mutex;
 
     std::atomic<UInt64> revision_counter;
+    static constexpr UInt64 LATEST_REVISION = (static_cast<UInt64>(1)) << 63;
+
+    /// File contains restore information
+    const String restore_file = "restore";
+    /// The number of keys listed in one request (1000 is max value).
+    int list_object_keys_size;
+
     /// Key has format: ../../r{revision}-{operation}
     const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
 };
