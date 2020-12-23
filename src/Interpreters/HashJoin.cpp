@@ -359,6 +359,7 @@ void HashJoin::init(Type type_)
 
 size_t HashJoin::getTotalRowCount() const
 {
+    std::shared_lock lock(data->rwlock);
     size_t res = 0;
 
     if (data->type == Type::CROSS)
@@ -376,6 +377,7 @@ size_t HashJoin::getTotalRowCount() const
 
 size_t HashJoin::getTotalByteCount() const
 {
+    std::shared_lock lock(data->rwlock);
     size_t res = 0;
 
     if (data->type == Type::CROSS)
