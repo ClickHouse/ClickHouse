@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/AccessFlags.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
@@ -118,7 +119,18 @@ Block InterpreterInsertQuery::getSampleBlock(
     return res;
 }
 
+static bool hasAggregateFunctions(const IAST * ast)
+{
+    if (const auto * func = typeid_cast<const ASTFunction *>(ast))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+            return true;
 
+    for (const auto & child : ast->children)
+        if (hasAggregateFunctions(child.get()))
+            return true;
+
+    return false;
+}
 /** A query that just reads all data without any complex computations or filetering.
   * If we just pipe the result to INSERT, we don't have to use too many threads for read.
   */
@@ -151,7 +163,8 @@ static bool isTrivialSelect(const ASTPtr & select)
             && !select_query->groupBy()
             && !select_query->having()
             && !select_query->orderBy()
-            && !select_query->limitBy());
+            && !select_query->limitBy()
+            && !hasAggregateFunctions(select_query));
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
