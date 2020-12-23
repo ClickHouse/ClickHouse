@@ -32,7 +32,7 @@ then
     git add ".nojekyll"
 
     # Push to GitHub rewriting the existing contents.
-    git commit -a -m "Add new release at $(date)"
+    git commit --quiet -m "Add new release at $(date)"
     git push --force origin master
 
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
