@@ -2,7 +2,7 @@
 toc_title: UNION ALL
 ---
 
-# UNION ALL子句 {#union-all-clause}
+# UNION ALL子句 {#union-clause}
 
 你可以使用 `UNION ALL` 结合任意数量的 `SELECT` 来扩展其结果。 示例:
 

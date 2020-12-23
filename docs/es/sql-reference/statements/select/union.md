@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
-# UNION ALL Cláusula {#union-all-clause}
+# UNION Cláusula {#union-clause}
 
 Usted puede utilizar `UNION ALL` combinar cualquier número de `SELECT` consultas extendiendo sus resultados. Ejemplo:
 
