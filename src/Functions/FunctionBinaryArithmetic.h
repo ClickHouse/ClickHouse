@@ -816,7 +816,8 @@ class FunctionBinaryArithmetic : public IFunction
             {
                 if (col_left_const)
                     // the column will be converted to native type later, no need to scale it twice.
-                    return 1;
+                    // the explicit type is needed to specify lambda return type
+                    return ResultType{1};
 
                 return 1 / DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
             }
@@ -835,7 +836,7 @@ class FunctionBinaryArithmetic : public IFunction
             else if constexpr (right_is_decimal)
             {
                 if (col_right_const)
-                    return 1;
+                    return ResultType{1};
 
                 return 1 / DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
             }
