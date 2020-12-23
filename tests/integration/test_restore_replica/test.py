@@ -40,8 +40,8 @@ def start_cluster():
 
 def check_data():
     res: str = node_1.query("SELECT sum(n), count(n) FROM test.test_table")
-    assert res == node_2.query("SELECT sum(n), count(n) FROM test.test_table")
-    assert res == node_3.query("SELECT sum(n), count(n) FROM test.test_table")
+    assert_eq_with_retry(node_2, "SELECT sum(n), count(n) FROM test.test_table", res)
+    assert_eq_with_retry(node_3, "SELECT sum(n), count(n) FROM test.test_table", res)
 
 
 def test_restore_replica(start_cluster):
