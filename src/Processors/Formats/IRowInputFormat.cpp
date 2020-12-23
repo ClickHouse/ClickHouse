@@ -132,6 +132,26 @@ Chunk IRowInputFormat::generate()
             }
         }
     }
+    catch (ParsingException & e)
+    {
+        String verbose_diagnostic;
+        try
+        {
+            verbose_diagnostic = getDiagnosticInfo();
+        }
+        catch (const Exception & exception)
+        {
+            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
+        }
+        catch (...)
+        {
+            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+        }
+
+        e.setLineNumber(total_rows);
+        e.addMessage(verbose_diagnostic);
+        throw;
+    }
     catch (Exception & e)
     {
         if (!isParseError(e.code()))
