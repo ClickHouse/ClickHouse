@@ -19,7 +19,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-Context updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
+std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -78,9 +78,8 @@ Context updateSettingsForCluster(const Cluster & cluster, const Context & contex
         }
     }
 
-    Context new_context(context);
-    new_context.setSettings(new_settings);
-
+    auto new_context = std::make_shared<Context>(context);
+    new_context->setSettings(new_settings);
     return new_context;
 }
 
@@ -99,7 +98,7 @@ void executeQuery(
 
     const std::string query = queryToString(query_ast);
 
-    Context new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+    auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
@@ -119,7 +118,11 @@ void executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : query_info.cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, plans, remote_pipes, delayed_pipes);
+    {
+        stream_factory.createForShard(shard_info, query, query_ast,
+            new_context, throttler, query_info, plans,
+            remote_pipes, delayed_pipes, log);
+    }
 
     if (!remote_pipes.empty())
     {

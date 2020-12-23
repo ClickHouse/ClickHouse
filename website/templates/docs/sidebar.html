@@ -8,23 +8,6 @@
                 <img src="/images/mkdocs/single.svg" alt="{{ _('Single-page version') }}" title="{{ _('Single-page version') }}" />
             </a>
         </div>
-        <div class="dropdown mb-3">
-            <a class="btn btn-dark dropdown-toggle text-muted" href="#" role="button" id="select-version" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                {{ _('Version') }}: <span class="text-light">{{ config.extra.version_prefix or _('latest') }}</span>
-            </a>
-
-            <div class="dropdown-menu bg-dark text-muted p-1" aria-labelledby="select-version">
-                <a class="dropdown-item{% if not config.extra.version_prefix %} disable{% endif %}"
-                   href="/docs/{{ language }}/">
-                    <span class="text-light">{{ _('latest') }}</span>
-                </a>
-
-                {% for release in config.extra.stable_releases %}
-                    <a class="dropdown-item{% if release.0 == config.extra.version_prefix %} disable{% endif %}"
-                       href="/docs/{{ release.0 }}/{{ language }}/">{{ release.0 }}{% if release.1.2 %} LTS{% endif %}</a>
-                {% endfor %}
-            </div>
-        </div>
         {% if not single_page %}
         <nav id="sidebar-nav" class="nav flex-column mb-5">
             {% for nav_item in nav %}

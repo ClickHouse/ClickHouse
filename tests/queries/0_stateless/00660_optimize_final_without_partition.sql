@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 DROP TABLE IF EXISTS partitioned_by_tuple;
 
 CREATE TABLE partitioned_by_tuple (d Date, x UInt8, w String, y UInt8) ENGINE SummingMergeTree (y) PARTITION BY (d, x) ORDER BY (d, x, w);

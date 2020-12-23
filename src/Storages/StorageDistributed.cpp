@@ -315,7 +315,8 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
 
     // LIMIT BY
     // LIMIT
-    if (select.limitBy() || select.limitLength())
+    // OFFSET
+    if (select.limitBy() || select.limitLength() || select.limitOffset())
         return QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -695,7 +696,7 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 
             if (std::filesystem::is_empty(dir_path))
             {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path);
+                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
                 /// Will be created by DistributedBlockOutputStream on demand.
                 std::filesystem::remove(dir_path);
             }

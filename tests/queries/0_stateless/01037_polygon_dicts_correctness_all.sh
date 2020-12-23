@@ -50,7 +50,7 @@ do
    value UInt64 DEFAULT 101
    )
    PRIMARY KEY key
-   SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
+   SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
    LIFETIME(0)
    LAYOUT($type());
 
