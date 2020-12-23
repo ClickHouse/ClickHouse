@@ -214,5 +214,6 @@ std::string FilterInfo::dump() const
     }
 
     return ss.str();
+}
 
 }
