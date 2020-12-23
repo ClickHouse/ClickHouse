@@ -882,7 +882,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
             addPartContributionToDataVolume(part);
-          
             CurrentMetrics::add(CurrentMetrics::Parts);
             CurrentMetrics::add(CurrentMetrics::PartsActive);
         });
@@ -901,9 +900,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         if (!data_parts_indexes.insert(part).second)
             throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-
         addPartContributionToDataVolume(part);
-      
+
         CurrentMetrics::add(CurrentMetrics::Parts);
         CurrentMetrics::add(CurrentMetrics::PartsActive);
     }
@@ -938,7 +936,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
             removePartContributionToDataVolume(*it);
-          
+
             CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsInactive);
         };
@@ -2025,7 +2023,7 @@ bool MergeTreeData::renameTempPartAndReplace(
             reduce_bytes += covered_part->getBytesOnDisk();
             reduce_rows += covered_part->rows_count;
             ++reduce_parts;
-          
+
             CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsInactive);
         }
@@ -2035,7 +2033,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         modifyPartState(part_it, DataPartState::Committed);
         addPartContributionToColumnSizes(part);
         addPartContributionToDataVolume(part);
-      
+
         CurrentMetrics::add(CurrentMetrics::PartsActive);
         CurrentMetrics::sub(CurrentMetrics::PartsInactive);
     }
@@ -2081,7 +2079,7 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
         {
             removePartContributionToColumnSizes(part);
             removePartContributionToDataVolume(part);
-          
+
             CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsInactive);
         }
@@ -2203,14 +2201,13 @@ restore_covered)
     {
         removePartContributionToDataVolume(part);
         removePartContributionToColumnSizes(part);
-      
+
         CurrentMetrics::sub(CurrentMetrics::PartsActive);
         CurrentMetrics::add(CurrentMetrics::PartsInactive);
     }
     modifyPartState(it_part, DataPartState::Deleting);
 
     part->renameToDetached(prefix);
-
     data_parts_indexes.erase(it_part);
 
     CurrentMetrics::sub(CurrentMetrics::Parts);
