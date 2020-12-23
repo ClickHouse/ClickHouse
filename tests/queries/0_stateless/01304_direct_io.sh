@@ -13,5 +13,7 @@ $CLICKHOUSE_BENCHMARK --iterations 10 --max_threads 100 --min_bytes_to_use_direc
 cat "$CLICKHOUSE_TMP"/err | grep Exception
 cat "$CLICKHOUSE_TMP"/err | grep Loaded
 
+rm "$CLICKHOUSE_TMP"/err
+
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE bug;"

@@ -344,8 +344,6 @@
 "TABLE"
 "TABLES"
 "TEMPORARY"
-"timeSeriesGroupRateSum"
-"timeSeriesGroupSum"
 "TIMESTAMP"
 "TIMESTAMP_ADD"
 "TIMESTAMPADD"

@@ -10,6 +10,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -567,7 +568,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto reservation = storage.getStoragePolicy()->reserve(block.bytes());
+    auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     auto disk = reservation->getDisk()->getPath();
     auto data_path = storage.getRelativeDataPath();
 

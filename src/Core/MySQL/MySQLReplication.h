@@ -549,7 +549,7 @@ namespace MySQLReplication
         std::shared_ptr<TableMapEvent> table_map;
         size_t checksum_signature_length = 4;
 
-        inline bool do_replicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
+        inline bool doReplicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
     };
 }
 

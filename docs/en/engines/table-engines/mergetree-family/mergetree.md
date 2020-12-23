@@ -98,6 +98,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
     -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — Minimum number of bytes/rows in a data part that can be stored in `Wide` format. You can set one, both or none of these settings. See [Data Storage](#mergetree-data-storage).
+    -   `max_parts_in_total` — Maximum number of parts in all partitions. 
 
 **Example of Sections Setting**
 
@@ -183,6 +184,10 @@ A sparse index allows extra data to be read. When reading a single range of the 
 Sparse indexes allow you to work with a very large number of table rows, because in most cases, such indexes fit in the computer’s RAM.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
+
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses. To allow this feature, turn on the [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) setting.
+
+The [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
@@ -579,6 +584,7 @@ Tags:
 -   `disk` — a disk within a volume.
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+-   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 Cofiguration examples:
 
@@ -607,6 +613,18 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
+		
+		<small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
     </policies>
     ...
 </storage_configuration>
