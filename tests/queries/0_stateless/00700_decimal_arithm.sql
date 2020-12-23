@@ -31,7 +31,7 @@ SELECT f + f, f - f, f * f, f / f, intDiv(f, f), intDivOrZero(f, f) FROM decimal
 SELECT g + g, g - g, g * g, g / g, intDiv(g, g), intDivOrZero(g, g) FROM decimal WHERE g > 0;
 SELECT h + h, h - h, h * h, h / h, intDiv(h, h), intDivOrZero(h, h) FROM decimal WHERE h > 0; -- { serverError 407 }
 SELECT h + h, h - h FROM decimal WHERE h > 0;
-SELECT i + i, i - i, i * i, i / i, intDiv(i, i), intDivOrZero(i, i) FROM decimal WHERE i > 0;
+SELECT i + i, i - i, i * i, i / i, intDiv(i, i), intDivOrZero(i, i) FROM decimal WHERE i > 0; -- { serverError 407 }
 SELECT i + i, i - i FROM decimal WHERE i > 0;
 SELECT j + j, j - j, j * j, j / j, intDiv(j, j), intDivOrZero(j, j) FROM decimal WHERE j > 0;
 
@@ -51,7 +51,7 @@ SELECT 21 + c, 21 - c, 84 - c, 21 * c, -21 * c, 21 / c, 84 / c, intDiv(21, c), i
 SELECT 21 + e, 21 - e, 84 - e, 21 * e, -21 * e, 21 / e, 84 / e FROM decimal WHERE e > 0; -- { serverError 407 }
 SELECT 21 + f, 21 - f, 84 - f, 21 * f, -21 * f, 21 / f, 84 / f FROM decimal WHERE f > 0; -- { serverError 407 }
 SELECT 21 + g, 21 - g, 84 - g, 21 * g, -21 * g, 21 / g, 84 / g, intDiv(21, g), intDivOrZero(84, g) FROM decimal WHERE g > 0;
-SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h, 21 / h, 84 / h FROM decimal WHERE h > 0;  -- { serverError 407 }
+SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h, 21 / h, 84 / h FROM decimal WHERE h > 0; -- { serverError 407 }
 SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h FROM decimal WHERE h > 0;
 SELECT 21 + i, 21 - i, 84 - i, 21 * i, -21 * i, 21 / i, 84 / i, intDiv(21, i), intDivOrZero(84, i) FROM decimal WHERE i > 0;
 SELECT 21 + j, 21 - j, 84 - j, 21 * j, -21 * j, 21 / j, 84 / j, intDiv(21, j), intDivOrZero(84, j) FROM decimal WHERE j > 0;
