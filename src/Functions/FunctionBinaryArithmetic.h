@@ -802,8 +802,12 @@ class FunctionBinaryArithmetic : public IFunction
             if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
-                // scale_a = 1 is result is decimal
-                return is_multiply ? 1 : type.scaleFactorFor(left, false);
+            {
+                if constexpr (is_multiply)
+                    return 1;
+                else
+                    return type.scaleFactorFor(left, false);
+            }
             else if constexpr (left_is_decimal)
             {
                 const ResultType scale = DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
@@ -816,7 +820,12 @@ class FunctionBinaryArithmetic : public IFunction
 
         const ResultType scale_b = [&] {
             if constexpr (result_is_decimal)
-                return is_multiply ? 1 : type.scaleFactorFor(right, true);
+            {
+                if constexpr (is_multiply)
+                    return 1;
+                else
+                    return type.scaleFactorFor(right, is_division);
+            }
             else if constexpr (right_is_decimal)
             {
                 const ResultType scale = DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
