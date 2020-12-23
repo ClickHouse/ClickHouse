@@ -409,6 +409,8 @@ class IColumn;
     \
     M(Bool, use_antlr_parser, false, "Parse incoming queries using ANTLR-generated parser", 0) \
     \
+    M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
+    \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(UInt64, max_memory_usage_for_all_queries, 0, "Obsolete. Will be removed after 2020-10-20", 0) \
