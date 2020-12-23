@@ -635,14 +635,24 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         for (const auto & name : columns_context.requiredColumns())
             ss << " '" << name << "'";
 
-        if (!source_column_names.empty())
+        if (storage)
         {
-            ss << ", source columns:";
-            for (const auto & name : source_column_names)
-                ss << " '" << name << "'";
+            ss << ", maybe you meant: ";
+            for (const auto & name : columns_context.requiredColumns())
+            {
+                auto hints = storage->getHints(name);
+                if (!hints.empty())
+                    ss << " '" << toString(hints) << "'";
+            }
         }
         else
-            ss << ", no source columns";
+        {
+            if (!source_column_names.empty())
+                for (const auto & name : columns_context.requiredColumns())
+                    ss << " '" << name << "'";
+            else
+                ss << ", no source columns";
+        }
 
         if (columns_context.has_table_join)
         {
