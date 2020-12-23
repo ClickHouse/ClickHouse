@@ -48,12 +48,12 @@ Chunk ArrowBlockInputFormat::generate()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
