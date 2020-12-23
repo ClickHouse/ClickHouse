@@ -35,13 +35,6 @@ public:
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        IAggregateFunction * sub = this;
-        while ((sub = sub->getNestedFunction().get()))
-        {
-            if (dynamic_cast<AggregateFunctionIf *>(sub))
-                throw Exception("Cannot nest -If combinator", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
         if (!isUInt8(types.back()))
             throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
