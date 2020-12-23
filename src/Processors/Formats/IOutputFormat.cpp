@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
     : IProcessor({header_, header_, header_}, {}), out(out_)
 {
@@ -30,7 +35,7 @@ IOutputFormat::Status IOutputFormat::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_chunk = input.pull(true);
+        current_chunk = input.pullData(true);
         current_block_kind = kind;
         has_input = true;
         return Status::Ready;
@@ -44,23 +49,31 @@ IOutputFormat::Status IOutputFormat::prepare()
     return Status::Finished;
 }
 
-static Chunk prepareTotals(Chunk chunk)
+static Port::Data prepareTotals(Port::Data data)
 {
-    if (!chunk.hasRows())
+    if (data.exception)
+        return data;
+
+    if (!data.chunk.hasRows())
         return {};
 
-    if (chunk.getNumRows() > 1)
+    if (data.chunk.getNumRows() > 1)
     {
         /// This may happen if something like ARRAY JOIN was executed on totals.
         /// Skip rows except the first one.
-        auto columns = chunk.detachColumns();
+        auto columns = data.chunk.detachColumns();
         for (auto & column : columns)
             column = column->cut(0, 1);
 
-        chunk.setColumns(std::move(columns), 1);
+        data.chunk.setColumns(std::move(columns), 1);
     }
 
-    return chunk;
+    return data;
+}
+
+void IOutputFormat::consume(Chunk)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method consume s not implemented for {}", getName());
 }
 
 void IOutputFormat::work()
@@ -84,17 +97,24 @@ void IOutputFormat::work()
     switch (current_block_kind)
     {
         case Main:
-            result_rows += current_chunk.getNumRows();
-            result_bytes += current_chunk.allocatedBytes();
+        {
+            result_rows += current_chunk.chunk.getNumRows();
+            result_bytes += current_chunk.chunk.allocatedBytes();
             consume(std::move(current_chunk));
             break;
+        }
         case Totals:
-            if (auto totals = prepareTotals(std::move(current_chunk)))
+        {
+            auto totals = prepareTotals(std::move(current_chunk));
+            if (totals.exception || totals.chunk)
                 consumeTotals(std::move(totals));
             break;
+        }
         case Extremes:
+        {
             consumeExtremes(std::move(current_chunk));
             break;
+        }
     }
 
     if (auto_flush)
