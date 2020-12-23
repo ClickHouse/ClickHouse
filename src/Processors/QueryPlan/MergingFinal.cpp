@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/MergingFinal.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Merges/AggregatingNoSortedTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -77,8 +78,10 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size);
 
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                           sort_description, max_block_size);
+                if (sort_description.empty())
+                    return std::make_shared<AggregatingNoSortedTransform>(header, num_outputs);
+                else
+                    return std::make_shared<AggregatingSortedTransform>(header, num_outputs, sort_description, max_block_size);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,

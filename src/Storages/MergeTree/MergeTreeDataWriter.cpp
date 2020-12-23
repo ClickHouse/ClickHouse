@@ -20,6 +20,7 @@
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/AggregatingNoSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
@@ -225,7 +226,10 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
                     block, 1, sort_description, data.merging_params.columns_to_sum,
                     partition_key_columns, block_size + 1);
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
+                if (sort_description.empty())
+                    return std::make_shared<AggregatingNoSortedAlgorithm>(block);
+                else
+                    return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
                     block, 1, sort_description, data.merging_params.sign_column, block_size + 1);
@@ -253,11 +257,14 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
 
     IMergingAlgorithm::Status status = merging_algorithm->merge();
 
-    /// Check that after first merge merging_algorithm is waiting for data from input 0.
-    if (status.required_source != 0)
-        throw Exception("Logical error: required source after the first merge is not 0.", ErrorCodes::LOGICAL_ERROR);
+    if (!sort_description.empty())
+    {
+        /// Check that after first merge merging_algorithm is waiting for data from input 0.
+        if (status.required_source != 0)
+            throw Exception("Logical error: required source after the first merge is not 0.", ErrorCodes::LOGICAL_ERROR);
 
-    status = merging_algorithm->merge();
+        status = merging_algorithm->merge();
+    }
 
     /// Check that merge is finished.
     if (!status.is_finished)

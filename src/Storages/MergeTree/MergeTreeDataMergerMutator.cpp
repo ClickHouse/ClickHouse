@@ -19,6 +19,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/AggregatingNoSortedTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -869,8 +870,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
-            merged_transform = std::make_unique<AggregatingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size);
+            if (sort_description.empty())
+                merged_transform = std::make_unique<AggregatingNoSortedTransform>(header, pipes.size());
+            else
+                merged_transform = std::make_unique<AggregatingSortedTransform>(header, pipes.size(), sort_description, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
