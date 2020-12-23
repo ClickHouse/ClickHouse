@@ -172,12 +172,16 @@ void PocoHTTPClient::makeRequestInternal(
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
+            {
+                /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
+                bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && poco_uri.getScheme() == "https";
                 session->setProxy(
                     request_configuration.proxyHost,
                     request_configuration.proxyPort,
                     Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
-                    false /// Disable proxy tunneling by default
+                    use_tunnel
                 );
+            }
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
