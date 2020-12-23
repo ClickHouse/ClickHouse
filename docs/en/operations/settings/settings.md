@@ -445,7 +445,7 @@ Possible values:
 
 -   `'simple'` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. Calculation is performed according to the data type's time zone (if present) or server time zone.
+    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
 -   `'iso'` - ISO output format.
 
