@@ -104,7 +104,12 @@ namespace CurrentMetrics
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
-    app.shouldSetupWatchdog(argc ? argv[0] : nullptr);
+
+    /// Do not fork separate process from watchdog if we attached to terminal.
+    /// Otherwise it breaks gdb usage.
+    if (argc > 0 && !isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
+        app.shouldSetupWatchdog(argv[0]);
+
     try
     {
         return app.run(argc, argv);
