@@ -406,8 +406,11 @@ class IColumn;
     M(Bool, optimize_skip_merged_partitions, false, "Skip partitions with one part with level > 0 in optimize final", 0) \
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
     M(Bool, allow_experimental_map_type, false, "Allow data type Map", 0) \
+    M(Bool, allow_experimental_window_functions, false, "Allow experimental window functions", 0) \
     \
     M(Bool, use_antlr_parser, false, "Parse incoming queries using ANTLR-generated parser", 0) \
+    \
+    M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
