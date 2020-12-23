@@ -29,12 +29,12 @@ These actions are described in detail below.
 ## ADD COLUMN {#alter_add-column}
 
 ``` sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
 Adds a new column to the table with the specified `name`, `type`, [`codec`](../../../sql-reference/statements/create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
 
-If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
+If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
 Adding a column just changes the table structure, without performing any actions with data. The data doesn’t appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)).
 
@@ -43,9 +43,24 @@ This approach allows us to complete the `ALTER` query instantly, without increas
 Example:
 
 ``` sql
-ALTER TABLE visits ADD COLUMN browser String AFTER user_id
+ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
+ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
+ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
+DESC alter_test FORMAT TSV;
 ```
 
+``` text
+Added1  UInt32
+CounterID       UInt32
+StartDate       Date
+UserID  UInt32
+VisitID UInt32
+NestedColumn.A  Array(UInt8)
+NestedColumn.S  Array(String)
+Added2  UInt32
+ToDrop  UInt32
+Added3  UInt32
+```
 ## DROP COLUMN {#alter_drop-column}
 
 ``` sql
@@ -99,7 +114,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
 ```
 
 This query changes the `name` column properties:
@@ -114,6 +129,8 @@ This query changes the `name` column properties:
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column doesn’t exist.
 
+The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description.
+
 When changing the type, values are converted as if the [toType](../../../sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query doesn’t do anything complex, and is completed almost instantly.
 
 Example:
@@ -124,15 +141,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
 
-There are several processing stages:
-
--   Preparing temporary (new) files with modified data.
--   Renaming old files.
--   Renaming the temporary (new) files to the old names.
--   Deleting the old files.
-
-Only the first stage takes time. If there is a failure at this stage, the data is not changed.
-If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
+The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 

@@ -7,15 +7,14 @@ PUBLISH_DIR="${BASE_DIR}/../publish"
 BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.tech}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-website-content.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
-EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases --minify --verbose}"
-HISTORY_SIZE="${HISTORY_SIZE:-5}"
+EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---minify --verbose}"
 
 if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
     python3 "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
-    rm -rf "${PUBLISH_DIR}" || true
-    cd "${PUBLISH_DIR}"
+    rm -rf "${PUBLISH_DIR}"
+    mkdir "${PUBLISH_DIR}" && cd "${PUBLISH_DIR}"
 
     # Will make a repository with website content as the only commit.
     git init
@@ -33,7 +32,7 @@ then
     git add ".nojekyll"
 
     # Push to GitHub rewriting the existing contents.
-    git commit -a -m "Add new release at $(date)"
+    git commit --quiet -m "Add new release at $(date)"
     git push --force origin master
 
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
