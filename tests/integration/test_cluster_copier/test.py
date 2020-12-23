@@ -94,8 +94,6 @@ class Task1:
         instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002",
                        settings={"insert_distributed_sync": 1})
 
-        print instance.query("SELECT DISTINCT 'all' AS partition FROM hits_all ORDER BY partition DESC")
-
     def check(self):
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
@@ -312,7 +310,13 @@ def execute_task(task, cmd_options):
 
 # Tests
 
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
 def test_copy_simple(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(Task1(started_cluster), ['--experimental-use-sample-offset', '1'])
@@ -320,7 +324,13 @@ def test_copy_simple(started_cluster, use_sample_offset):
         execute_task(Task1(started_cluster), [])
 
 
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
 def test_copy_with_recovering(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
@@ -329,7 +339,13 @@ def test_copy_with_recovering(started_cluster, use_sample_offset):
         execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
+@pytest.mark.parametrize(
+    ('use_sample_offset'),
+    [
+        False,
+        True
+    ]
+)
 def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offset):
     if use_sample_offset:
         execute_task(Task1(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
@@ -364,7 +380,11 @@ def test_no_index(started_cluster):
 def test_no_arg(started_cluster):
     execute_task(Task_no_arg(started_cluster), [])
 
-
 def test_non_partitioned_table(started_cluster):
     execute_task(Task_non_partitioned_table(started_cluster), [])
 
+if __name__ == '__main__':
+    with contextmanager(started_cluster)() as cluster:
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")
