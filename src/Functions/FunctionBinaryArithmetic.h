@@ -811,8 +811,7 @@ class FunctionBinaryArithmetic : public IFunction
             else if constexpr (left_is_decimal)
             {
                 const ResultType scale = DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
-                // if const, the scale needs to be inverted
-                return !col_left_const ? scale : (1 / scale);
+                return col_left_const ? scale : (1 / scale);
             }
             else
                 return 1; // the default value which won't cause any re-scale
@@ -829,7 +828,7 @@ class FunctionBinaryArithmetic : public IFunction
             else if constexpr (right_is_decimal)
             {
                 const ResultType scale = DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
-                return !col_right_const ? scale : (1 / scale);
+                return col_right_const ? scale : (1 / scale);
             }
             else
                 return 1;
