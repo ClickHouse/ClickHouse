@@ -475,15 +475,9 @@ void IPAddressDictionary::loadData()
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    /// created upfront to avoid excess allocations
-    const auto keys_size = dict_struct.key->size();
-
     const auto attributes_size = attributes.size();
 
     std::vector<IPRecord> ip_records;
-
-    row_idx.reserve(keys_size);
-    mask_column.reserve(keys_size);
 
     bool has_ipv6 = false;
 
@@ -492,19 +486,14 @@ void IPAddressDictionary::loadData()
         const auto rows = block.rows();
         element_count += rows;
 
-        const auto key_column_ptrs = ext::map<Columns>(
-            ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
-
+        const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
         const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size), [&](const size_t attribute_idx)
         {
-            return block.safeGetByPosition(keys_size + attribute_idx).column;
+            return block.safeGetByPosition(attribute_idx + 1).column;
         });
 
         for (const auto row : ext::range(0, rows))
         {
-            /// calculate key once per row
-            const auto key_column = key_column_ptrs.front();
-
             for (const auto attribute_idx : ext::range(0, attributes_size))
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
@@ -513,7 +502,7 @@ void IPAddressDictionary::loadData()
                 setAttributeValue(attribute, attribute_column[row]);
             }
 
-            const auto [addr, prefix] = parseIPFromString(std::string_view(key_column->getDataAt(row)));
+            const auto [addr, prefix] = parseIPFromString(std::string_view(key_column_ptr->getDataAt(row)));
             has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
             size_t row_number = ip_records.size();
@@ -522,6 +511,9 @@ void IPAddressDictionary::loadData()
     }
 
     stream->readSuffix();
+
+    row_idx.reserve(ip_records.size());
+    mask_column.reserve(ip_records.size());
 
     if (has_ipv6)
     {
@@ -1175,13 +1167,13 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        if (!dict_struct.key)
-            throw Exception{"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
+        if (!dict_struct.key || dict_struct.key->size() != 1)
+            throw Exception{"Dictionary of layout 'ip_trie' has to have one 'key'", ErrorCodes::BAD_ARGUMENTS};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        // This is specialised trie for storing IPv4 and IPv6 prefixes.
+        // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
