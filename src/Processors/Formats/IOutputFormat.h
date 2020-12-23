@@ -82,8 +82,19 @@ public:
     virtual void doWritePrefix() {}
     virtual void doWriteSuffix() { finalize(); }
 
-    void setTotals(const Block & totals) { consumeTotals(Port::Data{.chunk = Chunk(totals.getColumns(), totals.rows())}); }
-    void setExtremes(const Block & extremes) { consumeExtremes(Port::Data{.chunk = Chunk(extremes.getColumns(), extremes.rows())}); }
+    void setTotals(const Block & totals)
+    {
+        Port::Data data;
+        data.chunk = Chunk(totals.getColumns(), totals.rows());
+        consumeTotals(std::move(data));
+    }
+
+    void setExtremes(const Block & extremes)
+    {
+        Port::Data data;
+        data.chunk = Chunk(extremes.getColumns(), extremes.rows());
+        consumeExtremes(std::move(data));
+    }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
