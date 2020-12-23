@@ -790,9 +790,74 @@ RQ_SRS_007_LDAP_Configuration_Server_TLSCipherSuite = Requirement(
     level=3,
     num='4.2.27')
 
+RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown = Requirement(
+    name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL support `verification_cooldown` parameter in the [LDAP] server configuration section\n'
+        'that SHALL define a period of time, in seconds, after a successful bind attempt, during which a user SHALL be assumed\n'
+        'to be successfully authenticated for all consecutive requests without contacting the [LDAP] server.\n'
+        'After period of time since the last successful attempt expires then on the authentication attempt\n'
+        'SHALL result in contacting the [LDAP] server to verify the username and password. \n'
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.28')
+
+RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Default = Requirement(
+    name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Default',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] `verification_cooldown` parameter in the [LDAP] server configuration section\n'
+        'SHALL have a default value of `0` that disables caching and forces contacting\n'
+        'the [LDAP] server for each authentication request.\n'
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.29')
+
+RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Invalid = Requirement(
+    name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Invalid',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[Clickhouse] SHALL return an error if the value provided for the `verification_cooldown` parameter is not a valid positive integer.\n'
+        '\n'
+        'For example:\n'
+        '\n'
+        '* negative integer\n'
+        '* string\n'
+        '* empty value\n'
+        '* extremely large positive value (overflow)\n'
+        '* extremely large negative value (overflow)\n'
+        '\n'
+        'The error SHALL appear in the log and SHALL be similar to the following:\n'
+        '\n'
+        '```bash\n'
+        '<Error> Access(user directories): Could not parse LDAP server `openldap1`: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Syntax error: Not a valid unsigned integer: *input value*\n'
+        '```\n'
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.30')
+
 RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.Server.Syntax',
-    version='1.0',
+    version='2.0',
     priority=None,
     group=None,
     type=None,
@@ -808,6 +873,7 @@ RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
         '        <port>636</port>\n'
         '        <auth_dn_prefix>cn=</auth_dn_prefix>\n'
         '        <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>\n'
+        '        <verification_cooldown>0</verification_cooldown>\n'
         '        <enable_tls>yes</enable_tls>\n'
         '        <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>\n'
         '        <tls_require_cert>demand</tls_require_cert>\n'
@@ -823,7 +889,7 @@ RQ_SRS_007_LDAP_Configuration_Server_Syntax = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.28')
+    num='4.2.31')
 
 RQ_SRS_007_LDAP_Configuration_User_RBAC = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.RBAC',
@@ -843,7 +909,7 @@ RQ_SRS_007_LDAP_Configuration_User_RBAC = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.29')
+    num='4.2.32')
 
 RQ_SRS_007_LDAP_Configuration_User_Syntax = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.Syntax',
@@ -871,7 +937,7 @@ RQ_SRS_007_LDAP_Configuration_User_Syntax = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.30')
+    num='4.2.33')
 
 RQ_SRS_007_LDAP_Configuration_User_Name_Empty = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.Name.Empty',
@@ -886,7 +952,7 @@ RQ_SRS_007_LDAP_Configuration_User_Name_Empty = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.31')
+    num='4.2.34')
 
 RQ_SRS_007_LDAP_Configuration_User_BothPasswordAndLDAP = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.BothPasswordAndLDAP',
@@ -902,7 +968,7 @@ RQ_SRS_007_LDAP_Configuration_User_BothPasswordAndLDAP = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.32')
+    num='4.2.35')
 
 RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_NotDefined = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined',
@@ -919,7 +985,7 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_NotDefined = Requireme
         ),
     link=None,
     level=3,
-    num='4.2.33')
+    num='4.2.36')
 
 RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_Empty = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty',
@@ -936,7 +1002,7 @@ RQ_SRS_007_LDAP_Configuration_User_LDAP_InvalidServerName_Empty = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.34')
+    num='4.2.37')
 
 RQ_SRS_007_LDAP_Configuration_User_OnlyOneServer = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.OnlyOneServer',
@@ -951,7 +1017,7 @@ RQ_SRS_007_LDAP_Configuration_User_OnlyOneServer = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.35')
+    num='4.2.38')
 
 RQ_SRS_007_LDAP_Configuration_User_Name_Long = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.Name.Long',
@@ -967,7 +1033,7 @@ RQ_SRS_007_LDAP_Configuration_User_Name_Long = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.36')
+    num='4.2.39')
 
 RQ_SRS_007_LDAP_Configuration_User_Name_UTF8 = Requirement(
     name='RQ.SRS-007.LDAP.Configuration.User.Name.UTF8',
@@ -982,7 +1048,7 @@ RQ_SRS_007_LDAP_Configuration_User_Name_UTF8 = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.37')
+    num='4.2.40')
 
 RQ_SRS_007_LDAP_Authentication_Username_Empty = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Username.Empty',
@@ -997,7 +1063,7 @@ RQ_SRS_007_LDAP_Authentication_Username_Empty = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.38')
+    num='4.2.41')
 
 RQ_SRS_007_LDAP_Authentication_Username_Long = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Username.Long',
@@ -1012,7 +1078,7 @@ RQ_SRS_007_LDAP_Authentication_Username_Long = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.39')
+    num='4.2.42')
 
 RQ_SRS_007_LDAP_Authentication_Username_UTF8 = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Username.UTF8',
@@ -1027,7 +1093,7 @@ RQ_SRS_007_LDAP_Authentication_Username_UTF8 = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.40')
+    num='4.2.43')
 
 RQ_SRS_007_LDAP_Authentication_Password_Empty = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Password.Empty',
@@ -1044,7 +1110,7 @@ RQ_SRS_007_LDAP_Authentication_Password_Empty = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.41')
+    num='4.2.44')
 
 RQ_SRS_007_LDAP_Authentication_Password_Long = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Password.Long',
@@ -1060,7 +1126,7 @@ RQ_SRS_007_LDAP_Authentication_Password_Long = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.42')
+    num='4.2.45')
 
 RQ_SRS_007_LDAP_Authentication_Password_UTF8 = Requirement(
     name='RQ.SRS-007.LDAP.Authentication.Password.UTF8',
@@ -1076,7 +1142,64 @@ RQ_SRS_007_LDAP_Authentication_Password_UTF8 = Requirement(
         ),
     link=None,
     level=3,
-    num='4.2.43')
+    num='4.2.46')
+
+RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Performance = Requirement(
+    name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Performance',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL provide better login performance of [LDAP] authenticated users\n'
+        'when `verification_cooldown` parameter is set to a positive value when comparing\n'
+        'to the the case when `verification_cooldown` is turned off either for a single user or multiple users\n'
+        'making a large number of repeated requests.\n'
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.47')
+
+RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters = Requirement(
+    name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL reset any currently cached [LDAP] authentication bind requests enabled by the\n'
+        '`verification_cooldown` parameter in the [LDAP] server configuration section\n'
+        'if either `host`, `port`, `auth_dn_prefix`, or `auth_dn_suffix` parameter values\n'
+        'change in the configuration file. The reset SHALL cause any subsequent authentication attempts for any user\n'
+        "to result in contacting the [LDAP] server to verify user's username and password.\n"
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.48')
+
+RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_InvalidPassword = Requirement(
+    name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.InvalidPassword',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL reset current cached [LDAP] authentication bind request enabled by the\n'
+        '`verification_cooldown` parameter in the [LDAP] server configuration section\n'
+        'for the user if the password provided in the current authentication attempt does not match\n'
+        'the valid password provided during the first successful authentication request that was cached\n'
+        'for this exact user. The reset SHALL cause the next authentication attempt for this user\n'
+        "to result in contacting the [LDAP] server to verify user's username and password.\n"
+        '\n'
+        ),
+    link=None,
+    level=3,
+    num='4.2.49')
 
 SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
     name='SRS-007 ClickHouse Authentication of Users via LDAP', 
@@ -1150,22 +1273,28 @@ SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
         Heading(name='RQ.SRS-007.LDAP.Configuration.Server.TLSCACertDir', level=3, num='4.2.25'),
         Heading(name='RQ.SRS-007.LDAP.Configuration.Server.TLSCACertFile', level=3, num='4.2.26'),
         Heading(name='RQ.SRS-007.LDAP.Configuration.Server.TLSCipherSuite', level=3, num='4.2.27'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.Server.Syntax', level=3, num='4.2.28'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.RBAC', level=3, num='4.2.29'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Syntax', level=3, num='4.2.30'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.Empty', level=3, num='4.2.31'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.BothPasswordAndLDAP', level=3, num='4.2.32'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined', level=3, num='4.2.33'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty', level=3, num='4.2.34'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.OnlyOneServer', level=3, num='4.2.35'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.Long', level=3, num='4.2.36'),
-        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.UTF8', level=3, num='4.2.37'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.Empty', level=3, num='4.2.38'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.Long', level=3, num='4.2.39'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.UTF8', level=3, num='4.2.40'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.Empty', level=3, num='4.2.41'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.Long', level=3, num='4.2.42'),
-        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.UTF8', level=3, num='4.2.43'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown', level=3, num='4.2.28'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Default', level=3, num='4.2.29'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Invalid', level=3, num='4.2.30'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.Server.Syntax', level=3, num='4.2.31'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.RBAC', level=3, num='4.2.32'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Syntax', level=3, num='4.2.33'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.Empty', level=3, num='4.2.34'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.BothPasswordAndLDAP', level=3, num='4.2.35'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined', level=3, num='4.2.36'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty', level=3, num='4.2.37'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.OnlyOneServer', level=3, num='4.2.38'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.Long', level=3, num='4.2.39'),
+        Heading(name='RQ.SRS-007.LDAP.Configuration.User.Name.UTF8', level=3, num='4.2.40'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.Empty', level=3, num='4.2.41'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.Long', level=3, num='4.2.42'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Username.UTF8', level=3, num='4.2.43'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.Empty', level=3, num='4.2.44'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.Long', level=3, num='4.2.45'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.Password.UTF8', level=3, num='4.2.46'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Performance', level=3, num='4.2.47'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters', level=3, num='4.2.48'),
+        Heading(name='RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.InvalidPassword', level=3, num='4.2.49'),
         Heading(name='References', level=1, num='5'),
         ),
     requirements=(
@@ -1218,6 +1347,9 @@ SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
         RQ_SRS_007_LDAP_Configuration_Server_TLSCACertDir,
         RQ_SRS_007_LDAP_Configuration_Server_TLSCACertFile,
         RQ_SRS_007_LDAP_Configuration_Server_TLSCipherSuite,
+        RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown,
+        RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Default,
+        RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Invalid,
         RQ_SRS_007_LDAP_Configuration_Server_Syntax,
         RQ_SRS_007_LDAP_Configuration_User_RBAC,
         RQ_SRS_007_LDAP_Configuration_User_Syntax,
@@ -1234,9 +1366,13 @@ SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
         RQ_SRS_007_LDAP_Authentication_Password_Empty,
         RQ_SRS_007_LDAP_Authentication_Password_Long,
         RQ_SRS_007_LDAP_Authentication_Password_UTF8,
+        RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Performance,
+        RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_ChangeInCoreServerParameters,
+        RQ_SRS_007_LDAP_Authentication_VerificationCooldown_Reset_InvalidPassword,
         ),
     content='''
 # SRS-007 ClickHouse Authentication of Users via LDAP
+# Software Requirements Specification
 
 ## Table of Contents
 
@@ -1295,22 +1431,28 @@ SRS_007_ClickHouse_Authentication_of_Users_via_LDAP = Specification(
     * 4.2.25 [RQ.SRS-007.LDAP.Configuration.Server.TLSCACertDir](#rqsrs-007ldapconfigurationservertlscacertdir)
     * 4.2.26 [RQ.SRS-007.LDAP.Configuration.Server.TLSCACertFile](#rqsrs-007ldapconfigurationservertlscacertfile)
     * 4.2.27 [RQ.SRS-007.LDAP.Configuration.Server.TLSCipherSuite](#rqsrs-007ldapconfigurationservertlsciphersuite)
-    * 4.2.28 [RQ.SRS-007.LDAP.Configuration.Server.Syntax](#rqsrs-007ldapconfigurationserversyntax)
-    * 4.2.29 [RQ.SRS-007.LDAP.Configuration.User.RBAC](#rqsrs-007ldapconfigurationuserrbac)
-    * 4.2.30 [RQ.SRS-007.LDAP.Configuration.User.Syntax](#rqsrs-007ldapconfigurationusersyntax)
-    * 4.2.31 [RQ.SRS-007.LDAP.Configuration.User.Name.Empty](#rqsrs-007ldapconfigurationusernameempty)
-    * 4.2.32 [RQ.SRS-007.LDAP.Configuration.User.BothPasswordAndLDAP](#rqsrs-007ldapconfigurationuserbothpasswordandldap)
-    * 4.2.33 [RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined](#rqsrs-007ldapconfigurationuserldapinvalidservernamenotdefined)
-    * 4.2.34 [RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty](#rqsrs-007ldapconfigurationuserldapinvalidservernameempty)
-    * 4.2.35 [RQ.SRS-007.LDAP.Configuration.User.OnlyOneServer](#rqsrs-007ldapconfigurationuseronlyoneserver)
-    * 4.2.36 [RQ.SRS-007.LDAP.Configuration.User.Name.Long](#rqsrs-007ldapconfigurationusernamelong)
-    * 4.2.37 [RQ.SRS-007.LDAP.Configuration.User.Name.UTF8](#rqsrs-007ldapconfigurationusernameutf8)
-    * 4.2.38 [RQ.SRS-007.LDAP.Authentication.Username.Empty](#rqsrs-007ldapauthenticationusernameempty)
-    * 4.2.39 [RQ.SRS-007.LDAP.Authentication.Username.Long](#rqsrs-007ldapauthenticationusernamelong)
-    * 4.2.40 [RQ.SRS-007.LDAP.Authentication.Username.UTF8](#rqsrs-007ldapauthenticationusernameutf8)
-    * 4.2.41 [RQ.SRS-007.LDAP.Authentication.Password.Empty](#rqsrs-007ldapauthenticationpasswordempty)
-    * 4.2.42 [RQ.SRS-007.LDAP.Authentication.Password.Long](#rqsrs-007ldapauthenticationpasswordlong)
-    * 4.2.43 [RQ.SRS-007.LDAP.Authentication.Password.UTF8](#rqsrs-007ldapauthenticationpasswordutf8)
+    * 4.2.28 [RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown](#rqsrs-007ldapconfigurationserververificationcooldown)
+    * 4.2.29 [RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Default](#rqsrs-007ldapconfigurationserververificationcooldowndefault)
+    * 4.2.30 [RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Invalid](#rqsrs-007ldapconfigurationserververificationcooldowninvalid)
+    * 4.2.31 [RQ.SRS-007.LDAP.Configuration.Server.Syntax](#rqsrs-007ldapconfigurationserversyntax)
+    * 4.2.32 [RQ.SRS-007.LDAP.Configuration.User.RBAC](#rqsrs-007ldapconfigurationuserrbac)
+    * 4.2.33 [RQ.SRS-007.LDAP.Configuration.User.Syntax](#rqsrs-007ldapconfigurationusersyntax)
+    * 4.2.34 [RQ.SRS-007.LDAP.Configuration.User.Name.Empty](#rqsrs-007ldapconfigurationusernameempty)
+    * 4.2.35 [RQ.SRS-007.LDAP.Configuration.User.BothPasswordAndLDAP](#rqsrs-007ldapconfigurationuserbothpasswordandldap)
+    * 4.2.36 [RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.NotDefined](#rqsrs-007ldapconfigurationuserldapinvalidservernamenotdefined)
+    * 4.2.37 [RQ.SRS-007.LDAP.Configuration.User.LDAP.InvalidServerName.Empty](#rqsrs-007ldapconfigurationuserldapinvalidservernameempty)
+    * 4.2.38 [RQ.SRS-007.LDAP.Configuration.User.OnlyOneServer](#rqsrs-007ldapconfigurationuseronlyoneserver)
+    * 4.2.39 [RQ.SRS-007.LDAP.Configuration.User.Name.Long](#rqsrs-007ldapconfigurationusernamelong)
+    * 4.2.40 [RQ.SRS-007.LDAP.Configuration.User.Name.UTF8](#rqsrs-007ldapconfigurationusernameutf8)
+    * 4.2.41 [RQ.SRS-007.LDAP.Authentication.Username.Empty](#rqsrs-007ldapauthenticationusernameempty)
+    * 4.2.42 [RQ.SRS-007.LDAP.Authentication.Username.Long](#rqsrs-007ldapauthenticationusernamelong)
+    * 4.2.43 [RQ.SRS-007.LDAP.Authentication.Username.UTF8](#rqsrs-007ldapauthenticationusernameutf8)
+    * 4.2.44 [RQ.SRS-007.LDAP.Authentication.Password.Empty](#rqsrs-007ldapauthenticationpasswordempty)
+    * 4.2.45 [RQ.SRS-007.LDAP.Authentication.Password.Long](#rqsrs-007ldapauthenticationpasswordlong)
+    * 4.2.46 [RQ.SRS-007.LDAP.Authentication.Password.UTF8](#rqsrs-007ldapauthenticationpasswordutf8)
+    * 4.2.47 [RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Performance](#rqsrs-007ldapauthenticationverificationcooldownperformance)
+    * 4.2.48 [RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters](#rqsrs-007ldapauthenticationverificationcooldownresetchangeincoreserverparameters)
+    * 4.2.49 [RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.InvalidPassword](#rqsrs-007ldapauthenticationverificationcooldownresetinvalidpassword)
 * 5 [References](#references)
 
 ## Revision History
@@ -1631,8 +1773,43 @@ For example,
 The available suites SHALL depend on the [OpenSSL] library version and variant used to build
 [ClickHouse] and therefore might change.
 
-#### RQ.SRS-007.LDAP.Configuration.Server.Syntax
+#### RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown
 version: 1.0
+
+[ClickHouse] SHALL support `verification_cooldown` parameter in the [LDAP] server configuration section
+that SHALL define a period of time, in seconds, after a successful bind attempt, during which a user SHALL be assumed
+to be successfully authenticated for all consecutive requests without contacting the [LDAP] server.
+After period of time since the last successful attempt expires then on the authentication attempt
+SHALL result in contacting the [LDAP] server to verify the username and password. 
+
+#### RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Default
+version: 1.0
+
+[ClickHouse] `verification_cooldown` parameter in the [LDAP] server configuration section
+SHALL have a default value of `0` that disables caching and forces contacting
+the [LDAP] server for each authentication request.
+
+#### RQ.SRS-007.LDAP.Configuration.Server.VerificationCooldown.Invalid
+version: 1.0
+
+[Clickhouse] SHALL return an error if the value provided for the `verification_cooldown` parameter is not a valid positive integer.
+
+For example:
+
+* negative integer
+* string
+* empty value
+* extremely large positive value (overflow)
+* extremely large negative value (overflow)
+
+The error SHALL appear in the log and SHALL be similar to the following:
+
+```bash
+<Error> Access(user directories): Could not parse LDAP server `openldap1`: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Syntax error: Not a valid unsigned integer: *input value*
+```
+
+#### RQ.SRS-007.LDAP.Configuration.Server.Syntax
+version: 2.0
 
 [ClickHouse] SHALL support the following example syntax to create an entry for an [LDAP] server inside the `config.xml`
 configuration file or of any configuration file inside the `config.d` directory.
@@ -1644,6 +1821,7 @@ configuration file or of any configuration file inside the `config.d` directory.
         <port>636</port>
         <auth_dn_prefix>cn=</auth_dn_prefix>
         <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
+        <verification_cooldown>0</verification_cooldown>
         <enable_tls>yes</enable_tls>
         <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
         <tls_require_cert>demand</tls_require_cert>
@@ -1758,6 +1936,33 @@ version: 1.0
 
 [ClickHouse] SHALL support [UTF-8] characters in passwords
 used to authenticate users using an [LDAP] server.
+
+#### RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Performance
+version: 1.0
+
+[ClickHouse] SHALL provide better login performance of [LDAP] authenticated users
+when `verification_cooldown` parameter is set to a positive value when comparing
+to the the case when `verification_cooldown` is turned off either for a single user or multiple users
+making a large number of repeated requests.
+
+#### RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters
+version: 1.0
+
+[ClickHouse] SHALL reset any currently cached [LDAP] authentication bind requests enabled by the
+`verification_cooldown` parameter in the [LDAP] server configuration section
+if either `host`, `port`, `auth_dn_prefix`, or `auth_dn_suffix` parameter values
+change in the configuration file. The reset SHALL cause any subsequent authentication attempts for any user
+to result in contacting the [LDAP] server to verify user's username and password.
+
+#### RQ.SRS-007.LDAP.Authentication.VerificationCooldown.Reset.InvalidPassword
+version: 1.0
+
+[ClickHouse] SHALL reset current cached [LDAP] authentication bind request enabled by the
+`verification_cooldown` parameter in the [LDAP] server configuration section
+for the user if the password provided in the current authentication attempt does not match
+the valid password provided during the first successful authentication request that was cached
+for this exact user. The reset SHALL cause the next authentication attempt for this user
+to result in contacting the [LDAP] server to verify user's username and password.
 
 ## References
 
