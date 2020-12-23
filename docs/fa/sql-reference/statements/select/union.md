@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
-# اتحادیه همه بند {#union-all-clause}
+# اتحادیه همه بند {#union-clause}
 
 شما می توانید استفاده کنید `UNION ALL` برای ترکیب هر تعداد از `SELECT` نمایش داده شد با گسترش نتایج خود را. مثال:
 

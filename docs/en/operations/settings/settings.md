@@ -2460,7 +2460,7 @@ Default value: `0`.
 
 ## union_default_mode {#union-default-mode}
 
-Sets a special mode for combining `SELECT` query results using the [UNION](../../sql-reference/statements/select/union-all.md) expression.
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
 
 Possible values:
 
@@ -2470,53 +2470,6 @@ Possible values:
 
 Default value: `'DISTINCT'`.
 
-**Example of using the 'DISTINCT' value**
-
-Query:
-
-```sql
-SET union_default_mode = 'DISTINCT';
-SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
-```
-
-Result:
-
-```text
-┌─1─┐
-│ 1 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 3 │
-└───┘
-```
-
-**Example of using the 'ALL' value**
-
-Query:
-
-```sql
-SET union_default_mode = 'ALL';
-SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
-```
-
-Result:
-
-```text
-┌─1─┐
-│ 1 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 3 │
-└───┘
-```
+See examples in [UNION](../../sql-reference/statements/select/union.md).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

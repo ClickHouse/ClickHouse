@@ -2326,7 +2326,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## union_default_mode {#union-default-mode}
 
-Устанавливает особый режим объединения результатов `SELECT` запросов, используя выражение [UNION](../../sql-reference/statements/select/union-all.md).
+Устанавливает режим объединения результатов `SELECT` запросов. Настройка используется только при совместном использовании с [UNION](../../sql-reference/statements/select/union.md) без явного указания `UNION ALL` или `UNION DISTINCT`.
 
 Возможные значения:
 
@@ -2336,53 +2336,6 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Значение по умолчанию: `'DISTINCT'`.
 
-**Пример использования 'DISTINCT' в качестве значения настройки**
-
-Запрос:
-
-```sql
-SET union_default_mode = 'DISTINCT';
-SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
-```
-
-Результат:
-
-```text
-┌─1─┐
-│ 1 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 3 │
-└───┘
-```
-
-**Пример использования 'ALL' в качестве значения настройки**
-
-Запрос:
-
-```sql
-SET union_default_mode = 'ALL';
-SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
-```
-
-Результат:
-
-```text
-┌─1─┐
-│ 1 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 2 │
-└───┘
-┌─1─┐
-│ 3 │
-└───┘
-```
+Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
