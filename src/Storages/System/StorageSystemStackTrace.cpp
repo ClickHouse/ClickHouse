@@ -39,7 +39,7 @@ namespace
 
     std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
     std::atomic<int> data_ready_num = 0;
-    std::atomic<bool> signal_latch = 0;   /// Only need for thread sanitizer.
+    std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
     /** Notes:
       * Only one query from the table can be processed at the moment of time.
