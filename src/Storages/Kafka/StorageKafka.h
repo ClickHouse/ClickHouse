@@ -98,6 +98,9 @@ private:
 
     std::mutex mutex;
 
+    const String sasl_user;
+    const String sasl_password;
+
     // Stream thread
     struct TaskContext
     {
