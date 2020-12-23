@@ -1213,6 +1213,7 @@ protected:
     Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
         Method & method,
+        Arena * arena,
         bool final,
         size_t bucket) const;
 
