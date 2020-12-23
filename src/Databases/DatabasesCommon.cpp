@@ -72,7 +72,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     auto it = tables.find(table_name);
     if (it == tables.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
@@ -80,7 +80,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -102,7 +102,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (table_id.hasUUID())
     {
-        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
@@ -131,7 +131,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->shutdown();
         if (table_id.hasUUID())
         {
-            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }
@@ -157,7 +157,7 @@ StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist.",
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
 }
 

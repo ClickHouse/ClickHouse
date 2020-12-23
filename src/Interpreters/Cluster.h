@@ -1,13 +1,23 @@
 #pragma once
 
 #include <map>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
 
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
+
 namespace DB
 {
+
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

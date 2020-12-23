@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -73,6 +74,15 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
             thread_group->global_context = global_context;
     }
 
+    // Generate new span for thread manually here, because we can't depend
+    // on OpenTelemetrySpanHolder due to link order issues.
+    // FIXME why and how is this different from setupState()?
+    thread_trace_context = query_context->query_trace_context;
+    if (thread_trace_context.trace_id)
+    {
+        thread_trace_context.span_id = thread_local_rng();
+    }
+
     applyQuerySettings();
 }
 
@@ -108,7 +118,21 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     if (query_context)
+    {
         applyQuerySettings();
+
+        // Generate new span for thread manually here, because we can't depend
+        // on OpenTelemetrySpanHolder due to link order issues.
+        thread_trace_context = query_context->query_trace_context;
+        if (thread_trace_context.trace_id)
+        {
+            thread_trace_context.span_id = thread_local_rng();
+        }
+    }
+    else
+    {
+        thread_trace_context.trace_id = 0;
+    }
 
     initPerformanceCounters();
 
@@ -300,6 +324,41 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
 
+    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
+    if (thread_trace_context.trace_id && query_context)
+    {
+        opentelemetry_span_log = query_context->getOpenTelemetrySpanLog();
+    }
+
+    if (opentelemetry_span_log)
+    {
+        // Log the current thread span.
+        // We do this manually, because we can't use OpenTelemetrySpanHolder as a
+        // ThreadStatus member, because of linking issues. This file is linked
+        // separately, so we can reference OpenTelemetrySpanLog here, but if we had
+        // the span holder as a field, we would have to reference it in the
+        // destructor, which is in another library.
+        OpenTelemetrySpanLogElement span;
+
+        span.trace_id = thread_trace_context.trace_id;
+        // All child span holders should be finished by the time we detach this
+        // thread, so the current span id should be the thread span id. If not,
+        // an assertion for a proper parent span in ~OpenTelemetrySpanHolder()
+        // is going to fail, because we're going to reset it to zero later in
+        // this function.
+        span.span_id = thread_trace_context.span_id;
+        span.parent_span_id = query_context->query_trace_context.span_id;
+        span.operation_name = getThreadName();
+        span.start_time_us = query_start_time_microseconds;
+        span.finish_time_us =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        span.attribute_names.push_back("clickhouse.thread_id");
+        span.attribute_values.push_back(thread_id);
+
+        opentelemetry_span_log->add(span);
+    }
+
     finalizeQueryProfiler();
     finalizePerformanceCounters();
 
@@ -312,6 +371,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_id.clear();
     query_context = nullptr;
+    thread_trace_context.trace_id = 0;
+    thread_trace_context.span_id = 0;
     thread_group.reset();
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
@@ -364,6 +425,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
             elem.master_thread_id = thread_group->master_thread_id;
             elem.query = thread_group->query;
+            elem.normalized_query_hash = thread_group->normalized_query_hash;
         }
     }
 

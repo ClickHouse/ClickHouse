@@ -1,0 +1,75 @@
+#!/usr/bin/env python3                                                                                                                                                                                              
+import os
+import sys
+from scipy import stats
+import pandas as pd
+import numpy as np
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+from pure_http_client import ClickHouseClient
+
+def test_and_check(name, a, b, t_stat, p_value, precision=1e-2):
+    client = ClickHouseClient()
+    client.query("DROP TABLE IF EXISTS ttest;")
+    client.query("CREATE TABLE ttest (left Float64, right UInt8) ENGINE = Memory;");
+    client.query("INSERT INTO ttest VALUES {};".format(", ".join(['({},{})'.format(i, 0) for i in a])))
+    client.query("INSERT INTO ttest VALUES {};".format(", ".join(['({},{})'.format(j, 1) for j in b])))
+    real = client.query_return_df(
+        "SELECT roundBankers({}(left, right).1, 16) as t_stat, ".format(name) +
+               "roundBankers({}(left, right).2, 16) as p_value ".format(name) + 
+        "FROM ttest FORMAT TabSeparatedWithNames;")
+    real_t_stat = real['t_stat'][0]
+    real_p_value = real['p_value'][0]
+    assert(abs(real_t_stat - np.float64(t_stat)) < precision), "clickhouse_t_stat {}, scipy_t_stat {}".format(real_t_stat, t_stat)
+    assert(abs(real_p_value - np.float64(p_value)) < precision), "clickhouse_p_value {}, scipy_p_value {}".format(real_p_value, p_value)
+    client.query("DROP TABLE IF EXISTS ttest;")
+
+
+def test_student():
+    rvs1 = np.round(stats.norm.rvs(loc=1, scale=5,size=500), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=10, scale=5,size=500), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=5,size=500), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=5,size=500), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=2, scale=10,size=512), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=5, scale=20,size=1024), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=10,size=1024), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=10,size=512), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = True)
+    test_and_check("studentTTest", rvs1, rvs2, s, p)
+
+def test_welch():
+    rvs1 = np.round(stats.norm.rvs(loc=1, scale=15,size=500), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=10, scale=5,size=500), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=7,size=500), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=3,size=500), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=0, scale=10,size=1024), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=5, scale=1,size=512), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
+
+    rvs1 = np.round(stats.norm.rvs(loc=5, scale=10,size=512), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=5, scale=10,size=1024), 2)
+    s, p = stats.ttest_ind(rvs1, rvs2, equal_var = False)
+    test_and_check("welchTTest", rvs1, rvs2, s, p)
+
+if __name__ == "__main__":
+    test_student()
+    test_welch()
+    print("Ok.")
