@@ -802,20 +802,26 @@ class FunctionBinaryArithmetic : public IFunction
             if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
-                return type.scaleFactorFor(left, is_multiply);
-            else if constexpr (left_is_decimal) // needed for e.g. multiply(Decimal, Float) to scale the arguments
-                // scale multiplier = 10^scale, so we need to get this value divided by 10^0 -> 2nd arg is 0 as
-                // the convertTo basically divides the given value on the second arg.
-                return 1 / DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
+                // scale_a = 1 is result is decimal
+                return is_multiply ? 1 : type.scaleFactorFor(left, false);
+            else if constexpr (left_is_decimal)
+            {
+                const ResultType scale = DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
+                // if const, the scale needs to be inverted
+                return !col_left_const ? scale : (1 / scale);
+            }
             else
                 return 1; // the default value which won't cause any re-scale
         }();
 
         const ResultType scale_b = [&] {
             if constexpr (result_is_decimal)
-                return type.scaleFactorFor(right, is_multiply || is_division);
+                return is_multiply ? 1 : type.scaleFactorFor(right, true);
             else if constexpr (right_is_decimal)
-                return 1 / DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
+            {
+                const ResultType scale = DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
+                return !col_right_const ? scale : (1 / scale);
+            }
             else
                 return 1;
         }();
