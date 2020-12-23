@@ -101,7 +101,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         if (ident.compound())
         {
             if (count(full_name.begin(), full_name.end(),'.') == 2)
-                full_name = full_name.substr(full_name.find(".") + 1);
+                full_name = full_name.substr(full_name.find('.') + 1);
         }
         expected_columns.insert(full_name);
     }
