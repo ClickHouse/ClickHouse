@@ -1110,6 +1110,10 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
+            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            {
+                ++pos;
+            }
             else
             {
                 expected.add(pos, "comma or closing bracket");
@@ -1130,6 +1134,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1254,7 +1259,7 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         res->children.push_back(regex_node);
     }
 
-    ParserColumnsTransformers transformers_p;
+    ParserColumnsTransformers transformers_p(allowed_transformers);
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
@@ -1273,7 +1278,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword as("AS");
     ParserKeyword strict("STRICT");
 
-    if (apply.ignore(pos, expected))
+    if (allowed_transformers.isSet(ColumnTransformer::APPLY) && apply.ignore(pos, expected))
     {
         bool with_open_round_bracket = false;
 
@@ -1326,7 +1331,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    else if (except.ignore(pos, expected))
+    else if (allowed_transformers.isSet(ColumnTransformer::EXCEPT) && except.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -1366,7 +1371,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    else if (replace.ignore(pos, expected))
+    else if (allowed_transformers.isSet(ColumnTransformer::REPLACE) && replace.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -1429,7 +1434,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
-        ParserColumnsTransformers transformers_p;
+        ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
         {
@@ -1564,6 +1569,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
+        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

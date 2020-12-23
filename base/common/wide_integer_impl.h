@@ -5,9 +5,11 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include <cmath>
 #include <cfloat>
-#include <limits>
 #include <cassert>
+#include <limits>
+
 
 namespace wide
 {
@@ -239,6 +241,14 @@ struct integer<Bits, Signed>::_impl
     template <class T>
     constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
         constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
+
+        /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
+        if (!std::isfinite(t))
+        {
+            self = 0;
+            return;
+        }
+
         const T alpha = t / max_int;
 
         if (alpha <= max_int)

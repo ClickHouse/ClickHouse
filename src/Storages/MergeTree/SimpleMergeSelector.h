@@ -58,9 +58,9 @@ It's still unclear if this algorithm is good or optimal at all. It's unclear if 
 
 To test and optimize SimpleMergeSelector, we apply the following methods:
 - insert/merge simulator: a model simulating parts insertion and merging;
- merge selecting algorithm is applied and the relevant metrics are calculated to allow to tune the algorithm;
+merge selecting algorithm is applied and the relevant metrics are calculated to allow to tune the algorithm;
 - insert/merge simulator on real `system.part_log` from production - it gives realistic information about inserted data parts:
- their sizes, at what time intervals they are inserted;
+their sizes, at what time intervals they are inserted;
 
 There is a research thesis dedicated to optimization of merge algorithm:
 https://presentations.clickhouse.tech/hse_2019/merge_algorithm.pptx
