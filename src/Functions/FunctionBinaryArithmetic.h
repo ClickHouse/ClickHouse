@@ -804,7 +804,7 @@ class FunctionBinaryArithmetic : public IFunction
             else if constexpr (result_is_decimal)
             {
                 if constexpr (is_multiply)
-                    return 1;
+                    return ResultType{1};
                 else
                     return type.scaleFactorFor(left, false);
             }
@@ -822,7 +822,7 @@ class FunctionBinaryArithmetic : public IFunction
             if constexpr (result_is_decimal)
             {
                 if constexpr (is_multiply)
-                    return 1;
+                    return ResultType{1};
                 else
                     return type.scaleFactorFor(right, is_division);
             }
