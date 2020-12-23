@@ -286,6 +286,25 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 }
 
 
+bool Set::empty() const
+{
+    std::shared_lock lock(rwlock);
+    return data.empty();
+}
+
+size_t Set::getTotalRowCount() const
+{
+    std::shared_lock lock(rwlock);
+    return data.getTotalRowCount();
+}
+
+size_t Set::getTotalByteCount() const
+{
+    std::shared_lock lock(rwlock);
+    return data.getTotalByteCount();
+}
+
+
 template <typename Method>
 void NO_INLINE Set::executeImpl(
     Method & method,
