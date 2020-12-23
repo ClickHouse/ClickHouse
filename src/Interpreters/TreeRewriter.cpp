@@ -631,7 +631,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             {
                 auto hints = storage->getHints(name);
                 if (!hints.empty())
-                    ss << " '" << toString(hints) << " '";
+                    ss << " '" << toString(hints) << "'";
             }
         }
         else
