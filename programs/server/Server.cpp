@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -103,6 +104,7 @@ namespace CurrentMetrics
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+    app.shouldSetupWatchdog(argc ? argv[0] : nullptr);
     try
     {
         return app.run(argc, argv);
@@ -366,6 +368,7 @@ void checkForUsersNotInMainConfig(
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
