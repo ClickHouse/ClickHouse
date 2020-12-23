@@ -1855,6 +1855,18 @@ Default value: `0`.
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
+
+By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
+
+Possible values:
+
+-   0 — Insertion is rejected if there are multiple shards and no distributed key is given.
+-   1 — Insertion is done randomly among all available shards when no distributed key is given.
+
+Default value: `0`.
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 

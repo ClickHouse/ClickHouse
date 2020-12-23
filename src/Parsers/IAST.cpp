@@ -161,4 +161,11 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     }
 }
 
+std::string IAST::dumpTree(size_t indent) const
+{
+    WriteBufferFromOwnString wb;
+    dumpTree(wb, indent);
+    return wb.str();
+}
+
 }

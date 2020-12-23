@@ -75,6 +75,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
