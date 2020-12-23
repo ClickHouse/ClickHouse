@@ -262,4 +262,11 @@ inline String fileName(const String & path)
 {
     return Poco::Path(path).getFileName();
 }
+
+/// Return directory path for the specified path.
+inline String directoryPath(const String & path)
+{
+    return Poco::Path(path).setFileName("").toString();
+}
+
 }

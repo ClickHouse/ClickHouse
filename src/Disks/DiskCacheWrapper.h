@@ -43,7 +43,6 @@ public:
 
 private:
     std::shared_ptr<FileDownloadMetadata> acquireDownloadMetadata(const String & path) const;
-    static String getDirectoryPath(const String & path);
 
     /// Disk to cache files.
     std::shared_ptr<DiskLocal> cache_disk;
