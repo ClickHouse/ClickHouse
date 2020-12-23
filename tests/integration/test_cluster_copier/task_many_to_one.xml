@@ -1,7 +1,7 @@
 <yandex>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
-        <anime_source>
+        <big_source>
             <shard>
                 <internal_replication>true</internal_replication>    
                 <replica>
@@ -57,16 +57,16 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </anime_source>
+        </big_source>
 
-        <anime_destination>
+        <big_destination>
             <shard> 
                 <replica>
                     <host>s1_0_0</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </anime_destination>
+        </big_destination>
     </remote_servers>
 
     <!-- How many simultaneously active workers are possible. If you run more workers superfluous workers will sleep. -->
@@ -98,14 +98,14 @@
         <!-- A table task, copies one table. -->
         <table_first>
             <!-- Source cluster name (from <remote_servers/> section) and tables in it that should be copied -->
-            <cluster_pull>anime_source</cluster_pull>
+            <cluster_pull>big_source</cluster_pull>
             <database_pull>default</database_pull>
-            <table_pull>anime_all</table_pull>
+            <table_pull>big_all</table_pull>
 
             <!-- Destination cluster name and tables in which the data should be inserted -->
-            <cluster_push>anime_destination</cluster_push>
+            <cluster_push>big_destination</cluster_push>
             <database_push>default</database_push>
-            <table_push>anime</table_push>
+            <table_push>big</table_push>
 			
 			<!-- Engine of destination tables.
                  If destination tables have not be created, workers create them using columns definition from source tables and engine

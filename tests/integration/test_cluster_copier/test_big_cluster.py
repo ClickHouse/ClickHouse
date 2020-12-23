@@ -80,21 +80,21 @@ class Task_many_to_one:
     def start(self):
         instance = cluster.instances['s0_0_0']
 
-        for cluster_num in ["anime_source", "anime_destination"]:
+        for cluster_num in ["big_source", "big_destination"]:
             instance.query("DROP DATABASE IF EXISTS default ON CLUSTER {}".format(cluster_num))
             instance.query("CREATE DATABASE IF NOT EXISTS default ON CLUSTER {}".format(cluster_num))
 
-        instance.query("CREATE TABLE anime ON CLUSTER anime_source (first_id UUID DEFAULT generateUUIDv4(), second_id UInt64, datetime DateTime DEFAULT now()) " +
+        instance.query("CREATE TABLE big ON CLUSTER big_source (first_id UUID DEFAULT generateUUIDv4(), second_id UInt64, datetime DateTime DEFAULT now()) " +
                        "ENGINE=ReplicatedMergeTree " +
                        "PARTITION BY toSecond(datetime) " +  
                        "ORDER BY (first_id, second_id, toSecond(datetime))")
-        instance.query("CREATE TABLE anime_all ON CLUSTER anime_source (first_id UUID, second_id UInt64, datetime DateTime) ENGINE=Distributed(anime_source, default, anime, rand() % 5)")
-        instance.query("INSERT INTO anime_all SELECT generateUUIDv4(), number, now() FROM system.numbers LIMIT 1002",
+        instance.query("CREATE TABLE big_all ON CLUSTER big_source (first_id UUID, second_id UInt64, datetime DateTime) ENGINE=Distributed(big_source, default, big, rand() % 5)")
+        instance.query("INSERT INTO big_all SELECT generateUUIDv4(), number, now() FROM system.numbers LIMIT 1002",
                        settings={"insert_distributed_sync": 1})
 
     def check(self):
-        assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM anime_all")) == TSV("1002\n")
-        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM anime")) == TSV("1002\n")
+        assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM big_all")) == TSV("1002\n")
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM big")) == TSV("1002\n")
 
 def execute_task(task, cmd_options):
     task.start()
