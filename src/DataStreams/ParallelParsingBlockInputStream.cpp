@@ -209,7 +209,8 @@ void ParallelParsingBlockInputStream::onBackgroundException(size_t offset)
     {
         background_exception = std::current_exception();
 
-        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
+        if (ParsingException * e = exception_cast<ParsingException *>(background_exception)
+            && e->getLineNumber() != -1)
         {
             e->setLineNumber(e->getLineNumber() + offset);
         }
