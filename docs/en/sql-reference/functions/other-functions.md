@@ -1172,12 +1172,12 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (finalized state). Useful with using [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator.
+Takes state of aggregate function. Returns result of aggregation (finalized state). Useful with [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator.
 
 **Syntax** 
 
 ``` sql
-finalizeAggregation(state)
+finalizeAggregation(state);
 ```
 
 **Parameters**
@@ -1268,9 +1268,8 @@ Result:
 
 **See Also** 
 
-[arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
-
-[initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
