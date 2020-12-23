@@ -45,7 +45,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!s_show.ignore(pos, expected))
         return false;
 
-    if (s_databases.ignore(pos))
+    if (s_databases.ignore(pos, expected))
     {
         query->databases = true;
 
@@ -68,7 +68,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
         }
     }
-    else if (s_clusters.ignore(pos))
+    else if (s_clusters.ignore(pos, expected))
     {
         query->clusters = true;
 
@@ -91,7 +91,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
         }
     }
-    else if (s_cluster.ignore(pos))
+    else if (s_cluster.ignore(pos, expected))
     {
         query->cluster = true;
 
@@ -101,7 +101,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         query->cluster_str = std::move(cluster_str);
     }
-    else if (bool changed = s_changed.ignore(pos); changed || s_settings.ignore(pos))
+    else if (bool changed = s_changed.ignore(pos, expected); changed || s_settings.ignore(pos, expected))
     {
         query->m_settings = true;
 
@@ -113,7 +113,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         /// Not expected due to "SHOW SETTINGS PROFILES"
-        if (bool insensitive = s_ilike.ignore(pos); insensitive || s_like.ignore(pos))
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
         {
             if (insensitive)
                 query->case_insensitive_like = true;

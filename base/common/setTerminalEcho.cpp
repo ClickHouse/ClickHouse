@@ -1,6 +1,7 @@
 // https://stackoverflow.com/questions/1413445/reading-a-password-from-stdcin
 
 #include <common/setTerminalEcho.h>
+#include <common/errnoToString.h>
 #include <stdexcept>
 #include <cstring>
 #include <string>
@@ -31,7 +32,7 @@ void setTerminalEcho(bool enable)
 #else
     struct termios tty;
     if (tcgetattr(STDIN_FILENO, &tty))
-        throw std::runtime_error(std::string("setTerminalEcho failed get: ") + strerror(errno));
+        throw std::runtime_error(std::string("setTerminalEcho failed get: ") + errnoToString(errno));
     if (!enable)
         tty.c_lflag &= ~ECHO;
     else
@@ -39,6 +40,6 @@ void setTerminalEcho(bool enable)
 
     auto ret = tcsetattr(STDIN_FILENO, TCSANOW, &tty);
     if (ret)
-        throw std::runtime_error(std::string("setTerminalEcho failed set: ") + strerror(errno));
+        throw std::runtime_error(std::string("setTerminalEcho failed set: ") + errnoToString(errno));
 #endif
 }
