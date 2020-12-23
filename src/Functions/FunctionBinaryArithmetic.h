@@ -862,14 +862,14 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_a = helperGetOrConvert<T0, ResultDataType>(col_left_const, left);
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                const_a, col_right->getData(), vec_res, 1, scale_b);
+                const_a, col_right->getData(), vec_res, scale_a, scale_b);
         }
         else if (col_left && col_right_const)
         {
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
-                col_left->getData(), const_b, vec_res, scale_a, 1);
+                col_left->getData(), const_b, vec_res, scale_a, scale_b);
         }
         else
             return nullptr;
