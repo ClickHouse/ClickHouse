@@ -739,6 +739,31 @@
 
 ## ClickHouse release 20.8
 
+### ClickHouse release v20.8.10.13-lts, 2020-12-24
+
+#### Bug Fix
+
+* When server log rotation was configured using `logger.size` parameter with numeric value larger than 2^32, the logs were not rotated properly. [#17905](https://github.com/ClickHouse/ClickHouse/pull/17905) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Fixed incorrect initialization of `max_compress_block_size` in MergeTreeWriterSettings with `min_compress_block_size`. [#17833](https://github.com/ClickHouse/ClickHouse/pull/17833) ([flynn](https://github.com/ucasFL)).
+* Fixed problem when ClickHouse fails to resume connection to MySQL servers. [#17681](https://github.com/ClickHouse/ClickHouse/pull/17681) ([Alexander Kazakov](https://github.com/Akazz)).
+* Fixed `ALTER` query hang when the corresponding mutation was killed on the different replica. This fixes [#16953](https://github.com/ClickHouse/ClickHouse/issues/16953). [#17499](https://github.com/ClickHouse/ClickHouse/pull/17499) ([alesapin](https://github.com/alesapin)).
+* Fixed a bug when mark cache size was underestimated by ClickHouse. It may happen when there are a lot of tiny files with marks. [#17496](https://github.com/ClickHouse/ClickHouse/pull/17496) ([alesapin](https://github.com/alesapin)).
+* Fixed `ORDER BY` with enabled setting `optimize_redundant_functions_in_order_by`. [#17471](https://github.com/ClickHouse/ClickHouse/pull/17471) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed `ColumnConst` comparison which leads to crash. This fixed [#17088](https://github.com/ClickHouse/ClickHouse/issues/17088) . [#17135](https://github.com/ClickHouse/ClickHouse/pull/17135) ([Amos Bird](https://github.com/amosbird)).
+* Fixed bug when `ON CLUSTER` queries may hang forever for non-leader ReplicatedMergeTreeTables. [#17089](https://github.com/ClickHouse/ClickHouse/pull/17089) ([alesapin](https://github.com/alesapin)).
+* Avoid unnecessary network errors for remote queries which may be cancelled while execution, like queries with `LIMIT`. [#17006](https://github.com/ClickHouse/ClickHouse/pull/17006) ([Azat Khuzhin](https://github.com/azat)).
+* Reresolve the IP of the `format_avro_schema_registry_url` in case of errors. [#16985](https://github.com/ClickHouse/ClickHouse/pull/16985) ([filimonov](https://github.com/filimonov)).
+* Fixed possible server crash after `ALTER TABLE ... MODIFY COLUMN ... NewType` when `SELECT` have `WHERE` expression on altering column and alter doesn't finished yet. [#16968](https://github.com/ClickHouse/ClickHouse/pull/16968) ([Amos Bird](https://github.com/amosbird)).
+* Install script should always create subdirs in config folders. This is only relevant for Docker build with custom config. [#16936](https://github.com/ClickHouse/ClickHouse/pull/16936) ([filimonov](https://github.com/filimonov)).
+* Fixed possible error `Illegal type of argument` for queries with `ORDER BY`. Fixes [#16580](https://github.com/ClickHouse/ClickHouse/issues/16580). [#16928](https://github.com/ClickHouse/ClickHouse/pull/16928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Abort multipart upload if no data was written to WriteBufferFromS3. [#16840](https://github.com/ClickHouse/ClickHouse/pull/16840) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Fixed crash when using `any` without any arguments. This is for [#16803](https://github.com/ClickHouse/ClickHouse/issues/16803) . cc @azat. [#16826](https://github.com/ClickHouse/ClickHouse/pull/16826) ([Amos Bird](https://github.com/amosbird)).
+* Fixed `IN` operator over several columns and tuples with enabled `transform_null_in` setting. Fixes [#15310](https://github.com/ClickHouse/ClickHouse/issues/15310). [#16722](https://github.com/ClickHouse/ClickHouse/pull/16722) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed inconsistent behaviour of `optimize_read_in_order/optimize_aggregation_in_order` with max_threads > 0 and expression in ORDER BY. [#16637](https://github.com/ClickHouse/ClickHouse/pull/16637) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
+* Query is finished faster in case of exception. Cancel execution on remote replicas if exception happens. [#15578](https://github.com/ClickHouse/ClickHouse/pull/15578) ([Azat Khuzhin](https://github.com/azat)).
+
+
 ### ClickHouse release v20.8.6.6-lts, 2020-11-13
 
 #### Bug Fix
