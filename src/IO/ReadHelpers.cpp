@@ -96,7 +96,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw ParsingException(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -503,7 +503,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
             "Cannot parse quoted string: expected opening quote '{}', got '{}'",
             std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
     }
@@ -538,7 +538,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
             parseComplexEscapeSequence(s, buf);
     }
 
-    throw Exception("Cannot parse quoted string: expected closing quote",
+    throw ParsingException("Cannot parse quoted string: expected closing quote",
         ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
@@ -716,7 +716,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(message, code);
+            throw ParsingException(message, code);
         return ReturnType(false);
     };
 
@@ -861,7 +861,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -899,7 +899,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }

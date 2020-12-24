@@ -19,7 +19,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
@@ -34,17 +33,18 @@ bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadata
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
-                type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
-                "\" has timed out! (" + std::to_string(acquire_timeout.count()) + "ms) "
-                "Possible deadlock avoided. Client should retry.",
-                ErrorCodes::DEADLOCK_AVOIDED);
+            type_str + " locking attempt on \"" + getStorageID().getFullTableName() + "\" has timed out! ("
+                + std::to_string(acquire_timeout.count())
+                + "ms) "
+                  "Possible deadlock avoided. Client should retry.",
+            ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;
 }
@@ -84,26 +84,26 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
 }
 
 Pipe IStorage::read(
-        const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/)
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
+    unsigned /*num_streams*/)
 {
     throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams)
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
 {
     auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
@@ -119,15 +119,12 @@ void IStorage::read(
 }
 
 Pipe IStorage::alterPartition(
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    const PartitionCommands & /* commands */,
-    const Context & /* context */)
+    const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, const Context & /* context */)
 {
     throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::alter(
-    const AlterCommands & params, const Context & context, TableLockHolder &)
+void IStorage::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -148,7 +145,8 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-void IStorage::checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
+void IStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
     throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -168,6 +166,15 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 NamesAndTypesList IStorage::getVirtuals() const
 {
     return {};
+}
+
+Names IStorage::getAllRegisteredNames() const
+{
+    Names result;
+    auto getter = [](const auto & column) { return column.name; };
+    const NamesAndTypesList & available_columns = getInMemoryMetadata().getColumns().getAllPhysical();
+    std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
+    return result;
 }
 
 std::string PrewhereDAGInfo::dump() const
