@@ -571,6 +571,8 @@ def main(args):
             Note: if you are using unbundled mode, you also have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
+    if args.antlr:
+        build_flags.append('antlr')
 
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
@@ -884,6 +886,7 @@ if __name__ == '__main__':
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
+    group.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
 
     args = parser.parse_args()
 
@@ -962,6 +965,9 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
+    if args.antlr:
+        os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
