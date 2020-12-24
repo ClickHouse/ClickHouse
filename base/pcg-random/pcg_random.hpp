@@ -129,7 +129,7 @@ using namespace pcg_extras;
  *
  *      default_multiplier<uint32_t>::multiplier()
  *
- * gives you the default multipler for 32-bit integers.  We use the name
+ * gives you the default multiplier for 32-bit integers.  We use the name
  * of the constant and not a generic word like value to allow these classes
  * to be used as mixins.
  */
