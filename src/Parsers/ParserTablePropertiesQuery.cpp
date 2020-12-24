@@ -35,9 +35,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (s_exists.ignore(pos, expected))
     {
         if (s_database.ignore(pos, expected))
-	    {
+        {
             query = std::make_shared<ASTExistsDatabaseQuery>();
-	        parse_only_database_name = true;
+            parse_only_database_name = true;
 	    }
         else
         {
