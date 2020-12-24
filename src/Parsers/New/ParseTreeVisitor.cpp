@@ -33,15 +33,9 @@
 
 // Include last, because antlr-runtime undefines EOF macros, which is required in boost multiprecision numbers.
 #include <Parsers/New/ParseTreeVisitor.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 using namespace AST;
 
@@ -119,11 +113,7 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     auto and_args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createLiteral(Literal::createNumber("1"))});
 
-    if (context == nullptr)
-    {
-        throw Exception("Context should be provided", ErrorCodes::LOGICAL_ERROR);
-    }
-    auto current_database = ColumnExpr::createLiteral(Literal::createString(context->getCurrentDatabase()));
+    auto current_database = ColumnExpr::createLiteral(Literal::createString(current_database_name));
     if (ctx->databaseIdentifier())
     {
         current_database = ColumnExpr::createLiteral(Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName()));
