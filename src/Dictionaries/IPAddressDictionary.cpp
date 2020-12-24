@@ -401,57 +401,32 @@ void IPAddressDictionary::has(const Columns & key_columns, const DataTypes & key
 {
     validateKeyTypes(key_types);
 
-    const auto & attribute = attributes.front();
-
-    switch (attribute.type)
+    const auto first_column = key_columns.front();
+    const auto rows = first_column->size();
+    if (first_column->isNumeric())
     {
-        case AttributeUnderlyingType::utUInt8:
-            has<UInt8>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            has<UInt16>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            has<UInt32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            has<UInt64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            has<UInt128>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            has<Int8>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            has<Int16>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            has<Int32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            has<Int64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            has<Float32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            has<Float64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utString:
-            has<StringRef>(attribute, key_columns, out);
-            break;
-
-        case AttributeUnderlyingType::utDecimal32:
-            has<Decimal32>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            has<Decimal64>(attribute, key_columns, out);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            has<Decimal128>(attribute, key_columns, out);
-            break;
+        uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
+        for (const auto i : ext::range(0, rows))
+        {
+            auto addrv4 = UInt32(first_column->get64(i));
+            auto found = tryLookupIPv4(addrv4, addrv6_buf);
+            out[i] = (found != ipNotFound());
+        }
     }
+    else
+    {
+        for (const auto i : ext::range(0, rows))
+        {
+            auto addr = first_column->getDataAt(i);
+            if (unlikely(addr.size != IPV6_BINARY_LENGTH))
+                throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
+
+            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
+            out[i] = (found != ipNotFound());
+        }
+    }
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
 void IPAddressDictionary::createAttributes()
@@ -958,37 +933,6 @@ const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const s
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
-}
-
-template <typename T>
-void IPAddressDictionary::has(const Attribute &, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
-{
-    const auto first_column = key_columns.front();
-    const auto rows = first_column->size();
-    if (first_column->isNumeric())
-    {
-        uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
-        for (const auto i : ext::range(0, rows))
-        {
-            auto addrv4 = UInt32(first_column->get64(i));
-            auto found = tryLookupIPv4(addrv4, addrv6_buf);
-            out[i] = (found != ipNotFound());
-        }
-    }
-    else
-    {
-        for (const auto i : ext::range(0, rows))
-        {
-            auto addr = first_column->getDataAt(i);
-            if (unlikely(addr.size != IPV6_BINARY_LENGTH))
-                throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
-
-            auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
-            out[i] = (found != ipNotFound());
-        }
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
 Columns IPAddressDictionary::getKeyColumns() const
