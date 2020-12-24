@@ -18,6 +18,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
 
@@ -171,7 +172,8 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    Packet receivePacket();
+    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
+    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -226,7 +228,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 

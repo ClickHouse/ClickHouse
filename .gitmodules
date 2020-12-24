@@ -53,7 +53,8 @@
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/apache/arrow
+	url = https://github.com/ClickHouse-Extras/arrow
+	branch = clickhouse-arrow-2.0.0
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift.git

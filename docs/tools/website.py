@@ -232,6 +232,7 @@ def minify_website(args):
             f"'{args.output_dir}/docs/en/**/*.html' '{args.website_dir}/js/**/*.js' > {css_out}"
     else:
         command = f'cat {css_in} > {css_out}'
+
     logging.info(command)
     output = subprocess.check_output(command, shell=True)
     logging.debug(output)

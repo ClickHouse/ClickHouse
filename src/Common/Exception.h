@@ -96,6 +96,38 @@ private:
 };
 
 
+/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
+/// more convinient calculation of problem line number.
+class ParsingException : public Exception
+{
+public:
+    ParsingException();
+    ParsingException(const std::string & msg, int code);
+    ParsingException(int code, const std::string & message);
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    ParsingException(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {
+        Exception::message(Exception::message() + "{}");
+    }
+
+
+    std::string displayText() const override;
+
+    int getLineNumber() { return line_number_; }
+    void setLineNumber(int line_number) { line_number_ = line_number;}
+
+private:
+    ssize_t line_number_{-1};
+    mutable std::string formatted_message_;
+
+    const char * name() const throw() override { return "DB::ParsingException"; }
+    const char * className() const throw() override { return "DB::ParsingException"; }
+};
+
+
 using Exceptions = std::vector<std::exception_ptr>;
 
 

@@ -120,3 +120,7 @@ INSERT INTO partial_duplicates SELECT * FROM source_data;
 OPTIMIZE TABLE partial_duplicates FINAL DEDUPLICATE BY COLUMNS('.*k');
 SELECT * FROM partial_duplicates;
 TRUNCATE partial_duplicates;
+
+DROP TABLE full_duplicates;
+DROP TABLE partial_duplicates;
+DROP TABLE source_data;
