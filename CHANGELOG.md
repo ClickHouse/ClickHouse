@@ -10,8 +10,8 @@
 * Fixed `std::out_of_range: basic_string` in S3 URL parsing. [#18059](https://github.com/ClickHouse/ClickHouse/pull/18059) ([Vladimir Chebotarev](https://github.com/excitoon)).
 * Fixed the issue when some tables not synchronized to ClickHouse from MySQL caused by the fact that convertion MySQL prefix index wasn't supported for MaterializeMySQL. This fixes [#15187](https://github.com/ClickHouse/ClickHouse/issues/15187) and fixes [#17912](https://github.com/ClickHouse/ClickHouse/issues/17912)  [#17944](https://github.com/ClickHouse/ClickHouse/pull/17944) ([Winter Zhang](https://github.com/zhang2014)).
 * Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
-* Fix possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).
-* Fix empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).
+* Fixed possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fixed empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).
 
 
 ### ClickHouse release v20.12.3.3-stable, 2020-12-13
