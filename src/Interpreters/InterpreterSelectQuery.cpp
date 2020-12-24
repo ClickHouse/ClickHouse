@@ -35,36 +35,37 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -958,6 +959,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             else
             {
                 executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeWindow(query_plan);
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
 
@@ -1004,6 +1006,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     executeHaving(query_plan, expressions.before_having);
 
                 executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeWindow(query_plan);
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
 
             }
@@ -1749,6 +1752,58 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
 }
 
 
+void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
+{
+    for (const auto & [_, w] : query_analyzer->windowDescriptions())
+    {
+        const Settings & settings = context->getSettingsRef();
+
+        auto partial_sorting = std::make_unique<PartialSortingStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            0 /* LIMIT */,
+            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
+                settings.sort_overflow_mode));
+        partial_sorting->setStepDescription("Sort each block for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(partial_sorting));
+
+        auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            settings.max_block_size,
+            0 /* LIMIT */,
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            context->getTemporaryVolume(),
+            settings.min_free_disk_space_for_temporary_data);
+        merge_sorting_step->setStepDescription("Merge sorted blocks for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(merge_sorting_step));
+
+        // First MergeSorted, now MergingSorted.
+        auto merging_sorted = std::make_unique<MergingSortedStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            settings.max_block_size,
+            0 /* LIMIT */);
+        merging_sorted->setStepDescription("Merge sorted streams for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(merging_sorted));
+
+        auto window_step = std::make_unique<WindowStep>(
+            query_plan.getCurrentDataStream(),
+            w,
+            w.window_functions);
+        window_step->setStepDescription("Window step for window '"
+            + w.window_name + "'");
+
+        query_plan.addStep(std::move(window_step));
+    }
+}
+
+
 void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
     const Settings & settings = context->getSettingsRef();
@@ -1795,9 +1850,13 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     /// Merge the sorted blocks.
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
-            output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
+            output_order_descr,
+            settings.max_block_size,
+            limit,
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
     merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");
