@@ -27,6 +27,7 @@ void copyFile(IDisk & from_disk, const String & from_path, IDisk & to_disk, cons
     auto in = from_disk.readFile(from_path);
     auto out = to_disk.writeFile(to_path);
     copyData(*in, *out);
+    out->finalize();
 }
 
 

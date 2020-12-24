@@ -13,7 +13,7 @@ path_to_data = '/var/lib/clickhouse/'
 def started_cluster():
     try:
         cluster.start()
-        q('CREATE DATABASE test ENGINE = Ordinary')
+        q('CREATE DATABASE test ENGINE = Ordinary')     # Different path in shadow/ with Atomic
 
         yield cluster
 
@@ -52,7 +52,7 @@ def partition_complex_assert_columns_txt():
     for part_name in parts.lines:
         path_to_columns = path_to_parts + part_name + '/columns.txt'
         # 2 header lines + 3 columns
-        assert exec_bash('cat {} | wc -l'.format(path_to_columns)) == u'5\n'
+        assert exec_bash('cat {} | wc -l'.format(path_to_columns)) == '5\n'
 
 
 def partition_complex_assert_checksums():
@@ -145,7 +145,7 @@ def cannot_attach_active_part_table(started_cluster):
 
 def test_cannot_attach_active_part(cannot_attach_active_part_table):
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_active ATTACH PART '../1_2_2_0'")
-    print error
+    print(error)
     assert 0 <= error.find('Invalid part name')
 
     res = q("SElECT name FROM system.parts WHERE table='attach_active' AND database='test' ORDER BY name")

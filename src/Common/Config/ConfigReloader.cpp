@@ -138,6 +138,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
             tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
+            return;
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);

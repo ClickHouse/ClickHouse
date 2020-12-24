@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -75,9 +76,6 @@ private:
     /// Check that query should be executed on leader replica only
     static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
 
-    /// Check that shard has consistent config with table
-    void checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const;
-
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.
     /// Most of these queries can be executed on non-leader replica, but actually they still send
@@ -107,8 +105,7 @@ private:
     void attachToThreadGroup();
 
 private:
-    std::atomic<bool> is_circular_replicated = false;
-    Context & context;
+    Context context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
@@ -140,6 +137,8 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
+
+    std::atomic<UInt64> max_id = 0;
 
     friend class DDLQueryStatusInputStream;
     friend struct DDLTask;

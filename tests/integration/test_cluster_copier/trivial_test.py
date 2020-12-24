@@ -27,8 +27,8 @@ def started_cluster():
 
         cluster = ClickHouseCluster(__file__)
 
-        for cluster_name, shards in clusters_schema.iteritems():
-            for shard_name, replicas in shards.iteritems():
+        for cluster_name, shards in clusters_schema.items():
+            for shard_name, replicas in shards.items():
                 for replica_name in replicas:
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
@@ -59,7 +59,7 @@ class TaskTrivial:
 
         for node in [source, destination]:
             node.query("DROP DATABASE IF EXISTS default")
-            node.query("CREATE DATABASE IF NOT EXISTS default ENGINE=Ordinary")
+            node.query("CREATE DATABASE IF NOT EXISTS default")
 
         source.query("CREATE TABLE trivial (d UInt64, d1 UInt64 MATERIALIZED d+1) "
                      "ENGINE=ReplicatedMergeTree('/clickhouse/tables/source_trivial_cluster/1/trivial', '1') "
@@ -83,7 +83,7 @@ def execute_task(task, cmd_options):
     task.start()
 
     zk = cluster.get_kazoo_client('zoo1')
-    print "Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1])
+    print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
@@ -101,16 +101,16 @@ def execute_task(task, cmd_options):
 
     print(cmd)
 
-    for instance_name, instance in cluster.instances.iteritems():
+    for instance_name, instance in cluster.instances.items():
         container = instance.get_docker_handle()
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         docker_api.exec_start(exec_id, detach=True)
 
         copiers_exec_ids.append(exec_id)
-        print "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
+        print("Copier for {} ({}) has started".format(instance.name, instance.ip_address))
 
     # Wait for copiers stopping and check their return codes
-    for exec_id, instance in zip(copiers_exec_ids, cluster.instances.itervalues()):
+    for exec_id, instance in zip(copiers_exec_ids, iter(cluster.instances.values())):
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
@@ -175,6 +175,6 @@ def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
-        for name, instance in cluster.instances.items():
-            print name, instance.ip_address
-        raw_input("Cluster created, press any key to destroy...")
+        for name, instance in list(cluster.instances.items()):
+            print(name, instance.ip_address)
+        input("Cluster created, press any key to destroy...")

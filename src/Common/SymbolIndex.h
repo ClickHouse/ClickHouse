@@ -7,6 +7,7 @@
 #include <Common/Elf.h>
 #include <boost/noncopyable.hpp>
 
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ protected:
     SymbolIndex() { update(); }
 
 public:
-    static SymbolIndex & instance();
+    static MultiVersion<SymbolIndex>::Version instance(bool reload = false);
 
     struct Symbol
     {

@@ -176,7 +176,7 @@ class SourceMongo(ExternalSource):
         to_insert = []
         for row in data:
             row_dict = {}
-            for cell_name, cell_value in row.data.items():
+            for cell_name, cell_value in list(row.data.items()):
                 row_dict[cell_name] = self.converters[cell_name](cell_value)
             to_insert.append(row_dict)
 
@@ -333,16 +333,16 @@ class _SourceExecutableBase(ExternalSource):
                                         user='root')
 
 
-class SourceExecutableCache(_SourceExecutableBase):
+class SourceExecutableHashed(_SourceExecutableBase):
 
     def _get_cmd(self, path):
         return "cat {}".format(path)
 
     def compatible_with_layout(self, layout):
-        return 'cache' not in layout.name
+        return 'hashed' in layout.name
 
 
-class SourceExecutableHashed(_SourceExecutableBase):
+class SourceExecutableCache(_SourceExecutableBase):
 
     def _get_cmd(self, path):
         return "cat - >/dev/null;cat {}".format(path)
@@ -387,7 +387,7 @@ class SourceHTTPBase(ExternalSource):
         self.node.exec_in_container([
             "bash",
             "-c",
-            "python2 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
+            "python3 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
                 tbl=path, schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
         ], detach=True)
         self.ordered_names = structure.get_ordered_names()
@@ -573,12 +573,14 @@ class SourceAerospike(ExternalSource):
     def _flush_aerospike_db(self):
         keys = []
 
-        def handle_record((key, metadata, record)):
-            print("Handle record {} {}".format(key, record))
+        def handle_record(xxx_todo_changeme):
+            (key, metadata, record) = xxx_todo_changeme
+            print(("Handle record {} {}".format(key, record)))
             keys.append(key)
 
-        def print_record((key, metadata, record)):
-            print("Print record {} {}".format(key, record))
+        def print_record(xxx_todo_changeme1):
+            (key, metadata, record) = xxx_todo_changeme1
+            print(("Print record {} {}".format(key, record)))
 
         scan = self.client.scan(self.namespace, self.set)
         scan.foreach(handle_record)

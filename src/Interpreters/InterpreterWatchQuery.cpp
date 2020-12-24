@@ -16,7 +16,6 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/StreamLocalLimits.h>
 
 

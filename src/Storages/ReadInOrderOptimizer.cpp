@@ -1,8 +1,10 @@
 #include <Storages/ReadInOrderOptimizer.h>
+
+#include <Functions/IFunction.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Interpreters/TableJoin.h>
-#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -30,26 +32,11 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot) const
 {
-    Names sorting_key_columns;
-    if (dynamic_cast<const MergeTreeData *>(storage.get()))
-    {
-        if (!metadata_snapshot->hasSortingKey())
-            return {};
-        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    }
-    else if (dynamic_cast<const StorageFromMergeTreeDataPart *>(storage.get()))
-    {
-        if (!metadata_snapshot->hasSortingKey())
-            return {};
-        sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    }
-    else /// Inapplicable storage type
-    {
+    Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    if (!metadata_snapshot->hasSortingKey())
         return {};
-    }
-
 
     SortDescription order_key_prefix_descr;
     int read_direction = required_sort_description.at(0).direction;
@@ -72,7 +59,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
             bool found_function = false;
             for (const auto & action : elements_actions[i]->getActions())
             {
-                if (action.type != ExpressionAction::APPLY_FUNCTION)
+                if (action.node->type != ActionsDAG::ActionType::FUNCTION)
                     continue;
 
                 if (found_function)
@@ -83,13 +70,13 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage
                 else
                     found_function = true;
 
-                if (action.argument_names.size() != 1 || action.argument_names.at(0) != sorting_key_columns[i])
+                if (action.node->children.size() != 1 || action.node->children.at(0)->result_name != sorting_key_columns[i])
                 {
                     current_direction = 0;
                     break;
                 }
 
-                const auto & func = *action.function_base;
+                const auto & func = *action.node->function_base;
                 if (!func.hasInformationAboutMonotonicity())
                 {
                     current_direction = 0;

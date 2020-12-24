@@ -16,6 +16,14 @@
 
 #include <Parsers/queryToString.h>
 
+#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
+#include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
+
 namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
@@ -186,7 +194,74 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot)
+Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation)
+{
+    size_t block_size = block.rows();
+
+    auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
+    {
+        switch (data.merging_params.mode)
+        {
+            /// There is nothing to merge in single block in ordinary MergeTree
+            case MergeTreeData::MergingParams::Ordinary:
+                return nullptr;
+            case MergeTreeData::MergingParams::Replacing:
+                return std::make_shared<ReplacingSortedAlgorithm>(
+                    block, 1, sort_description, data.merging_params.version_column, block_size + 1);
+            case MergeTreeData::MergingParams::Collapsing:
+                return std::make_shared<CollapsingSortedAlgorithm>(
+                    block, 1, sort_description, data.merging_params.sign_column,
+                    false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
+            case MergeTreeData::MergingParams::Summing:
+                return std::make_shared<SummingSortedAlgorithm>(
+                    block, 1, sort_description, data.merging_params.columns_to_sum,
+                    partition_key_columns, block_size + 1);
+            case MergeTreeData::MergingParams::Aggregating:
+                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
+            case MergeTreeData::MergingParams::VersionedCollapsing:
+                return std::make_shared<VersionedCollapsingAlgorithm>(
+                    block, 1, sort_description, data.merging_params.sign_column, block_size + 1);
+            case MergeTreeData::MergingParams::Graphite:
+                return std::make_shared<GraphiteRollupSortedAlgorithm>(
+                    block, 1, sort_description, block_size + 1, data.merging_params.graphite_params, time(nullptr));
+        }
+
+        __builtin_unreachable();
+    };
+
+    auto merging_algorithm = get_merging_algorithm();
+    if (!merging_algorithm)
+        return block;
+
+    Chunk chunk(block.getColumns(), block_size);
+
+    IMergingAlgorithm::Input input;
+    input.set(std::move(chunk));
+    input.permutation = permutation;
+
+    IMergingAlgorithm::Inputs inputs;
+    inputs.push_back(std::move(input));
+    merging_algorithm->initialize(std::move(inputs));
+
+    IMergingAlgorithm::Status status = merging_algorithm->merge();
+
+    /// Check that after first merge merging_algorithm is waiting for data from input 0.
+    if (status.required_source != 0)
+        throw Exception("Logical error: required source after the first merge is not 0.", ErrorCodes::LOGICAL_ERROR);
+
+    status = merging_algorithm->merge();
+
+    /// Check that merge is finished.
+    if (!status.is_finished)
+        throw Exception("Logical error: merge is not finished after the second merge.", ErrorCodes::LOGICAL_ERROR);
+
+    /// Merged Block is sorted and we don't need to use permutation anymore
+    permutation = nullptr;
+
+    return block.cloneWithColumns(status.chunk.getColumns());
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert)
 {
     Block & block = block_with_partition.block;
 
@@ -220,6 +295,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     else
         part_name = new_part_info.getPartName();
 
+    /// If we need to calculate some columns to sort.
+    if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
+
+    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(block.getPositionByName(sort_columns[i]), 1, 1);
+
+    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
+
+    /// Sort
+    IColumn::Permutation * perm_ptr = nullptr;
+    IColumn::Permutation perm;
+    if (!sort_description.empty())
+    {
+        if (!isAlreadySorted(block, sort_description))
+        {
+            stableGetPermutation(block, sort_description, perm);
+            perm_ptr = &perm;
+        }
+        else
+            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
+    }
+
+    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
+    if (optimize_on_insert)
+        block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr);
+
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
@@ -229,7 +336,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr), 0, true);
+    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
@@ -238,6 +345,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         new_part_info,
         createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + part_name);
+
+    if (data.storage_settings.get()->assign_part_uuids)
+        new_data_part->uuid = UUIDHelpers::generateV4();
 
     new_data_part->setColumns(columns);
     new_data_part->partition = std::move(partition);
@@ -274,34 +384,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
-
-    /// If we need to calculate some columns to sort.
-    if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
-
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    SortDescription sort_description;
-    size_t sort_columns_size = sort_columns.size();
-    sort_description.reserve(sort_columns_size);
-
-    for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(block.getPositionByName(sort_columns[i]), 1, 1);
-
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
-
-    /// Sort
-    IColumn::Permutation * perm_ptr = nullptr;
-    IColumn::Permutation perm;
-    if (!sort_description.empty())
-    {
-        if (!isAlreadySorted(block, sort_description))
-        {
-            stableGetPermutation(block, sort_description, perm);
-            perm_ptr = &perm;
-        }
-        else
-            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
-    }
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
