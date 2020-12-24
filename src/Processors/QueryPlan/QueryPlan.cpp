@@ -498,11 +498,6 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
     auto & parent = parent_node->step;
     auto & child = child_node->step;
 
-    fmt::print(stderr,
-        "try merge expressions: parent '{}'\n, child '{}'\n at {}\n",
-        debugExplainStep(*parent), debugExplainStep(*child),
-        StackTrace().toString());
-
     /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());

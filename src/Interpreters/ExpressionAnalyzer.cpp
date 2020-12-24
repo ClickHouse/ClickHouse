@@ -1032,8 +1032,6 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     if (!select_query->having())
         return false;
 
-    fmt::print(stderr, "appendHaving:\n'{}'\n", select_query->dumpTree());
-
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
@@ -1443,11 +1441,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (has_window)
         {
-            fmt::print(stderr, "chain before window args: '{}'\n", chain.dumpChain());
-
             query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
-
-            fmt::print(stderr, "after window args chain: '{}'\n", chain.dumpChain());
 
             auto select_required_columns = chain.getLastStep().required_output;
 
@@ -1457,8 +1451,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
 
             finalize_chain(chain);
-            //auto & window_step = chain.addStep();
-            //window_step.actions_dag.query_analyzer.columns_after_window);
 
             auto & step = chain.lastStep(query_analyzer.columns_after_window);
             step.required_output = select_required_columns;
@@ -1473,8 +1465,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     step.required_output.push_back(child->getColumnName());
                 }
             }
-
-            fmt::print(stderr, "chain after window columns: '{}'\n", chain.dumpChain());
         }
 
         selected_columns = chain.getLastStep().required_output;
@@ -1488,8 +1478,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         final_projection = query_analyzer.appendProjectResult(chain);
 
         finalize_chain(chain);
-
-        fmt::print(stderr, "final chain: '{}'\n", chain.dumpChain());
     }
 
 
