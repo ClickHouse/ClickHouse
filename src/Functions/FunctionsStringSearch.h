@@ -29,7 +29,7 @@ namespace DB
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
   * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
-  * countSubstrings(haystack, needle) -- count number of occurences of needle in haystack.
+  * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
   * countSubstringsCaseInsensitive(haystack, needle)
   *
   * Applies regexp re2 and pulls:
