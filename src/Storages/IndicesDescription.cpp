@@ -2,6 +2,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -31,7 +32,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 
@@ -54,7 +55,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     type = other.type;
 
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
 

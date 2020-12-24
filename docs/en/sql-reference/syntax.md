@@ -13,9 +13,9 @@ The `INSERT` query uses both parsers:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
+The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
 
-Data can have any format. When a query is received, the server calculates no more than [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
+Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
 It allows for avoiding issues with large `INSERT` queries.
 
 When using the `Values` format in an `INSERT` query, it may seem that data is parsed the same as expressions in a `SELECT` query, but this is not true. The `Values` format is much more limited.
@@ -40,7 +40,7 @@ Keywords are case-insensitive when they correspond to:
 -   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
 -   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
-You can check whether a data type name is case-sensitive in the [system.data\_type\_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
+You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
 
@@ -57,7 +57,7 @@ Identifiers are:
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x, _1, X_y__Z123_.`
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
@@ -87,7 +87,7 @@ In string literals, you need to escape at least `'` and `\`. Single quotes can b
 
 ### Compound {#compound}
 
-Arrays are constructed with square brackets `[1, 2, 3]`. Nuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
+Arrays are constructed with square brackets `[1, 2, 3]`. Tuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
 Technically these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 An array must consist of at least one item, and a tuple must have at least two items.
 There’s a separate case when tuples appear in the `IN` clause of a `SELECT` query. Query results can include tuples, but tuples can’t be saved to a database (except of tables with [Memory](../engines/table-engines/special/memory.md) engine).

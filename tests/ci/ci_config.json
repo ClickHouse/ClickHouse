@@ -1,7 +1,7 @@
 {
     "build_config": [
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
@@ -102,7 +102,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -134,7 +134,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-darwin",
+            "compiler": "clang-11-darwin",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -144,7 +144,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-aarch64",
+            "compiler": "clang-11-aarch64",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -154,7 +154,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10-freebsd",
+            "compiler": "clang-11-freebsd",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -225,9 +225,21 @@
                 "with_coverage": false
             }
         },
+        "Functional stateless tests (ANTLR debug)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "debug",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Functional stateful tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -237,9 +249,9 @@
                 "with_coverage": false
             }
         },
-        "Functional stateful tests (release, DatabaseAtomic)": {
+        "Functional stateful tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -311,7 +323,19 @@
         },
         "Functional stateless tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests (pytest)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -333,9 +357,9 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (release, polymorphic parts enabled)": {
+        "Functional stateless tests (release, wide parts enabled)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -345,9 +369,9 @@
                 "with_coverage": false
             }
         },
-        "Functional stateless tests (release, DatabaseAtomic)": {
+        "Functional stateless tests (release, DatabaseOrdinary)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -405,6 +429,18 @@
                 "with_coverage": false
             }
         },
+        "Stress test (debug)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "debug",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Integration tests (asan)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -431,7 +467,7 @@
         },
         "Integration tests (release)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -441,9 +477,21 @@
                 "with_coverage": false
             }
         },
+        "Integration tests flaky check (asan)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "address",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
         "Compatibility check": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -467,7 +515,7 @@
         },
         "Testflows check": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -555,6 +603,30 @@
                 "package_type": "binary",
                 "build_type": "debug",
                 "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Release": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests flaky check (address)": {
+            "required_build_properties": {
+                "compiler": "clang-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",

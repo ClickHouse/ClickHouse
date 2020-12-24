@@ -390,13 +390,21 @@ String BaseSettings<Traits_>::valueToStringUtil(const std::string_view & name, c
 template <typename Traits_>
 Field BaseSettings<Traits_>::stringToValueUtil(const std::string_view & name, const String & str)
 {
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        return accessor.stringToValueUtil(index, str);
-    if constexpr (Traits::allow_custom_settings)
-        return Field::restoreFromDump(str);
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    try
+    {
+        const auto & accessor = Traits::Accessor::instance();
+        if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+            return accessor.stringToValueUtil(index, str);
+        if constexpr (Traits::allow_custom_settings)
+            return Field::restoreFromDump(str);
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
+        throw;
+    }
 }
 
 template <typename Traits_>

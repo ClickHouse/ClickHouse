@@ -18,7 +18,7 @@ namespace DB
 struct MetricLogElement
 {
     time_t event_time{};
-    UInt64 event_time_microseconds{};
+    Decimal64 event_time_microseconds{};
     UInt64 milliseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;

@@ -13,7 +13,7 @@ ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-serve
 
 如果指定`remove`属性，则删除该元素。
 
-此外，配置文件还可指定"substitutions"。如果一个元素有`incl`属性，则文件中的相应替换值将被使用。默认情况下，具有替换的文件的路径为`/etc/metrika.xml`。这可以在服务配置中的[include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from)元素中被修改。替换值在这个文件的`/yandex/substitution_name`元素中被指定。如果`incl`中指定的替换值不存在，则将其记录在日志中。为防止ClickHouse记录丢失的替换，请指定`optional="true"`属性（例如，[宏](server-configuration-parameters/settings.md)设置）。
+此外，配置文件还可指定"substitutions"。如果一个元素有`incl`属性，则文件中的相应替换值将被使用。默认情况下，具有替换的文件的路径为`/etc/metrika.xml`。这可以在服务配置中的[include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from)元素中被修改。替换值在这个文件的`/yandex/substitution_name`元素中被指定。如果`incl`中指定的替换值不存在，则将其记录在日志中。为防止ClickHouse记录丢失的替换，请指定`optional="true"`属性（例如，[宏](server-configuration-parameters/settings.md)设置）。
 
 替换也可以从ZooKeeper执行。为此，请指定属性`from_zk = "/path/to/node"`。元素值被替换为ZooKeeper节点`/path/to/node`的内容。您还可以将整个XML子树放在ZooKeeper节点上，并将其完全插入到源元素中。
 

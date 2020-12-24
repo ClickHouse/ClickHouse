@@ -1,5 +1,5 @@
 ---
-toc_priority: 19
+toc_priority: 18
 toc_title: Terabyte Click Logs from Criteo
 ---
 

@@ -11,11 +11,11 @@ ClickHouse ejecuta el generador de perfiles de muestreo que permite analizar la 
 
 Para usar el generador de perfiles:
 
--   Configurar el [trace\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sección de la configuración del servidor.
+-   Configurar el [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) sección de la configuración del servidor.
 
-    Esta sección configura la [trace\_log](../../operations/system-tables.md#system_tables-trace_log) tabla del sistema que contiene los resultados del funcionamiento del generador de perfiles. Está configurado de forma predeterminada. Recuerde que los datos de esta tabla solo son válidos para un servidor en ejecución. Después de reiniciar el servidor, ClickHouse no limpia la tabla y toda la dirección de memoria virtual almacenada puede dejar de ser válida.
+    Esta sección configura la [trace_log](../../operations/system-tables.md#system_tables-trace_log) tabla del sistema que contiene los resultados del funcionamiento del generador de perfiles. Está configurado de forma predeterminada. Recuerde que los datos de esta tabla solo son válidos para un servidor en ejecución. Después de reiniciar el servidor, ClickHouse no limpia la tabla y toda la dirección de memoria virtual almacenada puede dejar de ser válida.
 
--   Configurar el [Los resultados de la prueba](../settings/settings.md#query_profiler_cpu_time_period_ns) o [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) configuración. Ambos ajustes se pueden utilizar simultáneamente.
+-   Configurar el [Los resultados de la prueba](../settings/settings.md#query_profiler_cpu_time_period_ns) o [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) configuración. Ambos ajustes se pueden utilizar simultáneamente.
 
     Estas opciones le permiten configurar temporizadores del generador de perfiles. Como estos son los ajustes de sesión, puede obtener diferentes frecuencias de muestreo para todo el servidor, usuarios individuales o perfiles de usuario, para su sesión interactiva y para cada consulta individual.
 
@@ -25,7 +25,7 @@ Para analizar el `trace_log` tabla del sistema:
 
 -   Instale el `clickhouse-common-static-dbg` paquete. Ver [Instalar desde paquetes DEB](../../getting-started/install.md#install-from-deb-packages).
 
--   Permitir funciones de introspección [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) configuración.
+-   Permitir funciones de introspección [allow_introspection_functions](../settings/settings.md#settings-allow_introspection_functions) configuración.
 
     Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
 

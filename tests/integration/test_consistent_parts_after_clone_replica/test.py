@@ -29,7 +29,7 @@ def start_cluster():
         fill_nodes([node1, node2], 1)
         yield cluster
     except Exception as ex:
-        print ex
+        print(ex)
     finally:
         cluster.shutdown()
 

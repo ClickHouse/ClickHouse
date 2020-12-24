@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 
 import time
 
@@ -38,22 +38,14 @@ def test_simple_dict_get_or_default(started_cluster):
     assert None != dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
 
     def test_helper():
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'i8',  toUInt64(5),  toInt8(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'i16', toUInt64(5),  toInt16(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'i32', toUInt64(5),  toInt32(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'i64', toUInt64(5),  toInt64(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'u8',  toUInt64(5),  toUInt8(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'u16', toUInt64(5),  toUInt16(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'u32', toUInt64(5),  toUInt32(42));").rstrip()
-        assert '5' == main_node.query(
-            "select dictGetOrDefault('anime_dict', 'u64', toUInt64(5),  toUInt64(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'i8',  toUInt64(5),  toInt8(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'i16', toUInt64(5),  toInt16(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'i32', toUInt64(5),  toInt32(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'i64', toUInt64(5),  toInt64(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'u8',  toUInt64(5),  toUInt8(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'u16', toUInt64(5),  toUInt16(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'u32', toUInt64(5),  toUInt32(42));").rstrip()
+        assert '5' == main_node.query("select dictGetOrDefault('experimental_dict', 'u64', toUInt64(5),  toUInt64(42));").rstrip()
 
     test_helper()
 

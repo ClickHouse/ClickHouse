@@ -4,8 +4,8 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
@@ -19,7 +19,7 @@ class ExpressionStep : public ITransformingStep
 public:
     using Transform = ExpressionTransform;
 
-    explicit ExpressionStep(const DataStream & input_stream_, ExpressionActionsPtr expression_);
+    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipeline & pipeline) override;
@@ -28,10 +28,10 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
-    const ExpressionActionsPtr & getExpression() const { return expression; }
+    const ActionsDAGPtr & getExpression() const { return actions_dag; }
 
 private:
-    ExpressionActionsPtr expression;
+    ActionsDAGPtr actions_dag;
 };
 
 /// TODO: add separate step for join.

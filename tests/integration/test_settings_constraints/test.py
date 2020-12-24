@@ -116,7 +116,7 @@ def assert_query_settings(instance, query, settings, result=None, exception=None
     # session level settings
     queries = ""
 
-    for k, v in settings.items():
+    for k, v in list(settings.items()):
         queries += "SET {}={};\n".format(k, v)
 
     queries += query

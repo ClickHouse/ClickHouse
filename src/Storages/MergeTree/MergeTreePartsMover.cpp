@@ -195,11 +195,13 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
     LOG_TRACE(log, "Cloning part {}", moving_part.part->name);
-    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
+    const String directory_to_move = "moving";
+    moving_part.part->makeCloneOnDisk(moving_part.reserved_space->getDisk(), directory_to_move);
+
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk(), 0);
     MergeTreeData::MutableDataPartPtr cloned_part =
-        data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
+        data->createPart(moving_part.part->name, single_disk_volume, directory_to_move + '/' + moving_part.part->name);
     LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);

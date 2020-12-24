@@ -18,4 +18,14 @@ toc_title: Cloud
 -   Encryption and isolation
 -   Automated maintenance
 
+## Altinity.Cloud {#altinity.cloud}
+
+[Altinity.Cloud](https://altinity.com/cloud-database/) is a fully managed ClickHouse-as-a-Service for the Amazon public cloud. 
+-   Fast deployment of ClickHouse clusters on Amazon resources
+-   Easy scale-out/scale-in as well as vertical scaling of nodes
+-   Isolated per-tenant VPCs with public endpoint or VPC peering
+-   Configurable storage types and volume configurations
+-   Cross-AZ scaling for performance and high availability
+-   Built-in monitoring and SQL query editor
+
 {## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}

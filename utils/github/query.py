@@ -39,6 +39,7 @@ class Query:
 
         baseRefName
         closed
+        headRefName
         id
         mergeable
         merged
@@ -157,6 +158,24 @@ class Query:
             return result['nodes'][0]
         else:
             return {}
+
+    def find_pull_requests(self, label_name):
+        '''
+        Get all pull-requests filtered by label name
+        '''
+        _QUERY = '''
+            repository(owner: "{owner}" name: "{name}") {{
+                pullRequests(first: {min_page_size} labels: "{label_name}") {{
+                    nodes {{
+                        {pull_request_data}
+                    }}
+                }}
+            }}
+        '''
+
+        query = _QUERY.format(owner=self._owner, name=self._name, label_name=label_name,
+                              pull_request_data=self._PULL_REQUEST, min_page_size=self._min_page_size)
+        return self._run(query)['repository']['pullRequests']['nodes']
 
     def get_pull_requests(self, before_commit):
         '''
@@ -342,130 +361,6 @@ class Query:
         query = _SET_LABEL.format(pr_id=pull_request['id'], label_id=labels[0]['id'])
         self._run(query, is_mutation=True)
 
-    # OLD METHODS
-
-    # _LABELS = '''
-    #     repository(owner: "ClickHouse" name: "ClickHouse") {{
-    #         pullRequest(number: {number}) {{
-    #             labels(first: {max_page_size} {next}) {{
-    #                 pageInfo {{
-    #                     hasNextPage
-    #                     endCursor
-    #                 }}
-    #                 nodes {{
-    #                     name
-    #                     color
-    #                 }}
-    #             }}
-    #         }}
-    #     }}
-    # '''
-    # def get_labels(self, pull_request):
-    #     '''Fetchs all labels for given pull-request
-
-    #     Args:
-    #         pull_request: JSON object returned by `get_pull_requests()`
-
-    #     Returns:
-    #         labels: a list of JSON nodes with the name and color fields
-    #     '''
-    #     labels = [label for label in pull_request['labels']['nodes']]
-    #     not_end = pull_request['labels']['pageInfo']['hasNextPage']
-    #     query = Query._LABELS.format(number = pull_request['number'],
-    #                                  max_page_size = self._max_page_size,
-    #                                  next=f'after: "{pull_request["labels"]["pageInfo"]["endCursor"]}"')
-
-    #     while not_end:
-    #         result = self._run(query)['repository']['pullRequest']['labels']
-    #         not_end = result['pageInfo']['hasNextPage']
-    #         query = Query._LABELS.format(number=pull_request['number'],
-    #                                      max_page_size=self._max_page_size,
-    #                                      next=f'after: "{result["pageInfo"]["endCursor"]}"')
-
-    #         labels += [label for label in result['nodes']]
-
-    #     return labels
-
-    # _TIMELINE = '''
-    #     repository(owner: "ClickHouse" name: "ClickHouse") {{
-    #         pullRequest(number: {number}) {{
-    #             timeline(first: {max_page_size} {next}) {{
-    #                 pageInfo {{
-    #                     hasNextPage
-    #                     endCursor
-    #                 }}
-    #                 nodes {{
-    #                     ... on CrossReferencedEvent {{
-    #                         isCrossRepository
-    #                         source {{
-    #                             ... on PullRequest {{
-    #                                 number
-    #                                 baseRefName
-    #                                 merged
-    #                                 labels(first: {max_page_size}) {{
-    #                                     pageInfo {{
-    #                                         hasNextPage
-    #                                         endCursor
-    #                                     }}
-    #                                     nodes {{
-    #                                         name
-    #                                         color
-    #                                     }}
-    #                                 }}
-    #                             }}
-    #                         }}
-    #                         target {{
-    #                             ... on PullRequest {{
-    #                                 number
-    #                             }}
-    #                         }}
-    #                     }}
-    #                 }}
-    #             }}
-    #         }}
-    #     }}
-    # '''
-    # def get_timeline(self, pull_request):
-    #     '''Fetchs all cross-reference events from pull-request's timeline
-
-    #     Args:
-    #         pull_request: JSON object returned by `get_pull_requests()`
-
-    #     Returns:
-    #         events: a list of JSON nodes for CrossReferenceEvent
-    #     '''
-    #     events = [event for event in pull_request['timeline']['nodes'] if event and event['source']]
-    #     not_end = pull_request['timeline']['pageInfo']['hasNextPage']
-    #     query = Query._TIMELINE.format(number = pull_request['number'],
-    #                                    max_page_size = self._max_page_size,
-    #                                    next=f'after: "{pull_request["timeline"]["pageInfo"]["endCursor"]}"')
-
-    #     while not_end:
-    #         result = self._run(query)['repository']['pullRequest']['timeline']
-    #         not_end = result['pageInfo']['hasNextPage']
-    #         query = Query._TIMELINE.format(number=pull_request['number'],
-    #                                        max_page_size=self._max_page_size,
-    #                                        next=f'after: "{result["pageInfo"]["endCursor"]}"')
-
-    #         events += [event for event in result['nodes'] if event and event['source']]
-
-    #     return events
-
-    # _DEFAULT = '''
-    #     repository(owner: "ClickHouse", name: "ClickHouse") {
-    #         defaultBranchRef {
-    #             name
-    #         }
-    #     }
-    # '''
-    # def get_default_branch(self):
-    #     '''Get short name of the default branch
-
-    #     Returns:
-    #         name (string): branch name
-    #     '''
-    #     return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
-
     def _run(self, query, is_mutation=False):
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
@@ -517,7 +412,7 @@ class Query:
                 if not is_mutation:
                     import inspect
                     caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-                    if caller not in self.api_costs.keys():
+                    if caller not in list(self.api_costs.keys()):
                         self.api_costs[caller] = 0
                     self.api_costs[caller] += result['data']['rateLimit']['cost']
 
