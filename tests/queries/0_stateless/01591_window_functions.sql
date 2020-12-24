@@ -53,3 +53,7 @@ select median(x) over (partition by x) from (select 1 x);
 
 -- an empty window definition is valid as well
 select groupArray(number) over () from numbers(3);
+
+-- This one tests we properly process the window  function arguments.
+-- Seen errors like 'column `1` not found' from count(1).
+select count(1) over (), max(number + 1) over () from numbers(3);
