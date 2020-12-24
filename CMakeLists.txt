@@ -468,6 +468,7 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/rocksdb.cmake)
+include (cmake/find/nuraft.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
