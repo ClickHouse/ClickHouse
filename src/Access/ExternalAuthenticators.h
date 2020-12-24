@@ -33,8 +33,8 @@ public:
 private:
     struct LDAPCacheEntry
     {
-        std::size_t last_successful_password_hash = 0;
-        std::chrono::steady_clock::time_point last_successful_password_check_timestamp;
+        std::size_t last_successful_params_hash = 0;
+        std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
     };
 
     using LDAPServerCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry

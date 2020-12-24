@@ -171,7 +171,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const String & user_name, const String & password) const
 {
     std::optional<LDAPServerParams> params;
-    const auto password_hash = std::hash<String>{}(password);
+    std::size_t params_hash = 0;
 
     {
         std::scoped_lock lock(mutex);
@@ -184,6 +184,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
         params = pit->second;
         params->user = user_name;
         params->password = password;
+        params_hash = params->getCoreHash();
 
         // Check the cache, but only if the caching is enabled at all.
         if (params->verification_cooldown > std::chrono::seconds{0})
@@ -197,15 +198,15 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
                 if (eit != cache.end())
                 {
                     const auto & entry = eit->second;
-                    const auto last_check_period = std::chrono::steady_clock::now() - entry.last_successful_password_check_timestamp;
+                    const auto last_check_period = std::chrono::steady_clock::now() - entry.last_successful_authentication_timestamp;
 
                     if (
                         // Forbid the initial values explicitly.
-                        entry.last_successful_password_hash != 0 &&
-                        entry.last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
+                        entry.last_successful_params_hash != 0 &&
+                        entry.last_successful_authentication_timestamp != std::chrono::steady_clock::time_point{} &&
 
                         // Check if we can safely "reuse" the result of the previous successful password verification.
-                        password_hash == entry.last_successful_password_hash &&
+                        entry.last_successful_params_hash == params_hash &&
                         last_check_period >= std::chrono::seconds{0} &&
                         last_check_period <= params->verification_cooldown
                     )
@@ -229,12 +230,12 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
     const auto result = client.check();
     const auto current_check_timestamp = std::chrono::steady_clock::now();
 
-    // Update the cache, but only if this is the latest check and the server is still configured in the same way.
+    // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
     if (result)
     {
         std::scoped_lock lock(mutex);
 
-        // If the server was removed from the config while we were checking the password, we discard this result.
+        // If the server was removed from the config while we were checking the password, we discard the current result.
         const auto pit = ldap_server_params.find(server);
         if (pit == ldap_server_params.end())
             return false;
@@ -243,20 +244,19 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
         new_params.user = user_name;
         new_params.password = password;
 
-        // If the critical server params have changed while we were checking the password, we discard the result.
-        if (params->getCoreHash() != new_params.getCoreHash())
+        // If the critical server params have changed while we were checking the password, we discard the current result.
+        if (params_hash != new_params.getCoreHash())
             return false;
 
         auto & entry = ldap_server_caches[server][user_name];
-
-        if (entry.last_successful_password_check_timestamp < current_check_timestamp)
+        if (entry.last_successful_authentication_timestamp < current_check_timestamp)
         {
-            entry.last_successful_password_hash = password_hash;
-            entry.last_successful_password_check_timestamp = current_check_timestamp;
+            entry.last_successful_params_hash = params_hash;
+            entry.last_successful_authentication_timestamp = current_check_timestamp;
         }
-        else if (entry.last_successful_password_hash != password_hash)
+        else if (entry.last_successful_params_hash != params_hash)
         {
-            // Somehow a newer check succeeded but with other password, so this one is obsolete and we discard it.
+            // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
             return false;
         }
     }
