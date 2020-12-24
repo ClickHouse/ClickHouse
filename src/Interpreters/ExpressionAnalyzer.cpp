@@ -1004,15 +1004,17 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             col.column = col.type->createColumn();
             col.name = f.column_name;
 
-            step.actions()->addInput(col);
+//            step.actions()->addInput(col);
+            columns_after_window.push_back({f.column_name,
+                f.aggregate_function->getReturnType()});
 
             for (const auto & a : f.function_node->arguments->children)
             {
                 // 2.1) function arguments;
                 step.required_output.push_back(a->getColumnName());
             }
-            // 2.2) function result;
-            step.required_output.push_back(f.column_name);
+//            // 2.2) function result;
+//            step.required_output.push_back(f.column_name);
         }
 
         // 2.3) PARTITION BY and ORDER BY columns.
@@ -1029,6 +1031,8 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
 
     if (!select_query->having())
         return false;
+
+    fmt::print(stderr, "appendHaving:\n'{}'\n", select_query->dumpTree());
 
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
@@ -1048,6 +1052,15 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     for (const auto & child : select_query->select()->children)
     {
+        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
+            function
+            && function->is_window_function)
+        {
+            // Skip window function columns here -- they are calculated after
+            // other SELECT expressions by a special step.
+            continue;
+        }
+
         step.required_output.push_back(child->getColumnName());
     }
 }
@@ -1421,15 +1434,50 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
-        query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
-
-        selected_columns = chain.getLastStep().required_output;
         has_order_by = query.orderBy() != nullptr;
         before_order_and_select = query_analyzer.appendOrderBy(
                 chain,
                 only_types || (need_aggregate ? !second_stage : !first_stage),
                 optimize_read_in_order,
                 order_by_elements_actions);
+
+        if (has_window)
+        {
+            fmt::print(stderr, "chain before window args: '{}'\n", chain.dumpChain());
+
+            query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+
+            fmt::print(stderr, "after window args chain: '{}'\n", chain.dumpChain());
+
+            auto select_required_columns = chain.getLastStep().required_output;
+
+            for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
+            {
+                query_analyzer.columns_after_window.push_back(x);
+            }
+
+            finalize_chain(chain);
+            //auto & window_step = chain.addStep();
+            //window_step.actions_dag.query_analyzer.columns_after_window);
+
+            auto & step = chain.lastStep(query_analyzer.columns_after_window);
+            step.required_output = select_required_columns;
+            const auto * select_query = query_analyzer.getSelectQuery();
+            for (const auto & child : select_query->select()->children)
+            {
+                if (const auto * function
+                        = typeid_cast<const ASTFunction *>(child.get());
+                    function && function->is_window_function)
+                {
+                    // See its counterpart in appendSelect()
+                    step.required_output.push_back(child->getColumnName());
+                }
+            }
+
+            fmt::print(stderr, "chain after window columns: '{}'\n", chain.dumpChain());
+        }
+
+        selected_columns = chain.getLastStep().required_output;
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
@@ -1440,7 +1488,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         final_projection = query_analyzer.appendProjectResult(chain);
 
         finalize_chain(chain);
+
+        fmt::print(stderr, "final chain: '{}'\n", chain.dumpChain());
     }
+
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     removeExtraColumns();

@@ -521,6 +521,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             filter_info,
             source_header);
 
+    fmt::print(stderr, "ExpressionAnalysisResult: '{}'\nat\n{}\n",
+        analysis_result.dump(), StackTrace().toString());
+
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
         auto header = source_header;

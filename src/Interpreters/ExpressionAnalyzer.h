@@ -55,6 +55,8 @@ struct ExpressionAnalyzerData
     NamesAndTypesList columns_after_join;
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+    /// Columns after window functions.
+    NamesAndTypesList columns_after_window;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;

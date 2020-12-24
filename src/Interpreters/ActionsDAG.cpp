@@ -691,6 +691,9 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
 
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
+    fmt::print(stderr, "actiondag merge first '{}'\n, second '{}\n",
+        first.dumpDAG(), second.dumpDAG());
+
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (3), y, x (2), z, x (4) =(second)=> y, z, x (4), x (2), x (3)

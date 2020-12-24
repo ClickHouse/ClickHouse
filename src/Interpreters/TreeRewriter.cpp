@@ -443,6 +443,8 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
+    fmt::print(stderr, "AST at getWindowFunctions:\n'{}'\n", query->dumpTree());
+
     /// There can not be window functions inside the WHERE and PREWHERE.
     if (select_query.where())
         assertNoWindows(select_query.where(), "in WHERE");

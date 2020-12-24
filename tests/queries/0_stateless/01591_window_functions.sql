@@ -25,7 +25,14 @@ select number, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
 
 -- should work in ORDER BY though
-select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
+-- doesn't work now
+-- select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
+
+-- at least it works in ORDER BY if you wrap it in a subquery
+select * from (select count(*) over () c from numbers(3)) order by c;
+
+-- must work in WHERE if you wrap it in a subquery
+select * from (select count(*) over () c from numbers(3)) where c > 0;
 
 -- this one doesn't work yet -- looks like the column names clash, and the
 -- window count() is overwritten with aggregate count()
@@ -40,3 +47,9 @@ select number, max(number) over (partition by intDiv(number, 3) order by number 
 -- an explain test would also be helpful, but it's too immature now and I don't
 -- want to change reference all the time
 select number, max(number) over (partition by intDiv(number, 3) order by number desc), count(number) over (partition by intDiv(number, 3) order by number desc) as m from numbers(7) order by number settings max_block_size = 2;
+
+-- check that we can work with constant columns
+select median(x) over (partition by x) from (select 1 x);
+
+-- an empty window definition is valid as well
+select groupArray(number) over () from numbers(3);

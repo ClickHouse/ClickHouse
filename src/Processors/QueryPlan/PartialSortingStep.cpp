@@ -70,7 +70,7 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-void PartialSortingStep::describeActions(FormatSettings & settings) const
+void PartialSortingStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Sort description: ";

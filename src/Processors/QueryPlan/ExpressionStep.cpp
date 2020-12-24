@@ -87,7 +87,7 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void ExpressionStep::describeActions(FormatSettings & settings) const
+void ExpressionStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     bool first = true;

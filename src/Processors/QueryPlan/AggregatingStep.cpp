@@ -156,12 +156,12 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void AggregatingStep::describeActions(FormatSettings & settings) const
+void AggregatingStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
 }
 
-void AggregatingStep::describePipeline(FormatSettings & settings) const
+void AggregatingStep::describePipeline(QueryPlanStepFormatSettings & settings) const
 {
     if (!aggregating.empty())
         IQueryPlanStep::describePipeline(aggregating, settings);
