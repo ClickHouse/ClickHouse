@@ -1,7 +1,5 @@
 #include <Access/Authentication.h>
-#include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
-#include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 
@@ -50,7 +48,7 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::isCorrectPassword(const User & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const
+bool Authentication::isCorrectPassword(const String & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const
 {
     switch (type)
     {
@@ -82,58 +80,7 @@ bool Authentication::isCorrectPassword(const User & user_, const String & passwo
         }
 
         case LDAP_SERVER:
-        {
-            auto ldap_server_params = external_authenticators.getLDAPServerParams(server_name);
-            ldap_server_params.user = user_.getName();
-            ldap_server_params.password = password_;
-
-            const auto current_params_hash = ldap_server_params.getCoreHash();
-            auto & ldap_last_successful_password_check_params_hash = user_.cache.ldap_last_successful_password_check_params_hash;
-            auto & ldap_last_successful_password_check_timestamp = user_.cache.ldap_last_successful_password_check_timestamp;
-
-            {
-                std::scoped_lock lock(user_.cache.mutex);
-                const auto last_check_period = std::chrono::steady_clock::now() - ldap_last_successful_password_check_timestamp;
-
-                if (
-                    // Check if the caching is enabled at all.
-                    ldap_server_params.verification_cooldown > std::chrono::seconds{0} &&
-
-                    // Forbid the initial values explicitly.
-                    ldap_last_successful_password_check_params_hash != 0 &&
-                    ldap_last_successful_password_check_timestamp != std::chrono::steady_clock::time_point{} &&
-
-                    // Check if we can "reuse" the result of the previous successful password verification.
-                    current_params_hash == ldap_last_successful_password_check_params_hash &&
-                    last_check_period >= std::chrono::seconds{0} &&
-                    last_check_period <= ldap_server_params.verification_cooldown
-                )
-                {
-                    return true;
-                }
-            }
-
-            LDAPSimpleAuthClient ldap_client(ldap_server_params);
-            const auto result = ldap_client.check();
-            const auto current_check_timestamp = std::chrono::steady_clock::now();
-
-            {
-                std::scoped_lock lock(user_.cache.mutex);
-
-                if (result)
-                {
-                    ldap_last_successful_password_check_params_hash = current_params_hash;
-                    ldap_last_successful_password_check_timestamp = current_check_timestamp;
-                }
-                else
-                {
-                    ldap_last_successful_password_check_params_hash = 0;
-                    ldap_last_successful_password_check_timestamp = std::chrono::steady_clock::time_point{};
-                }
-            }
-
-            return result;
-        }
+            return external_authenticators.checkLDAPCredentials(server_name, user_, password_);
 
         case MAX_TYPE:
             break;
