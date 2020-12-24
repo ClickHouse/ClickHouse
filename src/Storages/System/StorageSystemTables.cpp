@@ -3,8 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
@@ -65,15 +65,8 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & database_name : databases | boost::adaptors::map_keys)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.tables
-
-        column->insert(database_name);
-    }
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+        column->insert(db.first);
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -199,11 +192,7 @@ protected:
 
                         // create_table_query
                         if (columns_mask[src_index++])
-                        {
-                            auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
-                            res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
-                        }
+                            res_columns[res_index++]->insertDefault();
 
                         // engine_full
                         if (columns_mask[src_index++])
@@ -441,7 +430,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context.getSettingsRef());
+                    auto total_rows = table->totalRows();
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -451,7 +440,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context.getSettingsRef());
+                    auto total_bytes = table->totalBytes();
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -499,7 +488,7 @@ private:
 Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

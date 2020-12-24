@@ -35,8 +35,6 @@ struct TreeRewriterResult
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;
 
-    std::vector<const ASTFunction *> window_function_asts;
-
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;

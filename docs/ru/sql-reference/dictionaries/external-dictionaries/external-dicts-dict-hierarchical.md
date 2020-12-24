@@ -1,8 +1,3 @@
----
-toc_priority: 45
-toc_title: "\u0418\u0435\u0440\u0430\u0440\u0445\u0438\u0447\u0435\u0441\u043a\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0438"
----
-
 # Иерархические словари {#ierarkhicheskie-slovari}
 
 ClickHouse поддерживает иерархические словари с [числовыми ключом](external-dicts-dict-structure.md#ext_dict-numeric-key).
@@ -25,7 +20,7 @@ ClickHouse поддерживает иерархические словари с
 
 Эту иерархию можно выразить в виде следующей таблицы-словаря.
 
-| region_id | parent_region | region_name  |
+| region\_id | parent\_region | region\_name  |
 |------------|----------------|---------------|
 | 1          | 0              | Russia        |
 | 2          | 1              | Moscow        |

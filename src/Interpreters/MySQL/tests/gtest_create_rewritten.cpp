@@ -12,9 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Common/tests/gtest_global_register.h>
-#include <Poco/String.h>
-
+#include <Common/tests/gtest_global_register_functions.h>
 
 using namespace DB;
 
@@ -195,15 +193,3 @@ TEST(MySQLCreateRewritten, RewrittenQueryWithPrefixKey)
         "ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY (key, prefix_key)");
 }
 
-TEST(MySQLCreateRewritten, UniqueKeysConvert)
-{
-    tryRegisterFunctions();
-    const auto & context_holder = getContext();
-
-    EXPECT_EQ(queryToString(tryRewrittenCreateQuery(
-        "CREATE TABLE `test_database`.`test_table_1` (code varchar(255) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,name varchar(255) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,"
-        " id bigint NOT NULL AUTO_INCREMENT, tenant_id bigint NOT NULL, PRIMARY KEY (id), UNIQUE KEY code_id (code, tenant_id), UNIQUE KEY name_id (name, tenant_id))"
-        " ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8 COLLATE=utf8_bin;", context_holder.context)),
-        "CREATE TABLE test_database.test_table_1 (`code` String, `name` String, `id` Int64, `tenant_id` Int64, `_sign` Int8() MATERIALIZED 1, `_version` UInt64() MATERIALIZED 1)"
-        " ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(id, 18446744073709551) ORDER BY (code, name, tenant_id, id)");
-}

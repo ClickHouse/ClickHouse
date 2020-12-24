@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>

@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
 }
 
-namespace
-{
 
 /** formatRow(<format>, x, y, ...) is a function that allows you to use RowOutputFormat over
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
@@ -47,18 +45,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
         WriteBufferFromVector buffer(vec);
         ColumnString::Offsets & offsets = col_str->getOffsets();
         offsets.resize(input_rows_count);
-        Block arg_columns;
+        Block arg_block;
         for (auto i = 1u; i < arguments.size(); ++i)
-            arg_columns.insert(arguments[i]);
-        materializeBlockInplace(arg_columns);
-        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, [&](const Columns &, size_t row)
+            arg_block.insert(block.getByPosition(arguments[i]));
+        materializeBlockInplace(arg_block);
+        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_block, context, [&](const Columns &, size_t row)
         {
             if constexpr (no_newline)
             {
@@ -70,8 +68,8 @@ public:
                 writeChar('\0', buffer);
             offsets[row] = buffer.count();
         });
-        out->write(arg_columns);
-        return col_str;
+        out->write(arg_block);
+        block.getByPosition(result).column = std::move(col_str);
     }
 
 private:
@@ -113,8 +111,6 @@ public:
 private:
     const Context & context;
 };
-
-}
 
 void registerFunctionFormatRow(FunctionFactory & factory)
 {

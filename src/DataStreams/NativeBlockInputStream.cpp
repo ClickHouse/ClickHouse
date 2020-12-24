@@ -106,7 +106,7 @@ Block NativeBlockInputStream::readImpl()
     if (istr.eof())
     {
         if (use_index)
-            throw ParsingException("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return res;
     }

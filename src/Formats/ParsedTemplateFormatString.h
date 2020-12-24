@@ -1,9 +1,8 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <functional>
 #include <optional>
-#include <vector>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
 
@@ -11,7 +10,6 @@ namespace DB
 {
 
 class Block;
-using Strings = std::vector<String>;
 
 struct ParsedTemplateFormatString
 {

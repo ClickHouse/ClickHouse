@@ -356,7 +356,7 @@ Diğer tüm durumlarda, anlamı açıklayan bir isim kullanın.
 bool info_successfully_loaded = false;
 ```
 
-**9.** İsimleri `define`s ve genel sabitler alt çizgi ile ALL_CAPS kullanın.
+**9.** İsimleri `define`s ve genel sabitler alt çizgi ile ALL\_CAPS kullanın.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ Bağımsız değişken yapıcı gövdesinde kullanılmazsa, alt çizgi soneki at
 timer (not m_timer)
 ```
 
-**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
+**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -579,7 +579,7 @@ Bir işlev öbekte oluşturulan bir nesnenin sahipliğini yakalarsa, bağımsız
 
 **14.** Değerleri döndürür.
 
-Çoğu durumda, sadece kullanın `return`. Yaz domayın `return std::move(res)`.
+Çoğu durumda, sadece kullanın `return`. Yaz domayın `[return std::move(res)]{.strike}`.
 
 İşlev öbek üzerinde bir nesne ayırır ve döndürürse, şunları kullanın `shared_ptr` veya `unique_ptr`.
 
@@ -673,7 +673,7 @@ Her zaman kullanın `#pragma once` korumaları dahil etmek yerine.
 **24.** Kullanmayın `trailing return type` gerekli olmadıkça fonksiyonlar için.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Değişkenlerin bildirimi ve başlatılması.
@@ -709,7 +709,7 @@ Standart kütüphane kullanılır (`libc++`).
 
 **4.**OS: Linux UB .untu, daha eski değil.
 
-**5.**Kod x86_64 CPU mimarisi için yazılmıştır.
+**5.**Kod x86\_64 CPU mimarisi için yazılmıştır.
 
 CPU komut seti, sunucularımız arasında desteklenen minimum kümedir. Şu anda, sse 4.2.
 

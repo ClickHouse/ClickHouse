@@ -5,9 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -18,8 +16,8 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -33,7 +31,6 @@ namespace DB
 
 class ClientInfo;
 class Pipe;
-struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData
@@ -86,8 +83,6 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const String & cluster_,
-        const String & cluster_secret_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Secure secure_ = Protocol::Secure::Disable,
@@ -95,8 +90,6 @@ public:
         :
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_),
-        cluster(cluster_),
-        cluster_secret(cluster_secret_),
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
@@ -172,8 +165,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
+    Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -199,11 +191,6 @@ private:
     String user;
     String password;
 
-    /// For inter-server authorization
-    String cluster;
-    String cluster_secret;
-    String salt;
-
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
     std::optional<Poco::Net::SocketAddress> current_resolved_address;
@@ -228,7 +215,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 
@@ -282,10 +269,6 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
-
-#if USE_SSL
-    void sendClusterNameAndSalt();
-#endif
     bool ping();
 
     Block receiveData();

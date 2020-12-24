@@ -1,6 +1,5 @@
-import random
-
 import bottle
+import random
 
 
 @bottle.route('/hostname')

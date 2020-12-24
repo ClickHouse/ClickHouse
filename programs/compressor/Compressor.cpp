@@ -155,7 +155,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true) << '\n';
+        std::cerr << getCurrentExceptionMessage(true);
         return getCurrentExceptionCode();
     }
 

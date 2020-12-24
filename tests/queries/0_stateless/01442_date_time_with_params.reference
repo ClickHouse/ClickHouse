@@ -15,7 +15,7 @@
 2020-05-14 03:37:03.253	Nullable(DateTime64(3, \'UTC\'))
 2020-05-14 06:37:03.253	Nullable(DateTime64(3, \'Europe/Minsk\'))
 2020-05-14 03:37:03.253	Nullable(DateTime64(3, \'UTC\'))
-1970-01-01 00:00:00.000	DateTime64(3, \'UTC\')
+1970-01-01 03:00:00.000	DateTime64(3)
 2020-05-14 03:37:03.000	DateTime64(3, \'UTC\')
 2020-05-14 03:37:03.000	DateTime64(3, \'UTC\')
 2020-05-14 03:37:03.253	DateTime64(3, \'UTC\')
@@ -35,7 +35,7 @@
 2020-05-14 03:37:03	Nullable(DateTime(\'UTC\'))
 2020-05-14 06:37:03	Nullable(DateTime(\'Europe/Minsk\'))
 2020-05-14 03:37:03	Nullable(DateTime(\'UTC\'))
-1970-01-01 00:00:00	DateTime(\'UTC\')
+1970-01-01 03:00:00	DateTime
 2020-05-14 03:37:03	DateTime(\'UTC\')
 2020-05-14 03:37:03	DateTime(\'UTC\')
 2020-05-14 03:37:03	DateTime(\'UTC\')

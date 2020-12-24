@@ -57,7 +57,6 @@ export -f thread_select
 export -f thread_insert
 export -f thread_insert_select
 
-
 # Do randomized queries and expect nothing extraordinary happens.
 
 function test_with_engine {
@@ -84,6 +83,3 @@ function test_with_engine {
 #test_with_engine StripeLog
 #test_with_engine Log
 test_with_engine Memory
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t1"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"

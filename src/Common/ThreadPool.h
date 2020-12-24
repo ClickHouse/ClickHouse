@@ -11,7 +11,6 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <ext/scope_guard.h>
 
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -71,7 +70,6 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
-    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -163,20 +161,21 @@ public:
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
-            args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
+            args = std::make_tuple(std::forward<Args>(args)...)]
         {
-            auto event = std::move(state);
-            SCOPE_EXIT(event->set());
-
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(func);
-            auto arguments = std::move(args);
-
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            std::apply(function, arguments);
+            try
+            {
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
+                DB::ThreadStatus thread_status;
+                std::apply(func, args);
+            }
+            catch (...)
+            {
+                state->set();
+                throw;
+            }
+            state->set();
         });
     }
 

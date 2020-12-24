@@ -19,5 +19,3 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND query LIKE '%data_01283 LIMIT 1%'
 GROUP BY thread_ids
 FORMAT Null;
-
-DROP TABLE data_01283;

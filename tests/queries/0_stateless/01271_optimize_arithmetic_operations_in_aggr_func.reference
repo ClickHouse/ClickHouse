@@ -1,4 +1,4 @@
-SELECT
+SELECT 
     sum(n + 1),
     sum(1 + n),
     sum(n - 1),
@@ -8,7 +8,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(n) * 2,
     2 * sum(n),
     sum(n) / 2,
@@ -18,7 +18,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n) + 1,
     1 + min(n),
     min(n) - 1,
@@ -28,7 +28,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n) * 2,
     2 * min(n),
     min(n) / 2,
@@ -38,7 +38,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n) + 1,
     1 + max(n),
     max(n) - 1,
@@ -48,7 +48,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n) * 2,
     2 * max(n),
     max(n) / 2,
@@ -58,7 +58,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(n + -1),
     sum(-1 + n),
     sum(n - -1),
@@ -68,7 +68,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(n) * -2,
     -2 * sum(n),
     sum(n) / -2,
@@ -78,7 +78,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n) + -1,
     -1 + min(n),
     min(n) - -1,
@@ -88,7 +88,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n) * -2,
     -2 * max(n),
     max(n) / -2,
@@ -98,7 +98,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n) + -1,
     -1 + max(n),
     max(n) - -1,
@@ -108,7 +108,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n) * -2,
     -2 * min(n),
     min(n) / -2,
@@ -118,7 +118,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(abs(2) + 1),
     sum(abs(2) + n),
     sum(n - abs(2)),
@@ -128,7 +128,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(abs(2)) * 2,
     sum(abs(2) * n),
     sum(n / abs(2)),
@@ -138,7 +138,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(abs(2)) + 1,
     min(abs(2) + n),
     min(n - abs(2)),
@@ -148,7 +148,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(abs(2)) * 2,
     min(abs(2) * n),
     min(n / abs(2)),
@@ -158,7 +158,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(abs(2)) + 1,
     max(abs(2) + n),
     max(n - abs(2)),
@@ -168,7 +168,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(abs(2)) * 2,
     max(abs(2) * n),
     max(n / abs(2)),
@@ -178,7 +178,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(abs(n) + 1),
     sum(abs(n) + n),
     sum(n - abs(n)),
@@ -188,7 +188,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(abs(n)) * 2,
     sum(abs(n) * n),
     sum(n / abs(n)),
@@ -198,7 +198,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(abs(n)) + 1,
     min(abs(n) + n),
     min(n - abs(n)),
@@ -208,7 +208,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(abs(n)) * 2,
     min(abs(n) * n),
     min(n / abs(n)),
@@ -218,7 +218,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(abs(n)) + 1,
     max(abs(n) + n),
     max(n - abs(n)),
@@ -228,7 +228,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(abs(n)) * 2,
     max(abs(n) * n),
     max(n / abs(n)),
@@ -238,7 +238,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum((n * n) + 1),
     sum(1 + (n * n)),
     sum((n * n) - 1),
@@ -248,7 +248,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(n * n) * 2,
     sum((2 * n) * n),
     sum(n * n) / 2,
@@ -258,7 +258,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n * n) + 1,
     1 + min(n * n),
     min(n * n) - 1,
@@ -268,7 +268,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     min(n * n) * 2,
     min((2 * n) * n),
     min(n * n) / 2,
@@ -278,7 +278,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n * n) + 1,
     1 + max(n * n),
     max(n * n) - 1,
@@ -288,7 +288,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     max(n * n) * 2,
     max((2 * n) * n),
     max(n * n) / 2,
@@ -298,7 +298,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum((1 + n) + 1),
     sum((1 + 1) + n),
     sum((1 + n) - 1),
@@ -308,7 +308,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum(1 + (n * 2)),
     sum(1 + (2 * n)),
     sum(1 + (n / 2)),
@@ -318,7 +318,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (1 + min(n)) + 1,
     min((1 + 1) + n),
     (1 + min(n)) - 1,
@@ -328,7 +328,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     1 + min(n * 2),
     1 + min(2 * n),
     1 + min(n / 2),
@@ -338,7 +338,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (1 + max(n)) + 1,
     max((1 + 1) + n),
     (1 + max(n)) - 1,
@@ -348,7 +348,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     1 + max(n * 2),
     1 + max(2 * n),
     1 + max(n / 2),
@@ -358,7 +358,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     sum((n + -1) + -1),
     sum((-1 + n) + -1),
     sum((n - -1) + -1),
@@ -368,7 +368,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (sum(n) * -2) * -1,
     (-2 * sum(n)) * -1,
     (sum(n) / -2) / -1,
@@ -378,7 +378,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (min(n) + -1) + -1,
     (-1 + min(n)) + -1,
     (min(n) - -1) + -1,
@@ -388,7 +388,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (min(n) * -2) * -1,
     (-2 * min(n)) * -1,
     (min(n) / -2) / -1,
@@ -398,7 +398,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (max(n) + -1) + -1,
     (-1 + max(n)) + -1,
     (max(n) - -1) + -1,
@@ -408,7 +408,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT
+SELECT 
     (max(n) * -2) * -1,
     (-2 * max(n)) * -1,
     (max(n) / -2) / -1,

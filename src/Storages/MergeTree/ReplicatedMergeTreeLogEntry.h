@@ -2,10 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Storages/MergeTree/MergeType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -77,12 +76,9 @@ struct ReplicatedMergeTreeLogEntryData
     MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
-    UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
-    Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
-    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
 
@@ -112,10 +108,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// Version of metadata which will be set after this alter
     /// Also present in MUTATE_PART command, to track mutations
     /// required for complete alter execution.
-    int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
+    int alter_version; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
-    bool have_mutation = false; /// If this alter requires additional mutation step, for data update
+    bool have_mutation; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
     String metadata_str; /// New metadata corresponding to alter_version

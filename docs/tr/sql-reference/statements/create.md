@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME({MIN min_val MAX max_val | max_val})
+LIFETIME([MIN val1] MAX val2)
 ```
 
 Oluşturuyor [dış sözlük](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) verilen ile [yapılı](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [kaynaklı](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [düzen](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) ve [ömür](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

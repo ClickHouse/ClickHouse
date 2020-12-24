@@ -43,7 +43,7 @@ void addDefaultRequiredExpressionsRecursively(Block & block, const String & requ
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
 
-        auto cast_func = makeASTFunction("cast", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
+        auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
         default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
         added_columns.emplace(required_column);
 
@@ -79,7 +79,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         auto cast_func = makeASTFunction(
-            "cast", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+            "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
 
         conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
 
