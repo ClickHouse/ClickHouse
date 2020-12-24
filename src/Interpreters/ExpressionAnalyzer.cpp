@@ -981,6 +981,7 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             getRootActionsNoMakeSet(f.function_node->clone(),
                 true /* no_subqueries */, step.actions());
 
+            // FIXME rewrite this comment
             // 1.2) result of window function: an empty INPUT.
             // It is an aggregate function, so it won't be added by getRootActions.
             // This is something of a hack. Other options:
@@ -999,12 +1000,6 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             //     Expression pipelines. This is a "proper" way that would allow
             //     us to depend on window functions in other functions. But it's
             //     complicated so I avoid doing it for now.
-            ColumnWithTypeAndName col;
-            col.type = f.aggregate_function->getReturnType();
-            col.column = col.type->createColumn();
-            col.name = f.column_name;
-
-//            step.actions()->addInput(col);
             columns_after_window.push_back({f.column_name,
                 f.aggregate_function->getReturnType()});
 
@@ -1013,8 +1008,6 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
                 // 2.1) function arguments;
                 step.required_output.push_back(a->getColumnName());
             }
-//            // 2.2) function result;
-//            step.required_output.push_back(f.column_name);
         }
 
         // 2.3) PARTITION BY and ORDER BY columns.
