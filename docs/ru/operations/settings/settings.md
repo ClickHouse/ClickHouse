@@ -2249,7 +2249,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull). Включите для совместимости со стандартом SQL.
-Реализуется с помощью перезаписи запросов (аналогично настройке [count_distinct_implementation](#settings-count_distinct_implementation)), чтобы получить согласованные результаты для распределенных запросов.
+Реализуется с помощью перезаписи запросов (аналогично настройке `count_distinct_implementation`), чтобы получить согласованные результаты для распределенных запросов.
 
 Возможные значения:
 

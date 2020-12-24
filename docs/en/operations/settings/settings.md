@@ -2378,7 +2378,7 @@ Default value: `0`.
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [`count_distinct_implementation`](settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+It is implemented via query rewrite (similar to [count_distinct_implementation](settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
 
 Possible values:
 
