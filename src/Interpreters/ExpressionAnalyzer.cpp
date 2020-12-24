@@ -1426,6 +1426,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
         has_order_by = query.orderBy() != nullptr;
+        // FIXME selected columns was set here. Should split order by and select
+        // and insert window functions in between.
+        // Will fix:
+        // 1) window function in DISTINCT
+        // 2) totally broken DISTINCT
+        // 3) window functions in order by
         before_order_and_select = query_analyzer.appendOrderBy(
                 chain,
                 only_types || (need_aggregate ? !second_stage : !first_stage),
