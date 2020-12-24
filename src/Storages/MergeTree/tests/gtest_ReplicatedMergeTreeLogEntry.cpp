@@ -213,7 +213,7 @@ TEST_P(ReplicatedMergeTreeLogEntryDataTest, transcode)
 
 // Enabling this warning would ruin test brievity without adding anything else in return,
 // since most of the fields have default constructors or be will be zero-initialized as by standard,
-// so values are predicatable and stable accross runs.
+// so values are predicatable and stable across runs.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 
@@ -301,7 +301,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
 
 // This is just an example of how to set all fields. Can't be used as is since depending on type,
 // only some fields are serialized/deserialized, and even if everything works perfectly,
-// some fileds in deserialized object would be unset (hence differ from expected).
+// some fields in deserialized object would be unset (hence differ from expected).
 // INSTANTIATE_TEST_SUITE_P(Full, ReplicatedMergeTreeLogEntryDataTest,
 //         ::testing::ValuesIn(std::initializer_list<ReplicatedMergeTreeLogEntryData>{
 //     {

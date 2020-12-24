@@ -61,7 +61,7 @@ struct ExtractStringImpl
     // read a ASCII word
     static ALWAYS_INLINE inline size_t readOneASCIIWord(PaddedPODArray<UInt8> & word_buf, const char *& pos, const char * end)
     {
-        // jump seperators
+        // jump separators
         while (pos < end && !isAlphaNumericASCII(*pos))
             ++pos;
 
@@ -93,7 +93,7 @@ struct ExtractStringImpl
     // read one UTF8 word from pos to word
     static ALWAYS_INLINE inline size_t readOneUTF8Word(PaddedPODArray<UInt32> & word_buf, const char *& pos, const char * end)
     {
-        // jump UTF8 seperator
+        // jump UTF8 separator
         while (pos < end && isUTF8Sep(*pos))
             ++pos;
         word_buf.clear();
@@ -112,7 +112,7 @@ private:
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
 
-    // we use ASCII non-alphanum character as UTF8 seperator
+    // we use ASCII non-alphanum character as UTF8 separator
     static ALWAYS_INLINE inline bool isUTF8Sep(const UInt8 c) { return c < 128 && !isAlphaNumericASCII(c); }
 
     // read one UTF8 character and return it
