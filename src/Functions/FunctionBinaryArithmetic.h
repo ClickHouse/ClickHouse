@@ -1375,9 +1375,9 @@ public:
         if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
             return {true, true, false};
 
-        const std::string_view name = Name::name;
+        const std::string_view name_view = Name::name;
 
-        if (name == "minus" || name == "plus")
+        if (name_view == "minus" || name_view == "plus")
         {
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
@@ -1395,7 +1395,8 @@ public:
                 };
                 transform(left_point);
                 transform(right_point);
-                if (name == "plus")
+
+                if (name_view == "plus")
                 {
                     // Check if there is an overflow
                     if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
@@ -1437,7 +1438,7 @@ public:
                     return {false, true, false};
             }
         }
-        if (name == "divide" || name == "intDiv")
+        if (name_view == "divide" || name_view == "intDiv")
         {
             // const / variable
             if (left.column && isColumnConst(*left.column))
