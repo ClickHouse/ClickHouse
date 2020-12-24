@@ -504,15 +504,13 @@ void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_ar
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
+
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments,
+                                                                                        const DefaultReturnTypeGetter & getter)
 {
-    checkNumberOfArguments(arguments.size());
+    NullPresence null_presence = getNullPresense(arguments);
 
-    if (!arguments.empty() && impl->useDefaultImplementationForNulls())
-    {
-        NullPresence null_presence = getNullPresense(arguments);
-
-        if (null_presence.has_null_constant)
+    if (null_presence.has_null_constant)
         {
             return makeNullable(std::make_shared<DataTypeNothing>());
         }
@@ -521,10 +519,19 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(
             Block nested_block = createBlockWithNestedColumns(
                 Block(arguments),
                 ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
-            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
+            auto return_type = getter(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
         }
-    }
+
+    return getter(arguments);
+}
+
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
+{
+    checkNumberOfArguments(arguments.size());
+
+    if (!arguments.empty() && impl->useDefaultImplementationForNulls())
+        return getReturnTypeDefaultImplementationForNulls(arguments, [&](const auto & args) { return impl->getReturnType(args); });
 
     return impl->getReturnType(arguments);
 }
