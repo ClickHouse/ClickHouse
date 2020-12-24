@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct User;
 class ExternalAuthenticators;
 
 /// Authentication type and encrypted password for checking when an user logins.
@@ -90,8 +89,8 @@ public:
     void setServerName(const String & server_name_);
 
     /// Checks if the provided password is correct. Returns false if not.
-    /// User instance and external authenticators' info are used only by some specific authentication type (e.g., LDAP_SERVER).
-    bool isCorrectPassword(const User & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const;
+    /// User name and external authenticators are used by specific authentication types only (e.g., LDAP_SERVER).
+    bool isCorrectPassword(const String & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }

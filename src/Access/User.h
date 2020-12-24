@@ -8,27 +8,9 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/SettingsProfileElement.h>
 
-#include <chrono>
-#include <mutex>
 
 namespace DB
 {
-
-/** Various cached data bound to a User instance. Access to any member must be synchronized via 'mutex' member.
-  */
-struct UserEtcCache
-{
-    mutable std::recursive_mutex mutex;
-    std::size_t ldap_last_successful_password_check_params_hash = 0;
-    std::chrono::steady_clock::time_point ldap_last_successful_password_check_timestamp;
-
-    explicit UserEtcCache() = default;
-    explicit UserEtcCache(const UserEtcCache & other) { (*this) = other; }
-    explicit UserEtcCache(UserEtcCache && other) { (*this) = std::move(other); }
-    UserEtcCache & operator= (const UserEtcCache & other);
-    UserEtcCache & operator= (UserEtcCache && other);
-};
-
 /** User and ACL.
   */
 struct User : public IAccessEntity
@@ -39,7 +21,6 @@ struct User : public IAccessEntity
     GrantedRoles granted_roles;
     RolesOrUsersSet default_roles = RolesOrUsersSet::AllTag{};
     SettingsProfileElements settings;
-    mutable UserEtcCache cache;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
