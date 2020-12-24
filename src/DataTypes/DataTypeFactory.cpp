@@ -43,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return get(ident->name, {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -180,7 +180,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
-    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

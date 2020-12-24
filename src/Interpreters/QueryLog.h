@@ -30,9 +30,9 @@ struct QueryLogElement
     /// Depending on the type of query and type of stage, not all the fields may be filled.
 
     time_t event_time{};
-    Decimal64 event_time_microseconds{};
+    UInt64 event_time_microseconds{};
     time_t query_start_time{};
-    Decimal64 query_start_time_microseconds{};
+    UInt64 query_start_time_microseconds{};
     UInt64 query_duration_ms{};
 
     /// The data fetched from DB to execute the query
@@ -51,12 +51,6 @@ struct QueryLogElement
 
     String current_database;
     String query;
-    UInt64 normalized_query_hash{};
-
-    String query_kind;
-    std::set<String> query_databases;
-    std::set<String> query_tables;
-    std::set<String> query_columns;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;

@@ -17,12 +17,7 @@ struct LazyPipeFDs
     void open();
     void close();
 
-    /// Set O_NONBLOCK to different ends of pipe preserving existing flags.
-    /// Throws an exception if fcntl was not successful.
-    void setNonBlockingWrite();
-    void setNonBlockingRead();
-    void setNonBlockingReadWrite();
-
+    void setNonBlocking();
     void tryIncreaseSize(int desired_size);
 
     ~LazyPipeFDs();

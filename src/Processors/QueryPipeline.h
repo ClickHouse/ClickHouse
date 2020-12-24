@@ -53,11 +53,6 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
-
-    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
-    /// Transform pipeline in general way.
-    void transform(const Transformer & transformer);
-
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
@@ -81,7 +76,7 @@ public:
 
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
-    /// Changes the number of output ports if needed. Adds ResizeTransform.
+    /// Changes the number of input ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     /// Unite several pipelines together. Result pipeline would have common_header structure.
@@ -110,9 +105,6 @@ public:
     void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
-    void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
-    void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -164,7 +156,7 @@ private:
 };
 
 /// This is a small class which collects newly added processors to QueryPipeline.
-/// Pipeline must live longer than this class.
+/// Pipeline must live longer that this class.
 class QueryPipelineProcessorsCollector
 {
 public:

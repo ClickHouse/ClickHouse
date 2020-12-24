@@ -10,7 +10,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 
-#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -22,18 +21,19 @@ namespace DB
   */
 class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
+friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
 
-    size_t getSize() const { return data.get()->size(); }
+    size_t getSize() const { return data.size(); }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -45,12 +45,10 @@ public:
 
     void drop() override;
 
-    void mutate(const MutationCommands & commands, const Context & context) override;
-
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -90,8 +88,8 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
-    MultiVersion<Blocks> data;
+    /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
+    BlocksList data;
 
     mutable std::mutex mutex;
 

@@ -1,8 +1,3 @@
----
-toc_priority: 35
-toc_title: "\u041c\u0430\u0441\u0441\u0438\u0432\u044b"
----
-
 # Массивы {#functions-for-working-with-arrays}
 
 ## empty {#function-empty}
@@ -1157,7 +1152,6 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
-```
 
 ## arrayAUC {#arrayauc}
 

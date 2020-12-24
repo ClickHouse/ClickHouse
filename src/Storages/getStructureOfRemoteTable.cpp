@@ -38,8 +38,10 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context);
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
+            auto storage_ptr = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -71,7 +73,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, *new_context);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(table_id);

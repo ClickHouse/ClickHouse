@@ -10,10 +10,10 @@ namespace DB
 JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
     WriteBuffer & out_,
     const Block & header,
-    const RowOutputFormatParams & params_,
+    FormatFactory::WriteCallback callback,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : JSONRowOutputFormat(out_, header, params_, settings_, yield_strings_)
+    : JSONRowOutputFormat(out_, header, callback, settings_, yield_strings_)
 {
 }
 
@@ -93,19 +93,19 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, false);
+        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, callback, format_settings, false);
     });
 
     factory.registerOutputFormatProcessor("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, true);
+        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, callback, format_settings, true);
     });
 }
 

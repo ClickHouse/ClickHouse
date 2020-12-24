@@ -29,9 +29,9 @@ public:
 
     String getName() const override { return "now"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        return DataTypeDateTime().createColumnConst(
+        block.getByPosition(result).column = DataTypeDateTime().createColumnConst(
                 input_rows_count,
                 static_cast<UInt64>(time_value));
     }
@@ -53,12 +53,12 @@ public:
         return argument_types;
     }
 
-    const DataTypePtr & getResultType() const override
+    const DataTypePtr & getReturnType() const override
     {
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }

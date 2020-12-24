@@ -489,7 +489,7 @@ void TemplateRowInputFormat::skipToNextDelimiterOrEof(const String & delimiter)
 
 void TemplateRowInputFormat::throwUnexpectedEof()
 {
-    throw ParsingException("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
+    throw Exception("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
                     "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
 }

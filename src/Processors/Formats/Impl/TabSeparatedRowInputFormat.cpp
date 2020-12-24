@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
 {
-    NullOutput null_sink;
+    NullSink null_sink;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -196,7 +196,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         }
         else
         {
-            NullOutput null_sink;
+            NullSink null_sink;
             readEscapedStringInto(null_sink, in);
         }
 
@@ -353,7 +353,7 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
     }
     else
     {
-        NullOutput null_sink;
+        NullSink null_sink;
         readEscapedStringInto(null_sink, in);
     }
 }
@@ -423,11 +423,10 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -444,9 +443,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
         }
         else if (*pos == '\n' || *pos == '\r')
         {
-            if (*pos == '\n')
-                ++number_of_rows;
-
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
             ++pos;
@@ -455,7 +451,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
     saveUpToPosition(in, memory, pos);
 
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)

@@ -21,8 +21,8 @@ def cluster():
 
 def test_different_types(cluster):
     node = cluster.instances["node"]
-    response = node.query("SELECT * FROM system.disks")
-    disks = response.split("\n")
+    responce = node.query("SELECT * FROM system.disks")
+    disks = responce.split("\n")
     for disk in disks:
         if disk == '':  # skip empty line (after split at last position)
             continue

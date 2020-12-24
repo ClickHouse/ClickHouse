@@ -1,8 +1,3 @@
----
-toc_priority: 17
-toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0020\u043a\u043e\u043c\u0430\u043d\u0434\u043d\u043e\u0439\u0020\u0441\u0442\u0440\u043e\u043a\u0438"
----
-
 # Клиент командной строки {#klient-komandnoi-stroki}
 
 ClickHouse предоставляет собственный клиент командной строки: `clickhouse-client`. Клиент поддерживает запуск с аргументами командной строки и с конфигурационными файлами. Подробнее читайте в разделе [Конфигурирование](#interfaces_cli_configuration).
@@ -11,9 +6,9 @@ ClickHouse предоставляет собственный клиент ком
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 20.13.1.5273 (official build).
+ClickHouse client version 19.17.1.1579 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 20.13.1 revision 54442.
+Connected to ClickHouse server version 19.17.1 revision 54428.
 
 :)
 ```
@@ -63,7 +58,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 По умолчанию, в качестве формата, используется формат PrettyCompact (красивые таблички). Вы можете изменить формат с помощью секции FORMAT запроса, или с помощью указания `\G` на конце запроса, с помощью аргумента командной строки `--format` или `--vertical`, или с помощью конфигурационного файла клиента.
 
-Чтобы выйти из клиента, нажмите Ctrl+D, или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
+Чтобы выйти из клиента, нажмите Ctrl+D (или Ctrl+C), или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
 
 При выполнении запроса, клиент показывает:
 
@@ -130,8 +125,6 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 -   `--config-file` — имя конфигурационного файла.
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
-
-Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
 
 ### Конфигурационные файлы {#konfiguratsionnye-faily}
 

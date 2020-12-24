@@ -195,14 +195,7 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
     : MergedData(std::move(columns_), false, max_block_size_), def(def_)
 {
-    initAggregateDescription();
-
-    /// Just to make startGroup() simpler.
-    if (def.allocates_memory_in_arena)
-    {
-        arena = std::make_unique<Arena>();
-        arena_size = arena->size();
-    }
+        initAggregateDescription();
 }
 
 void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnRawPtrs & raw_columns, size_t row)
@@ -219,19 +212,8 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     for (auto & desc : def.columns_to_simple_aggregate)
         desc.createState();
 
-    /// Frequent Arena creation may be too costly, because we have to increment the atomic
-    /// ProfileEvents counters when creating the first Chunk -- e.g. SELECT with
-    /// SimpleAggregateFunction(String) in PK and lots of groups may produce ~1.5M of
-    /// ArenaAllocChunks atomic increments, while LOCK is too costly for CPU
-    /// (~10% overhead here).
-    /// To avoid this, reset arena if and only if:
-    /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
-    /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->size() > arena_size)
-    {
+    if (def.allocates_memory_in_arena)
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
-    }
 
     is_group_started = true;
 }
@@ -257,12 +239,12 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
         throw Exception("Can't add a row to the group because it was not started.", ErrorCodes::LOGICAL_ERROR);
 
     for (auto & desc : def.columns_to_aggregate)
-        desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getRow());
+        desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->pos);
 
     for (auto & desc : def.columns_to_simple_aggregate)
     {
         auto & col = cursor->all_columns[desc.column_number];
-        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->getRow(), arena.get());
+        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, arena.get());
     }
 }
 
@@ -352,7 +334,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
-            merged_data.startGroup(current->all_columns, current->getRow());
+            merged_data.startGroup(current->all_columns, current->pos);
         }
 
         merged_data.addRow(current);

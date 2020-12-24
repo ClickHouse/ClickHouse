@@ -9,7 +9,7 @@ toc_title: "Linux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3059\u308B\u65B9\u6CD
 
 次のチュートリアルはUbuntu Linuxシステムに基づいています。
 適切な変更により、他のLinuxディストリビューションでも動作するはずです。
-サポートされるプラットフォーム:x86_64およびAArch64。 Power9のサポートは実験的です。
+サポートされるプラットフォーム:x86\_64およびAArch64。 Power9のサポートは実験的です。
 
 ## Git、CMake、Pythonと忍者をインストールします {#install-git-cmake-python-and-ninja}
 
@@ -19,7 +19,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 古いシステムではcmakeの代わりにcmake3。
 
-## GCC9のインストール {#install-gcc-10}
+## GCC9のインストール {#install-gcc-9}
 
 これを行うにはいくつかの方法があります。
 
@@ -29,18 +29,18 @@ $ sudo apt-get install git cmake python ninja-build
 $ sudo apt-get install software-properties-common
 $ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 $ sudo apt-get update
-$ sudo apt-get install gcc-10 g++-10
+$ sudo apt-get install gcc-9 g++-9
 ```
 
 ### ソースからインスト {#install-from-sources}
 
 見て [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## ビルドにGCC9を使用する {#use-gcc-10-for-builds}
+## ビルドにGCC9を使用する {#use-gcc-9-for-builds}
 
 ``` bash
-$ export CC=gcc-10
-$ export CXX=g++-10
+$ export CC=gcc-9
+$ export CXX=g++-9
 ```
 
 ## ﾂつｨﾂ姪"ﾂ債ﾂつｹ {#checkout-clickhouse-sources}

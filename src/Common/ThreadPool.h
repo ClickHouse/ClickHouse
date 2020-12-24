@@ -71,7 +71,6 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
-    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -165,8 +164,7 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            auto event = std::move(state);
-            SCOPE_EXIT(event->set());
+            SCOPE_EXIT(state->set());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.

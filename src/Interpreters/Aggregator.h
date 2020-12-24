@@ -16,6 +16,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
+#include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
@@ -1212,7 +1213,6 @@ protected:
     Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
         Method & method,
-        Arena * arena,
         bool final,
         size_t bucket) const;
 

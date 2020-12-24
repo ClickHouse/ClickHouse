@@ -5,7 +5,7 @@ toc_priority: 52
 toc_title: "Agregar funci\xF3n (nombre, types_of_arguments)...)"
 ---
 
-# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [una vista materializada](../../sql-reference/statements/create.md#create-view). La forma común de producir un estado de función agregada es llamando a la función agregada con el `-State` sufijo. Para obtener el resultado final de la agregación en el futuro, debe utilizar la misma función de agregado con el `-Merge`sufijo.
 
