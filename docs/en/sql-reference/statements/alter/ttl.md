@@ -13,7 +13,7 @@ You can change [table TTL](../../../engines/table-engines/mergetree-family/merge
 ALTER TABLE table_name MODIFY TTL ttl_expression;
 ```
 
-## REMOVE TTL {remove-ttl}
+## REMOVE TTL {#remove-ttl}
 
 Removes TTL-property from the specified column.
 
@@ -27,7 +27,26 @@ ALTER TABLE table_name MODIFY column_name REMOVE TTL
 
 Requests and results:
 
-To start the background cleaning using TTL, make this:
+Firstly we should create a table to work with:
+
+```sql
+CREATE TABLE table_with_ttl
+(
+    event_time DateTime,
+    UserID UInt64,
+    Comment String
+)
+ENGINE MergeTree()
+ORDER BY tuple()
+TTL event_time + INTERVAL 3 MONTH;
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');
+
+INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+```
+
+Trigger `TTL` works clearly with `OPTIMIZE` query. Make this to start the background cleaning using TTL:
 
 ```sql
 OPTIMIZE TABLE table_with_ttl FINAL;
@@ -46,11 +65,11 @@ OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl;
 ```
 
-And now we have nothing to delete.
+Now TTL-property was removed and there is nothing to be deleted.
 
 ```text
---2020-12-11 12:44:57    1       username1
---2020-08-11 12:44:57    2       username2
+|2020-12-11 12:44:57  |  1  |     username1|
+|2020-08-11 12:44:57  |  2  |     username2|
 ```
 
 ### See Also
