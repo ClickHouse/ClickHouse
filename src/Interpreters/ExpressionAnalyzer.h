@@ -43,6 +43,9 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
+SortDescription getSortDescription(const ASTSelectQuery & query, const Context & context);
+SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query);
+
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {

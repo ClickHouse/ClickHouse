@@ -882,6 +882,10 @@ public:
         size_t max_threads;
 
         const size_t min_free_disk_space;
+
+        /// Settings is used to finalize aggregating columns used by limit_pushdown.
+        bool enable_limit_pushdown;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -890,7 +894,8 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_,
+            bool enable_limit_pushdown_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -898,14 +903,15 @@ public:
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_volume(tmp_volume_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_)
+            min_free_disk_space(min_free_disk_space_),
+            enable_limit_pushdown(enable_limit_pushdown_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false)
         {
             intermediate_header = intermediate_header_;
         }
@@ -915,11 +921,12 @@ public:
             const Block & intermediate_header,
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
-            bool final);
+            bool final,
+            bool enable_limit_pushdown);
 
         Block getHeader(bool final) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final);
+            return getHeader(src_header, intermediate_header, keys, aggregates, final, enable_limit_pushdown);
         }
 
         /// Returns keys and aggregated for EXPLAIN query
@@ -1174,6 +1181,12 @@ protected:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
+    template <typename Mapped>
+    void insertAggregatesIntoColumnsPreliminary(
+        Mapped & mapped,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena) const;
+
     template <typename Method, typename Table>
     void convertToBlockImplFinal(
         Method & method,
@@ -1188,6 +1201,13 @@ protected:
         Table & data,
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns) const;
+
+    template <typename Method, typename Table>
+    void convertToBlockImplPreliminaryFinal(
+        Table & data,
+        MutableColumns & key_columns,
+        MutableColumns & final_aggregate_columns,
+        Arena * arena) const;
 
     template <typename Filler>
     Block prepareBlockAndFill(

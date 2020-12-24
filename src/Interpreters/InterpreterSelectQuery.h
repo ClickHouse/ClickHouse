@@ -122,11 +122,11 @@ private:
     static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
-    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
+    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, bool limit_pushdown);
     void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
-    void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
+    void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset, bool limit_pushdown);
     void executeLimitBy(QueryPlan & query_plan);
     void executeLimit(QueryPlan & query_plan);
     void executeOffset(QueryPlan & query_plan);

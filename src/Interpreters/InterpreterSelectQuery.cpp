@@ -98,7 +98,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
-    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -588,100 +587,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     return analysis_result.final_projection->getResultColumns();
 }
 
-static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
-{
-    const auto & [field, type] = evaluateConstantExpression(node, context);
-
-    if (!isColumnedAsNumber(type))
-        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-    return field;
-}
-
-static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context & context)
-{
-    FillColumnDescription descr;
-    if (order_by_elem.fill_from)
-        descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
-    if (order_by_elem.fill_to)
-        descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
-    if (order_by_elem.fill_step)
-        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
-    else
-        descr.fill_step = order_by_elem.direction;
-
-    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
-        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-    if (order_by_elem.direction == 1)
-    {
-        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
-            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
-        {
-            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-        }
-    }
-    else
-    {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
-            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
-        {
-            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-        }
-    }
-
-    return descr;
-}
-
-static SortDescription getSortDescription(const ASTSelectQuery & query, const Context & context)
-{
-    SortDescription order_descr;
-    order_descr.reserve(query.orderBy()->children.size());
-    for (const auto & elem : query.orderBy()->children)
-    {
-        String name = elem->children.front()->getColumnName();
-        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
-
-        std::shared_ptr<Collator> collator;
-        if (order_by_elem.collation)
-            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
-
-        if (order_by_elem.with_fill)
-        {
-            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
-            order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, true, fill_desc);
-        }
-        else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
-    }
-
-    return order_descr;
-}
-
-static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
-{
-    SortDescription order_descr;
-    order_descr.reserve(query.groupBy()->children.size());
-
-    for (const auto & elem : query.groupBy()->children)
-    {
-        String name = elem->getColumnName();
-        order_descr.emplace_back(name, 1, 1);
-    }
-
-    return order_descr;
-}
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context, const std::string & expr)
 {
@@ -856,15 +761,19 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         auto preliminary_sort = [&]()
         {
+            bool limit_pushdown = !aggregate_final && settings.enable_limit_pushdown;
             /** For distributed query processing,
               *  if no GROUP, HAVING set,
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
+              *
+              * When limit_pushdown is set, aggregation-columns used by sorting has already been finalized.
+              *  In order to achieve limit_pushdown, the results must be sorted and limited.
               */
-            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
+            if ((!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving()) || limit_pushdown)
             {
                 if (expressions.has_order_by)
-                    executeOrder(query_plan, query_info.input_order_info);
+                    executeOrder(query_plan, query_info.input_order_info, limit_pushdown);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
@@ -876,7 +785,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
 
                 if (query.limitLength())
-                    executePreLimit(query_plan, true);
+                    executePreLimit(query_plan, true, limit_pushdown);
             }
         };
 
@@ -1044,7 +953,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
-                    executeOrder(query_plan, query_info.input_order_info);
+                    executeOrder(query_plan, query_info.input_order_info, false);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1068,7 +977,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
                 !has_withfill)
             {
-                executePreLimit(query_plan, false);
+                executePreLimit(query_plan, false, false);
                 has_prelimit = true;
             }
 
@@ -1116,6 +1025,20 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
     if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
+
+    {
+        WriteBufferFromOwnString buf;
+        QueryPlan::ExplainPlanOptions query_plan_options{true, true, true};
+        query_plan.explainPlan(buf, query_plan_options);
+        LOG_TRACE(log, "__TEST__ \n{}", buf.str());
+    }
+
+    {
+        WriteBufferFromOwnString buf;
+        QueryPlan::ExplainPipelineOptions query_pipeline_options{true};
+        query_plan.explainPipeline(buf, query_pipeline_options);
+        LOG_TRACE(log, "__TEST__ \n{}", buf.str());
+    }
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)
@@ -1654,7 +1577,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
                               settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(),
                               settings.max_threads,
-                              settings.min_free_disk_space_for_temporary_data);
+                              settings.min_free_disk_space_for_temporary_data,
+                              settings.enable_limit_pushdown);
 
     SortDescription group_by_sort_description;
 
@@ -1763,7 +1687,8 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
+                              settings.enable_limit_pushdown);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -1857,11 +1782,29 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
     query_plan.addStep(std::move(finish_sorting_step));
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, bool limit_pushdown)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
+
+    /** In this step for limit_pushdown, aggregation columns hasn't been finalized.
+      * So that names of columns are replaced with sorting_column_names that temporarily has been finalized.
+      */
+    if (limit_pushdown)
+    {
+        for (auto & descr : output_order_descr)
+        {
+            auto aggregate = std::find_if(query_analyzer->aggregates().begin(), query_analyzer->aggregates().end(),
+                [&descr](auto & agg_descr) { return agg_descr.column_name == descr.column_name; });
+            if (aggregate != query_analyzer->aggregates().end())
+            {
+                descr.column_name = aggregate->sorting_column_name;
+            }
+        }
+
+        limit *= context->getSettingsRef().limit_pushdown_fetch_multiplier;
+    }
 
     if (input_sorting_info)
     {
@@ -1967,13 +1910,16 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
+void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset, bool limit_pushdown)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
+
+        if (limit_pushdown)
+            limit_length *= context->getSettingsRef().limit_pushdown_fetch_multiplier;
 
         if (do_not_skip_offset)
         {

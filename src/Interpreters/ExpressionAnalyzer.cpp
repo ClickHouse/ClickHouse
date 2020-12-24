@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
+#include <Columns/Collator.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -24,6 +26,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -38,6 +41,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/parseQuery.h>
@@ -69,6 +73,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -116,6 +121,110 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     }
     return true;
 }
+
+
+static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isColumnedAsNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    return field;
+}
+
+
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context & context)
+{
+    FillColumnDescription descr;
+    if (order_by_elem.fill_from)
+        descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
+    if (order_by_elem.fill_to)
+        descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.fill_step)
+        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
+    else
+        descr.fill_step = order_by_elem.direction;
+
+    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    if (order_by_elem.direction == 1)
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+        {
+            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+    else
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+        {
+            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+
+    return descr;
+}
+
+
+SortDescription getSortDescription(const ASTSelectQuery & query, const Context & context)
+{
+    SortDescription order_descr;
+    auto order_by = query.orderBy();
+    if (!order_by)
+        return SortDescription{};
+
+    order_descr.reserve(order_by->children.size());
+    for (const auto & elem : query.orderBy()->children)
+    {
+        String name = elem->children.front()->getColumnName();
+        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
+
+        std::shared_ptr<Collator> collator;
+        if (order_by_elem.collation)
+            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
+
+        if (order_by_elem.with_fill)
+        {
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+            order_descr.emplace_back(name, order_by_elem.direction,
+                order_by_elem.nulls_direction, collator, true, fill_desc);
+        }
+        else
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+    }
+
+    return order_descr;
+}
+
+
+SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
+{
+    SortDescription order_descr;
+    order_descr.reserve(query.groupBy()->children.size());
+
+    for (const auto & elem : query.groupBy()->children)
+    {
+        String name = elem->getColumnName();
+        order_descr.emplace_back(name, 1, 1);
+    }
+
+    return order_descr;
+}
+
 
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
@@ -433,6 +542,13 @@ void ExpressionAnalyzer::getRootActionsForHaving(const ASTPtr & ast, bool no_sub
 
 bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 {
+    auto * select_query = query->as<ASTSelectQuery>();
+    SortDescription sort_descr;
+    int sorting_key_index = 0;
+
+    if (select_query)
+        sort_descr = getSortDescription(*select_query, context);
+
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
@@ -464,6 +580,10 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         AggregateFunctionProperties properties;
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
+
+        aggregate.is_sorting_key = std::count_if(sort_descr.begin(), sort_descr.end(),
+            [&aggregate](auto & sort) { return sort.column_name == aggregate.column_name; });
+        aggregate.sorting_column_name = aggregate.column_name + "_sorting_key" + std::to_string(++sorting_key_index);
 
         aggregate_descriptions.push_back(aggregate);
     }
@@ -1116,6 +1236,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
 
     return true;
 }
+
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
