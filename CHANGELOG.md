@@ -1,5 +1,19 @@
 ### ClickHouse release 20.12
 
+### ClickHouse release v20.12.4.5-stable, 2020-12-24
+
+#### Bug Fix
+
+* Fixed issue when `clickhouse-odbc-bridge` process is unreachable by server on machines with dual IPv4/IPv6 stack; - Fixed issue when ODBC dictionary updates are performed using malformed queries and/or cause crashes; Possibly closes [#14489](https://github.com/ClickHouse/ClickHouse/issues/14489). [#18278](https://github.com/ClickHouse/ClickHouse/pull/18278) ([Denis Glazachev](https://github.com/traceon)).
+* Fixed key comparison between Enum and Int types. This fixes [#17989](https://github.com/ClickHouse/ClickHouse/issues/17989). [#18214](https://github.com/ClickHouse/ClickHouse/pull/18214) ([Amos Bird](https://github.com/amosbird)).
+* Fixed unique key convert crash in `MaterializeMySQL` database engine. This fixes [#18186](https://github.com/ClickHouse/ClickHouse/issues/18186) and fixes [#16372](https://github.com/ClickHouse/ClickHouse/issues/16372)  [#18211](https://github.com/ClickHouse/ClickHouse/pull/18211) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `std::out_of_range: basic_string` in S3 URL parsing. [#18059](https://github.com/ClickHouse/ClickHouse/pull/18059) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Fixed the issue when some tables not synchronized to ClickHouse from MySQL caused by the fact that convertion MySQL prefix index wasn't supported for MaterializeMySQL. This fixes [#15187](https://github.com/ClickHouse/ClickHouse/issues/15187) and fixes [#17912](https://github.com/ClickHouse/ClickHouse/issues/17912)  [#17944](https://github.com/ClickHouse/ClickHouse/pull/17944) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
+* Fix possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fix empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).
+
+
 ### ClickHouse release v20.12.3.3-stable, 2020-12-13
 
 #### Backward Incompatible Change
