@@ -70,6 +70,7 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
