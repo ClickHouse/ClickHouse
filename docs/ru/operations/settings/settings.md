@@ -1371,18 +1371,6 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
-
-Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса `-OrNull`. Включите для совместимости со стандартом SQL.
-Реализуется с помощью перезаписи запросов (аналогично настройке `count_distinct_implementation`), чтобы получить согласованные результаты для распределенных запросов.
-
-Возможные значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Включает или отключает тихий пропуск недоступных шардов.
@@ -2257,5 +2245,17 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 - 0 — отключает поддержку типа `Nullable` для ключей таблиц.
 
 Значение по умолчанию: `0`.
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+
+Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull). Включите для совместимости со стандартом SQL.
+Реализуется с помощью перезаписи запросов (аналогично настройке [count_distinct_implementation](#settings-count_distinct_implementation)), чтобы получить согласованные результаты для распределенных запросов.
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 0.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
