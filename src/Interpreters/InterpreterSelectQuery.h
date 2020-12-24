@@ -3,16 +3,15 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IInterpreter.h>
-#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/StorageID.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
-#include <Storages/ReadInOrderOptimizer.h>
-#include <Interpreters/StorageID.h>
 
 #include <Columns/FilterDescription.h>
 
@@ -32,7 +31,7 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
-class InterpreterSelectQuery : public IInterpreter
+class InterpreterSelectQuery : public IInterpreterUnionOrSelectQuery
 {
 public:
     /**
@@ -79,20 +78,16 @@ public:
     BlockIO execute() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan);
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
-    Block getSampleBlock();
-
-    void ignoreWithTotals();
-
-    ASTPtr getQuery() const { return query_ptr; }
-
-    size_t getMaxStreams() const { return max_streams; }
+    virtual void ignoreWithTotals() override;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
+
+    static void addEmptySourceToQueryPlan(QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
 private:
     InterpreterSelectQuery(
@@ -116,15 +111,17 @@ private:
     void executeFetchColumns(
         QueryProcessingStage::Enum processing_stage,
         QueryPlan & query_plan,
-        const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere);
+        const PrewhereDAGInfoPtr & prewhere_info,
+        const NameSet & columns_to_remove_after_prewhere);
 
-    void executeWhere(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPlan & query_plan, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+    void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
+    void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
-    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeHaving(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
-    static void executeExpression(QueryPlan & query_plan, const ExpressionActionsPtr & expression, const std::string & description);
+    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression);
+    static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
+    /// FIXME should go through ActionsDAG to behave as a proper function
+    void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
     void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPlan & query_plan);
@@ -133,14 +130,14 @@ private:
     void executeLimitBy(QueryPlan & query_plan);
     void executeLimit(QueryPlan & query_plan);
     void executeOffset(QueryPlan & query_plan);
-    static void executeProjection(QueryPlan & query_plan, const ExpressionActionsPtr & expression);
+    static void executeProjection(QueryPlan & query_plan, const ActionsDAGPtr & expression);
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     String generateFilterActions(
-        ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
+            ActionsDAGPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     enum class Modificator
     {
@@ -158,9 +155,6 @@ private:
       */
     void initSettings();
 
-    SelectQueryOptions options;
-    ASTPtr query_ptr;
-    std::shared_ptr<Context> context;
     TreeRewriterResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
@@ -172,15 +166,10 @@ private:
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
-    size_t max_streams = 1;
-
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
     Block source_header;
-    /// Structure of query result.
-    Block result_header;
 
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;

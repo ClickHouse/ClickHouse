@@ -21,11 +21,15 @@ toc_title: Client Libraries
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [one-ck](https://github.com/lizhichao/one-ck)
+    -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+-   Swift
+    -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
+    -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
@@ -56,5 +60,7 @@ toc_title: Client Libraries
     -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+-   Haskell
+    -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

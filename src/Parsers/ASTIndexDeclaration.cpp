@@ -1,5 +1,8 @@
 #include <Parsers/ASTIndexDeclaration.h>
+
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB

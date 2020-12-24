@@ -1,6 +1,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -53,6 +54,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:
             return "RELOAD CONFIG";
+        case Type::RELOAD_SYMBOLS:
+            return "RELOAD SYMBOLS";
         case Type::STOP_MERGES:
             return "STOP MERGES";
         case Type::START_MERGES:

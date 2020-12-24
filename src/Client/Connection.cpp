@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -73,6 +74,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -201,6 +207,12 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
+
+    /// Prevent read after eof in readVarUInt in case of reset connection
+    /// (Poco should throw such exception while reading from socket but
+    /// sometimes it doesn't for unknown reason)
+    if (in->eof())
+        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -730,8 +742,11 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT(in->setAsyncCallback({}));
+
     try
     {
         Packet res;

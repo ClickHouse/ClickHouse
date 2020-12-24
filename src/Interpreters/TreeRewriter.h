@@ -35,6 +35,8 @@ struct TreeRewriterResult
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;
 
+    std::vector<const ASTFunction *> window_function_asts;
+
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
@@ -53,6 +55,9 @@ struct TreeRewriterResult
 
     bool optimize_trivial_count = false;
 
+    /// Cache isRemote() call for storage, because it may be too heavy.
+    bool is_remote_storage = false;
+
     /// Results of scalar sub queries
     Scalars scalars;
 
@@ -60,13 +65,7 @@ struct TreeRewriterResult
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
         const StorageMetadataPtr & metadata_snapshot_ = {},
-        bool add_special = true)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , source_columns(source_columns_)
-    {
-        collectSourceColumns(add_special);
-    }
+        bool add_special = true);
 
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);

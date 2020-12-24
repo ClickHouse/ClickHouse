@@ -5,6 +5,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -201,6 +202,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             thread_group->query = process_it->query;
+            thread_group->normalized_query_hash = normalizedQueryHash(process_it->query);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
