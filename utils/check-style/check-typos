@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set +x
 
 # Check for typos in code.
 
