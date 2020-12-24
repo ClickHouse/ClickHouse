@@ -13,7 +13,6 @@ class DataStream;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
-struct QueryPlanStepFormatSettings;
 
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
