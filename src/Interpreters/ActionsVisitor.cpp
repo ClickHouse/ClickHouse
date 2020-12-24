@@ -749,6 +749,19 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             visit(node.window_order_by->clone(), data);
         }
 
+        // Also manually add columns for arguments of the window function itself.
+        // ActionVisitor is written in such a way that this method must itself
+        // descend into all needed function children. Window functions can't have
+        // any special functions as argument, so the code below that handles
+        // special arguments is not needed. This is analogous to the
+        // appendWindowFunctionsArguments() in SelectQueryExpressionAnalyzer and
+        // partially duplicates its code. Probably we can remove most of the
+        // logic from that function, but I don't yet have it all figured out...
+        for (const auto & arg : node.arguments->children)
+        {
+            visit(arg, data);
+        }
+
         // Don't need to do anything more for window functions here -- the
         // resulting column is added in ExpressionAnalyzer, similar to the
         // aggregate functions.

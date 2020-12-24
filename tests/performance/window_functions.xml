@@ -1,0 +1,36 @@
+<test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+    <!--
+        For some counters, find top 10 users by the numer of records.
+        First with LIMIT BY, next with window functions.
+    -->
+    <query><![CDATA[
+        select CounterID, UserID, count(*) c
+        from hits_100m_single
+        where CounterID < 10000
+        group by CounterID, UserID
+        order by c desc
+        limit 10 by CounterID
+        format Null
+    ]]></query>
+
+    <query><![CDATA[
+        select *
+        from (
+            select *,
+                count() over (partition by CounterID order by c desc) rank
+                from (
+                    select CounterID, UserID, count() c
+                    from hits_100m_single
+                    where CounterID < 10000
+                    group by CounterID, UserID
+                )
+        )
+        where rank <= 10
+        format Null
+    ]]></query>
+
+</test>
