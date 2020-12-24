@@ -548,7 +548,7 @@ countMatches(haystack, pattern)
 Запрос:
 
 ``` sql
-SELECT countMatches('foobar.com', 'o+')
+SELECT countMatches('foobar.com', 'o+');
 ```
 
 Результат:
@@ -562,13 +562,13 @@ SELECT countMatches('foobar.com', 'o+')
 Запрос:
 
 ``` sql
-SELECT countMatches('aaaa', 'aa')
+SELECT countMatches('aaaa', 'aa');
 ```
 
 Результат:
 
 ``` text
-┌─countMatches('aaaa', 'aa')─┐
+┌─countMatches('aaaa', 'aa')────┐
 │                             2 │
 └───────────────────────────────┘
 ```
