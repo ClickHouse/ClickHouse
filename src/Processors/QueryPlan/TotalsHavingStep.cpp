@@ -74,7 +74,7 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
     __builtin_unreachable();
 }
 
-void TotalsHavingStep::describeActions(FormatSettings & settings) const
+void TotalsHavingStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Filter column: " << filter_column_name << '\n';

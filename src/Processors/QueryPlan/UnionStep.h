@@ -15,7 +15,7 @@ public:
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
-    void describePipeline(FormatSettings & settings) const override;
+    void describePipeline(QueryPlanStepFormatSettings & settings) const override;
 
 private:
     Block header;

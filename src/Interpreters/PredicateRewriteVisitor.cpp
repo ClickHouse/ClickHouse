@@ -88,7 +88,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         || (!optimize_with && subquery.with())
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength()
-        || hasStatefulFunction(subquery.select(), context))
+        || hasNonRewritableFunction(subquery.select(), context))
         return false;
 
     for (const auto & predicate : predicates)

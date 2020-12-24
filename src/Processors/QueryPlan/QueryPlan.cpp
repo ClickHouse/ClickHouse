@@ -204,7 +204,7 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 
 static void explainStep(
     const IQueryPlanStep & step,
-    IQueryPlanStep::FormatSettings & settings,
+    QueryPlanStepFormatSettings & settings,
     const QueryPlan::ExplainPlanOptions & options)
 {
     std::string prefix(settings.offset, ' ');
@@ -247,11 +247,20 @@ static void explainStep(
         step.describeActions(settings);
 }
 
+std::string debugExplainStep(const IQueryPlanStep & step)
+{
+    WriteBufferFromOwnString out;
+    QueryPlanStepFormatSettings settings{.out = out};
+    QueryPlan::ExplainPlanOptions options{.actions = true};
+    explainStep(step, settings, options);
+    return out.str();
+}
+
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
+    QueryPlanStepFormatSettings settings{.out = buffer, .write_header = options.header};
 
     struct Frame
     {
@@ -284,7 +293,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
     }
 }
 
-static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
+static void explainPipelineStep(IQueryPlanStep & step, QueryPlanStepFormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
     size_t current_offset = settings.offset;
@@ -297,7 +306,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
+    QueryPlanStepFormatSettings settings{.out = buffer, .write_header = options.header};
 
     struct Frame
     {
@@ -488,6 +497,12 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
 {
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
+    fmt::print(stderr,
+        "try merge expressions: parent '{}'\n, child '{}'\n at {}\n",
+        debugExplainStep(*parent), debugExplainStep(*child),
+        StackTrace().toString());
+
     /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());

@@ -77,6 +77,11 @@ void WindowTransform::transform(Chunk & chunk)
         ws.argument_columns.clear();
         for (const auto column_index : ws.argument_column_indices)
         {
+            // Aggregate functions can't work with constant columns, so we have to
+            // materialize them like the Aggregator does.
+            columns[column_index]
+                = std::move(columns[column_index])->convertToFullColumnIfConst();
+
             ws.argument_columns.push_back(columns[column_index].get());
         }
 

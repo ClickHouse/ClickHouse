@@ -15,7 +15,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(FormatSettings & settings) const override;
+    void describeActions(QueryPlanStepFormatSettings & settings) const override;
 
     void updateInputStream(DataStream input_stream, Block result_header);
 
