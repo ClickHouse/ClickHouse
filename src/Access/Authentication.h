@@ -6,7 +6,6 @@
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <chrono>
 
 
 namespace DB
@@ -89,7 +88,7 @@ public:
     void setServerName(const String & server_name_);
 
     /// Checks if the provided password is correct. Returns false if not.
-    /// User name and external authenticators are used by specific authentication types only (e.g., LDAP_SERVER).
+    /// User name and external authenticators are used by the specific authentication types only (e.g., LDAP_SERVER).
     bool isCorrectPassword(const String & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
