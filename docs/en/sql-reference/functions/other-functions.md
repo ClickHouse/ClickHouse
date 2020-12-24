@@ -1177,7 +1177,7 @@ Takes state of aggregate function. Returns result of aggregation (finalized stat
 **Syntax** 
 
 ``` sql
-finalizeAggregation(state);
+finalizeAggregation(state)
 ```
 
 **Parameters**
@@ -1246,7 +1246,7 @@ SELECT
     number,
     finalizeAggregation(one_row_sum_state) AS one_row_sum,
     runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(10)
+FROM numbers(10);
 ```
 
 Result:
