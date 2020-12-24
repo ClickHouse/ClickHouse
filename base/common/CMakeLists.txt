@@ -37,8 +37,6 @@ add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
-    target_compile_options(common PUBLIC ${COMPILER_COVERAGE_OPTIONS})
-    target_link_options(common PUBLIC ${COMPILER_COVERAGE_OPTIONS})
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
