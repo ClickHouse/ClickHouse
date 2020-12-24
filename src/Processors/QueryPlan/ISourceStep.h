@@ -14,7 +14,7 @@ public:
 
     virtual void initializePipeline(QueryPipeline & pipeline) = 0;
 
-    void describePipeline(QueryPlanStepFormatSettings & settings) const override;
+    void describePipeline(FormatSettings & settings) const override;
 
 protected:
     /// We collect processors got after pipeline transformation.

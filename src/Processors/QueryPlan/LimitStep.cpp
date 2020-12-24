@@ -50,7 +50,7 @@ void LimitStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addTransform(std::move(transform));
 }
 
-void LimitStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void LimitStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Limit " << limit << '\n';

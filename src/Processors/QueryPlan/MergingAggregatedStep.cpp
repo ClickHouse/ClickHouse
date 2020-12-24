@@ -63,7 +63,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void MergingAggregatedStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     return params->params.explain(settings.out, settings.offset);
 }

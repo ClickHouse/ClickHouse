@@ -18,8 +18,7 @@ const DataStream & IQueryPlanStep::getOutputStream() const
     return *output_stream;
 }
 
-static void doDescribeHeader(const Block & header, size_t count,
-    QueryPlanStepFormatSettings & settings)
+static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
     String prefix(settings.offset, settings.indent_char);
     prefix += "Header";
@@ -53,8 +52,7 @@ static void doDescribeHeader(const Block & header, size_t count,
     }
 }
 
-static void doDescribeProcessor(const IProcessor & processor, size_t count,
-    QueryPlanStepFormatSettings & settings)
+static void doDescribeProcessor(const IProcessor & processor, size_t count, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << processor.getName();
     if (count > 1)
@@ -91,7 +89,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count,
     settings.offset += settings.indent;
 }
 
-void IQueryPlanStep::describePipeline(const Processors & processors, QueryPlanStepFormatSettings & settings)
+void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
 {
     const IProcessor * prev = nullptr;
     size_t count = 0;

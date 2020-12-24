@@ -29,8 +29,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(QueryPlanStepFormatSettings &) const override;
-    void describePipeline(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings &) const override;
+    void describePipeline(FormatSettings & settings) const override;
 
 private:
     Aggregator::Params params;

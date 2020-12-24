@@ -20,7 +20,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings & settings) const override;
 
     size_t getLimitForSorting() const
     {

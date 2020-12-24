@@ -20,7 +20,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     SizeLimits set_size_limits;

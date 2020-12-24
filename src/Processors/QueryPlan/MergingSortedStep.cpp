@@ -62,7 +62,7 @@ void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void MergingSortedStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void MergingSortedStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Sort description: ";

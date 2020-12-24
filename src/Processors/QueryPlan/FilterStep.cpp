@@ -80,7 +80,7 @@ void FilterStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void FilterStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void FilterStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Filter column: " << filter_column_name << '\n';

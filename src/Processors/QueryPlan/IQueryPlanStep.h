@@ -61,16 +61,6 @@ public:
 
 using DataStreams = std::vector<DataStream>;
 
-// Not a nested class so that we can forward declare it.
-struct QueryPlanStepFormatSettings
-{
-    WriteBuffer & out;
-    size_t offset = 0;
-    const size_t indent = 2;
-    const char indent_char = ' ';
-    const bool write_header = false;
-};
-
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -96,11 +86,20 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct FormatSettings
+    {
+        WriteBuffer & out;
+        size_t offset = 0;
+        const size_t indent = 2;
+        const char indent_char = ' ';
+        const bool write_header = false;
+    };
+
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
-    virtual void describeActions(QueryPlanStepFormatSettings & /*settings*/) const {}
+    virtual void describeActions(FormatSettings & /*settings*/) const {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
-    virtual void describePipeline(QueryPlanStepFormatSettings & /*settings*/) const {}
+    virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
 protected:
     DataStreams input_streams;
@@ -109,7 +108,7 @@ protected:
     /// Text description about what current step does.
     std::string step_description;
 
-    static void describePipeline(const Processors & processors, QueryPlanStepFormatSettings & settings);
+    static void describePipeline(const Processors & processors, FormatSettings & settings);
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;

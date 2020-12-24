@@ -43,7 +43,7 @@ void FillingStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-void FillingStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void FillingStep::describeActions(FormatSettings & settings) const
 {
     settings.out << String(settings.offset, ' ');
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);

@@ -71,7 +71,7 @@ void WindowStep::transformPipeline(QueryPipeline & pipeline)
         "WindowStep transform for '" + window_description.window_name + "'");
 }
 
-void WindowStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void WindowStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Window: (";

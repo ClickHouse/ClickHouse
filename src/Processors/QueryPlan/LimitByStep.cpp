@@ -46,7 +46,7 @@ void LimitByStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-void LimitByStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void LimitByStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
 

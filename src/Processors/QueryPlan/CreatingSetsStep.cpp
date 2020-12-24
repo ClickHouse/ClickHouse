@@ -47,7 +47,7 @@ void CreatingSetStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
 }
 
-void CreatingSetStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
 
@@ -102,7 +102,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
     return main_pipeline;
 }
 
-void CreatingSetsStep::describePipeline(QueryPlanStepFormatSettings & settings) const
+void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }

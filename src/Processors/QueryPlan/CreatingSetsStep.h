@@ -22,7 +22,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     String description;
@@ -40,7 +40,7 @@ public:
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
-    void describePipeline(QueryPlanStepFormatSettings & settings) const override;
+    void describePipeline(FormatSettings & settings) const override;
 
 private:
     Processors processors;
