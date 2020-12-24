@@ -235,7 +235,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
     /// Little tricky, because we cannot discriminate null from first character.
 
     if (istr.eof())
-        throw Exception("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
 
     /// This is not null, surely.
     if (*istr.position() != '\\')
@@ -250,7 +250,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
         ++istr.position();
 
         if (istr.eof())
-            throw Exception("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return safeDeserialize<ReturnType>(column, *nested_data_type,
             [&istr]
@@ -405,11 +405,11 @@ ReturnType DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & i
                 /// or if someone uses 'U' or 'L' as delimiter in CSV.
                 /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
                 if (settings.csv.delimiter == 'U' || settings.csv.delimiter == 'L')
-                    throw DB::Exception("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
+                    throw DB::ParsingException("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
                                         "with format_csv_delimiter = 'U' or 'L' for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
                 WriteBufferFromOwnString parsed_value;
                 nested_data_type->serializeAsTextCSV(nested, nested.size() - 1, parsed_value, settings);
-                throw DB::Exception("Error while parsing \"" + std::string(null_literal, null_prefix_len)
+                throw DB::ParsingException("Error while parsing \"" + std::string(null_literal, null_prefix_len)
                                     + std::string(istr.position(), std::min(size_t{10}, istr.available())) + "\" as Nullable(" + nested_data_type->getName()
                                     + ") at position " + std::to_string(istr.count()) + ": expected \"NULL\" or " + nested_data_type->getName()
                                     + ", got \"" + std::string(null_literal, buf.count()) + "\", which was deserialized as \""
