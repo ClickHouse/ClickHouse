@@ -36,10 +36,12 @@ if (NOT PARALLEL_LINK_JOBS AND AVAILABLE_PHYSICAL_MEMORY AND MAX_LINKER_MEMORY)
 endif ()
 
 # ThinLTO provides its own parallel linking
+# (which is enabled only for RELWITHDEBINFO)
+#
 # But use 2 parallel jobs, since:
 # - this is what llvm does
 # - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
-if (ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
     message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
     set (PARALLEL_LINK_JOBS 2)
 endif()
