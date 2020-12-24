@@ -514,13 +514,11 @@ void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_ar
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
-{
-    checkNumberOfArguments(arguments.size());
 
-    if (!arguments.empty() && impl->useDefaultImplementationForNulls())
-    {
-        NullPresence null_presence = getNullPresense(arguments);
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments,
+                                                                                        const DefaultReturnTypeGetter & getter)
+{
+    NullPresence null_presence = getNullPresense(arguments);
 
         if (null_presence.has_null_constant)
         {
@@ -531,10 +529,19 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(
             Block nested_block = createBlockWithNestedColumns(
                 arguments,
                 ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
-            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
+            auto return_type = getter(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
         }
-    }
+
+    return getter(arguments);
+}
+
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
+{
+    checkNumberOfArguments(arguments.size());
+
+    if (!arguments.empty() && impl->useDefaultImplementationForNulls())
+        return getReturnTypeDefaultImplementationForNulls(arguments, [&](const auto & args) { return impl->getReturnType(args); });
 
     return impl->getReturnType(arguments);
 }
