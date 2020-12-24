@@ -173,7 +173,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(in);
 
     if (in.eof())
-        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
     else if (*in.position() == '}')
     {
         ++in.position();
