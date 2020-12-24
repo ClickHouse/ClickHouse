@@ -977,8 +977,6 @@ struct ConvertThroughParsing
 };
 
 
-
-
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertDefaultBehaviorTag>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
@@ -1044,6 +1042,9 @@ template <>
 struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertDefaultBehaviorTag>
     : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertDefaultBehaviorTag> {};
 
+template <>
+struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertReturnNullOnErrorTag>
+    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertReturnNullOnErrorTag> {};
 
 /** If types are identical, just take reference to column.
   */
@@ -1187,6 +1188,7 @@ public:
         auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
         auto res = FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(arguments, getter);
         to_nullable = res->isNullable();
+        checked_return_type = true;
         return res;
     }
 
@@ -1268,17 +1270,16 @@ public:
         }
     }
 
-    bool useDefaultImplementationForNulls() const override { return to_nullable; }  // FIXME 
+    /// Function actually uses default implementation for nulls,
+    /// but we need to know if return type is Nullable or not,
+    /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
+    bool useDefaultImplementationForNulls() const override { return checked_return_type; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return executeImplRemovedNullable(arguments, result_type, input_rows_count);
-    }
-
-    ColumnPtr executeImplRemovedNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         try
         {
@@ -1323,6 +1324,7 @@ public:
     }
 
 private:
+    mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1359,12 +1361,12 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, scale);
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, dt64->getScale());
             }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
@@ -1414,6 +1416,8 @@ private:
         }
         else
         {
+            /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
+            /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
             if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
                 done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
             else
