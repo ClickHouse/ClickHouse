@@ -25,12 +25,17 @@ namespace ErrorCodes
 extern const int ILLEGAL_COLUMN;
 }
 
+template <> struct NativeType<DataTypeDate>         { using Type = DataTypeDate::FieldType; };
+template <> struct NativeType<DataTypeDateTime>     { using Type = DataTypeDateTime::FieldType; };
+template <> struct NativeType<DataTypeDateTime64>   { using Type = NativeType<DataTypeDateTime64::FieldType>::Type; };
+template <> struct NativeType<DataTypeUUID>         { using Type = DataTypeUUID::FieldType; };
+template <> struct NativeType<DataTypeEnum8>        { using Type = DataTypeEnum8::FieldType; };
+template <> struct NativeType<DataTypeEnum16>       { using Type = DataTypeEnum16::FieldType; };
+
 namespace
 {
 
 template <typename T> struct ByteSizeForNative { static constexpr const UInt64 value = sizeof(typename NativeType<T>::Type); };
-template <typename T> struct ByteSizeForNumberBase { static constexpr const UInt64 value = sizeof(typename NativeType<typename T::FieldType>::Type); };
-template <typename T> struct ByteSizeForEnum { static constexpr const UInt64 value = sizeof(typename T::FieldType); };
 
 /** byteSize() - get the columns size in number of bytes.
   */
@@ -68,6 +73,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    // TODO:
+    //   case TypeIndex::Tuple:      return "Tuple";
+    //   case TypeIndex::Nullable:   return "Nullable";
+    //   case TypeIndex::Function:   return "Function";
+    //   case TypeIndex::AggregateFunction: return "AggregateFunction";
+    //   case TypeIndex::LowCardinality: return "LowCardinality";
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_col = ColumnUInt64::create(input_rows_count, 0);
@@ -76,8 +87,6 @@ public:
         {
             const ColumnPtr & column = arg.column;
             const IDataType * data_type = arg.type.get();
-            WhichDataType which(data_type);
-
             byteSizeOne(data_type, column, vec_res);
         }
         return result_col;
@@ -101,6 +110,22 @@ public:
         }
     }
 
+    static bool byteSizeByDataType(const IDataType * data_type, UInt64 & byte_size)
+    {
+        TypeIndex type_id = data_type->getTypeId();
+        if (byteSizeByTypeId(type_id, byte_size))
+            return true;
+
+        switch (type_id)
+        {
+            case TypeIndex::FixedString:
+                byte_size = typeid_cast<const DataTypeFixedString *>(data_type)->getN();
+                break;
+            default: return false;
+        }
+        return true;
+    }
+
     static bool byteSizeByTypeId(TypeIndex type_id, UInt64 & byte_size)
     {
         switch (type_id)
@@ -120,45 +145,21 @@ public:
             case TypeIndex::Int256:     byte_size = ByteSizeForNative<Int256>::value; break;
             case TypeIndex::Float32:    byte_size = ByteSizeForNative<Float32>::value; break;
             case TypeIndex::Float64:    byte_size = ByteSizeForNative<Float64>::value; break;
-            case TypeIndex::Date:       byte_size = ByteSizeForNumberBase<DataTypeDate>::value; break;
-            case TypeIndex::DateTime:   byte_size = ByteSizeForNumberBase<DataTypeDateTime>::value; break;
-            case TypeIndex::DateTime64: byte_size = ByteSizeForNumberBase<DataTypeDateTime64>::value; break;
-//            case TypeIndex::String:     return TypeName<String>::get();
-//            case TypeIndex::FixedString:
-            case TypeIndex::Enum8:      byte_size = ByteSizeForEnum<DataTypeEnum8>::value; break;
-            case TypeIndex::Enum16:     byte_size = ByteSizeForEnum<DataTypeEnum16>::value; break;
+            case TypeIndex::Date:       byte_size = ByteSizeForNative<DataTypeDate>::value; break;
+            case TypeIndex::DateTime:   byte_size = ByteSizeForNative<DataTypeDateTime>::value; break;
+            case TypeIndex::DateTime64: byte_size = ByteSizeForNative<DataTypeDateTime64>::value; break;
+            case TypeIndex::Enum8:      byte_size = ByteSizeForNative<DataTypeEnum8>::value; break;
+            case TypeIndex::Enum16:     byte_size = ByteSizeForNative<DataTypeEnum16>::value; break;
             case TypeIndex::Decimal32:  byte_size = ByteSizeForNative<Decimal32>::value; break;
             case TypeIndex::Decimal64:  byte_size = ByteSizeForNative<Decimal64>::value; break;
             case TypeIndex::Decimal128: byte_size = ByteSizeForNative<Decimal128>::value; break;
             case TypeIndex::Decimal256: byte_size = ByteSizeForNative<Decimal256>::value; break;
-            case TypeIndex::UUID:       byte_size = ByteSizeForNumberBase<DataTypeUUID>::value; break;
-//            case TypeIndex::Array:      return "Array";
-//            case TypeIndex::Tuple:      return "Tuple";
-//            case TypeIndex::Set:        return "Set";
-//            case TypeIndex::Interval:   byte_size = ByteSizeForNumberBase<DataTypeInterval>::value; break;
-//            case TypeIndex::Nullable:   return "Nullable";
-//            case TypeIndex::Function:   return "Function";
-//            case TypeIndex::AggregateFunction: return "AggregateFunction";
-//            case TypeIndex::LowCardinality: return "LowCardinality";
+            case TypeIndex::UUID:       byte_size = ByteSizeForNative<DataTypeUUID>::value; break;
+            // case TypeIndex::Interval: internal use only.
+            // case TypeIndex::Set:      internal use only.
             default: return false;
         }
 
-        return true;
-    }
-
-    static bool byteSizeByDataType(const IDataType * data_type, UInt64 & byte_size)
-    {
-        TypeIndex type_id = data_type->getTypeId();
-        if (byteSizeByTypeId(type_id, byte_size))
-            return true;
-
-        switch (type_id)
-        {
-            case TypeIndex::FixedString:
-                byte_size = typeid_cast<const DataTypeFixedString *>(data_type)->getN();
-                break;
-            default: return false;
-        }
         return true;
     }
 
@@ -168,7 +169,7 @@ public:
                           // The following is not supported by ColumnVector:
                           //   Decimal32, Decimal64, Decimal128, Decimal256
                           //   DataTypeEnum8, DataTypeEnum16, DataTypeDate, DataTypeDateTime, DataTypeDateTime64
-                          //   DataTypeUUID, DataTypeInterval
+                          //   DataTypeUUID
 
     static bool byteSizeByColumn(const IDataType * data_type, const ColumnPtr & column, ColumnUInt64::Container & vec_res)
     {
@@ -201,17 +202,6 @@ public:
         return false;
     }
 
-    static inline bool byteSizeForConstArray(const IDataType * /*data_type*/, const ColumnPtr & column, ColumnUInt64::Container & vec_res) {
-        const ColumnConst * col_arr = checkAndGetColumnConst<ColumnArray>(column.get());
-        if (!col_arr)
-            return false;
-        size_t vec_size = vec_res.size();
-        const UInt64 byte_size = col_arr->byteSize();
-        for (size_t i = 0; i < vec_size; ++i)
-            vec_res[i] += byte_size;
-        return true;
-    }
-
 #undef INTEGRAL_TPL_PACK
 
     template <class ...Integral>
@@ -240,6 +230,17 @@ public:
             vec_res[i] += array_size * byte_size + sizeof(offsets[0]);
             prev_offset = offsets[i];
         }
+        return true;
+    }
+
+    static inline bool byteSizeForConstArray(const IDataType * /*data_type*/, const ColumnPtr & column, ColumnUInt64::Container & vec_res) {
+        const ColumnConst * col_arr = checkAndGetColumnConst<ColumnArray>(column.get());
+        if (!col_arr)
+            return false;
+        size_t vec_size = vec_res.size();
+        const UInt64 byte_size = col_arr->byteSize();
+        for (size_t i = 0; i < vec_size; ++i)
+            vec_res[i] += byte_size;
         return true;
     }
 
