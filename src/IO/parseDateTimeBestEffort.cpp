@@ -99,7 +99,7 @@ ReturnType parseDateTimeBestEffortImpl(
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw Exception(message, code);
         else
             return false;
     };

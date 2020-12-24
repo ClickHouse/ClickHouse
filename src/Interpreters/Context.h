@@ -10,9 +10,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Access/RowPolicy.h>
+#include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -40,7 +40,6 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
-    class TestKeeperStorage;
 }
 
 
@@ -63,6 +62,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
+class BackgroundProcessingPool;
 class BackgroundSchedulePool;
 class MergeList;
 class ReplicatedFetchList;
@@ -113,7 +113,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
-struct BackgroundTaskSchedulingSettings;
 
 
 #if USE_EMBEDDED_COMPILER
@@ -191,16 +190,6 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
 
-    /// Record entities accessed by current query, and store this information in system.query_log.
-    struct QueryAccessInfo
-    {
-        std::set<std::string> databases;
-        std::set<std::string> tables;
-        std::set<std::string> columns;
-    };
-
-    QueryAccessInfo query_access_info;
-
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
@@ -209,12 +198,6 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
-public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for
-    // a query context.
-    OpenTelemetryTraceContext query_trace_context;
-
-private:
     friend class NamedSessions;
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -366,9 +349,6 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
-    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
-
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
@@ -507,16 +487,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
-
-
-    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
-
-    /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
-    void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
-    /// Has ready or expired auxiliary ZooKeeper
-    bool hasAuxiliaryZooKeeper(const String & name) const;
     /// Reset current zookeeper session. Do not create a new one.
     void resetZooKeeper() const;
     // Reload Zookeeper
@@ -540,16 +512,12 @@ public:
       */
     void dropCaches() const;
 
-    /// Settings for MergeTree background tasks stored in config.xml
-    BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
-    BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundSchedulePool & getBufferFlushSchedulePool();
+    BackgroundProcessingPool & getBackgroundPool();
+    BackgroundProcessingPool & getBackgroundMovePool();
+    BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getDistributedSchedulePool();
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
-    BackgroundSchedulePool & getSchedulePool() const;
-    BackgroundSchedulePool & getDistributedSchedulePool() const;
-
-    /// Has distributed_ddl configuration or not.
-    bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 

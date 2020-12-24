@@ -4,7 +4,6 @@
 #include <Common/FieldVisitors.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 #include <common/logger_useful.h>
 
@@ -26,9 +25,9 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const String & sign_column,
     bool only_positive_sign_,
     size_t max_block_size,
-    Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
+    bool use_average_block_sizes,
+    Poco::Logger * log_)
     : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , sign_column_number(header.getPositionByName(sign_column))
@@ -42,7 +41,7 @@ void CollapsingSortedAlgorithm::reportIncorrectData()
     if (!log)
         return;
 
-    WriteBufferFromOwnString s;
+    std::stringstream s;
     auto & sort_columns = *last_row.sort_columns;
     for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
     {
@@ -123,7 +122,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
+        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
 
         RowRef current_row;
         setRowRef(current_row, current);

@@ -106,11 +106,6 @@ public:
         return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
-    bool hasNameOrAlias(const String & name) const
-    {
-        return getMap().count(name) || getCaseInsensitiveMap().count(name) || isAlias(name);
-    }
-
     virtual ~IFactoryWithAliases() override {}
 
 private:

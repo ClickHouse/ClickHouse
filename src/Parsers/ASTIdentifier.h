@@ -73,6 +73,7 @@ private:
     void resetFullName();
 };
 
+
 /// ASTIdentifier Helpers: hide casts and semantic.
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);

@@ -15,8 +15,7 @@ protected:
     bool got_exception = false;
     Port::Data current_chunk;
 
-    virtual Chunk generate();
-    virtual std::optional<Chunk> tryGenerate();
+    virtual Chunk generate() = 0;
 
 public:
     ISource(Block header);

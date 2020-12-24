@@ -3,7 +3,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <vector>
 #include <common/types.h>
 
@@ -29,8 +28,6 @@ struct S3AuthSettings
     const String secret_access_key;
 
     const HeaderCollection headers;
-
-    std::optional<bool> use_environment_credentials;
 };
 
 /// Settings for the StorageS3.

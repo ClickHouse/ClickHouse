@@ -3,8 +3,6 @@
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -25,10 +23,9 @@ std::ostream & operator<<(std::ostream & stream, const Expected & what)
 
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
-    WriteBufferFromOStream buf(stream, 4096);
-    buf << "IAST{";
-    what.dumpTree(buf);
-    buf << "}";
+    stream << "IAST{";
+    what.dumpTree(stream);
+    stream << "}";
     return stream;
 }
 

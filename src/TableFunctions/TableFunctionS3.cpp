@@ -67,7 +67,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const C
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
     UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
-    UInt64 max_single_part_upload_size = context.getSettingsRef().s3_max_single_part_upload_size;
 
     StoragePtr storage = StorageS3::create(
             s3_uri,
@@ -76,7 +75,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const C
             StorageID(getDatabaseName(), table_name),
             format,
             min_upload_part_size,
-            max_single_part_upload_size,
             getActualTableStructure(context),
             ConstraintsDescription{},
             const_cast<Context &>(context),

@@ -28,7 +28,7 @@ static void checkSource(const IProcessor & source)
                         ErrorCodes::LOGICAL_ERROR);
 
     if (source.getOutputs().size() > 1)
-        throw Exception("Source for pipe should have single output, but " + source.getName() + " has " +
+        throw Exception("Source for pipe should have single or two outputs, but " + source.getName() + " has " +
                         toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 

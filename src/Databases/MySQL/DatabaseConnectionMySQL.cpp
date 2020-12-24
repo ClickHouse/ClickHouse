@@ -13,7 +13,6 @@
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
-#    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ParserCreateQuery.h>
@@ -395,7 +394,7 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context &, bool, bool /*force_at
     }
 }
 
-void DatabaseConnectionMySQL::detachTablePermanently(const String & table_name)
+void DatabaseConnectionMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -427,11 +426,6 @@ void DatabaseConnectionMySQL::detachTablePermanently(const String & table_name)
         throw;
     }
     table_iter->second.second->is_dropped = true;
-}
-
-void DatabaseConnectionMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
-{
-    detachTablePermanently(table_name);
 }
 
 DatabaseConnectionMySQL::~DatabaseConnectionMySQL()

@@ -112,12 +112,6 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
-# Global libraries
-# See:
-# - default_libs.cmake
-# - sanitize.cmake
-add_library(global-libs INTERFACE)
-
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
@@ -160,19 +154,17 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-    if (OBJCOPY_PATH)
-        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OBJCOPY_PATH)
+    message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
-        if (ARCH_AMD64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-        elseif (ARCH_AARCH64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
-        endif ()
-    else ()
-        message(FATAL_ERROR "Cannot find objcopy.")
+    if (ARCH_AMD64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+    elseif (ARCH_AARCH64)
+        set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
     endif ()
+else ()
+    message(FATAL_ERROR "Cannot find objcopy.")
 endif ()
 
 if (OS_DARWIN)
@@ -229,16 +221,16 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # to make numeric_limits<__int128> works with GCC
-    set (_CXX_STANDARD "gnu++2a")
+if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
+    # to make numeric_limits<__int128> works for unbundled build
+    set (_CXX_STANDARD "-std=gnu++2a")
 else()
-    set (_CXX_STANDARD "c++2a")
+    set (_CXX_STANDARD "-std=c++2a")
 endif()
 
 # cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
 
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -262,8 +254,6 @@ if (WITH_COVERAGE AND COMPILER_GCC)
     set(COVERAGE_OPTION "-lgcov")
     set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
-
-set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
@@ -455,7 +445,6 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
-include (cmake/find/miniselect.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
@@ -463,12 +452,9 @@ include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
-include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
-include (cmake/find/rocksdb.cmake)
-
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -485,6 +471,9 @@ set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
 
 find_contrib_lib(farmhash)
+
+set (USE_INTERNAL_BTRIE_LIBRARY ON CACHE INTERNAL "")
+find_contrib_lib(btrie)
 
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
@@ -519,11 +508,8 @@ macro (add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # disabled for TSAN and gcc since libtsan.a provides overrides too
-        if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
-        endif()
+        # operator::new/delete for executables (MemoryTracker stuff)
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
     endif()
 endmacro()
 
@@ -534,8 +520,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 
 add_subdirectory (base)
-add_subdirectory (src)
 add_subdirectory (programs)
+add_subdirectory (src)
 add_subdirectory (tests)
 add_subdirectory (utils)
 

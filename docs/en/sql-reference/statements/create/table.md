@@ -29,8 +29,6 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 
 Expressions can also be defined for default values (see below).
 
-If necessary, primary key can be specified, with one or more key expressions.
-
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
 ``` sql
@@ -98,34 +96,6 @@ When using the ALTER query to add new columns, old data for these columns is not
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
-
-## Primary Key {#primary-key}
-
-You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
-
-- inside the column list
-
-``` sql
-CREATE TABLE db.table_name 
-( 
-    name1 type1, name2 type2, ..., 
-    PRIMARY KEY(expr1[, expr2,...])]
-) 
-ENGINE = engine;
-```
-
-- outside the column list
-
-``` sql
-CREATE TABLE db.table_name
-( 
-    name1 type1, name2 type2, ...
-) 
-ENGINE = engine
-PRIMARY KEY(expr1[, expr2,...]);
-```
-
-You can't combine both ways in one query.
 
 ## Constraints {#constraints}
 

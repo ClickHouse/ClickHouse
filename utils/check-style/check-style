@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing/|Parsers/New'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing'
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE_DIRS |
@@ -36,48 +36,32 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
 # Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null | while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
 
 # Unused ErrorCodes
 # NOTE: to fix automatically, replace echo with:
 # sed -i "/extern const int $code/d" $file
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
 
 # Undefined ErrorCodes
 # NOTE: to fix automatically, replace echo with:
 # ( grep -q -F 'namespace ErrorCodes' $file && sed -i -r "0,/(\s*)extern const int [_A-Z]+/s//\1extern const int $code;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace ErrorCodes\n{\n    extern const int '$code';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
 
 # Duplicate ErrorCodes
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
 
 # Three or more consecutive empty lines
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
 
 # Broken XML files (requires libxml2-utils)
-find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs xmllint --noout --nonet
+find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' | xargs xmllint --noout --nonet
 
 # Machine translation to Russian is strictly prohibited
-find $ROOT_PATH/docs/ru -name '*.md' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -l -F 'machine_translated: true'
+find $ROOT_PATH/docs/ru -name '*.md' | xargs grep -l -F 'machine_translated: true'
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
-find $ROOT_PATH/tests/queries -iname '*fail*' |
-    grep -vP $EXCLUDE_DIRS |
-    grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
+find $ROOT_PATH/tests/queries -iname '*fail*' | grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
 
 # All the submodules should be from https://github.com/
 find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
@@ -106,9 +90,7 @@ find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*'
 git status -uno | grep ya.make && echo "ya.make files should be generated with utils/generate-ya-make/generate-ya-make.sh"
 
 # Check that every header file has #pragma once in first line
-find $ROOT_PATH/{src,programs,utils} -name '*.h' |
-    grep -vP $EXCLUDE_DIRS |
-    while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
+find $ROOT_PATH/{src,programs,utils} -name '*.h' | while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
@@ -119,20 +101,7 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' 
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
 # Too many exclamation marks
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Trailing whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
-
-# Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
-
-# Conflict markers
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
-    xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."

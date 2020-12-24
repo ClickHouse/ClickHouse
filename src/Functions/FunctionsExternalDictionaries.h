@@ -37,7 +37,7 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/IPAddressDictionary.h>
+#include <Dictionaries/TrieDictionary.h>
 #include <Dictionaries/PolygonDictionaryImplementations.h>
 #include <Dictionaries/DirectDictionary.h>
 
@@ -163,7 +163,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /** Do not require existence of the dictionary if the function is called for empty columns.
           * This is needed to allow successful query analysis on a server,
@@ -192,7 +192,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -204,7 +204,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchSimple(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -227,7 +227,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -324,7 +324,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -346,7 +346,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -359,7 +359,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatch(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -388,7 +388,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -423,7 +423,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchRange(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -502,7 +502,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -524,7 +524,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -621,7 +621,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -839,7 +839,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -861,7 +861,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -873,7 +873,7 @@ private:
     }
 
     template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    ColumnPtr executeDispatch(ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -926,7 +926,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -967,7 +967,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchRange(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1094,7 +1094,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -1116,7 +1116,7 @@ private:
             || (res = executeDispatchComplex<SSDComplexKeyCacheDictionary>(arguments, dict))
 #endif
 #if !defined(ARCADIA_BUILD)
-            || (res = executeDispatchComplex<IPAddressDictionary>(arguments, dict))
+            || (res = executeDispatchComplex<TrieDictionary>(arguments, dict))
 #endif
             || (res = executeDispatchComplex<PolygonDictionarySimple>(arguments, dict))
             || (res = executeDispatchComplex<PolygonDictionaryIndexEach>(arguments, dict))
@@ -1127,7 +1127,7 @@ private:
     }
 
     template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    ColumnPtr executeDispatch(ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1150,7 +1150,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatch(
-            const ColumnsWithTypeAndName & arguments, const DictionaryType * dict,
+            ColumnsWithTypeAndName & arguments, const DictionaryType * dict,
             const std::string & attr_name, const ColumnUInt64 * id_col) const
     {
         const auto * default_col_untyped = arguments[3].column.get();
@@ -1189,7 +1189,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatch(
-            const ColumnsWithTypeAndName & arguments, const DictionaryType * dict,
+            ColumnsWithTypeAndName & arguments, const DictionaryType * dict,
             const std::string & attr_name, const ColumnConst * id_col) const
     {
         const auto * default_col_untyped = arguments[3].column.get();
@@ -1246,7 +1246,7 @@ private:
 
     template <typename DictionaryType>
     ColumnPtr executeDispatchComplex(
-            const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+            ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1472,7 +1472,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
@@ -1613,7 +1613,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
@@ -1661,7 +1661,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -1679,7 +1679,7 @@ private:
     }
 
     template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    ColumnPtr executeDispatch(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)
@@ -1814,7 +1814,7 @@ private:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -1832,7 +1832,7 @@ private:
     }
 
     template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    ColumnPtr executeDispatch(ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
     {
         const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
         if (!dict)

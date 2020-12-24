@@ -16,7 +16,6 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
@@ -829,9 +828,9 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         FuncRet r(ret_type, "");
         if (no_indent)
         {
-            DB::WriteBufferFromOwnString buf;
-            formatAST(*ch, buf);
-            r.value = buf.str();
+            std::ostringstream ss;
+            formatAST(*ch, ss);
+            r.value = ss.str();
         }
         return r;
     }
@@ -991,10 +990,10 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                DB::WriteBufferFromOwnString buf;
-                formatAST(*ch, buf);
+                std::ostringstream ss;
+                formatAST(*ch, ss);
                 auto r = func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
-                r.value = buf.str();
+                r.value = ss.str();
                 return r;
             }
             return func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
@@ -1004,11 +1003,11 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             if (no_indent)
             {
-                DB::WriteBufferFromOwnString buf;
-                formatAST(*ch, buf);
+                std::ostringstream ss;
+                formatAST(*ch, ss);
                 return FuncRet(
                         func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
-                        buf.str());
+                        ss.str());
             }
             return FuncRet(
                     func_to_param_type[boost::algorithm::to_lower_copy(x->name)],
@@ -1255,10 +1254,10 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
 
 TableList getTablesFromSelect(std::vector<std::string> queries)
 {
+    DB::ParserQueryWithOutput parser;
     TableList result;
     for (std::string & query : queries)
     {
-        DB::ParserQueryWithOutput parser(query.data() + query.size());
         DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
         for (auto & select : getSelect(ast))
         {
@@ -1293,11 +1292,9 @@ int main(int argc, const char *argv[])
             return 1;
         }
         if (vm.count("input"))
-            if (!freopen(vm["input"].as<std::string>().c_str(), "r", stdin))
-                std::cout << "Error while input." << std::endl;
+            freopen(vm["input"].as<std::string>().c_str(), "r", stdin);
         if (vm.count("output"))
-            if (!freopen(vm["output"].as<std::string>().c_str(), "w", stdout))
-                std::cout << "Error while output." << std::endl;
+            freopen(vm["output"].as<std::string>().c_str(), "w", stdout);
         if (vm.empty())
             std::cout << "Copy your queries (with semicolons) here, press Enter and Ctrl+D." << std::endl;
     }

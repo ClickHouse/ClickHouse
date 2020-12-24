@@ -22,7 +22,7 @@ static bool removeInjectiveFunction(ASTPtr & ast, const Context & context, const
     if (!func)
         return false;
 
-    if (!func->arguments || func->arguments->children.size() != 1)
+    if (func->arguments->children.size() != 1)
         return false;
 
     if (!function_factory.get(func->name, context)->isInjective({}))

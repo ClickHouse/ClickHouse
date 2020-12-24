@@ -55,7 +55,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        static ColumnPtr run(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -166,7 +166,7 @@ private:
         String key;
     };
 
-    static std::vector<Move> prepareMoves(const char * function_name, const ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments);
+    static std::vector<Move> prepareMoves(const char * function_name, ColumnsWithTypeAndName & columns, size_t first_index_argument, size_t num_index_arguments);
 
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser>
@@ -286,7 +286,7 @@ public:
         return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON

@@ -71,7 +71,6 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         {
             threads_tasks[thread] = std::move(threads_tasks[*it]);
             remaining_thread_tasks.erase(it);
-            remaining_thread_tasks.insert(thread);
         }
         else // Try steal tasks from the next thread
         {

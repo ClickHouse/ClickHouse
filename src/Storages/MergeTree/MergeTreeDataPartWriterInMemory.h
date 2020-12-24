@@ -16,13 +16,14 @@ public:
         const MergeTreeWriterSettings & settings_);
 
     /// You can write only one block. In-memory part can be written only at INSERT.
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumn::Permutation * permutation,
+        const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block) override;
 
 private:
-    void calculateAndSerializePrimaryIndex(const Block & primary_index_block);
-
     DataPartInMemoryPtr part_in_memory;
 };
 

@@ -613,7 +613,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateMultiply(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName new_arguments = arguments;
         if (WhichDataType(new_arguments[1].type).isAggregateFunction())
@@ -680,7 +680,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     /// Merge two aggregation states together.
-    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateAddition(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         const IColumn & lhs_column = *arguments[0].column;
         const IColumn & rhs_column = *arguments[1].column;
@@ -712,7 +712,7 @@ class FunctionBinaryArithmetic : public IFunction
             return column_to;
     }
 
-    ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+    ColumnPtr executeDateTimeIntervalPlusMinus(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
                                                size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
         ColumnsWithTypeAndName new_arguments = arguments;
@@ -847,7 +847,7 @@ public:
         return type_res;
     }
 
-    ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeFixedString(ColumnsWithTypeAndName & arguments) const
     {
         using OpImpl = FixedStringOperationImpl<Op<UInt8, UInt8>>;
 
@@ -923,7 +923,7 @@ public:
     }
 
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
+    ColumnPtr executeNumeric(ColumnsWithTypeAndName & arguments, const A & left, const B & right) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -1047,7 +1047,7 @@ public:
         return nullptr;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0].type, arguments[1].type))
@@ -1181,7 +1181,7 @@ public:
     {
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (left.column && isColumnConst(*left.column) && arguments.size() == 1)
         {
@@ -1206,7 +1206,11 @@ public:
     bool hasInformationAboutMonotonicity() const override
     {
         std::string_view name_ = Name::name;
-        return (name_ == "minus" || name_ == "plus" || name_ == "divide" || name_ == "intDiv");
+        if (name_ == "minus" || name_ == "plus" || name_ == "divide" || name_ == "intDiv")
+        {
+            return true;
+        }
+        return false;
     }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override

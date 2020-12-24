@@ -19,7 +19,8 @@ public:
         WriteBuffer & out_,
         const Block & header_,
         const RowOutputFormatParams & params_,
-        const FormatSettings & settings_);
+        const FormatSettings & settings_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
@@ -27,9 +28,6 @@ public:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
-    void writeRowBetweenDelimiter() override;
-    void writePrefix() override;
-    void writeSuffix() override;
 
 protected:
     /// No totals and extremes.
@@ -42,6 +40,9 @@ private:
     Names fields;
 
     FormatSettings settings;
+
+protected:
+    bool yield_strings;
 };
 
 }

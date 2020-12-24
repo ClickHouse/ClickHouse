@@ -4,7 +4,6 @@
 #include <sparsehash/dense_hash_set>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -428,7 +427,7 @@ namespace
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
         {
             if (it != available_columns.begin())

@@ -39,7 +39,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /** We create an array column with array elements as the most deep elements of nested arrays,
           * and construct offsets by selecting elements of most deep offsets by values of ancestor offsets.

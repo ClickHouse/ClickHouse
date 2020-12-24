@@ -30,7 +30,7 @@ if (ENABLE_SSL)
 
         target_compile_options (_poco_crypto PRIVATE -Wno-newline-eof)
         target_include_directories (_poco_crypto SYSTEM PUBLIC ${LIBRARY_DIR}/Crypto/include)
-        target_link_libraries (_poco_crypto PUBLIC Poco::Foundation ssl crypto)
+        target_link_libraries (_poco_crypto PUBLIC Poco::Foundation ssl)
     else ()
         add_library (Poco::Crypto UNKNOWN IMPORTED GLOBAL)
 

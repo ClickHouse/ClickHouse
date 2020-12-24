@@ -35,7 +35,7 @@ public:
         return makeNullable(arguments[0]);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         return makeNullable(arguments[0].column);
     }

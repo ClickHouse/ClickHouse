@@ -25,7 +25,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
-constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -57,10 +56,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception("If 'engine' is specified for system table, "
                 "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
                 ErrorCodes::BAD_ARGUMENTS);
-        if (config.has(config_prefix + ".ttl"))
-            throw Exception("If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
-                            ErrorCodes::BAD_ARGUMENTS);
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -69,15 +64,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
         engine = "ENGINE = MergeTree";
         if (!partition_by.empty())
             engine += " PARTITION BY (" + partition_by + ")";
-        String ttl = config.getString(config_prefix + ".ttl", "");
-        if (!ttl.empty())
-            engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
     }
-    // Validate engine definition grammatically to prevent some configuration errors
-    ParserStorage storage_parser;
-    parseQuery(storage_parser, engine.data(), engine.data() + engine.size(),
-            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                           DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
@@ -137,8 +125,7 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 
     if (metric_log)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 

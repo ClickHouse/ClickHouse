@@ -16,7 +16,7 @@ class InDepthNodeVisitor
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
+    InDepthNodeVisitor(Data & data_, std::ostream * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
@@ -46,7 +46,7 @@ public:
 private:
     Data & data;
     size_t visit_depth;
-    WriteBuffer * ostr;
+    std::ostream * ostr;
 
     void visitChildren(T & ast)
     {

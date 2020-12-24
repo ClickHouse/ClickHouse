@@ -23,8 +23,7 @@
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
-    std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    error.exceptions(std::ios::failbit);
+    std::stringstream error;
     switch (sig)
     {
         case SIGSEGV:
@@ -195,8 +194,7 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -317,12 +315,10 @@ static void toStringEveryLineImpl(
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
+    std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -361,8 +357,7 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
+    std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
@@ -377,8 +372,7 @@ static void toStringEveryLineImpl(
 
 static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
+    std::stringstream out;
     toStringEveryLineImpl(frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }

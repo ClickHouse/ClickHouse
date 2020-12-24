@@ -40,7 +40,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -67,7 +67,6 @@ private:
 
 protected:
     StorageJoin(
-        DiskPtr disk_,
         const String & relative_path_,
         const StorageID & table_id_,
         const Names & key_names_,
@@ -77,6 +76,7 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool overwrite,
+        const Context & context_,
         bool persistent_);
 };
 

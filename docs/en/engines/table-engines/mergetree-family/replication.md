@@ -53,42 +53,6 @@ Example of setting the addresses of the ZooKeeper cluster:
 </zookeeper>
 ```
 
-ClickHouse also supports to store replicas meta information in the auxiliary ZooKeeper cluster by providing ZooKeeper cluster name and path as engine arguments.
-In other word, it supports to store the metadata of differnt tables in different ZooKeeper clusters.
-
-Example of setting the addresses of the auxiliary ZooKeeper cluster:
-
-``` xml
-<auxiliary_zookeepers>
-    <zookeeper2>
-        <node index="1">
-            <host>example_2_1</host>
-            <port>2181</port>
-        </node>
-        <node index="2">
-            <host>example_2_2</host>
-            <port>2181</port>
-        </node>
-        <node index="3">
-            <host>example_2_3</host>
-            <port>2181</port>
-        </node>
-    </zookeeper2>
-    <zookeeper3>
-        <node index="1">
-            <host>example_3_1</host>
-            <port>2181</port>
-        </node>
-    </zookeeper3>
-</auxiliary_zookeepers>
-```
-
-To store table datameta in a auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
-ReplicatedMergeTree engine as follow:
-
-```
-CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
-```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
 If ZooKeeper isn’t set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
@@ -188,7 +152,7 @@ You can specify default arguments for `Replicated` table engine in the server co
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_name>
+<default_replica_name>{replica}</default_replica_path>
 ```
 
 In this case, you can omit arguments when creating tables:

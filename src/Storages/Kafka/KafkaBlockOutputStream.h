@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <Interpreters/Context.h>
 #include <Storages/Kafka/StorageKafka.h>
 
 namespace DB

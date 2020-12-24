@@ -14,7 +14,7 @@ public:
 
     String getName() const final { return impl->getName(); }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const final;
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) final;
 
     void createLowCardinalityResultCache(size_t cache_size) override;
 
@@ -25,13 +25,13 @@ private:
     ExecutableFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 
     ColumnPtr defaultImplementationForConstantArguments(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run);
 
     ColumnPtr defaultImplementationForNulls(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run);
 
     ColumnPtr executeWithoutLowCardinalityColumns(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run);
 };
 
 class FunctionBaseAdaptor final : public IFunctionBase
@@ -149,11 +149,11 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) final
     {
         return function->executeImpl(arguments, result_type, input_rows_count);
     }
-    ColumnPtr executeDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final
+    ColumnPtr executeDryRun(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) final
     {
         return function->executeImplDryRun(arguments, result_type, input_rows_count);
     }
