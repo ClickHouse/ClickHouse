@@ -98,9 +98,6 @@ private:
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
 
-void debugExplainStep(
-    const IQueryPlanStep & step,
-    QueryPlanStepFormatSettings & settings,
-    const QueryPlan::ExplainPlanOptions & options);
+std::string debugExplainStep(const IQueryPlanStep & step);
 
 }
