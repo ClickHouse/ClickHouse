@@ -594,20 +594,8 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
-    const std::string before = select_query->dumpTree();
-    fmt::print(stderr, "before predicate pushdown:\n'{}'\n",
-        select_query->dumpTree());
     /// Push the predicate expression down to the subqueries.
     rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
-
-    fmt::print(stderr, "after predicate pushdown:\n'{}'\n",
-        select_query->dumpTree());
-
-    if (before != select_query->dumpTree())
-    {
-        fmt::print(stderr, "predicate pushdown made changes at\n'{}'\n",
-            StackTrace().toString());
-    }
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, source_columns_set, context);
