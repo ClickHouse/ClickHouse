@@ -56,6 +56,7 @@ def test_restore_replica(start_cluster):
     node_1.query("INSERT INTO test.test_table SELECT * FROM numbers(1000, 2000)")
     check_data()
 
+    print("Partition\tRows\tCount")
     print(node_1.query(
         "SELECT partition, sum(rows) AS rows, count() FROM system.parts WHERE"
         " table = 'test_table' AND active GROUP BY partition"))
@@ -65,12 +66,12 @@ def test_restore_replica(start_cluster):
     # 1. Delete individual replicas paths in ZK and check that the restoration query will return an error
     # (there's nothing to restore as long as there is a single replica path in ZK)
 
-    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica1")
+    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/1/test_table/replicas/replica1") is None
 
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")
 
-    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica2")
+    zk.delete("/clickhouse/tables/test/1/test_table/replicas/replica2", recursive=True)
     assert zk.exists("/clickhouse/tables/test/1/test_table/replicas/replica2") is None
 
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test.test_table")
