@@ -85,7 +85,7 @@ void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void FinishSortingStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void FinishSortingStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
 

@@ -19,7 +19,7 @@ QueryPipelinePtr ISourceStep::updatePipeline(QueryPipelines)
     return pipeline;
 }
 
-void ISourceStep::describePipeline(QueryPlanStepFormatSettings & settings) const
+void ISourceStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }

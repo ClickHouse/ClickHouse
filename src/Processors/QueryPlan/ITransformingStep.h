@@ -55,7 +55,7 @@ public:
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
-    void describePipeline(QueryPlanStepFormatSettings & settings) const override;
+    void describePipeline(FormatSettings & settings) const override;
 
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.

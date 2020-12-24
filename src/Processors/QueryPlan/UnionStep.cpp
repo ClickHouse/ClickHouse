@@ -36,7 +36,7 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
     return pipeline;
 }
 
-void UnionStep::describePipeline(QueryPlanStepFormatSettings & settings) const
+void UnionStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }

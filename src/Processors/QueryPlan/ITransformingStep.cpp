@@ -65,7 +65,7 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
     }
 }
 
-void ITransformingStep::describePipeline(QueryPlanStepFormatSettings & settings) const
+void ITransformingStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
 }

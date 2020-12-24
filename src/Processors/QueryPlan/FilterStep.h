@@ -22,7 +22,7 @@ public:
 
     void updateInputStream(DataStream input_stream, bool keep_header);
 
-    void describeActions(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }

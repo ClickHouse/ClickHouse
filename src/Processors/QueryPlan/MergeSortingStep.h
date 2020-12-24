@@ -26,7 +26,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(QueryPlanStepFormatSettings & settings) const override;
+    void describeActions(FormatSettings & settings) const override;
 
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);

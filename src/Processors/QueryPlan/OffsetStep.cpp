@@ -36,7 +36,7 @@ void OffsetStep::transformPipeline(QueryPipeline & pipeline)
     pipeline.addTransform(std::move(transform));
 }
 
-void OffsetStep::describeActions(QueryPlanStepFormatSettings & settings) const
+void OffsetStep::describeActions(FormatSettings & settings) const
 {
     settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
 }
