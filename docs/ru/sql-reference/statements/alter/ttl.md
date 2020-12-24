@@ -13,7 +13,7 @@ toc_title: TTL
 ALTER TABLE table-name MODIFY TTL ttl-expression
 ```
 
-## REMOVE TTL {remove-ttl}
+## REMOVE TTL {#remove-ttl}
 
 Убирает свойство TTL из выбранного вами столбца.
 

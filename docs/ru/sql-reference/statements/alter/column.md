@@ -110,7 +110,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ``` sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
-## MODIFY REMOVE
+## MODIFY REMOVE {#modify-remove}
 
 Удаляет что-либо из столбца. Например, больше не нужное свойство TTL.
 

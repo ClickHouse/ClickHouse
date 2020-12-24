@@ -122,9 +122,9 @@ Example:
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-## MODIFY REMOVE
+## MODIFY REMOVE {#modify-remove}
 
-Removes something from a column. For example, TTL-property.
+Removes one of the column properties: DEFAULT, ALIAS, MATERIALIZED, CODEC, COMMENT, TTL.
 
 Syntax:
 
