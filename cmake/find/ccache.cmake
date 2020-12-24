@@ -31,8 +31,20 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
 
    if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       message(STATUS "Using ${CCACHE_FOUND} ${CCACHE_VERSION}")
-      set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE_FOUND})
-      set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_FOUND})
+
+      # 4+ ccache respect SOURCE_DATE_EPOCH (always includes it into the hash
+      # of the manifest) and debian will extract these from d/changelog, and
+      # makes cache of ccache unusable
+      #
+      # FIXME: once sloppiness will be introduced for this this can be removed.
+      if (CCACHE_VERSION VERSION_GREATER "4.0")
+         message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache")
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
+      else()
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE ${CCACHE_FOUND})
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_FOUND})
+      endif()
    else ()
       message(${RECONFIGURE_MESSAGE_LEVEL} "Not using ${CCACHE_FOUND} ${CCACHE_VERSION} bug: https://bugzilla.samba.org/show_bug.cgi?id=8118")
    endif ()

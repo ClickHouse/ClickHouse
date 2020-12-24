@@ -3,7 +3,6 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <sstream>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <common/types.h>
 #include <Common/HashTable/Hash.h>

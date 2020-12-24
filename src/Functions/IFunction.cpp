@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/LRUCache.h>
+#include <Common/SipHash.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -197,7 +198,7 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
 }
 
 ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForConstantArguments(
-    ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     ColumnNumbers arguments_to_remain_constants = impl->getArgumentsThatAreAlwaysConstant();
 
@@ -247,7 +248,8 @@ ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForConstantArguments(
 }
 
 
-ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (args.empty() || !impl->useDefaultImplementationForNulls())
         return nullptr;
@@ -276,7 +278,7 @@ ColumnPtr ExecutableFunctionAdaptor::defaultImplementationForNulls(ColumnsWithTy
 }
 
 ColumnPtr ExecutableFunctionAdaptor::executeWithoutLowCardinalityColumns(
-    ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
         return res;
@@ -377,7 +379,7 @@ static void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
     }
 }
 
-ColumnPtr ExecutableFunctionAdaptor::execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run)
+ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (impl->useDefaultImplementationForLowCardinalityColumns())
     {
@@ -463,25 +465,32 @@ void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_ar
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
+
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments,
+                                                                                        const DefaultReturnTypeGetter & getter)
+{
+    NullPresence null_presence = getNullPresense(arguments);
+
+    if (null_presence.has_null_constant)
+    {
+        return makeNullable(std::make_shared<DataTypeNothing>());
+    }
+    if (null_presence.has_nullable)
+    {
+        Block nested_columns = createBlockWithNestedColumns(arguments);
+        auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+        return makeNullable(return_type);
+    }
+
+    return getter(arguments);
+}
+
 DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
 
     if (!arguments.empty() && impl->useDefaultImplementationForNulls())
-    {
-        NullPresence null_presence = getNullPresense(arguments);
-
-        if (null_presence.has_null_constant)
-        {
-            return makeNullable(std::make_shared<DataTypeNothing>());
-        }
-        if (null_presence.has_nullable)
-        {
-            Block nested_columns = createBlockWithNestedColumns(arguments);
-            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            return makeNullable(return_type);
-        }
-    }
+        return getReturnTypeDefaultImplementationForNulls(arguments, [&](const auto & args) { return impl->getReturnType(args); });
 
     return impl->getReturnType(arguments);
 }

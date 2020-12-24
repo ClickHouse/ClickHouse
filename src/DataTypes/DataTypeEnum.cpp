@@ -155,7 +155,7 @@ void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & i
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
         std::string field_name;
         readEscapedString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
     }
 }
 
@@ -182,7 +182,7 @@ void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & ist
     {
         std::string field_name;
         readString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
     }
 }
 
@@ -195,7 +195,7 @@ void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_nu
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeXMLStringForTextElement(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -226,7 +226,7 @@ void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     {
         std::string field_name;
         readCSVString(field_name, istr, settings.csv);
-        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name), true));
     }
 }
 

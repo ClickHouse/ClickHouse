@@ -60,7 +60,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString
 # https://github.com/ClickHouse/ClickHouse/issues/14228
 ${CLICKHOUSE_CURL} \
     --header "traceparent: 00-$trace_id-0000000000000073-01" \
-    --header "tracestate: some custom state" "http://localhost:8123/" \
+    --header "tracestate: some custom state" "http://127.0.0.2:8123/" \
     --get \
     --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) format Null"
 
@@ -105,7 +105,7 @@ ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
     with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
-    select if(c > 5 and c < 35, 'OK', 'fail: ' || toString(c))
+    select if(c > 1 and c < 50, 'OK', 'fail: ' || toString(c))
     from system.opentelemetry_span_log
         array join attribute.names as name, attribute.values as value
     where name = 'clickhouse.query_id'

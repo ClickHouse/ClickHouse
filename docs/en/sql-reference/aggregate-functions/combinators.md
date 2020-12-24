@@ -25,6 +25,10 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
 
+## -SimpleState {#agg-functions-combinator-simplestate}
+
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is an `SimpleAggregateFunction(...)` that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines.
+
 ## -State {#agg-functions-combinator-state}
 
 If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
@@ -48,6 +52,11 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 ## -ForEach {#agg-functions-combinator-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
+
+## -Distinct {#agg-functions-combinator-distinct}
+
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
@@ -239,5 +248,6 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

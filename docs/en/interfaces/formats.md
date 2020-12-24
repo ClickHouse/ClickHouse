@@ -25,6 +25,7 @@ The supported formats are:
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
@@ -58,6 +59,7 @@ The supported formats are:
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
+| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -457,7 +459,10 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) to 1.
 
-See also the [JSONEachRow](#jsoneachrow) format.
+**See Also**
+
+-   [JSONEachRow](#jsoneachrow) format
+-   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
 ## JSONString {#jsonstring}
 
@@ -507,6 +512,34 @@ Example:
         "rows_before_limit_at_least": 3
 }
 ```
+
+## JSONAsString {#jsonasstring}
+
+In this format, a single JSON object is interpreted as a single value. If input has several JSON objects (comma separated) they will be interpreted as a sepatate rows.
+
+This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+Result:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactString {#jsoncompactstring}
@@ -1333,7 +1366,7 @@ When working with the `Regexp` format, you can use the following settings:
 
 The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset. 
 
-Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"` (except the `Raw` format, which does not support any escaping characters). 
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`. 
 
 The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting. 
 
@@ -1400,5 +1433,46 @@ Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
+
+## RawBLOB {#rawblob}
+
+In this format, all input data is read to a single value. It is possible to parse only a table with a single field of type [String](../sql-reference/data-types/string.md) or similar.
+The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
+
+Below is a comparison of the formats `RawBLOB` and [TabSeparatedRaw](#tabseparatedraw).
+`RawBLOB`:
+- data is output in binary format, no escaping;
+- there are no delimiters between values;
+- no newline at the end of each value.
+[TabSeparatedRaw] (#tabseparatedraw):
+- data is output without escaping;
+- the rows contain values separated by tabs;
+- there is a line feed after the last value in every row.
+
+The following is a comparison of the `RawBLOB` and [RowBinary](#rowbinary) formats.
+`RawBLOB`:
+- String fields are output without being prefixed by length.
+`RowBinary`:
+- String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
+
+When an empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
+
+``` text
+Code: 108. DB::Exception: No data to insert
+```
+
+**Example**
+
+``` bash
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+Result:
+
+``` text
+f9725a22f9191e064120d718e26862a9  -
+```
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
