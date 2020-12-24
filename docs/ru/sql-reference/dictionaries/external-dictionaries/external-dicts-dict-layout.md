@@ -404,6 +404,14 @@ LAYOUT(DIRECT())
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Ключевой аттрибут `prefix` будет доступен через dictGetString -->
+        <!-- Эта опция увеличивает потреблямую память -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 или
@@ -433,6 +441,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
-Данные хранятся в побитовом дереве (`trie`), он должен полностью помещаться в оперативной памяти.
+Данные должны полностью помещаться в оперативной памяти.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
