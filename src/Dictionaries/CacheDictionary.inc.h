@@ -147,7 +147,7 @@ void CacheDictionary::getItemsNumberImpl(
     tryPushToUpdateQueueOrThrow(update_unit_ptr);
     waitForCurrentUpdateFinish(update_unit_ptr);
 
-    /// Add updated keys to asnwer.
+    /// Add updated keys to answer.
 
     const size_t attribute_index = getAttributeIndex(attribute.name);
 

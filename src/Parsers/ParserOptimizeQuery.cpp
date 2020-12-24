@@ -4,10 +4,23 @@
 
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionListParsers.h>
 
 
 namespace DB
 {
+
+bool ParserOptimizeQueryColumnsSpecification::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    // Do not allow APPLY and REPLACE transformers.
+    // Since we use Columns Transformers only to get list of columns,
+    // we can't actually modify content of the columns for deduplication.
+    const auto allowed_transformers = ParserColumnsTransformers::ColumnTransformers{ParserColumnsTransformers::ColumnTransformer::EXCEPT};
+
+    return ParserColumnsMatcher(allowed_transformers).parse(pos, node, expected)
+        || ParserAsterisk(allowed_transformers).parse(pos, node, expected)
+        || ParserIdentifier(false).parse(pos, node, expected);
+}
 
 
 bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -16,6 +29,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_partition("PARTITION");
     ParserKeyword s_final("FINAL");
     ParserKeyword s_deduplicate("DEDUPLICATE");
+    ParserKeyword s_by("BY");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
     ParserPartition partition_p;
@@ -55,6 +69,14 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
 
+    ASTPtr deduplicate_by_columns;
+    if (deduplicate && s_by.ignore(pos, expected))
+    {
+        if (!ParserList(std::make_unique<ParserOptimizeQueryColumnsSpecification>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+                .parse(pos, deduplicate_by_columns, expected))
+            return false;
+    }
+
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
@@ -62,9 +84,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     tryGetIdentifierNameInto(table, query->table);
 
     query->cluster = cluster_str;
-    query->partition = partition;
+    if ((query->partition = partition))
+        query->children.push_back(partition);
     query->final = final;
     query->deduplicate = deduplicate;
+    query->deduplicate_by_columns = deduplicate_by_columns;
 
     return true;
 }

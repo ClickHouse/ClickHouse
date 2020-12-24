@@ -32,11 +32,12 @@ public:
     virtual void createForShard(
             const Cluster::ShardInfo & shard_info,
             const String & query, const ASTPtr & query_ast,
-            const Context & context, const ThrottlerPtr & throttler,
+            const std::shared_ptr<Context> & context_ptr, const ThrottlerPtr & throttler,
             const SelectQueryInfo & query_info,
             std::vector<QueryPlanPtr> & res,
             Pipes & remote_pipes,
-            Pipes & delayed_pipes) = 0;
+            Pipes & delayed_pipes,
+            Poco::Logger * log) = 0;
 };
 
 }

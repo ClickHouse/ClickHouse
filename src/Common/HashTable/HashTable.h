@@ -194,9 +194,6 @@ struct HashTableCell
     /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Whether the cell is deleted.
-    bool isDeleted() const { return false; }
-
     /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & /*value*/) {}
 
@@ -229,6 +226,9 @@ struct HashTableGrower
 
     UInt8 size_degree = initial_size_degree;
     static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -277,6 +277,9 @@ template <size_t key_bits>
 struct HashTableFixedGrower
 {
     static constexpr auto initial_count = 1ULL << key_bits;
+
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -466,7 +469,7 @@ protected:
           */
         size_t i = 0;
         for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this) && !buf[i].isDeleted())
+            if (!buf[i].isZero(*this))
                 reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
@@ -477,7 +480,7 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
+        for (; !buf[i].isZero(*this); ++i)
             reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
@@ -829,6 +832,7 @@ protected:
                   */
                 --m_size;
                 buf[place_value].setZero();
+                inserted = false;
                 throw;
             }
 
@@ -952,6 +956,112 @@ public:
     ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
+    }
+
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, void>
+    ALWAYS_INLINE erase(const Key & x)
+    {
+        /** Deletion from open addressing hash table without tombstones
+          *
+          * https://en.wikipedia.org/wiki/Linear_probing
+          * https://en.wikipedia.org/wiki/Open_addressing
+          * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
+          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          *
+          * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
+          */
+
+        if (Cell::isZero(x, *this))
+        {
+            if (this->hasZero())
+            {
+                --m_size;
+                this->clearHasZero();
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        size_t hash_value = hash(x);
+        size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
+
+        /// Key is not found
+        if (buf[erased_key_position].isZero(*this))
+        {
+            return;
+        }
+
+        /// We need to guarantee loop termination because there will be empty position
+        assert(m_size < grower.bufSize());
+
+        size_t next_position = erased_key_position;
+
+        /**
+         * During element deletion there is a possibility that the search will be broken for one
+         * of the following elements, because this place erased_key_position is empty. We will check
+         * next_element. Consider a sequence from (erased_key_position, next_element], if the
+         * optimal_position of next_element falls into it, then removing erased_key_position
+         * will not break search for next_element.
+         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
+         * then deleting a erased_key_position will break search for it, so we need to move next_element
+         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
+         * procedure for it.
+         * If an empty element is encountered then means that there is no more next elements for which we can
+         * break the search so we can exit.
+        */
+
+        /// Walk to the right through collision resolution chain and move elements to better positions
+        while (true)
+        {
+            next_position = grower.next(next_position);
+
+            /// If there's no more elements in the chain
+            if (buf[next_position].isZero(*this))
+                break;
+
+            /// The optimal position of the element in the cell at next_position
+            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
+
+            /// If position of this element is already optimal - proceed to the next element.
+            if (optimal_position == next_position)
+                continue;
+
+            /// Cannot move this element because optimal position is after the freed place
+            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+            ///  and the optimal position is actually before in collision resolution chain:
+            ///
+            /// [*xn***----------------***]
+            ///   ^^-next elem          ^
+            ///   |                     |
+            ///   erased elem           the optimal position of the next elem
+            ///
+            /// so, the next elem should be moved to position of erased elem
+
+            /// The case of non overlapping part of chain
+            if (next_position > erased_key_position
+               && (optimal_position > erased_key_position) && (optimal_position < next_position))
+            {
+                continue;
+            }
+
+            /// The case of overlapping chain
+            if (next_position < erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
+            {
+                continue;
+            }
+
+            /// Move the element to the freed place
+            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+            /// Now we have another freed place
+            erased_key_position = next_position;
+        }
+
+        buf[erased_key_position].setZero();
+        --m_size;
     }
 
     bool ALWAYS_INLINE has(const Key & x) const
