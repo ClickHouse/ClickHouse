@@ -1740,7 +1740,7 @@ void InterpreterSelectQuery::executeMergeFinalized(QueryPlan & query_plan, Aggre
         settings.max_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
-        std::move(nullptr),
+        nullptr,
         std::move(group_by_sort_description));
 
     query_plan.addStep(std::move(aggregating_step));
