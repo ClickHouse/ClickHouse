@@ -57,7 +57,7 @@ JoinExpr::JoinExpr(JoinExpr::ExprType type, JoinExpr::JoinOpType op, JoinExpr::J
 
 ASTPtr JoinExpr::convertToOld() const
 {
-    /** The sole convertable chain of Join's may look like:
+    /** The sole convertible chain of Join's may look like:
      *
      *      … FROM table1 JOIN table2 ON SMTH JOIN table3 ON SMTH JOIN …
      *
