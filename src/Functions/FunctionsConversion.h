@@ -1055,6 +1055,7 @@ public:
 
     static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
                                                       std::is_same_v<ToDataType, DataTypeString>;
+    static constexpr bool to_uuid = std::is_same_v<ToDataType, DataTypeUUID>;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
@@ -1294,7 +1295,7 @@ private:
         }
 
         bool done;
-        if constexpr (to_string_or_fixed_string)
+        if constexpr (to_string_or_fixed_string || to_uuid)
         {
             done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
