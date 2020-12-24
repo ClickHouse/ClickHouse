@@ -618,7 +618,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT countMatches('foobar.com', 'o+')
+SELECT countMatches('foobar.com', 'o+');
 ```
 
 Result:
@@ -632,13 +632,13 @@ Result:
 Query:
 
 ``` sql
-SELECT countMatches('aaaa', 'aa')
+SELECT countMatches('aaaa', 'aa');
 ```
 
 Result:
 
 ``` text
-┌─countMatches('aaaa', 'aa')─┐
+┌─countMatches('aaaa', 'aa')────┐
 │                             2 │
 └───────────────────────────────┘
 ```
