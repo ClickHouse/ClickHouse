@@ -153,7 +153,7 @@ void MergingFinal::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-void MergingFinal::describeActions(FormatSettings & settings) const
+void MergingFinal::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Sort description: ";

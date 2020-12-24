@@ -23,7 +23,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(FormatSettings & settings) const override;
+    void describeActions(QueryPlanStepFormatSettings & settings) const override;
 
 private:
     AggregatingTransformParamsPtr params;

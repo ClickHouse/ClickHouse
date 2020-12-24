@@ -69,7 +69,7 @@ void ArrayJoinStep::transformPipeline(QueryPipeline & pipeline)
     }
 }
 
-void ArrayJoinStep::describeActions(FormatSettings & settings) const
+void ArrayJoinStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     bool first = true;

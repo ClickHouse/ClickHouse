@@ -22,7 +22,7 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(FormatSettings & settings) const override;
+    void describeActions(QueryPlanStepFormatSettings & settings) const override;
 
 private:
     size_t num_output_streams;

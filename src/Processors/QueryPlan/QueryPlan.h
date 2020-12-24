@@ -13,6 +13,7 @@ class DataStream;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+struct QueryPlanStepFormatSettings;
 
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
@@ -96,5 +97,10 @@ private:
     size_t max_threads = 0;
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
+
+void debugExplainStep(
+    const IQueryPlanStep & step,
+    QueryPlanStepFormatSettings & settings,
+    const QueryPlan::ExplainPlanOptions & options);
 
 }

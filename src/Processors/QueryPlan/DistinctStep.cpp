@@ -79,7 +79,7 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline)
     });
 }
 
-void DistinctStep::describeActions(FormatSettings & settings) const
+void DistinctStep::describeActions(QueryPlanStepFormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << "Columns: ";
