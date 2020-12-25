@@ -62,7 +62,7 @@ ifndef DISABLE_NINJA
     NINJA=$(shell which ninja)
 ifneq ($(NINJA),)
         CMAKE_FLAGS += -GNinja
-        export MAKE=$(NINJA)
+        export MAKE=$(NINJA) $(NINJA_FLAGS)
 endif
 endif
 
@@ -93,7 +93,7 @@ override_dh_auto_build:
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
+	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V
 endif
 
 override_dh_clean:
