@@ -481,7 +481,7 @@ struct MinHashImpl
             size_t length = start - word_start;
 
             if (length)
-                words.emplace_back(word_start, length);
+                words.emplace_back(BytesRef{word_start, length});
         }
 
         UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(words);
