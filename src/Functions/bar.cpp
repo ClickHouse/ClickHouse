@@ -7,8 +7,6 @@
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 
-#include <iostream>
-
 
 namespace DB
 {
