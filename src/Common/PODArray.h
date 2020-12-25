@@ -89,8 +89,8 @@ protected:
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, ELEMENT_SIZE), 16);
-    /// Empty array will point to this static memory as padding.
-    static constexpr char * null = pad_left ? const_cast<char *>(empty_pod_array) + empty_pod_array_size : nullptr;
+    /// Empty array will point to this static memory as padding and begin/end.
+    static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
@@ -268,8 +268,11 @@ public:
             reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t items_byte_size = byte_size(number_of_items);
-        memcpy(c_end, ptr, items_byte_size);
-        c_end += items_byte_size;
+        if (items_byte_size)
+        {
+            memcpy(c_end, ptr, items_byte_size);
+            c_end += items_byte_size;
+        }
     }
 
     void protect()
@@ -476,6 +479,9 @@ public:
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        if (!bytes_to_copy)
+            return;
+
         size_t bytes_to_move = this->byte_size(end() - it);
 
         insertPrepare(from_begin, from_end);
@@ -494,8 +500,11 @@ public:
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
-        memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-        this->c_end += bytes_to_copy;
+        if (bytes_to_copy)
+        {
+            memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+            this->c_end += bytes_to_copy;
+        }
     }
 
     template <typename... TAllocatorParams>
@@ -632,9 +641,11 @@ public:
             this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
-        memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
-
-        this->c_end = this->c_start + bytes_to_copy;
+        if (bytes_to_copy)
+        {
+            memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+            this->c_end = this->c_start + bytes_to_copy;
+        }
     }
 
     // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.
