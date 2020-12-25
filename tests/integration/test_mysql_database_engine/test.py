@@ -192,19 +192,20 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
         mysql_node.query("DROP DATABASE test")
 
- # will use ',' to split values for counting, so do not include ',' inside a value.
-float_values = "(NULL)" # float value cannot be test with ==
-int32_values = "(0), (1), (-1), (2147483647), (-2147483648)"
-uint32_values = "(0), (1), (4294967295)"
-int16_values = "(0), (1), (-1), (32767), (-32768)"
-uint16_values = "(0), (1), (65535)"
-int8_values = "(0), (1), (-1), (127), (-128)"
-uint8_values = "(0), (1), (256)"
-string_values = "('ClickHouse'), (NULL)"
+float_values = [0] # test tool cannot support null by now
+int32_values = [0, 1, -1, 2147483647, -2147483648]
+uint32_values = [0, 1, 4294967295]
+int16_values = [0, 1, -1, 32767, -32768]
+uint16_values = [0, 1, 65535]
+int8_values = [0, 1, -1, 127, -128]
+uint8_values = [0, 1, 256]
+# string_values = ["'ClickHouse'", 'NULL'] # test tool cannot support null by now
+string_values = ["'ClickHouse'"] 
 
-decimal_values = "(0), (0.123), (0.4), (5.67), (8.91011), (123456789.123), (-0.123), (-0.4), (-5.67), (-8.91011), (-123456789.123)"
-timestamp_values = "('2015-05-18 07:40:01.123'), ('2019-09-16 19:20:11.123')"
-timestamp_values_no_subsecond = "('2015-05-18 07:40:01'), ('2019-09-16 19:20:11')"
+
+decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
+timestamp_values = ["'2015-05-18 07:40:01.123'", "'2019-09-16 19:20:11.123'"]
+timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'"]
 
 
 @pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level",
@@ -231,7 +232,7 @@ timestamp_values_no_subsecond = "('2015-05-18 07:40:01'), ('2019-09-16 19:20:11'
                              ("common_types", "INTEGER UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
 
                              ("common_types", "MEDIUMINT", "Nullable(Int32)", int32_values, ""),
-                             ("common_types", "MEDIUMINT UNSIGNED", "t Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "MEDIUMINT UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
 
                              ("common_types", "SMALLINT", "Nullable(Int16)", int16_values, ""),
                              ("common_types", "SMALLINT UNSIGNED", "Nullable(UInt16)", uint16_values, ""),
@@ -281,7 +282,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
         mysql_db='decimal_support',
         table_name=case_name,
         mysql_type=mysql_type,
-        mysql_values=mysql_values,
+        mysql_values=', '.join('({})'.format(x) for x in mysql_values),
         ch_mysql_db='mysql_db',
         ch_mysql_table='mysql_table_engine_' + case_name,
         expected_ch_type=expected_ch_type,
@@ -314,7 +315,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
 
         assert execute_query(mysql_node, "SELECT COUNT(*) FROM ${mysql_db}.${table_name}") \
                == \
-               "{}".format(len(mysql_values.split(',')))
+               "{}".format(len(mysql_values))
 
         # MySQL TABLE ENGINE
         execute_query(clickhouse_node, [
