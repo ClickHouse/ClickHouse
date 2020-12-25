@@ -255,7 +255,7 @@ struct SimHashImpl
             size_t length = start - word_start;
 
             if (length)
-                words.emplace_back(word_start, length);
+                words.emplace_back(BytesRef{word_start, length});
         }
 
         UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(words);
@@ -350,10 +350,8 @@ struct MinHashImpl
             if (values.empty())
                 return 0;
 
-            auto it = values.begin();
-            UInt64 res = CityHash_v1_0_2::CityHash64(it->first, sizeof(UInt64));
-
-            for (; it != values.end(); ++it)
+            UInt64 res = 0;
+            for (auto it = values.begin(); it != values.end(); ++it)
                 res = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(res, it->first));
 
             return res;
@@ -529,7 +527,7 @@ struct MinHashImpl
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const char * one_data = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
+            const UInt8 * one_data = &data[offsets[i - 1]];
             const size_t data_size = offsets[i] - offsets[i - 1] - 1;
 
             min_heap.values.clear();
