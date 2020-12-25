@@ -202,7 +202,7 @@ long double powl(long double x, long double y)
 	volatile long double z=0;
 	long double w=0, W=0, Wa=0, Wb=0, ya=0, yb=0, u=0;
 
-	/* make sure no invalid exception is raised by nan comparision */
+	/* make sure no invalid exception is raised by nan comparison */
 	if (isnan(x)) {
 		if (!isnan(y) && y == 0.0)
 			return 1.0;
