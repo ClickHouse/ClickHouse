@@ -970,7 +970,9 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     // 1) Add actions for window functions and their arguments;
-    // 2) Mark the columns that are really required.
+    // 2) Mark the columns that are really required. We have to mark them as
+    //    required because we finish the expression chain before processing the
+    //    window functions.
     for (const auto & [_, w] : window_descriptions)
     {
         for (const auto & f : w.window_functions)
@@ -1425,48 +1427,46 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
-        has_order_by = query.orderBy() != nullptr;
-        // FIXME selected columns was set here. Should split order by and select
-        // and insert window functions in between.
-        // Will fix:
-        // 1) window function in DISTINCT
-        // 2) totally broken DISTINCT
-        // 3) window functions in order by
-        before_order_and_select = query_analyzer.appendOrderBy(
-                chain,
-                only_types || (need_aggregate ? !second_stage : !first_stage),
-                optimize_read_in_order,
-                order_by_elements_actions);
-
+        // Window functions are processed in a separate expression chain after
+        // the main SELECT, similar to what we do for aggregate functions.
         if (has_window)
         {
             query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
 
-            auto select_required_columns = chain.getLastStep().required_output;
 
             for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
             {
                 query_analyzer.columns_after_window.push_back(x);
             }
 
+            before_window = chain.getLastActions();
             finalize_chain(chain);
 
             auto & step = chain.lastStep(query_analyzer.columns_after_window);
-            step.required_output = select_required_columns;
+
+            // The output of this expression chain is the result of
+            // SELECT (before "final projection" i.e. renaming the columns), so
+            // we have to mark the expressions that are required in the output,
+            // again. We did it for the previous expression chain ("select w/o
+            // window functions") earlier, in appendSelect(). But that chain also
+            // produced the expressions required to calculate window functions.
+            // They are not needed in the final SELECT result. Knowing the correct
+            // list of columns is important when we apply SELECT DISTINCT later.
             const auto * select_query = query_analyzer.getSelectQuery();
             for (const auto & child : select_query->select()->children)
             {
-                if (const auto * function
-                        = typeid_cast<const ASTFunction *>(child.get());
-                    function && function->is_window_function)
-                {
-                    // See its counterpart in appendSelect()
-                    step.required_output.push_back(child->getColumnName());
-                }
+                step.required_output.push_back(child->getColumnName());
             }
         }
 
         selected_columns = chain.getLastStep().required_output;
+
+        has_order_by = query.orderBy() != nullptr;
+        before_order_by = query_analyzer.appendOrderBy(
+                chain,
+                only_types || (need_aggregate ? !second_stage : !first_stage),
+                optimize_read_in_order,
+                order_by_elements_actions);
 
         if (query_analyzer.appendLimitBy(chain, only_types || !second_stage))
         {
@@ -1478,7 +1478,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         finalize_chain(chain);
     }
-
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     removeExtraColumns();
@@ -1610,9 +1609,9 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "before_window " << before_window->dumpDAG() << "\n";
     }
 
-    if (before_order_and_select)
+    if (before_order_by)
     {
-        ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
+        ss << "before_order_by " << before_order_by->dumpDAG() << "\n";
     }
 
     if (before_limit_by)
@@ -1623,6 +1622,20 @@ std::string ExpressionAnalysisResult::dump() const
     if (final_projection)
     {
         ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    if (!selected_columns.empty())
+    {
+        ss << "selected_columns ";
+        for (size_t i = 0; i < selected_columns.size(); i++)
+        {
+            if (i > 0)
+            {
+                ss << ", ";
+            }
+            ss << backQuote(selected_columns[i]);
+        }
+        ss << "\n";
     }
 
     return ss.str();

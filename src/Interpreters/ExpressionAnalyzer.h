@@ -204,11 +204,12 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
     ActionsDAGPtr before_window;
-    ActionsDAGPtr before_order_and_select;
+    ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
     ActionsDAGPtr final_projection;
 
-    /// Columns from the SELECT list, before renaming them to aliases.
+    /// Columns from the SELECT list, before renaming them to aliases. Used to
+    /// perform SELECT DISTINCT.
     Names selected_columns;
 
     /// Columns will be removed after prewhere actions execution.
