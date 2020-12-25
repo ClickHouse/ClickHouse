@@ -381,7 +381,7 @@ struct MinHashImpl
     using MaxHeap = Heap<std::less<size_t>>;
     using MinHeap = Heap<std::greater<size_t>>;
 
-    static ALWAYS_INLINE inline UInt64 ngramHashASCII(
+    static ALWAYS_INLINE inline void ngramHashASCII(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,
@@ -390,7 +390,12 @@ struct MinHashImpl
         size_t heap_size)
     {
         if (size < shingle_size)
-            return Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+        {
+            UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+            min_heap.update(hash_value, BytesRef{data, size}, heap_size);
+            max_heap.update(hash_value, BytesRef{data, size}, heap_size);
+            return;
+        }
 
         const UInt8 * end = data + size;
 
@@ -405,7 +410,7 @@ struct MinHashImpl
         }
     }
 
-    static ALWAYS_INLINE inline UInt64 ngramHashUTF8(
+    static ALWAYS_INLINE inline void ngramHashUTF8(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,
@@ -422,7 +427,12 @@ struct MinHashImpl
         for (size_t i = 0; i < shingle_size; ++i)
         {
             if (word_end >= end)
-                return Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+            {
+                auto hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, data, size);
+                min_heap.update(hash_value, BytesRef{data, size}, heap_size);
+                max_heap.update(hash_value, BytesRef{data, size}, heap_size);
+                return;
+            }
 
             ExtractStringImpl::readOneUTF8Code(word_end, end);
         }
@@ -443,7 +453,7 @@ struct MinHashImpl
     // MinHash word shingle hash value calculate function: String ->Tuple(UInt64, UInt64)
     // for each word shingle, we calculate a hash value, but in fact, we just maintain the
     // K minimum and K maximum hash value
-    static ALWAYS_INLINE inline UInt64 wordShingleHash(
+    static ALWAYS_INLINE inline void wordShingleHash(
         MinHeap & min_heap,
         MaxHeap & max_heap,
         const UInt8 * data,
