@@ -192,7 +192,7 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
         mysql_node.query("DROP DATABASE test")
 
-
+ # will use ',' to split values for counting, so do not include ',' inside a value.
 float_values = "(NULL)" # float value cannot be test with ==
 int32_values = "(0), (1), (-1), (2147483647), (-2147483648)"
 uint32_values = "(0), (1), (4294967295)"
@@ -314,7 +314,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
 
         assert execute_query(mysql_node, "SELECT COUNT(*) FROM ${mysql_db}.${table_name}") \
                == \
-               "{}".format(len(mysql_values))
+               "{}".format(len(mysql_values.split(',')))
 
         # MySQL TABLE ENGINE
         execute_query(clickhouse_node, [
