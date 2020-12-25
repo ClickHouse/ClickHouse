@@ -87,7 +87,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as parameter, in that case you would need to use `Identifier` as data type.
+-   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as a parameter, in that case you would need to use `Identifier` as a data type.
 
 #### Example {#example}
 
