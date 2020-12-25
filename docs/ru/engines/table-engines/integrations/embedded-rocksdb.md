@@ -22,7 +22,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Обязательные параметры:
 
--  `primary_key_name` – любое имя столбца в списке столбцов.
+-  `primary_key_name` – любое имя столбца из списка столбцов.
 
 Пример:
 
