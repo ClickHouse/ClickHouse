@@ -335,7 +335,7 @@ struct SimHashImpl
 template <bool UTF8, bool Ngram, bool CaseInsensitive>
 struct MinHashImpl
 {
-    static constexpr size_t min_word_size = 3;
+    static constexpr size_t min_word_size = 4;
 
     template<typename Comp>
     struct Heap
