@@ -9,7 +9,7 @@ toc_title: EmbeddedRocksDB
 
 `EmbeddedRocksDB` дает возможность:
 
-## Создавать таблицу {#table_engine-EmbeddedRocksDB-creating-a-table}
+## Создание таблицы {#table_engine-EmbeddedRocksDB-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
