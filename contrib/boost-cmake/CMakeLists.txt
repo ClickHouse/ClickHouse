@@ -81,6 +81,10 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (boost::headers_only ALIAS _boost_headers_only)
     target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
+    # asio
+
+    target_compile_definitions (_boost_headers_only INTERFACE BOOST_ASIO_STANDALONE=1)
+
     # iostreams
 
     set (SRCS_IOSTREAMS
