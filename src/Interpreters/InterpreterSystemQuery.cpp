@@ -434,7 +434,7 @@ void InterpreterSystemQuery::restoreReplica()
 
         create_query.database = db_name;
         create_query.table = new_table_name;
-        create_query.uuid = uuid;
+        //create_query.uuid = uuid; I think the UUID is not needed as it leads to "directory already exists" errors.
         create_query.as_database = db_name;
         create_query.as_table = old_table_name;
 

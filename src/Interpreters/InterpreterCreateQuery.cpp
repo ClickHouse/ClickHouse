@@ -836,8 +836,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
 
         data_path = database->getTableDataPath(create);
+
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{context.getPath()} / data_path))
-            throw Exception("Directory for table data " + data_path + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+            throw Exception("Directory for table " +
+                table_name + " " + data_path + " already exists",
+                ErrorCodes::TABLE_ALREADY_EXISTS);
     }
     else
     {
