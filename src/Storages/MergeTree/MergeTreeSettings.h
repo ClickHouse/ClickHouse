@@ -134,7 +134,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes";
+        return name == "index_granularity" || name == "index_granularity_bytes" || name == "write_final_mark"
+            || name == "enable_mixed_granularity_parts";
     }
 
     static bool isPartFormatSetting(const String & name)

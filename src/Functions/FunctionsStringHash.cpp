@@ -151,7 +151,7 @@ template <size_t N, typename CodePoint, bool UTF8, bool Ngram, bool CaseInsensit
 struct SimhashImpl
 {
     using StrOp = ExtractStringImpl<N, CaseInsensitive>;
-    // we made an assumption that the size of one word cann't exceed 128, which may not true
+    // we made an assumption that the size of one word can't exceed 128, which may not true
     // if some word's size exceed 128, it would be cut up to several word
     static constexpr size_t max_string_size = 1u << 15;
     static constexpr size_t simultaneously_codepoints_num = StrOp::buffer_size;
@@ -203,7 +203,7 @@ struct SimhashImpl
         return res_bit.to_ullong();
     }
 
-    // Simhash word shingle calculate funtion: String -> UInt64
+    // Simhash word shingle calculate function: String -> UInt64
     // this function extracting n word shingle from input string, and maintain a 64-dimensions vector as well
     // for each word shingle, calculate a 64 bit hash value, and update the vector according the hash value
     // finally return a 64 bit value(UInt64), i'th bit is 1 means vector[i] > 0, otherwise, vector[i] < 0
@@ -211,8 +211,8 @@ struct SimhashImpl
     // word shingle hash value calculate:
     // 1. at the first, extracts N word shingles and calculate N hash values, store into an array, use this N hash values
     // to calculate the first word shingle hash value
-    // 2. next, we extrac one word each time, and calculate a new hash value of the new word,then use the latest N hash
-    // values to caculate the next word shingle hash value
+    // 2. next, we extract one word each time, and calculate a new hash value of the new word,then use the latest N hash
+    // values to calculate the next word shingle hash value
     static ALWAYS_INLINE inline UInt64 wordShinglesCalculateHashValue(
         const char * data,
         size_t size,
@@ -254,12 +254,12 @@ struct SimhashImpl
             // for example, N = 5, array |a0|a1|a2|a3|a4|, now , a0 is the oldest location,
             // so we need to store new word hash into location of a0, then ,this array become
             // |a5|a1|a2|a3|a4|, next time, a1 become the oldest location, we need to store new
-            // word hash value into locaion of a1, then array become |a5|a6|a2|a3|a4|
+            // word hash value into location of a1, then array become |a5|a6|a2|a3|a4|
             nword_hashes[offset] = Hash::hashSum(word_buf.data(), word_buf.size());
             offset = (offset + 1) % N;
             // according to the word hash storation way, in order to not lose the word shingle's
             // sequence information, when calculation word shingle hash value, we need provide the offset
-            // inforation, which is the offset of the first word's hash value of the word shingle
+            // information, which is the offset of the first word's hash value of the word shingle
             hash_value = hash_functor(nword_hashes, N, offset);
             std::bitset<64> bits(hash_value);
             for (size_t i = 0; i < 64; ++i)

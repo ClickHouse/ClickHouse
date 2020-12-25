@@ -93,12 +93,12 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 
         result.emplace_back(Granule{
             .start_row = current_row,
-            .granularity_rows = expected_rows_in_mark,
-            .block_rows = std::min(rows_left_in_block, expected_rows_in_mark),
+            .rows_to_write = std::min(rows_left_in_block, expected_rows_in_mark),
             .mark_number = current_mark,
-            .mark_on_start = true
+            .mark_on_start = true,
+            .is_complete = (rows_left_in_block >= expected_rows_in_mark)
         });
-        current_row += expected_rows_in_mark;
+        current_row += result.back().rows_to_write;
         current_mark++;
     }
 
@@ -173,8 +173,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 {
     for (const auto & granule : granules)
     {
-        if (granule.granularity_rows)
-            data_written = true;
+        data_written = true;
 
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
@@ -206,13 +205,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(plain_hashing.count(), marks);
             writeIntBinary(UInt64(0), marks);
 
-            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.granularity_rows);
+            writeColumnSingleGranule(block.getByName(name_and_type->name), stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
             prev_stream->hashing_buf.next(); //-V522
         }
 
-        writeIntBinary(granule.block_rows, marks);
+        writeIntBinary(granule.rows_to_write, marks);
     }
 }
 
@@ -222,11 +221,11 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     {
         auto block = header.cloneWithColumns(columns_buffer.releaseColumns());
         auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), /* last_block = */ true);
-        if (!granules_to_write.back().isCompleted())
+        if (!granules_to_write.back().is_complete)
         {
             /// Correct last mark as it should contain exact amount of rows.
             index_granularity.popMark();
-            index_granularity.appendMark(granules_to_write.back().block_rows);
+            index_granularity.appendMark(granules_to_write.back().rows_to_write);
         }
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }

@@ -57,7 +57,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         {
             // Deduplication is performed only for adjacent rows in a block,
             // and all rows in block are in the sorting key order within a single partition,
-            // hence deduplication always implicitly takes sorting keys and parition keys in account.
+            // hence deduplication always implicitly takes sorting keys and partition keys in account.
             // So we just explicitly state that limitation in order to avoid confusion.
             if (std::find(column_names.begin(), column_names.end(), required_col) == column_names.end())
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,

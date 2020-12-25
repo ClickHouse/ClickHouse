@@ -560,6 +560,13 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
+            String path_to_data_file = getFullRelativePath() + getFileNameForColumn(part_column) + ".bin";
+            if (!volume->getDisk()->exists(path_to_data_file))
+            {
+                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but data file {} doesn't exists", name, backQuoteIfNeed(part_column.name), path_to_data_file);
+                continue;
+            }
+
             result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
             break;
         }

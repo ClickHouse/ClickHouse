@@ -132,7 +132,7 @@ struct CustomizeAggregateFunctionsSuffixData
     }
 };
 
-// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we shoule rewrite to sumOrNullIf
+// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we should rewrite to sumOrNullIf
 struct CustomizeAggregateFunctionsMoveSuffixData
 {
     using TypeToVisit = ASTFunction;

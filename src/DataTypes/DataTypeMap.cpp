@@ -204,7 +204,7 @@ void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuf
 
 void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
@@ -226,7 +226,7 @@ void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, Writ
 
 void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    // need_safe_get_int_key is set for Interger to prevent to readIntTextUnsafe
+    // need_safe_get_int_key is set for Integer to prevent to readIntTextUnsafe
     bool need_safe_get_int_key = isInteger(key_type);
 
     deserializeTextImpl(column, istr, need_safe_get_int_key,
