@@ -39,6 +39,16 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             (*it)->appendColumnName(ostr);
         }
     writeChar(')', ostr);
+
+    if (is_window_function)
+    {
+        writeCString(" OVER (", ostr);
+        FormatSettings settings{ostr, true /* one_line */};
+        FormatState state;
+        FormatStateStacked frame;
+        appendWindowDescription(settings, state, frame);
+        writeCString(")", ostr);
+    }
 }
 
 /** Get the text that identifies this element. */
