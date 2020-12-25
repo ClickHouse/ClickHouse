@@ -163,7 +163,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
-    if (settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
 
     if (parallel_parsing && name == "JSONEachRow")
