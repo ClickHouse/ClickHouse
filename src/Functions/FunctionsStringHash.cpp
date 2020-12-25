@@ -719,26 +719,26 @@ using FunctionWordShingleMinHashCaseInsensitiveUTF8
 
 // MinHasArg
 
-using FunctionNgramMinHashArg = FunctionsStringHash<MinHashImpl<false, true, false>, NameNgramMinHashArg, false>;
+using FunctionNgramMinHashArg = FunctionsStringHash<MinHashImpl<false, true, false>, NameNgramMinHashArg, false, true>;
 
 using FunctionNgramMinHashArgCaseInsensitive
-= FunctionsStringHash<MinHashImpl<false, true, true>, NameNgramMinHashArgCaseInsensitive, false>;
+= FunctionsStringHash<MinHashImpl<false, true, true>, NameNgramMinHashArgCaseInsensitive, false, true>;
 
-using FunctionNgramMinHashArgUTF8 = FunctionsStringHash<MinHashImpl<true, true, false>, NameNgramMinHashArgUTF8, false>;
+using FunctionNgramMinHashArgUTF8 = FunctionsStringHash<MinHashImpl<true, true, false>, NameNgramMinHashArgUTF8, false, true>;
 
 using FunctionNgramMinHashArgCaseInsensitiveUTF8
-= FunctionsStringHash<MinHashImpl<true, true, true>, NameNgramMinHashArgCaseInsensitiveUTF8, false>;
+= FunctionsStringHash<MinHashImpl<true, true, true>, NameNgramMinHashArgCaseInsensitiveUTF8, false, true>;
 
-using FunctionWordShingleMinHashArg = FunctionsStringHash<MinHashImpl<false, false, false>, NameWordShingleMinHashArg, false>;
+using FunctionWordShingleMinHashArg = FunctionsStringHash<MinHashImpl<false, false, false>, NameWordShingleMinHashArg, false, true>;
 
 using FunctionWordShingleMinHashArgCaseInsensitive
-= FunctionsStringHash<MinHashImpl<false, false, true>, NameWordShingleMinHashArgCaseInsensitive, false>;
+= FunctionsStringHash<MinHashImpl<false, false, true>, NameWordShingleMinHashArgCaseInsensitive, false, true>;
 
 using FunctionWordShingleMinHashArgUTF8
-= FunctionsStringHash<MinHashImpl<true, false, false>, NameWordShingleMinHashArgUTF8, false>;
+= FunctionsStringHash<MinHashImpl<true, false, false>, NameWordShingleMinHashArgUTF8, false, true>;
 
 using FunctionWordShingleMinHashArgCaseInsensitiveUTF8
-= FunctionsStringHash<MinHashImpl<true, false, true>, NameWordShingleMinHashArgCaseInsensitiveUTF8, false>;
+= FunctionsStringHash<MinHashImpl<true, false, true>, NameWordShingleMinHashArgCaseInsensitiveUTF8, false, true>;
 
 void registerFunctionsStringHash(FunctionFactory & factory)
 {
