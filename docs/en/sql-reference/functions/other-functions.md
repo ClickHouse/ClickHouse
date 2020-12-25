@@ -1172,7 +1172,7 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (finalized state). Useful with [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator.
+Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
 **Syntax** 
 

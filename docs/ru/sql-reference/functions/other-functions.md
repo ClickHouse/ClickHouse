@@ -1104,7 +1104,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Принимает состояние агрегатной функции. Возвращает результат агрегирования. Полезно с комбинатором [-State](../../sql-reference/aggregate-functions/combinators.md#state).
+Принимает состояние агрегатной функции. Возвращает результат агрегирования (или завершенное состояние при использовании комбинатора [-State](../../sql-reference/aggregate-functions/combinators.md#state)).
 
 **Синтаксис** 
 
