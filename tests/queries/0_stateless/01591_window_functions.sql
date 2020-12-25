@@ -24,11 +24,10 @@ select number, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 -- last stage of select, after all other functions.
 select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
 
--- should work in ORDER BY though
--- doesn't work now
--- select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
+-- should work in ORDER BY
+select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
 
--- at least it works in ORDER BY if you wrap it in a subquery
+-- also works in ORDER BY if you wrap it in a subquery
 select * from (select count(*) over () c from numbers(3)) order by c;
 
 -- must work in WHERE if you wrap it in a subquery
@@ -57,3 +56,7 @@ select groupArray(number) over () from numbers(3);
 -- This one tests we properly process the window  function arguments.
 -- Seen errors like 'column `1` not found' from count(1).
 select count(1) over (), max(number + 1) over () from numbers(3);
+
+-- Should work in DISTINCT
+select distinct sum(0) over () from numbers(2);
+select distinct any(number) over () from numbers(2);

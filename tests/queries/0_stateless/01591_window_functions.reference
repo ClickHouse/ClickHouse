@@ -79,12 +79,22 @@ select number, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 9	9
 select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
 
--- should work in ORDER BY though
--- doesn't work now
--- select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
+-- should work in ORDER BY
 
--- at least it works in ORDER BY if you wrap it in a subquery
+select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
 
+-- also works in ORDER BY if you wrap it in a subquery
+
+9	9
+6	8
+7	8
+8	8
+3	5
+4	5
+5	5
+0	2
+1	2
+2	2
 select * from (select count(*) over () c from numbers(3)) order by c;
 
 -- must work in WHERE if you wrap it in a subquery
@@ -168,4 +178,12 @@ select groupArray(number) over () from numbers(3);
 [0,1,2]
 select count(1) over (), max(number + 1) over () from numbers(3);
 
+-- Should work in DISTINCT
+
 1	3
+select distinct sum(0) over () from numbers(2);
+
+0
+select distinct any(number) over () from numbers(2);
+
+0
