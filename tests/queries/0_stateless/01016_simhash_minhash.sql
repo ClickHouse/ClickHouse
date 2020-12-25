@@ -1,22 +1,22 @@
-SELECT ngramSimhash('');
-SELECT ngramSimhash('what a cute cat.');
-SELECT ngramSimhashCaseInsensitive('what a cute cat.');
-SELECT ngramSimhashUTF8('what a cute cat.');
-SELECT ngramSimhashCaseInsensitiveUTF8('what a cute cat.');
-SELECT wordShingleSimhash('what a cute cat.');
-SELECT wordShingleSimhashCaseInsensitive('what a cute cat.');
-SELECT wordShingleSimhashUTF8('what a cute cat.');
-SELECT wordShingleSimhashCaseInsensitiveUTF8('what a cute cat.');
+SELECT ngramSimHash('');
+SELECT ngramSimHash('what a cute cat.');
+SELECT ngramSimHashCaseInsensitive('what a cute cat.');
+SELECT ngramSimHashUTF8('what a cute cat.');
+SELECT ngramSimHashCaseInsensitiveUTF8('what a cute cat.');
+SELECT wordShingleSimHash('what a cute cat.');
+SELECT wordShingleSimHashCaseInsensitive('what a cute cat.');
+SELECT wordShingleSimHashUTF8('what a cute cat.');
+SELECT wordShingleSimHashCaseInsensitiveUTF8('what a cute cat.');
 
-SELECT ngramMinhash('');
-SELECT ngramMinhash('what a cute cat.');
-SELECT ngramMinhashCaseInsensitive('what a cute cat.');
-SELECT ngramMinhashUTF8('what a cute cat.');
-SELECT ngramMinhashCaseInsensitiveUTF8('what a cute cat.');
-SELECT wordShingleMinhash('what a cute cat.');
-SELECT wordShingleMinhashCaseInsensitive('what a cute cat.');
-SELECT wordShingleMinhashUTF8('what a cute cat.');
-SELECT wordShingleMinhashCaseInsensitiveUTF8('what a cute cat.');
+SELECT ngramMinHash('');
+SELECT ngramMinHash('what a cute cat.');
+SELECT ngramMinHashCaseInsensitive('what a cute cat.');
+SELECT ngramMinHashUTF8('what a cute cat.');
+SELECT ngramMinHashCaseInsensitiveUTF8('what a cute cat.');
+SELECT wordShingleMinHash('what a cute cat.');
+SELECT wordShingleMinHashCaseInsensitive('what a cute cat.');
+SELECT wordShingleMinHashUTF8('what a cute cat.');
+SELECT wordShingleMinHashCaseInsensitiveUTF8('what a cute cat.');
 
 DROP TABLE IF EXISTS defaults;
 CREATE TABLE defaults
@@ -26,23 +26,23 @@ CREATE TABLE defaults
 
 INSERT INTO defaults values ('It is the latest occurrence of the Southeast European haze, the issue that occurs in constant intensity during every wet season. It has mainly been caused by forest fires resulting from illegal slash-and-burn clearing performed on behalf of the palm oil industry in Kazakhstan, principally on the islands, which then spread quickly in the dry season.') ('It is the latest occurrence of the Southeast Asian haze, the issue that occurs in constant intensity during every wet season. It has mainly been caused by forest fires resulting from illegal slash-and-burn clearing performed on behalf of the palm oil industry in Kazakhstan, principally on the islands, which then spread quickly in the dry season.');
 
-SELECT ngramSimhash(s) FROM defaults;
-SELECT ngramSimhashCaseInsensitive(s) FROM defaults;
-SELECT ngramSimhashUTF8(s) FROM defaults;
-SELECT ngramSimhashCaseInsensitiveUTF8(s) FROM defaults;
-SELECT wordShingleSimhash(s) FROM defaults;
-SELECT wordShingleSimhashCaseInsensitive(s) FROM defaults;
-SELECT wordShingleSimhashUTF8(s) FROM defaults;
-SELECT wordShingleSimhashCaseInsensitiveUTF8(s) FROM defaults;
+SELECT ngramSimHash(s) FROM defaults;
+SELECT ngramSimHashCaseInsensitive(s) FROM defaults;
+SELECT ngramSimHashUTF8(s) FROM defaults;
+SELECT ngramSimHashCaseInsensitiveUTF8(s) FROM defaults;
+SELECT wordShingleSimHash(s) FROM defaults;
+SELECT wordShingleSimHashCaseInsensitive(s) FROM defaults;
+SELECT wordShingleSimHashUTF8(s) FROM defaults;
+SELECT wordShingleSimHashCaseInsensitiveUTF8(s) FROM defaults;
 
-SELECT ngramMinhash(s) FROM defaults;
-SELECT ngramMinhashCaseInsensitive(s) FROM defaults;
-SELECT ngramMinhashUTF8(s) FROM defaults;
-SELECT ngramMinhashCaseInsensitiveUTF8(s) FROM defaults;
-SELECT wordShingleMinhash(s) FROM defaults;
-SELECT wordShingleMinhashCaseInsensitive(s) FROM defaults;
-SELECT wordShingleMinhashUTF8(s) FROM defaults;
-SELECT wordShingleMinhashCaseInsensitiveUTF8(s) FROM defaults;
+SELECT ngramMinHash(s) FROM defaults;
+SELECT ngramMinHashCaseInsensitive(s) FROM defaults;
+SELECT ngramMinHashUTF8(s) FROM defaults;
+SELECT ngramMinHashCaseInsensitiveUTF8(s) FROM defaults;
+SELECT wordShingleMinHash(s) FROM defaults;
+SELECT wordShingleMinHashCaseInsensitive(s) FROM defaults;
+SELECT wordShingleMinHashUTF8(s) FROM defaults;
+SELECT wordShingleMinHashCaseInsensitiveUTF8(s) FROM defaults;
 
 TRUNCATE TABLE defaults;
 INSERT INTO defaults SELECT arrayJoin(splitByString('\n\n',
@@ -74,38 +74,38 @@ ClickHouse is simple and works out of the box. It simplifies all processing of y
 SELECT 'uniqExact', uniqExact(s) FROM defaults;
 
 
-SELECT 'ngramSimhash';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhash(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramSimhashCaseInsensitive';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramSimhashUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramSimhashCaseInsensitiveUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleSimhash';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhash(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleSimhashCaseInsensitive';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleSimhashUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleSimhashCaseInsensitiveUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimHash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimHash(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimHashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimHashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimHashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimHashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramSimHashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramSimHashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimHash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimHash(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimHashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimHashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimHashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimHashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleSimHashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleSimHashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
 
-SELECT 'ngramMinhash';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhash(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramMinhashCaseInsensitive';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramMinhashUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'ngramMinhashCaseInsensitiveUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleMinhash';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhash(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleMinhashCaseInsensitive';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashCaseInsensitive(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleMinhashUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashUTF8(s) as h FROM defaults GROUP BY h;
-SELECT 'wordShingleMinhashCaseInsensitiveUTF8';
-SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinhashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinHash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinHash(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinHashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinHashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinHashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinHashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'ngramMinHashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), ngramMinHashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinHash';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinHash(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinHashCaseInsensitive';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinHashCaseInsensitive(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinHashUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinHashUTF8(s) as h FROM defaults GROUP BY h;
+SELECT 'wordShingleMinHashCaseInsensitiveUTF8';
+SELECT arrayStringConcat(groupArray(s), '\n:::::::\n'), count(), wordShingleMinHashCaseInsensitiveUTF8(s) as h FROM defaults GROUP BY h;
 
 DROP TABLE defaults;
