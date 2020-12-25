@@ -81,6 +81,14 @@ public:
 
         for (const auto & value_type : values_types)
         {
+            if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
+            {
+                if (!value_type->isSummable())
+                    throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Values for {} cannot be summed, passed type {}",
+                        getName(), value_type->getName()};
+            }
+
             DataTypePtr result_type;
 
             if constexpr (overflow)
