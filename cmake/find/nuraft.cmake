@@ -11,9 +11,13 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/CMakeLists.txt")
     return()
 endif ()
 
-set (USE_NURAFT 1)
-set (NURAFT_LIBRARY nuraft)
+if (NOT OS_FREEBSD)
+    set (USE_NURAFT 1)
+    set (NURAFT_LIBRARY nuraft)
 
-set (NURAFT_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/include")
+    set (NURAFT_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/include")
 
-message (STATUS "Using NuRaft=${USE_NURAFT}: ${NURAFT_INCLUDE_DIR} : ${NURAFT_LIBRARY}")
+    message (STATUS "Using NuRaft=${USE_NURAFT}: ${NURAFT_INCLUDE_DIR} : ${NURAFT_LIBRARY}")
+else()
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal NuRaft library on FreeBSD is not supported")
+endif()
