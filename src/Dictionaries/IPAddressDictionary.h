@@ -228,9 +228,6 @@ private:
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
-    template <typename T>
-    void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
-
     Columns getKeyColumns() const;
     RowIdxConstIter ipNotFound() const;
     RowIdxConstIter tryLookupIPv4(UInt32 addr, uint8_t * buf) const;

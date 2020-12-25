@@ -229,7 +229,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, co
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to remove permanenty detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
 }
@@ -264,7 +264,7 @@ void DatabaseOnDisk::detachTablePermanently(const String & table_name)
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to set permanenty detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
 }
