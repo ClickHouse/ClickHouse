@@ -27,7 +27,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list_,
         skip_indices,
         default_codec_,
-        {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
 {
@@ -39,7 +38,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
-    const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
     bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
@@ -53,16 +51,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         aio_threshold,
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
-
-    if (aio_threshold > 0 && !merged_column_to_size.empty())
-    {
-        for (const auto & column : columns_list)
-        {
-            auto size_it = merged_column_to_size.find(column.name);
-            if (size_it != merged_column_to_size.end())
-                writer_settings.estimated_size += size_it->second;
-        }
-    }
 
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
