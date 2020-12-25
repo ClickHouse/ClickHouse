@@ -64,9 +64,7 @@ public:
     std::string getStackTraceString() const;
 
 private:
-#ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
-#endif
 
     const char * className() const throw() override { return "DB::Exception"; }
 };

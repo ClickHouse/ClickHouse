@@ -334,6 +334,7 @@ dbms_target_link_libraries (
         string_utils
     PUBLIC
         ${MYSQLXX_LIBRARY}
+        boost::context
         boost::system
         clickhouse_common_io
 )
@@ -448,8 +449,6 @@ if (USE_LIBPQXX)
     dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
 endif()
-
-dbms_target_link_libraries(PRIVATE _boost_context)
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

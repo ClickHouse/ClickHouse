@@ -63,41 +63,18 @@ Exception::Exception(const std::string & msg, const Exception & nested, int code
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
-    : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
+    : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION), trace(exc)
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
-#endif
 }
 
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION), trace(exc)
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
-#endif
 }
-
-
-std::string getExceptionStackTraceString(const std::exception & e)
-{
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
-#else
-    if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
-        return db_exception->getStackTraceString();
-    return {};
-#endif
-}
-
 
 std::string Exception::getStackTraceString() const
 {
-#ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    return StackTrace::toString(get_stack_trace_frames(), 0, get_stack_trace_size());
-#else
     return trace.toString();
-#endif
 }
 
 
@@ -275,7 +252,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + StackTrace(e).toString() : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
@@ -292,7 +269,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + StackTrace(e).toString() : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
