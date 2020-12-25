@@ -29,12 +29,12 @@ struct ExtractStringImpl
     static ALWAYS_INLINE inline const UInt8 * readOneASCIIWord(const UInt8 *& pos, const UInt8 * end)
     {
         // jump separators
-        while (pos < end && !isAlphaNumericASCII(*pos))
+        while (pos < end && isUTF8Sep(*pos))
             ++pos;
 
         // word start from here
         const UInt8 * word_start = pos;
-        while (pos < end && isAlphaNumericASCII(*pos))
+        while (pos < end && !isUTF8Sep(*pos))
             ++pos;
 
         return word_start;

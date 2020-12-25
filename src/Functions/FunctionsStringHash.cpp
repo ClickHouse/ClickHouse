@@ -150,6 +150,8 @@ struct Hash
 template <bool UTF8, bool Ngram, bool CaseInsensitive>
 struct SimHashImpl
 {
+    static constexpr size_t min_word_size = 4;
+
     /// Update fingerprint according to hash_value bits.
     static ALWAYS_INLINE inline void updateFingerVector(Int64 * finger_vec, UInt64 hash_value)
     {
@@ -247,7 +249,7 @@ struct SimHashImpl
         // get first word shingle
         while (start < end && words.size() < shingle_size)
         {
-            const UInt8 * word_start = nullptr;
+            const UInt8 * word_start;
 
             if constexpr (UTF8)
                 word_start = ExtractStringImpl::readOneUTF8Word(start, end);
@@ -256,7 +258,7 @@ struct SimHashImpl
 
             size_t length = start - word_start;
 
-            if (length)
+            if (length >= min_word_size)
                 words.emplace_back(BytesRef{word_start, length});
         }
 
@@ -275,7 +277,7 @@ struct SimHashImpl
 
             size_t length = start - word_start;
 
-            if (length == 0)
+            if (length < min_word_size)
                 continue;
 
             // we need to store the new word hash value to the oldest location.
@@ -333,6 +335,8 @@ struct SimHashImpl
 template <bool UTF8, bool Ngram, bool CaseInsensitive>
 struct MinHashImpl
 {
+    static constexpr size_t min_word_size = 3;
+
     template<typename Comp>
     struct Heap
     {
@@ -471,7 +475,7 @@ struct MinHashImpl
         // get first word shingle
         while (start < end && words.size() < shingle_size)
         {
-            const UInt8 * word_start = nullptr;
+            const UInt8 * word_start;
 
             if constexpr (UTF8)
                 word_start = ExtractStringImpl::readOneUTF8Word(start, end);
@@ -480,7 +484,7 @@ struct MinHashImpl
 
             size_t length = start - word_start;
 
-            if (length)
+            if (length >= min_word_size)
                 words.emplace_back(BytesRef{word_start, length});
         }
 
@@ -505,7 +509,7 @@ struct MinHashImpl
 
             size_t length = start - word_start;
 
-            if (length == 0)
+            if (length < min_word_size)
                 continue;
 
             words[offset] = BytesRef{word_start, length};
