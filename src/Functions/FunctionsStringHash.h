@@ -100,10 +100,10 @@ public:
         }
 
         if (shingle_size == 0)
-            throw Exception("Second argument (shingle size) of function {} cannot be zero", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (shingle size) of function {} cannot be zero", getName());
 
         if (num_hashes == 0)
-            throw Exception("Third argument (num hashes) of function {} cannot be zero", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (num hashes) of function {} cannot be zero", getName());
 
         auto type = std::make_shared<DataTypeUInt64>();
         if constexpr (is_simhash)

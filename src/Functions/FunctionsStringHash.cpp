@@ -22,6 +22,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+struct BytesRef
+{
+    const UInt8 * data;
+    size_t size;
+};
+
 struct Hash
 {
     static UInt64 crc32u64(UInt64 crc [[maybe_unused]], UInt64 val [[maybe_unused]])
@@ -123,7 +129,7 @@ struct Hash
     }
 
     template <bool CaseInsensitive>
-    static ALWAYS_INLINE inline UInt64 shingleHash(const std::vector<StringRef> & shingle, size_t offset = 0)
+    static ALWAYS_INLINE inline UInt64 shingleHash(const std::vector<BytesRef> & shingle, size_t offset = 0)
     {
         UInt64 crc = -1ULL;
 
@@ -233,7 +239,7 @@ struct SimHashImpl
         // A 64 bit vector initialized to zero.
         Int64 finger_vec[64] = {};
         // An array to store N words.
-        std::vector<StringRef> words;
+        std::vector<BytesRef> words;
         words.reserve(shingle_size);
 
         // get first word shingle
@@ -275,7 +281,7 @@ struct SimHashImpl
             // so we need to store new word hash into location of a0, then ,this array become
             // |a5|a1|a2|a3|a4|, next time, a1 become the oldest location, we need to store new
             // word hash value into location of a1, then array become |a5|a6|a2|a3|a4|
-            words[offset] = StringRef(word_start, length);
+            words[offset] = BytesRef{word_start, length};
             ++offset;
             if (offset >= shingle_size)
                 offset = 0;
@@ -328,7 +334,7 @@ struct MinHashImpl
     template<typename Comp>
     struct Heap
     {
-        void update(UInt64 hash, StringRef ref, size_t limit)
+        void update(UInt64 hash, BytesRef ref, size_t limit)
         {
             if (values.count(hash))
                 return;
@@ -369,7 +375,7 @@ struct MinHashImpl
             }
         }
 
-        std::map<UInt64, StringRef, Comp> values;
+        std::map<UInt64, BytesRef, Comp> values;
     };
 
     using MaxHeap = Heap<std::less<size_t>>;
@@ -394,8 +400,8 @@ struct MinHashImpl
 
             // insert the new hash value into array used to store K minimum value
             // and K maximum value
-            min_heap.update(hash_value, StringRef{pos, shingle_size}, heap_size);
-            max_heap.update(hash_value, StringRef{pos, shingle_size}, heap_size);
+            min_heap.update(hash_value, BytesRef{pos, shingle_size}, heap_size);
+            max_heap.update(hash_value, BytesRef{pos, shingle_size}, heap_size);
         }
     }
 
@@ -429,8 +435,8 @@ struct MinHashImpl
             size_t length = word_end - word_start;
             UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(-1ULL, word_start, length);
 
-            min_heap.update(hash_value, StringRef{word_start, length}, heap_size);
-            max_heap.update(hash_value, StringRef{word_start, length}, heap_size);
+            min_heap.update(hash_value, BytesRef{word_start, length}, heap_size);
+            max_heap.update(hash_value, BytesRef{word_start, length}, heap_size);
         }
     }
 
@@ -449,7 +455,7 @@ struct MinHashImpl
         const UInt8 * end = data + size;
 
         // An array to store N words.
-        std::vector<StringRef> words;
+        std::vector<BytesRef> words;
         words.reserve(shingle_size);
 
         // get first word shingle
@@ -470,9 +476,9 @@ struct MinHashImpl
 
         UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(words);
         {
-            const char * shingle_start = words.front().data;
-            const char * shingle_end = words.back().data + words.back().size;
-            StringRef ref(shingle_start, shingle_end - shingle_start);
+            const UInt8 * shingle_start = words.front().data;
+            const UInt8 * shingle_end = words.back().data + words.back().size;
+            BytesRef ref{shingle_start, static_cast<size_t>(shingle_end - shingle_start)};
             min_heap.update(hash_value, ref, heap_size);
             max_heap.update(hash_value, ref, heap_size);
         }
@@ -492,17 +498,17 @@ struct MinHashImpl
             if (length == 0)
                 continue;
 
-            words[offset] = StringRef(word_start, length);
-            const char * shingle_end = words[offset].data + length;
+            words[offset] = BytesRef{word_start, length};
+            const UInt8 * shingle_end = words[offset].data + length;
 
             ++offset;
             if (offset >= shingle_size)
                 offset = 0;
 
-            const char * shingle_start = words[offset].data;
+            const UInt8 * shingle_start = words[offset].data;
 
             hash_value = Hash::shingleHash<CaseInsensitive>(words, offset);
-            StringRef ref(shingle_start, shingle_end - shingle_start);
+            BytesRef ref{shingle_start, static_cast<size_t>(shingle_end - shingle_start)};
             min_heap.update(hash_value, ref, heap_size);
             max_heap.update(hash_value, ref, heap_size);
         }
