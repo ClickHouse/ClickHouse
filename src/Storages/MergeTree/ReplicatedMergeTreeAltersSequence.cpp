@@ -45,7 +45,6 @@ void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, s
         queue_state.erase(alter_version);
     else
         queue_state[alter_version].metadata_finished = true;
-
 }
 
 void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
