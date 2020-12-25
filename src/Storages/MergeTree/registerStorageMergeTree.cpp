@@ -719,9 +719,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    for (size_t i = 0; i < data_types.size(); ++i)
-        if (strncmp(data_types[i]->getFamilyName(), "Float", 5) == 0)
-            throw Exception("Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+    if (!args.attach)
+    {
+        for (size_t i = 0; i < data_types.size(); ++i)
+            if (isFloat(data_types[i]))
+                throw Exception(
+                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+    }
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
