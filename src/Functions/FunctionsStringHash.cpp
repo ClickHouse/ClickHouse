@@ -138,6 +138,8 @@ struct Hash
 
         for (size_t i = 0; i < offset; ++i)
             crc = shingleHash<CaseInsensitive>(crc, shingle[i].data, shingle[i].size);
+
+        return crc;
     }
 };
 
@@ -365,7 +367,7 @@ struct MinHashImpl
                 auto & col_string = static_cast<ColumnString &>(strings.getColumn(i));
                 if (it != values.end())
                 {
-                    col_string.insertData(it->second.data, it->second.size);
+                    col_string.insertData(static_cast<const char *>(it->second.data), it->second.size);
                     ++it;
                 }
                 else
