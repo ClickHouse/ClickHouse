@@ -81,13 +81,16 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     size_t sum_rows = 0;
     size_t sum_bytes_uncompressed = 0;
+    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::UNKNOWN;
     for (const auto & part : parts_)
     {
         sum_rows += part->rows_count;
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
+        future_part_type = std::min(future_part_type, part->getType());
     }
 
-    auto future_part_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
+    auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
+    future_part_type = std::min(future_part_type, chosen_type);
     assign(std::move(parts_), future_part_type);
 }
 
