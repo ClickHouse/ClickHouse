@@ -423,7 +423,11 @@ void InterpreterSystemQuery::restoreReplica()
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
-    const String new_table_name = old_table_name + "_tmp_" + std::to_string(thread_local_rng());
+
+    /// The server may fail at any step of processing the query, so there can't be any random in a new table name,
+    /// so you can't use a random number generator although it's faster.
+    const std::hash<String> table_name_hash;
+    const String new_table_name = old_table_name + "_tmp_" + std::to_string(table_name_hash(old_table_name));
 
     LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk root path at " + zk_root_path);
 
@@ -434,9 +438,10 @@ void InterpreterSystemQuery::restoreReplica()
 
         create_query.database = db_name;
         create_query.table = new_table_name;
-        //create_query.uuid = uuid; I think the UUID is not needed as it leads to "directory already exists" errors.
         create_query.as_database = db_name;
         create_query.as_table = old_table_name;
+        create_query.if_not_exists = true; /// if the server failed after, the old temporary table won't be lost in mem.
+        // No need to initialize the UUID (it will be initialized in the interpreter)
 
         InterpreterCreateQuery interpreter_create(create_query_ptr, context);
 
@@ -482,11 +487,12 @@ void InterpreterSystemQuery::restoreReplica()
         ASTPtr get_parts_from_ptr = std::make_shared<ASTTablesInSelectQuery>();
         auto& get_parts_from = get_parts_from_ptr->as<ASTTablesInSelectQuery&>();
 
-        ASTPtr get_parts_from_table_ptr = std::make_shared<ASTTableExpression>();
-        auto& get_parts_from_table = get_parts_from_table_ptr->as<ASTTableExpression&>();
+        ASTPtr get_parts_from_table_ptr = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto& get_parts_from_table = get_parts_from_table_ptr->as<ASTTablesInSelectQueryElement&>();
 
-        get_parts_from_table.database_and_table_name = std::make_shared<ASTIdentifier>(
-            std::vector<String>{"system", "parts"});
+        get_parts_from_table.table_expression = std::make_shared<ASTTableExpression>();
+        get_parts_from_table.table_expression->children.emplace_back(
+            std::make_shared<ASTIdentifier>(std::vector<String>{"system", "parts"}));
 
         get_parts_from.children.emplace_back(std::move(get_parts_from_table_ptr));
 
