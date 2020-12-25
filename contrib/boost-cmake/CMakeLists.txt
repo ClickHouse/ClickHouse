@@ -24,6 +24,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (_boost_headers_only INTERFACE)
         add_library (boost::headers_only ALIAS _boost_headers_only)
         target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${Boost_INCLUDE_DIR})
+        target_compile_definitions (_boost_headers_only PUBLIC BOOST_ASIO_STANDALONE)
 
         add_library (_boost_filesystem INTERFACE)
         add_library (_boost_iostreams INTERFACE)
