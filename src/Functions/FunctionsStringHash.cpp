@@ -362,7 +362,7 @@ struct MinHashImpl
         void fill(ColumnTuple & strings)
         {
             auto it = values.begin();
-            for (size_t i = 0; i < strings.size(); ++i)
+            for (size_t i = 0; i < strings.tupleSize(); ++i)
             {
                 auto & col_string = static_cast<ColumnString &>(strings.getColumn(i));
                 if (it != values.end())
