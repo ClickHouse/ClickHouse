@@ -157,7 +157,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void flushBack();
+    void backgroundFlush();
     void reschedule();
 
     BackgroundSchedulePool & bg_pool;
