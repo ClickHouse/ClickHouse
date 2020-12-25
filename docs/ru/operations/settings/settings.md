@@ -444,7 +444,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 См. также:
 
 -   [Тип данных DateTime](../../sql-reference/data-types/datetime.md)
--   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 
