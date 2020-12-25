@@ -19,5 +19,6 @@ if (NOT OS_FREEBSD)
 
     message (STATUS "Using NuRaft=${USE_NURAFT}: ${NURAFT_INCLUDE_DIR} : ${NURAFT_LIBRARY}")
 else()
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal NuRaft library on FreeBSD is not supported")
+    set (USE_NURAFT 0)
+    message (STATUS "Using internal NuRaft library on FreeBSD is not supported")
 endif()
