@@ -1114,13 +1114,13 @@ finalizeAggregation(state)
 
 **Параметры**
 
--   `state` — Состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+-   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
 **Возвращаемые значения**
 
 -   Значения, которые были агрегированы.
 
-Тип: тип, значения которого были агрегированы.
+Тип: соответствует типу агрегируемых значений.
 
 **Примеры**
 
@@ -1152,7 +1152,7 @@ SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
 └──────────────────────────────────┘
 ```
 
-Обратите внимания, что значения NULL игнорируются. 
+Обратите внимание, что значения `NULL` игнорируются. 
 
 Запрос:
 

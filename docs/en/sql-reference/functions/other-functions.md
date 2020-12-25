@@ -1220,7 +1220,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-Note that NULL values are ignored. 
+Note that `NULL` values are ignored. 
 
 Query:
 
