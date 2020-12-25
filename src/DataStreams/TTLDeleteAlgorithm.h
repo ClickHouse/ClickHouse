@@ -1,0 +1,21 @@
+#pragma once
+
+#include <DataStreams/ITTLAlgorithm.h>
+
+namespace DB
+{
+
+class TTLDeleteAlgorithm final : public ITTLAlgorithm
+{
+public:
+    TTLDeleteAlgorithm(const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
+
+    void execute(Block & block) override;
+    void finalize(const MutableDataPartPtr & data_part) const override;
+    size_t getNumberOfRemovedRows() const { return rows_removed; }
+
+private:
+    size_t rows_removed = 0;
+};
+
+}

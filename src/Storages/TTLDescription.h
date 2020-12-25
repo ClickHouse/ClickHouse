@@ -107,6 +107,8 @@ struct TTLTableDescription
 
     TTLDescriptions recompression_ttl;
 
+    TTLDescriptions group_by_ttl;
+
     TTLTableDescription() = default;
     TTLTableDescription(const TTLTableDescription & other);
     TTLTableDescription & operator=(const TTLTableDescription & other);

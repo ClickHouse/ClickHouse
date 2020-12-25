@@ -49,9 +49,10 @@ struct MergeTreeDataPartTTLInfos
 
     TTLInfoMap recompression_ttl;
 
+    TTLInfoMap group_by_ttl;
+
     /// Return the smallest max recompression TTL value
     time_t getMinimalMaxRecompressionTTL() const;
-
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
@@ -68,7 +69,7 @@ struct MergeTreeDataPartTTLInfos
 
     bool empty() const
     {
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty();
+        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && group_by_ttl.empty();
     }
 };
 

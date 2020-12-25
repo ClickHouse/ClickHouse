@@ -259,6 +259,7 @@ TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  , rows_ttl(other.rows_ttl)
  , move_ttl(other.move_ttl)
  , recompression_ttl(other.recompression_ttl)
+ , group_by_ttl(other.group_by_ttl)
 {
 }
 
@@ -275,6 +276,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
     rows_ttl = other.rows_ttl;
     move_ttl = other.move_ttl;
     recompression_ttl = other.recompression_ttl;
+    group_by_ttl = other.group_by_ttl;
 
     return *this;
 }
@@ -295,7 +297,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
         auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
-        if (ttl.mode == TTLMode::DELETE || ttl.mode == TTLMode::GROUP_BY)
+        if (ttl.mode == TTLMode::DELETE)
         {
             if (seen_delete_ttl)
                 throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
@@ -305,6 +307,10 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         else if (ttl.mode == TTLMode::RECOMPRESS)
         {
             result.recompression_ttl.emplace_back(std::move(ttl));
+        }
+        else if (ttl.mode == TTLMode::GROUP_BY)
+        {
+            result.group_by_ttl.emplace_back(std::move(ttl));
         }
         else
         {

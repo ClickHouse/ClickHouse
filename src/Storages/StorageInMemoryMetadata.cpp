@@ -125,7 +125,7 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL();
+    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL();
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
@@ -166,6 +166,16 @@ TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
 bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
 {
     return !table_ttl.recompression_ttl.empty();
+}
+
+TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
+{
+    return table_ttl.group_by_ttl;
+}
+
+bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
+{
+    return !table_ttl.group_by_ttl.empty();
 }
 
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
