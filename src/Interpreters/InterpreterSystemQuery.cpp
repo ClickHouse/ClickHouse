@@ -423,7 +423,7 @@ void InterpreterSystemQuery::restoreReplica()
     const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
-    const String new_table_name = old_table_name + "_" + std::to_string(thread_local_rng());
+    const String new_table_name = old_table_name + "_tmp_" + std::to_string(thread_local_rng());
 
     LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk root path at " + zk_root_path);
 
@@ -433,8 +433,9 @@ void InterpreterSystemQuery::restoreReplica()
         ASTCreateQuery& create_query = create_query_ptr->as<ASTCreateQuery&>();
 
         create_query.database = db_name;
-        create_query.uuid = uuid;
         create_query.table = new_table_name;
+        create_query.uuid = uuid;
+        create_query.as_database = db_name;
         create_query.as_table = old_table_name;
 
         InterpreterCreateQuery interpreter_create(create_query_ptr, context);
