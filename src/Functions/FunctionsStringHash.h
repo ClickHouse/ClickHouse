@@ -158,7 +158,7 @@ public:
             auto max_tuple = ColumnTuple::create(std::move(max_columns));
 
             const ColumnString * col_str_vector = checkAndGetColumn<ColumnString>(&*column);
-            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, nullptr, nullptr, &min_tuple, &max_tuple);
+            Impl::apply(col_str_vector->getChars(), col_str_vector->getOffsets(), shingle_size, num_hashes, nullptr, nullptr, min_tuple.get(), max_tuple.get());
 
             MutableColumns tuple_columns;
             tuple_columns.emplace_back(std::move(min_tuple));
