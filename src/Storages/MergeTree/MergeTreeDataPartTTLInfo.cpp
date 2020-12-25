@@ -17,13 +17,17 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
         updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
+    for (const auto & [name, ttl_info] : other_infos.group_by_ttl)
+    {
+        group_by_ttl[name].update(ttl_info);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+    }
+
     for (const auto & [name, ttl_info] : other_infos.recompression_ttl)
         recompression_ttl[name].update(ttl_info);
 
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
-    {
         moves_ttl[expression].update(ttl_info);
-    }
 
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
@@ -59,29 +63,33 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
+
+    auto fill_ttl_info_map = [](const JSON & json_part, TTLInfoMap & ttl_info_map)
+    {
+        for (auto elem : json_part) // NOLINT
+        {
+            MergeTreeDataPartTTLInfo ttl_info;
+            ttl_info.min = elem["min"].getUInt();
+            ttl_info.max = elem["max"].getUInt();
+            String expression = elem["expression"].getString();
+            ttl_info_map.emplace(expression, ttl_info);
+        }
+    };
+
     if (json.has("moves"))
     {
         const JSON & moves = json["moves"];
-        for (auto move : moves) // NOLINT
-        {
-            MergeTreeDataPartTTLInfo ttl_info;
-            ttl_info.min = move["min"].getUInt();
-            ttl_info.max = move["max"].getUInt();
-            String expression = move["expression"].getString();
-            moves_ttl.emplace(expression, ttl_info);
-        }
+        fill_ttl_info_map(moves, moves_ttl);
     }
     if (json.has("recompression"))
     {
         const JSON & recompressions = json["recompression"];
-        for (auto recompression : recompressions) // NOLINT
-        {
-            MergeTreeDataPartTTLInfo ttl_info;
-            ttl_info.min = recompression["min"].getUInt();
-            ttl_info.max = recompression["max"].getUInt();
-            String expression = recompression["expression"].getString();
-            recompression_ttl.emplace(expression, ttl_info);
-        }
+        fill_ttl_info_map(recompressions, recompression_ttl);
+    }
+    if (json.has("group_by"))
+    {
+        const JSON & group_by = json["group_by"];
+        fill_ttl_info_map(group_by, group_by_ttl);
     }
 }
 
@@ -118,6 +126,18 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.max, out);
         writeString("}", out);
     }
+
+    auto write_info_for_expression = [&out](const auto & name, const auto & info)
+    {
+        writeString(R"({"expression":)", out);
+        writeString(doubleQuoteString(name), out);
+        writeString(R"(,"min":)", out);
+        writeIntText(info.min, out);
+        writeString(R"(,"max":)", out);
+        writeIntText(info.max, out);
+        writeString("}", out);
+    };
+
     if (!moves_ttl.empty())
     {
         if (!columns_ttl.empty() || table_ttl.min)
@@ -128,13 +148,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             if (it != moves_ttl.begin())
                 writeString(",", out);
 
-            writeString(R"({"expression":)", out);
-            writeString(doubleQuoteString(it->first), out);
-            writeString(R"(,"min":)", out);
-            writeIntText(it->second.min, out);
-            writeString(R"(,"max":)", out);
-            writeIntText(it->second.max, out);
-            writeString("}", out);
+            write_info_for_expression(it->first, it->second);
         }
         writeString("]", out);
     }
@@ -149,13 +163,22 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             if (it != recompression_ttl.begin())
                 writeString(",", out);
 
-            writeString(R"({"expression":)", out);
-            writeString(doubleQuoteString(it->first), out);
-            writeString(R"(,"min":)", out);
-            writeIntText(it->second.min, out);
-            writeString(R"(,"max":)", out);
-            writeIntText(it->second.max, out);
-            writeString("}", out);
+            write_info_for_expression(it->first, it->second);
+        }
+        writeString("]", out);
+    }
+    if (!group_by_ttl.empty())
+    {
+        if (!moves_ttl.empty() || !columns_ttl.empty() || !recompression_ttl.empty() || table_ttl.min)
+            writeString(",", out);
+
+        writeString(R"("group_by":[)", out);
+        for (auto it = group_by_ttl.begin(); it != group_by_ttl.end(); ++it)
+        {
+            if (it != group_by_ttl.begin())
+                writeString(",", out);
+
+            write_info_for_expression(it->first, it->second);
         }
         writeString("]", out);
     }
