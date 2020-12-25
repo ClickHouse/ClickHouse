@@ -1,3 +1,5 @@
+set insert_distributed_sync=1;
+
 drop table if exists null_01293;
 drop table if exists dist_01293;
 

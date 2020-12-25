@@ -18,22 +18,17 @@ SKIP_LIST = [
     "00463_long_sessions_in_http_interface",
     "00505_secure",
     "00505_shard_secure",
-    "00506_union_distributed",  # flaky
     "00646_url_engine",
-    "00821_distributed_storage_with_join_on.sql",  # flaky
     "00834_cancel_http_readonly_queries_on_client_close",
     "00933_test_fix_extra_seek_on_compressed_cache",
     "00965_logs_level_bugfix",
     "00965_send_logs_level_concurrent_queries",
+    # "00967_insert_into_distributed_different_types.sql",  # FLAKY
     "00990_hasToken",
     "00990_metric_log_table_not_empty",
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01018_Distributed__shard_num",
     "01018_ip_dictionary",
-    "01023_materialized_view_query_context",  # flaky
-    "01035_lc_empty_part_bug",  # flaky
-    "01037_polygon_dicts_simple_functions.sh",  # flaky
-    "01046_materialized_view_with_join_over_distributed",  # flaky
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
@@ -43,25 +38,23 @@ SKIP_LIST = [
     "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
     "01098_temporary_and_external_tables",
-    "01099_parallel_distributed_insert_select",  # flaky
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
-    "01193_metadata_loading.sh",  # flaky
-    "01274_alter_rename_column_distributed",  # flaky
     "01280_ssd_complex_key_dictionary",
     "01293_client_interactive_vertical_multiline",  # expect-test
     "01293_client_interactive_vertical_singleline",  # expect-test
+    "01293_system_distribution_queue",  # FLAKY
     "01293_show_clusters",
     "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01294_system_distributed_on_cluster",
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
+    "01035_lc_empty_part_bug",  # FLAKY
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
-    "01375_storage_file_tsv_csv_with_names_write_prefix",  # flaky
     "01376_GROUP_BY_injective_elimination_dictGet",
     "01393_benchmark_secure_port",
     "01418_custom_settings",
@@ -72,6 +65,7 @@ SKIP_LIST = [
     "01507_clickhouse_server_start_with_embedded_config",
     "01514_distributed_cancel_query_on_error",
     "01520_client_print_query_id",  # expect-test
+    "01526_client_start_and_exit",  # expect-test
     "01527_dist_sharding_key_dictGet_reload",
     "01545_url_file_format_settings",
     "01553_datetime64_comparison",
@@ -84,6 +78,8 @@ SKIP_LIST = [
     "01600_benchmark_query",
     "01601_custom_tld",
     "01601_proxy_protocol",
+    "01606_git_import",
+    "01610_client_spawn_editor",
 ]
 
 
@@ -136,6 +132,7 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map={}):
 
 def random_str(length=10):
     alphabet = string.ascii_lowercase + string.digits
+    random.seed(os.urandom(8))
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 

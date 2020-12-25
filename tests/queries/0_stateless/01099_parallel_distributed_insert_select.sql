@@ -1,3 +1,5 @@
+set insert_distributed_sync = 1;
+
 DROP TABLE IF EXISTS local_01099_a;
 DROP TABLE IF EXISTS local_01099_b;
 DROP TABLE IF EXISTS distributed_01099_a;

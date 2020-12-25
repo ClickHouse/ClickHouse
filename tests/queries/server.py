@@ -76,8 +76,8 @@ class ServerThread(threading.Thread):
                     print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
-                except Exception as e:
-                    print('Failed to connect to server:', e, file=sys.stderr)
+                except Exception:
+                    # Failed to connect to server - try again
                     continue
                 else:
                     break
@@ -95,6 +95,10 @@ class ServerThread(threading.Thread):
             break
 
         self._lock.release()
+
+        if not retries:
+            print('Failed to start server', file=sys.stderr)
+            return
 
         while self._proc.returncode is None:
             self._proc.communicate()
