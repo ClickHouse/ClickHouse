@@ -36,7 +36,7 @@ CREATE TABLE test
     `v3` Float32,
 )
 ENGINE = EmbeddedRocksDB
-PRIMARY KEY key
+PRIMARY KEY key;
 ```
 
 ## Описание {#description}
