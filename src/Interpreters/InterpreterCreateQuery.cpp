@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -894,8 +895,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && context.tryResolveStorageID({"", create.table}, Context::ResolveExternal))
             return false;
 
+        String temporary_table_name = create.table;
         auto temporary_table = TemporaryTableHolder(context, properties.columns, properties.constraints, query_ptr);
-        context.getSessionContext().addExternalTable(create.table, std::move(temporary_table));
+        context.getSessionContext().addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
     }
 
