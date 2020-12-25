@@ -112,6 +112,12 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
+# Global libraries
+# See:
+# - default_libs.cmake
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
+
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
@@ -513,8 +519,11 @@ macro (add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # operator::new/delete for executables (MemoryTracker stuff)
-        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        # disabled for TSAN and gcc since libtsan.a provides overrides too
+        if (TARGET clickhouse_new_delete)
+            # operator::new/delete for executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        endif()
     endif()
 endmacro()
 
@@ -525,8 +534,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 
 add_subdirectory (base)
-add_subdirectory (programs)
 add_subdirectory (src)
+add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
