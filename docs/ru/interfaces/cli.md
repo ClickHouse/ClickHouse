@@ -93,7 +93,7 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 ```
 
 -   `name` — идентификатор подстановки. В консольном клиенте его следует использовать как часть имени параметра `--param_<name> = value`.
--   `data type` — [тип данных](../sql-reference/data-types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql-reference/data-types/int-uint.md) тип может быть и другим). В качестве параметра можно передать название столбца, таблицы и базы данных, в этом случае используется `Identifier` как тип данных.
+-   `data type` — [тип данных](../sql-reference/data-types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql-reference/data-types/int-uint.md) тип может быть и другим). В качестве параметра можно передать название столбца, таблицы и базы данных, в этом случае используется тип данных`Identifier` .
 
 #### Пример {#primer}
 
