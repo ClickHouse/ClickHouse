@@ -24,18 +24,24 @@ select number, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 -- last stage of select, after all other functions.
 select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
 
+-- must work in WHERE if you wrap it in a subquery
+select * from (select count(*) over () c from numbers(3)) where c > 0;
+
 -- should work in ORDER BY
 select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
 
 -- also works in ORDER BY if you wrap it in a subquery
 select * from (select count(*) over () c from numbers(3)) order by c;
 
--- must work in WHERE if you wrap it in a subquery
-select * from (select count(*) over () c from numbers(3)) where c > 0;
+-- Example with window function only in ORDER BY. Here we make a rank of all
+-- numbers sorted descending, and then sort by this rank descending, and must get
+-- the ascending order.
+select * from (select * from numbers(5) order by rand()) order by count() over (order by number desc) desc;
 
--- this one doesn't work yet -- looks like the column names clash, and the
--- window count() is overwritten with aggregate count()
--- select number, count(), count() over (partition by intDiv(number, 3)) from numbers(10) group by number order by count() desc;
+-- Aggregate functions as window function arguments. This query is semantically
+-- the same as the above one, only we replace `number` with
+-- `any(number) group by number` and so on.
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number)) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't

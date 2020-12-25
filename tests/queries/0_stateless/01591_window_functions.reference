@@ -79,8 +79,15 @@ select number, quantileExact(number) over (partition by intDiv(number, 3)) q fro
 9	9
 select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
 
+-- must work in WHERE if you wrap it in a subquery
+
+select * from (select count(*) over () c from numbers(3)) where c > 0;
+
 -- should work in ORDER BY
 
+1
+2
+3
 select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
 
 -- also works in ORDER BY if you wrap it in a subquery
@@ -97,24 +104,35 @@ select number, max(number) over (partition by intDiv(number, 3) order by number 
 2	2
 select * from (select count(*) over () c from numbers(3)) order by c;
 
--- must work in WHERE if you wrap it in a subquery
+-- Example with window function only in ORDER BY. Here we make a rank of all
+-- numbers sorted descending, and then sort by this rank descending, and must get
+-- the ascending order.
 
 1
 2
 3
-select * from (select count(*) over () c from numbers(3)) where c > 0;
+select * from (select * from numbers(5) order by rand()) order by count() over (order by number desc) desc;
 
--- this one doesn't work yet -- looks like the column names clash, and the
--- window count() is overwritten with aggregate count()
--- select number, count(), count() over (partition by intDiv(number, 3)) from numbers(10) group by number order by count() desc;
+-- Aggregate functions as window function arguments. This query is semantically
+-- the same as the above one, only we replace `number` with
+-- `any(number) group by number` and so on.
+
+0
+1
+2
+3
+4
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number)) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't
 -- want to change reference all the time
 
 1
+0
 2
 3
+4
 select number, max(number) over (partition by intDiv(number, 3) order by number desc), count(number) over (partition by intDiv(number, 5) order by number) as m from numbers(31) order by number settings max_block_size = 2;
 
 -- two functions over the same window
