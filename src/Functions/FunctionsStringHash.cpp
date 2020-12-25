@@ -367,7 +367,7 @@ struct MinHashImpl
                 auto & col_string = static_cast<ColumnString &>(strings.getColumn(i));
                 if (it != values.end())
                 {
-                    col_string.insertData(static_cast<const char *>(it->second.data), it->second.size);
+                    col_string.insertData(reinterpret_cast<const char *>(it->second.data), it->second.size);
                     ++it;
                 }
                 else
