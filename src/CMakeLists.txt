@@ -308,6 +308,9 @@ if (USE_KRB5)
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+if (USE_NURAFT)
+    dbms_target_link_libraries(PRIVATE ${NURAFT_LIBRARY})
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
