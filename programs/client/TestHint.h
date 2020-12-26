@@ -19,6 +19,7 @@ namespace ErrorCodes
 
 /// Checks expected server and client error codes in testmode.
 /// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
+/// Also you can enable echoing all queries by writing "-- { echo }".
 class TestHint
 {
 public:
@@ -84,12 +85,14 @@ public:
 
     int serverError() const { return server_error; }
     int clientError() const { return client_error; }
+    bool echoQueries() const { return echo; }
 
 private:
     bool enabled = false;
     const String & query;
     int server_error = 0;
     int client_error = 0;
+    bool echo = false;
 
     void parse(const String & hint)
     {
@@ -107,6 +110,8 @@ private:
                 ss >> server_error;
             else if (item == "clientError")
                 ss >> client_error;
+            else if (item == "echo")
+                echo = true;
         }
     }
 

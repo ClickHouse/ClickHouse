@@ -48,8 +48,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
+        storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         aio_threshold,
+        /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
@@ -66,8 +68,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         volume->getDisk()->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
-    writer->initPrimaryIndex();
-    writer->initSkipIndices();
 }
 
 /// If data is pre-sorted.
@@ -102,9 +102,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->finishDataSerialization(checksums, sync);
-    writer->finishPrimaryIndexSerialization(checksums, sync);
-    writer->finishSkipIndicesSerialization(checksums, sync);
+    writer->finish(checksums, sync);
 
     NamesAndTypesList part_columns;
     if (!total_columns_list)
@@ -218,19 +216,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    std::unordered_set<String> skip_indexes_column_names_set;
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-        std::copy(index.column_names.cbegin(), index.column_names.cend(),
-                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
-    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
-
-    Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
-    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
-
-    writer->write(block, permutation, primary_key_block, skip_indexes_block);
-    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
-    writer->calculateAndSerializePrimaryIndex(primary_key_block);
-    writer->next();
+    writer->write(block, permutation);
 
     rows_count += rows;
 }

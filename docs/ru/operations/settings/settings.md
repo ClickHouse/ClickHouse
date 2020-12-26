@@ -2231,9 +2231,87 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Позволяет настраивать представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Настройка управляет форматом выходных данных, `\N` является единственным поддерживаемым представлением для формата входных данных TSV.
+Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
 
 Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос
+
+```sql
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Результат
+
+```text
+788
+\N
+\N
+```
+
+Запрос
+
+```sql
+SET output_format_tsv_null_representation = 'My NULL';
+SELECT * FROM tsv_custom_null FORMAT TSV;
+```
+
+Результат
+
+```text
+788
+My NULL
+My NULL
+```
+
+## output_format_json_array_of_rows {#output-format-json-array-of-rows}
+
+Позволяет выводить все строки в виде массива JSON в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+
+Возможные значения:
+
+-   1 — ClickHouse выводит все строки в виде массива и при этом каждую строку в формате `JSONEachRow`.
+-   0 — ClickHouse выводит каждую строку отдельно в формате `JSONEachRow`.
+
+Значение по умолчанию: `0`.
+
+**Пример запроса с включенной настройкой**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}                                                                                                                                                                                  
+]
+```
+
+**Пример запроса с отключенной настройкой**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
 
 ## allow_nullable_key {#allow-nullable-key}
 

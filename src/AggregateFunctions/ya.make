@@ -41,6 +41,7 @@ SRCS(
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
     AggregateFunctionSimpleLinearRegression.cpp
+    AggregateFunctionSimpleState.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp

@@ -10,6 +10,10 @@
     #include <linux/capability.h>
 #endif
 
+#if defined(OS_DARWIN)
+    #include <mach-o/dyld.h>
+#endif
+
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
@@ -147,9 +151,24 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     try
     {
         /// We need to copy binary to the binary directory.
-        /// The binary is currently run. We need to obtain its path from procfs.
+        /// The binary is currently run. We need to obtain its path from procfs (on Linux).
 
+#if defined(OS_DARWIN)
+        uint32_t path_length = 0;
+        _NSGetExecutablePath(nullptr, &path_length);
+        if (path_length <= 1)
+            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+
+        std::string path(path_length, std::string::value_type());
+        auto res = _NSGetExecutablePath(&path[0], &path_length);
+        if (res != 0)
+            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+
+        fs::path binary_self_path(path);
+#else
         fs::path binary_self_path = "/proc/self/exe";
+#endif
+
         if (!fs::exists(binary_self_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary from {}, file doesn't exist",
                             binary_self_path.string());

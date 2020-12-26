@@ -21,6 +21,8 @@
 #include <Common/assert_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -164,20 +166,47 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
 
     if (indices_define && !indices_define->children.empty())
     {
+        NameSet columns_name_set;
+        const Names & columns_name = columns.getNames();
+        columns_name_set.insert(columns_name.begin(), columns_name.end());
+
+        const auto & remove_prefix_key = [&](const ASTPtr & node) -> ASTPtr
+        {
+            auto res = std::make_shared<ASTExpressionList>();
+            for (const auto & index_expression : node->children)
+            {
+                res->children.emplace_back(index_expression);
+
+                if (const auto & function = index_expression->as<ASTFunction>())
+                {
+                    /// column_name(int64 literal)
+                    if (columns_name_set.count(function->name) && function->arguments->children.size() == 1)
+                    {
+                        const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
+
+                        if (prefix_limit && isInt64FieldType(prefix_limit->value.getType()))
+                            res->children.back() = std::make_shared<ASTIdentifier>(function->name);
+                    }
+                }
+            }
+            return res;
+        };
+
         for (const auto & declare_index_ast : indices_define->children)
         {
             const auto & declare_index = declare_index_ast->as<MySQLParser::ASTDeclareIndex>();
+            const auto & index_columns = remove_prefix_key(declare_index->index_columns);
 
             /// flatten
             if (startsWith(declare_index->index_type, "KEY_"))
                 keys->arguments->children.insert(keys->arguments->children.end(),
-                    declare_index->index_columns->children.begin(), declare_index->index_columns->children.end());
+                    index_columns->children.begin(), index_columns->children.end());
             else if (startsWith(declare_index->index_type, "UNIQUE_"))
-                unique_keys->arguments->children.insert(keys->arguments->children.end(),
-                    declare_index->index_columns->children.begin(), declare_index->index_columns->children.end());
+                unique_keys->arguments->children.insert(unique_keys->arguments->children.end(),
+                    index_columns->children.begin(), index_columns->children.end());
             if (startsWith(declare_index->index_type, "PRIMARY_KEY_"))
-                primary_keys->arguments->children.insert(keys->arguments->children.end(),
-                    declare_index->index_columns->children.begin(), declare_index->index_columns->children.end());
+                primary_keys->arguments->children.insert(primary_keys->arguments->children.end(),
+                    index_columns->children.begin(), index_columns->children.end());
         }
     }
 

@@ -87,8 +87,8 @@ Ahora es el momento de llenar nuestro servidor ClickHouse con algunos datos de m
 ### Descargar y extraer datos de tabla {#download-and-extract-table-data}
 
 ``` bash
-curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 Los archivos extraídos tienen un tamaño de aproximadamente 10 GB.

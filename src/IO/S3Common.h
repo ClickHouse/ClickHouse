@@ -36,6 +36,7 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 
@@ -44,6 +45,7 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 
@@ -53,6 +55,7 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
+        bool use_environment_credentials,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 

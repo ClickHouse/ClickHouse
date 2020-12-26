@@ -12,6 +12,7 @@ toc_title: SYSTEM
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache) 
 -   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
+-   [DROP REPLICA](#query_language-system-drop-replica)
 -   [FLUSH LOGS](#query_language-system-flush_logs)
 -   [RELOAD CONFIG](#query_language-system-reload-config)
 -   [SHUTDOWN](#query_language-system-shutdown)
@@ -65,6 +66,24 @@ SELECT name, status FROM system.dictionaries;
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
 Сбрасывает кеш «засечек» (`mark cache`). Используется при разработке ClickHouse и тестах производительности.
+
+## DROP REPLICA {#query_language-system-drop-replica}
+
+Мертвые реплики можно удалить, используя следующий синтаксис:
+
+``` sql
+SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
+SYSTEM DROP REPLICA 'replica_name' FROM DATABASE database;
+SYSTEM DROP REPLICA 'replica_name';
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
+```
+
+Удаляет путь реплики из ZooKeeper-а. Это полезно, когда реплика мертва и ее метаданные не могут быть удалены из ZooKeeper с помощью `DROP TABLE`, потому что такой таблицы больше нет. `DROP REPLICA` может удалить только неактивную / устаревшую реплику и не может удалить локальную реплику, используйте для этого `DROP TABLE`. `DROP REPLICA` не удаляет таблицы и не удаляет данные или метаданные с диска.
+
+Первая команда удаляет метаданные реплики `'replica_name'` для таблицы `database.table`.
+Вторая команда удаляет метаданные реплики `'replica_name'` для всех таблиц базы данных `database`.
+Третья команда удаляет метаданные реплики `'replica_name'` для всех таблиц, существующих на локальном сервере (список таблиц генерируется из локальной реплики).
+Четверая команда полезна для удаления метаданных мертвой реплики когда все другие реплики таблицы уже были удалены ранее, поэтому необходимо явно указать ZooKeeper путь таблицы. ZooKeeper путь это первый аргумент для `ReplicatedMergeTree` движка при создании таблицы.
 
 ## DROP UNCOMPRESSED CACHE {#query_language-system-drop-uncompressed-cache}
 
