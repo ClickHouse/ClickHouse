@@ -21,10 +21,12 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
-    extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARY_IS_EMPTY;
 }
 
 namespace
@@ -89,9 +91,9 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
             const auto * addr_str_end = addr_str.data() + addr_str.size();
             auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
             if (p != addr_str_end)
-                throw DB::Exception("extra characters at the end", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception("extra characters at the end", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             if (ec != std::errc())
-                throw DB::Exception("mask is not a valid number", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception("mask is not a valid number", ErrorCodes::CANNOT_PARSE_NUMBER);
 
             addr = addr & Poco::Net::IPAddress(prefix, addr.family());
             return {addr, prefix};
@@ -103,7 +105,7 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     catch (Poco::Exception & ex)
     {
         throw DB::Exception("can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
-            ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
     }
 }
 
