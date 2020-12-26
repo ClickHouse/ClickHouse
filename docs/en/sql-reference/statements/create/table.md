@@ -99,6 +99,14 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
+## NULL Or NOT NULL Modifiers
+
+`NULL` and `NOT NULL` modifiers after data type in table definition allow or do not allow it to be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable). 
+
+If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
+
+See also [data_type_default_nullable](../../operations/settings/settings.md#data_type_default_nullable) setting.
+
 ## Primary Key {#primary-key}
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
