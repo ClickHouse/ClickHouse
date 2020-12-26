@@ -21,13 +21,12 @@ toc_title: "\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0438\u0020\u
 ## Altinity.Cloud {#altinity.cloud}
 
 [Altinity.Cloud](https://altinity.com/cloud-database/) — это полностью управляемый ClickHouse-as-a-Service для публичного облака Amazon.
+
 -   Быстрое развертывание кластеров ClickHouse на ресурсах Amazon
--   Easy scale-out/scale-in as well as vertical scaling of nodes
 -   Легкое горизонтальное масштабирование также, как и вертикальное масштабирование узлов
 -   Изолированные виртуальные сети для каждого клиента с общедоступным эндпоинтом или пирингом VPC
 -   Настраиваемые типы и объемы хранилищ
--   Cross-AZ scaling for performance and high availability
--   Cross-AZ масштабирование для повышения производительности и высокой доступности
+-   Cross-AZ масштабирование для повышения производительности и обеспечения высокой доступности
 -   Встроенный мониторинг и редактор SQL-запросов
 
 {## [Оригинальная статья](https://clickhouse.tech/docs/ru/commercial/cloud/) ##}
