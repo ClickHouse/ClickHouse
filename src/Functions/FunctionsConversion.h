@@ -2473,24 +2473,23 @@ private:
             const auto * col = arguments.front().column.get();
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
 
-            if (column_tuple.getColumn(0).size() != column_tuple.getColumn(1).size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map can only be performed from tuple of arrays with equal sizes."
-                    " Size of keys: {}. Size of values: {}", column_tuple.getColumn(0).size(), column_tuple.getColumn(1).size());
-
-            ColumnPtr offsets;
+            Columns offsets(2);
             Columns converted_columns(2);
             for (size_t i = 0; i < 2; ++i)
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
                 ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
                 converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
-
-                if (!offsets)
-                    offsets = column_array.getOffsetsPtr();
+                offsets[i] = column_array.getOffsetsPtr();
             }
 
-            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets);
+            const auto & keys_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[0]).getData();
+            const auto & values_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[1]).getData();
+            if (keys_offsets != values_offsets)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map can only be performed from tuple of arrays with equal sizes.");
+
+            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets[0]);
         };
     }
 
