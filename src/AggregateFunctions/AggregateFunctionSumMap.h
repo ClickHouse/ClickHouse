@@ -72,7 +72,8 @@ public:
             const DataTypes & values_types_, const DataTypes & argument_types_)
         : Base(argument_types_, {} /* parameters */), keys_type(keys_type_),
           values_types(values_types_)
-    {}
+    {
+    }
 
     DataTypePtr getReturnType() const override
     {
@@ -94,8 +95,8 @@ public:
             if constexpr (overflow)
             {
                 // Overflow, meaning that the returned type is the same as
-                // the input type.
-                result_type = value_type;
+                // the input type. Nulls are skipped.
+                result_type = removeNullable(value_type);
             }
             else
             {
@@ -162,9 +163,6 @@ public:
                 if (!keepKey(key))
                     continue;
 
-                if (value.isNull())
-                    continue;
-
                 typename std::decay_t<decltype(merged_maps)>::iterator it;
                 if constexpr (IsDecimalNumber<T>)
                 {
@@ -176,7 +174,7 @@ public:
                 else
                     it = merged_maps.find(key);
 
-                if (it != merged_maps.end())
+                if (it != merged_maps.end() && !it->second[col].isNull())
                 {
                     applyVisitor(Visitor(value), it->second[col]);
                 }
@@ -187,7 +185,7 @@ public:
                     new_values.resize(values_types.size());
                     for (size_t k = 0; k < new_values.size(); ++k)
                     {
-                        new_values[k] = (k == col) ? value : values_types[k]->getDefault();
+                        new_values[k] = (k == col && !value.isNull()) ? value : values_types[k]->getDefault();
                     }
 
                     if constexpr (IsDecimalNumber<T>)
@@ -215,7 +213,8 @@ public:
             if (it != merged_maps.end())
             {
                 for (size_t col = 0; col < values_types.size(); ++col)
-                    applyVisitor(Visitor(elem.second[col]), it->second[col]);
+                    if (!elem.second[col].isNull())
+                        applyVisitor(Visitor(elem.second[col]), it->second[col]);
             }
             else
                 merged_maps[elem.first] = elem.second;
