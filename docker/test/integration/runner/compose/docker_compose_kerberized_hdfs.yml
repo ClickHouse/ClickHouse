@@ -1,0 +1,29 @@
+version: '2.3'
+
+services:
+  kerberizedhdfs1:
+    cap_add:
+      - DAC_READ_SEARCH
+    image: yandex/clickhouse-kerberized-hadoop:16621
+    hostname: kerberizedhdfs1
+    restart: always
+    volumes:
+        - ${KERBERIZED_HDFS_DIR}/../../hdfs_configs/bootstrap.sh:/etc/bootstrap.sh:ro
+        - ${KERBERIZED_HDFS_DIR}/secrets:/usr/local/hadoop/etc/hadoop/conf
+        - ${KERBERIZED_HDFS_DIR}/secrets/krb_long.conf:/etc/krb5.conf:ro
+    ports:
+      - 1006:1006
+      - 50070:50070
+      - 9000:9000
+    depends_on:
+        - hdfskerberos
+    entrypoint: /etc/bootstrap.sh -d
+
+  hdfskerberos:
+    image: yandex/clickhouse-kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG}
+    hostname: hdfskerberos
+    volumes:
+        - ${KERBERIZED_HDFS_DIR}/secrets:/tmp/keytab
+        - ${KERBERIZED_HDFS_DIR}/../../kerberos_image_config.sh:/config.sh
+        - /dev/urandom:/dev/random
+    ports: [88, 749]

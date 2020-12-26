@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -136,6 +137,8 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
+
+    std::atomic<UInt64> max_id = 0;
 
     friend class DDLQueryStatusInputStream;
     friend struct DDLTask;

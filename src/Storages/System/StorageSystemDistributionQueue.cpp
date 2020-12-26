@@ -4,10 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
 namespace DB

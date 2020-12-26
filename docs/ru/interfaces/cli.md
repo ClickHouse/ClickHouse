@@ -11,9 +11,9 @@ ClickHouse предоставляет собственный клиент ком
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 19.17.1.1579 (official build).
+ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```
@@ -63,7 +63,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 По умолчанию, в качестве формата, используется формат PrettyCompact (красивые таблички). Вы можете изменить формат с помощью секции FORMAT запроса, или с помощью указания `\G` на конце запроса, с помощью аргумента командной строки `--format` или `--vertical`, или с помощью конфигурационного файла клиента.
 
-Чтобы выйти из клиента, нажмите Ctrl+D (или Ctrl+C), или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
+Чтобы выйти из клиента, нажмите Ctrl+D, или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
 
 При выполнении запроса, клиент показывает:
 
@@ -130,6 +130,8 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 -   `--config-file` — имя конфигурационного файла.
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
+
+Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
 
 ### Конфигурационные файлы {#konfiguratsionnye-faily}
 

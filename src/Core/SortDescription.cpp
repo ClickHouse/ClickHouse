@@ -37,5 +37,12 @@ void dumpSortDescription(const SortDescription & description, const Block & head
     }
 }
 
+std::string dumpSortDescription(const SortDescription & description)
+{
+    WriteBufferFromOwnString wb;
+    dumpSortDescription(description, Block{}, wb);
+    return wb.str();
+}
+
 }
 
