@@ -73,6 +73,8 @@ public:
 
     MarksInCompressedFile& operator=(MarksInCompressedFile&& other)
     {
+        freeMarksDataIfNeeded();
+
         marks_size = other.marks_size;
         owns_marks_data = other.owns_marks_data;
         marks_data = other.marks_data;
@@ -101,13 +103,18 @@ public:
 
     ~MarksInCompressedFile()
     {
+        freeMarksDataIfNeeded();
+    }
+private:
+    void freeMarksDataIfNeeded()
+    {
         if (owns_marks_data && marks_data)
         {
             Allocator::free(marks_data, marks_size * sizeof(MarkInCompressedFile));
             marks_data = nullptr;    /// To avoid double free if next alloc will throw an exception
         }
     }
-private:
+
     size_t marks_size;
     bool owns_marks_data;
     void * marks_data;
