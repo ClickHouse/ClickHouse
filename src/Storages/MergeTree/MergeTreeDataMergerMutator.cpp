@@ -622,7 +622,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (disk->exists(new_part_tmp_path))
         throw Exception("Directory " + fullPath(disk, new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
     Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
     NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
@@ -703,6 +702,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         rows_sources_uncompressed_write_buf = disk->writeFile(rows_sources_file_path);
         rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
 
+        MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
         for (const MergeTreeData::DataPartPtr & part : parts)
             part->accumulateColumnSizes(merged_column_to_size);
 
@@ -854,7 +854,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec,
-        merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
         blocks_are_granules_size};
 
