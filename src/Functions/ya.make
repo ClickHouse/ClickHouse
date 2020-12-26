@@ -220,6 +220,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
