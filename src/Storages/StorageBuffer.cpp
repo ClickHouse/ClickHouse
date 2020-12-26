@@ -386,16 +386,17 @@ static void appendBlock(const Block & from, Block & to)
 
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
+    MutableColumnPtr last_col;
     try
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            col_to->insertRangeFrom(col_from, 0, rows);
+            last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(col_to);
+            to.getByPosition(column_no).column = std::move(last_col);
         }
     }
     catch (...)
@@ -406,6 +407,16 @@ static void appendBlock(const Block & from, Block & to)
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
+                /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
+                if (!col_to)
+                {
+                    col_to = std::move(last_col);
+                    /// Suppress clang-tidy [bugprone-use-after-move]
+                    last_col = {};
+                }
+                /// But if there is still nothing, abort
+                if (!col_to)
+                    throw Exception("No column to rollback", ErrorCodes::LOGICAL_ERROR);
                 if (col_to->size() != old_rows)
                     col_to = col_to->cut(0, old_rows);
             }
@@ -569,7 +580,7 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
@@ -818,7 +829,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushBack()
+void StorageBuffer::backgroundFlush()
 {
     try
     {
