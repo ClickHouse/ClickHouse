@@ -178,10 +178,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() != 4)
+        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 5)
             throw Exception(fmt::format(
-                        "{} Database require postgres_host_port, postgres_dbname, "
-                        "postgres_username, mysql_password arguments.", engine_name),
+                        "{} Database require host:port, database_name, username, password arguments "
+                        "[, use_table_cache = 0].", engine_name),
                 ErrorCodes::BAD_ARGUMENTS);
 
         ASTs & engine_args = engine->arguments->children;
@@ -194,6 +194,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
         const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
+        auto use_table_cache = 0;
+        if (engine->arguments->children.size() == 5)
+            use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
+
         auto parsed_host_port = parseAddress(host_port, 5432);
         String connection_str;
         connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
@@ -203,7 +207,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto connection = std::make_shared<PGConnection>(connection_str);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, connection);
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
     }
 
 #endif

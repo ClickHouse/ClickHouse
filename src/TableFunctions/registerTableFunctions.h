@@ -41,8 +41,6 @@ void registerTableFunctionMySQL(TableFunctionFactory & factory);
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
 #endif
 
-
-
 void registerTableFunctions();
 
 }

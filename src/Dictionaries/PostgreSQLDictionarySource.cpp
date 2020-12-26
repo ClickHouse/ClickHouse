@@ -13,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 static const UInt64 max_block_size = 8192;
 
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(
