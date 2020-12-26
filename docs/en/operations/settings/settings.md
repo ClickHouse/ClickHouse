@@ -2470,4 +2470,15 @@ Possible values:
 
 Default value: `0`.
 
+## data_type_default_nullable {#data_type_default_nullable}
+
+Allows data types without explicit modifiers in table definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+Possible values:
+
+- 1 — `Nullable`-type expressions are allowed in a table definition.
+- 0 — `Nullable`-type expressions are not allowed in a table definition.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
