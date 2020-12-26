@@ -182,10 +182,10 @@ namespace
 
     using FunctionDecodeXMLComponent = FunctionStringToString<FunctionDecodeXMLComponentImpl, DecodeXMLComponentName>;
 
-} // namespace
+}
 
 void registerFunctionDecodeXMLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecodeXMLComponent>();
 }
-} // namespace DB
+}
