@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-/// These functions are also used for postgresql table function
 
 std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection, const String & postgres_table_name, bool use_nulls)
 {
@@ -37,10 +36,6 @@ std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection,
     pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
     std::tuple<std::string, std::string, std::string, uint16_t> row;
 
-    /// No rows to be fetched
-    if (!stream)
-        return nullptr;
-
     while (stream >> row)
     {
         columns.push_back(NameAndTypePair(
@@ -49,6 +44,9 @@ std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection,
     }
     stream.complete();
     tx.commit();
+
+    if (columns.empty())
+        return nullptr;
 
     return std::make_shared<NamesAndTypesList>(columns);
 }

@@ -60,14 +60,8 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     cursor.execute('ALTER TABLE test_table ADD COLUMN data Text')
     assert 'data' in node1.query("SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
 
-    node1.query("INSERT INTO test_database.test_table SELECT 101, 101, toString(101)")
-    assert node1.query("SELECT data FROM test_database.test_table WHERE id = 101").rstrip() == '101'
-
     cursor.execute('ALTER TABLE test_table DROP COLUMN data')
     assert 'data' not in node1.query("SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
-
-    cursor.execute('DROP TABLE test_table;')
-    assert 'test_table' not in node1.query('SHOW TABLES FROM test_database')
 
     node1.query("DROP DATABASE test_database")
     assert 'test_database' not in node1.query('SHOW DATABASES')
@@ -111,6 +105,46 @@ def test_postgresql_database_engine_queries(started_cluster):
 
     node1.query("INSERT INTO test_database.test_table SELECT number, number from numbers(10000)")
     assert node1.query("SELECT count() FROM test_database.test_table").rstrip() == '10000'
+
+    cursor.execute('DROP TABLE test_table;')
+    assert 'test_table' not in node1.query('SHOW TABLES FROM test_database')
+
+    node1.query("DROP DATABASE test_database")
+    assert 'test_database' not in node1.query('SHOW DATABASES')
+
+
+def test_postgresql_database_engine_table_cache(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1)")
+
+    create_postgres_table(cursor, 'test_table')
+    assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)'
+
+    cursor.execute('ALTER TABLE test_table ADD COLUMN data Text')
+    assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)'
+
+    node1.query("DETACH TABLE test_database.test_table")
+    assert 'test_table' not in node1.query('SHOW TABLES FROM test_database')
+
+    node1.query("ATTACH TABLE test_database.test_table")
+    assert 'test_table' in node1.query('SHOW TABLES FROM test_database')
+
+    assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)\t\t\t\t\t\ndata\tNullable(String)'
+
+    node1.query("DROP TABLE test_database.test_table")
+    assert 'test_table' not in node1.query('SHOW TABLES FROM test_database')
+
+    node1.query("ATTACH TABLE test_database.test_table")
+    assert 'test_table' in node1.query('SHOW TABLES FROM test_database')
+
+    node1.query("INSERT INTO test_database.test_table SELECT number, number, toString(number) from numbers(10000)")
+    assert node1.query("SELECT count() FROM test_database.test_table").rstrip() == '10000'
+
+    cursor.execute('DROP TABLE test_table;')
+    assert 'test_table' not in node1.query('SHOW TABLES FROM test_database')
 
     node1.query("DROP DATABASE test_database")
     assert 'test_database' not in node1.query('SHOW DATABASES')

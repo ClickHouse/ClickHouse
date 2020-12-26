@@ -6,19 +6,9 @@
 
 #if USE_LIBPQXX
 
-#include <Core/MultiEnum.h>
-#include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-
-#include <atomic>
-#include <condition_variable>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <unordered_set>
-#include <vector>
-
 #include <Storages/StoragePostgreSQL.h>
 #include <pqxx/pqxx>
 
@@ -37,7 +27,8 @@ public:
         const ASTStorage * database_engine_define,
         const String & dbname_,
         const String & postgres_dbname,
-        PGConnectionPtr connection_);
+        PGConnectionPtr connection_,
+        const bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
     String getMetadataPath() const override { return metadata_path; };
@@ -49,6 +40,8 @@ public:
     ASTPtr getCreateDatabaseQuery() const override;
 
     bool empty() const override;
+
+    void loadStoredObjects(Context &, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
@@ -62,7 +55,7 @@ public:
     StoragePtr detachTable(const String & table_name) override;
 
     void drop(const Context & /*context*/) override;
-    void shutdown() override {};
+    void shutdown() override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, const Context & context, bool throw_on_error) const override;
@@ -73,12 +66,16 @@ private:
     ASTPtr database_engine_define;
     String dbname;
     PGConnectionPtr connection;
+    const bool cache_tables;
 
-    std::unordered_set<std::string> detached_tables;
+    mutable Tables cached_tables;
+    std::unordered_set<std::string> detached_or_dropped;
+    BackgroundSchedulePool::TaskHolder cleaner_task;
 
     bool checkPostgresTable(const String & table_name) const;
     std::unordered_set<std::string> fetchTablesList() const;
-    StoragePtr fetchTable(const String & table_name, const Context & context) const;
+    StoragePtr fetchTable(const String & table_name, const Context & context, const bool table_checked) const;
+    void removeOutdatedTables();
 };
 
 }
