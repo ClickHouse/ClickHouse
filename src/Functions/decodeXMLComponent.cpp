@@ -26,7 +26,7 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
-            res_data.resize(data.size() * 6);
+            res_data.resize(data.size());
             size_t size = offsets.size();
             res_offsets.resize(size);
 
