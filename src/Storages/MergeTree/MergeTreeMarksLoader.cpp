@@ -42,8 +42,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
             + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
 #endif
 
-    /// If we get marks from cache use marks_cache_holder
-    auto& valid_marks = marks_cache ? marks_cache->payload() : marks_non_cache;
+    auto & valid_marks = marks_cache ? marks_cache->payload() : marks_non_cache;
     return valid_marks[row_index * columns_in_mark + column_index];
 }
 
@@ -89,17 +88,19 @@ void MergeTreeMarksLoader::loadMarks()
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
+    size_t marks_size = marks_count * columns_in_mark;
+    
     if (mark_cache)
     {
         auto key = mark_cache->hash(mrk_path);
 
         if (save_marks_in_cache)
         {
-            auto get_size = [&] { return marks_count * columns_in_mark * sizeof(MarkInCompressedFile); };
+            auto get_size = [&] { return marks_size * sizeof(MarkInCompressedFile); };
 
             auto initialization = [&](void * ptr, MarksInCompressedFile & payload)
             {
-                payload = MarksInCompressedFile(marks_count * columns_in_mark, ptr);
+                payload = MarksInCompressedFile(marks_size, ptr);
                 readIntoMarks(payload);
             };
 
@@ -113,7 +114,7 @@ void MergeTreeMarksLoader::loadMarks()
 
     if (!marks_cache)
     {
-        MarksInCompressedFile marks_to_load(marks_count * columns_in_mark);
+        MarksInCompressedFile marks_to_load(marks_size);
         readIntoMarks(marks_to_load);
         marks_non_cache = std::move(marks_to_load);
     }

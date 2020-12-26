@@ -43,11 +43,7 @@ struct MarkInCompressedFile
 class MarksInCompressedFile final: boost::noncopyable, Allocator<false>
 {
 public:
-    MarksInCompressedFile()
-        : marks_size(0)
-        , owns_marks_data(false)
-        , marks_data(nullptr)
-    {}
+    MarksInCompressedFile() = default;
 
     MarksInCompressedFile(size_t marks_size_)
         : marks_size(marks_size_)
@@ -61,32 +57,21 @@ public:
         , marks_data(marks_data_)
     {}
 
-    MarksInCompressedFile(MarksInCompressedFile&& other)
-        : marks_size(other.marks_size)
-        , owns_marks_data(other.owns_marks_data)
-        , marks_data(other.marks_data)
+    MarksInCompressedFile(MarksInCompressedFile&& rhs)
     {
-        other.marks_size = 0;
-        other.owns_marks_data = false;
-        other.marks_data = nullptr;
+        *this = std::move(rhs);
     }
 
-    MarksInCompressedFile& operator=(MarksInCompressedFile&& other)
+    MarksInCompressedFile& operator=(MarksInCompressedFile&& rhs)
     {
-        freeMarksDataIfNeeded();
-
-        marks_size = other.marks_size;
-        owns_marks_data = other.owns_marks_data;
-        marks_data = other.marks_data;
-
-        other.marks_size = 0;
-        other.owns_marks_data = false;
-        other.marks_data = nullptr;
+        std::swap(marks_size, rhs.marks_size);
+        std::swap(owns_marks_data, rhs.owns_marks_data);
+        std::swap(marks_data, rhs.marks_data);
 
         return *this;
     }
 
-    void read(ReadBuffer & buffer, size_t from, size_t count)
+    inline void read(ReadBuffer & buffer, size_t from, size_t count)
     {
         buffer.readStrict(reinterpret_cast<char *>(data() + from), count * sizeof(MarkInCompressedFile));
     }
@@ -95,18 +80,18 @@ public:
 
     inline MarkInCompressedFile * data() { return static_cast<MarkInCompressedFile*>(marks_data); }
 
-    const MarkInCompressedFile & operator[](size_t i) const { return data()[i]; }
+    inline const MarkInCompressedFile & operator[](size_t i) const { return data()[i]; }
 
-    MarkInCompressedFile & operator[](size_t i) { return data()[i]; }
+    inline MarkInCompressedFile & operator[](size_t i) { return data()[i]; }
 
-    size_t size() const { return marks_size; }
+    inline size_t size() const { return marks_size; }
 
     ~MarksInCompressedFile()
     {
-        freeMarksDataIfNeeded();
+        dealloc();
     }
 private:
-    void freeMarksDataIfNeeded()
+    inline void dealloc()
     {
         if (owns_marks_data && marks_data)
         {
@@ -115,9 +100,9 @@ private:
         }
     }
 
-    size_t marks_size;
-    bool owns_marks_data;
-    void * marks_data;
+    size_t marks_size = 0;
+    bool owns_marks_data = false;
+    void * marks_data = nullptr;
 };
 
 }
