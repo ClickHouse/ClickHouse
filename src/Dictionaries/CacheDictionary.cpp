@@ -17,7 +17,7 @@
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-
+#include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
 {
@@ -249,32 +249,145 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
         out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
 }
 
-void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+ColumnPtr CacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr &,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_untyped) const
 {
+    ColumnPtr result;
+
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    const auto null_value = StringRef{std::get<String>(attribute.null_value)};
+    /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
 
-    getItemsString(attribute, ids, out, [&](const size_t) { return null_value; });
-}
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-void CacheDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
-{
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+        auto identifiers_size = ids.size();
 
-    getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
-}
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
 
-void CacheDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsString(attribute, ids, column_string.get(), [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
 
-    getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
+                    getItemsString(attribute, ids, column_string.get(), [&](const size_t) { return StringRef{def}; });
+                }
+            }
+            else
+            {
+                const auto null_value = StringRef{std::get<String>(attribute.null_value)};
+
+                getItemsString(attribute, ids, column_string.get(), [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(identifiers_size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_value);
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    out,
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        ids,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_value);
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    attribute,
+                    ids,
+                    out,
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+   
+    return result;
 }
 
 template<class... Ts>
@@ -375,8 +488,14 @@ size_t CacheDictionary::findCellIdxForSet(const Key & id) const
     return oldest_id;
 }
 
-void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr CacheDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
     /// There are three types of ids.
     /// - Valid ids. These ids are presented in local cache and their lifetime is not expired.
     /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
@@ -444,7 +563,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     {
         /// Nothing to update - return;
         if (!cache_expired_count)
-            return;
+            return result;
 
         if (allow_read_expired_keys)
         {
@@ -458,7 +577,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
             tryPushToUpdateQueueOrThrow(update_unit_ptr);
             /// Update is async - no need to wait.
-            return;
+            return result;
         }
     }
 
@@ -483,6 +602,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             for (const auto row : cache_expired_or_not_found_ids[key])
                 out[row] = true;
     }
+
+    return result;
 }
 
 
