@@ -14,8 +14,9 @@ TEST(ArrayCache, Set)
         auto holder = cache.getOrSet(
             i,
             [&] { return sizeof(Int64); },
-            [&](void * ptr, int & payload) {
-                Int64* int_ptr = static_cast<Int64*>(ptr);
+            [&](void * ptr, int & payload)
+            {
+                Int64 * int_ptr = static_cast<Int64 *>(ptr);
                 *int_ptr = i;
                 payload = i;
             },
@@ -32,7 +33,7 @@ TEST(ArrayCache, Set)
 
         ASSERT_EQ(result->key(), i);
         ASSERT_EQ(result->payload(), i);
-        ASSERT_EQ(*static_cast<Int64*>(result->ptr()), i);
+        ASSERT_EQ(*static_cast<Int64 *>(result->ptr()), i);
     }
 }
 
@@ -50,7 +51,8 @@ TEST(ArrayCache, SetUnaligned)
 {
     ArrayCache<int, int> cache(ArrayCache<int, int>::min_chunk_size);
 
-    auto result = cache.getOrSet(0, [&] { return 15; }, [&](void *, int&) {}, nullptr);
+    auto result = cache.getOrSet(
+        0, [&] { return 15; }, [&](void *, int &) {}, nullptr);
 
     ASSERT_TRUE(result != nullptr);
     ASSERT_EQ(result->size(), 15);
@@ -64,7 +66,7 @@ TEST(ArrayCache, SetLRU)
         0, [&] { return ArrayCache<int, int>::min_chunk_size / 4; }, [&](void *, int &) {}, nullptr);
 
     ASSERT_TRUE(first != nullptr);
-    
+
     auto second = cache.getOrSet(
         1, [&] { return ArrayCache<int, int>::min_chunk_size / 4; }, [&](void *, int &) {}, nullptr);
 
@@ -72,12 +74,12 @@ TEST(ArrayCache, SetLRU)
 
     auto third = cache.getOrSet(
         2, [&] { return ArrayCache<int, int>::min_chunk_size / 2; }, [&](void *, int &) {}, nullptr);
-    
+
     ASSERT_TRUE(third != nullptr);
 
     auto full_chunk_set_result = cache.getOrSet(
         4, [&] { return ArrayCache<int, int>::min_chunk_size; }, [&](void *, int &) {}, nullptr);
-    
+
     ASSERT_TRUE(full_chunk_set_result == nullptr);
 
     first.reset();
@@ -86,6 +88,6 @@ TEST(ArrayCache, SetLRU)
 
     full_chunk_set_result = cache.getOrSet(
         5, [&] { return ArrayCache<int, int>::min_chunk_size; }, [&](void *, int &) {}, nullptr);
-    
+
     ASSERT_TRUE(full_chunk_set_result != nullptr);
 }
