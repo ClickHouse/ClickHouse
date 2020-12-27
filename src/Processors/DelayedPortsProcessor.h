@@ -32,6 +32,7 @@ private:
     size_t num_finished = 0;
 
     std::vector<size_t> output_to_pair;
+    bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);
 };
