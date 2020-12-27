@@ -348,4 +348,21 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 SHOW [CURRENT] QUOTA
 ```
 
+## SHOW CLUSTER(s) {#show-cluster-statement}
+
+Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
+
+### Syntax {#show-cluster-syntax}
+
+``` sql
+SHOW (CLUSTER '<name>') | (CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]);
+```
+### Examples 
+
+``` sql
+SHOW CLUSTERS;
+SHOW CLUSTERS LIKE 'xxx';
+SHOW CLUSTER 'xxx';
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
