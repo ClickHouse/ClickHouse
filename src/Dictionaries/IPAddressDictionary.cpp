@@ -91,9 +91,9 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
             const auto * addr_str_end = addr_str.data() + addr_str.size();
             auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
             if (p != addr_str_end)
-                throw DB::Exception("extra characters at the end", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw DB::Exception("Extra characters at the end of IP address", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             if (ec != std::errc())
-                throw DB::Exception("mask is not a valid number", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw DB::Exception("Mask for IP address is not a valid number", ErrorCodes::CANNOT_PARSE_NUMBER);
 
             addr = addr & Poco::Net::IPAddress(prefix, addr.family());
             return {addr, prefix};
@@ -104,7 +104,7 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
     catch (Poco::Exception & ex)
     {
-        throw DB::Exception("can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
+        throw DB::Exception("Can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
             ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
     }
 }
