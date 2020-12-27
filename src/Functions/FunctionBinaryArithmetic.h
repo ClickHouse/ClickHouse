@@ -767,7 +767,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     template <class LeftDataType, class RightDataType, class ResultDataType>
     ColumnPtr executeNumericWithDecimal(
-        const auto& left, const auto& right,
+        const auto & left, const auto & right,
         const ColumnConst * const col_left_const, const ColumnConst * const col_right_const,
         const auto * const col_left, const auto * const col_right,
         size_t col_left_size) const
@@ -789,7 +789,8 @@ class FunctionBinaryArithmetic : public IFunction
 
         typename ColVecResult::MutablePtr col_res = nullptr;
 
-        const ResultDataType type = [&] {
+        const ResultDataType type = [&]
+        {
             if constexpr (left_is_decimal && IsFloatingPoint<RightDataType>)
                 return RightDataType();
             else if constexpr (right_is_decimal && IsFloatingPoint<LeftDataType>)
@@ -798,7 +799,8 @@ class FunctionBinaryArithmetic : public IFunction
                 return decimalResultType<is_multiply, is_division>(left, right);
         }();
 
-        const ResultType scale_a = [&] {
+        const ResultType scale_a = [&]
+        {
             if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else if constexpr (result_is_decimal)
@@ -825,7 +827,8 @@ class FunctionBinaryArithmetic : public IFunction
                 return 1; // the default value which won't cause any re-scale
         }();
 
-        const ResultType scale_b = [&] {
+        const ResultType scale_b = [&]
+        {
             if constexpr (result_is_decimal)
             {
                 if constexpr (is_multiply)
@@ -1000,9 +1003,9 @@ public:
 
                         const TimezoneMixin * tz = nullptr;
                         if constexpr (std::is_same_v<RightDataType, DataTypeDateTime>)
-                                tz = &right;
+                            tz = &right;
                         if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
-                                tz = &left;
+                            tz = &left;
                         type_res = std::make_shared<ResultDataType>(*tz);
                     }
                     else
@@ -1139,12 +1142,14 @@ public:
             const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
 
             if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
+            {
                 return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
                     left, right,
                     col_left_const, col_right_const,
                     col_left, col_right,
                     col_left_size);
-            else //can't avoid else and another indentation level, otherwise the compiler would try to instantiate
+            }
+            else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
             {
                 using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
