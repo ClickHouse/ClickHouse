@@ -31,6 +31,7 @@ namespace DB
     {
         extern const int CANNOT_ALLOCATE_MEMORY;
         extern const int CANNOT_MUNMAP;
+        extern const int BAD_ARGUMENTS;
     }
 }
 
@@ -105,6 +106,7 @@ private:
             char * char_ptr;
         };
         size_t size;
+        size_t unaligned_size;
         size_t refcount = 0;
         void * chunk;
 
@@ -209,10 +211,6 @@ private:
     /// Max size of cache.
     const size_t max_total_size;
 
-    /// We will allocate memory in chunks of at least that size.
-    /// 64 MB makes mmap overhead comparable to memory throughput.
-    static constexpr size_t min_chunk_size = 64 * 1024 * 1024;
-
     /// Cache stats.
     std::atomic<size_t> hits {0};            /// Value was in cache.
     std::atomic<size_t> concurrent_hits {0}; /// Value was calculated by another thread and we was waiting for it. Also summed in hits.
@@ -227,6 +225,10 @@ private:
 
 
 public:
+    /// We will allocate memory in chunks of at least that size.
+    /// 64 MB makes mmap overhead comparable to memory throughput.
+    static constexpr size_t min_chunk_size = 64 * 1024 * 1024;
+
     /// Holds region as in use. Regions in use could not be evicted from cache.
     /// In constructor, increases refcount and if it becomes non-zero, remove region from lru_list.
     /// In destructor, decreases refcount and if it becomes zero, insert region to lru_list.
@@ -249,7 +251,7 @@ public:
 
         void * ptr() { return region.ptr; }
         const void * ptr() const { return region.ptr; }
-        size_t size() const { return region.size; }
+        size_t size() const { return region.unaligned_size; }
         Key key() const { return region.key; }
         Payload & payload() { return region.payload; }
         const Payload & payload() const { return region.payload; }
@@ -466,7 +468,7 @@ private:
 
 
     /// Precondition: free_region.size >= size.
-    RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
+    RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size, size_t unaligned_size)
     {
         ++allocations;
         allocated_bytes += size;
@@ -484,6 +486,7 @@ private:
         allocated_region->ptr = free_region.ptr;
         allocated_region->chunk = free_region.chunk;
         allocated_region->size = size;
+        allocated_region->unaligned_size = unaligned_size;
 
         size_multimap.erase(size_multimap.iterator_to(free_region));
         free_region.size -= size;
@@ -498,13 +501,14 @@ private:
     /// Does not insert allocated region to key_map or lru_list. Caller must do it.
     RegionMetadata * allocate(size_t size)
     {
+        size_t unaligned_size = size;
         size = roundUp(size, alignment);
 
         /// Look up to size multimap to find free region of specified size.
         auto it = size_multimap.lower_bound(size, RegionCompareBySize());
         if (size_multimap.end() != it)
         {
-            return allocateFromFreeRegion(*it, size);
+            return allocateFromFreeRegion(*it, size, unaligned_size);
         }
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
@@ -515,7 +519,7 @@ private:
         {
             /// Create free region spanning through chunk.
             RegionMetadata * free_region = addNewChunk(required_chunk_size);
-            return allocateFromFreeRegion(*free_region, size);
+            return allocateFromFreeRegion(*free_region, size, unaligned_size);
         }
 
 //        std::cerr << "Requested size: " << size << "\n";
@@ -533,7 +537,7 @@ private:
             if (res->size < size)
                 continue;
 
-            return allocateFromFreeRegion(*res, size);
+            return allocateFromFreeRegion(*res, size, unaligned_size);
         }
     }
 
@@ -541,6 +545,8 @@ private:
 public:
     ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
     {
+        if (max_total_size < min_chunk_size)
+            throw DB::Exception("Max total size should be greater than min chunk size", DB::ErrorCodes::BAD_ARGUMENTS);
     }
 
     ~ArrayCache()
@@ -626,12 +632,12 @@ public:
 
         ++misses;
 
-        size_t size = get_size();
+        size_t requested_size = get_size();
 
         RegionMetadata * region;
         {
             std::lock_guard cache_lock(mutex);
-            region = allocate(size);
+            region = allocate(requested_size);
         }
 
         /// Cannot allocate memory.
@@ -641,8 +647,9 @@ public:
         region->key = key;
 
         {
-            total_size_currently_initialized += size;
-            SCOPE_EXIT({ total_size_currently_initialized -= size; });
+            /// TODO: Check
+            // total_size_currently_initialized += size;
+            // SCOPE_EXIT({ total_size_currently_initialized -= size; });
 
             try
             {
@@ -767,5 +774,3 @@ public:
         return res;
     }
 };
-
-template <typename Key, typename Payload> constexpr size_t ArrayCache<Key, Payload>::min_chunk_size;

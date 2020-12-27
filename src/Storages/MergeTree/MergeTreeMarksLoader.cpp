@@ -89,7 +89,7 @@ void MergeTreeMarksLoader::loadMarks()
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     size_t marks_size = marks_count * columns_in_mark;
-    
+
     if (mark_cache)
     {
         auto key = mark_cache->hash(mrk_path);
