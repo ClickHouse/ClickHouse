@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 DelayedPortsProcessor::DelayedPortsProcessor(
     const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
     : IProcessor(InputPorts(num_ports, header),
