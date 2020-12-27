@@ -158,6 +158,13 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
 
+        const Settings & settings = context.getSettingsRef();
+        const auto & log_comment = settings.log_comment;
+        if (!log_comment.toString().empty())
+        {
+            query = query + log_comment;
+        }
+
         LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
@@ -171,6 +178,22 @@ static void logQuery(const String & query, const Context & context, bool interna
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
+
+        QueryLogElement elem;
+
+        elem.type = QueryLogElementType::QUERY_START;
+        elem.event_time = current_time_us / 1000000;
+        elem.event_time_microseconds = current_time_us;
+        elem.query_start_time = current_time_us / 1000000;
+        elem.query_start_time_microseconds = current_time_us;
+
+        elem.current_database = context.getCurrentDatabase();
+        elem.query = query;
+        elem.normalized_query_hash = normalizedQueryHash(query);
+
+        elem.client_info = client_info;
+        if (auto query_log = context.getQueryLog())
+            query_log->add(elem);
     }
 }
 
