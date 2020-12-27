@@ -23,6 +23,7 @@
 #include <city.h>
 #include <fcntl.h>
 
+#include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
 {
@@ -1327,93 +1328,146 @@ SSDCacheDictionary::SSDCacheDictionary(
     createAttributes();
 }
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>(index, ids, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
-    }
+ColumnPtr SSDCacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr &,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr default_untyped) const
+{
+    ColumnPtr result;
 
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    
+    const auto index = getAttributeIndex(attribute_name);
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>( \
-            index, \
-            ids, \
-            out, \
-            [&](const size_t row) { return def[row]; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
 
-#define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>( \
-            index, \
-            ids, \
-            out, \
-            [&](const size_t) { return def; }); \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        auto identifiers_size = ids.size();
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsStringImpl(index, ids, column_string.get(), [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsStringImpl(index, ids, column_string.get(), [&](const size_t) { return StringRef{def}; });
+                }
+            }
+            else
+            {
+                const auto null_value = StringRef{std::get<String>(null_values[index])};
+
+                getItemsStringImpl(index, ids, column_string.get(), [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(identifiers_size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        ids,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        ids,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(null_values[index]);;
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    index,
+                    ids,
+                    out,
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        ids,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        ids,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(null_values[index]);;
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    index,
+                    ids,
+                    out,
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
+   
+    return result;
+}
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
@@ -1443,34 +1497,6 @@ void SSDCacheDictionary::getItemsNumberImpl(
                     out[row] = get_default(row);
             },
             getLifetime());
-}
-
-void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    const auto null_value = StringRef{std::get<String>(null_values[index])};
-
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return null_value; });
-}
-
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
-}
-
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return StringRef{def}; });
 }
 
 template <typename DefaultGetter>
@@ -1545,14 +1571,24 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
     }
 }
 
-void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr SSDCacheDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
+
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
     storage.has(ids, out, not_found_ids, now);
     if (not_found_ids.empty())
-        return;
+        return result;
 
     std::vector<Key> required_ids(not_found_ids.size());
     std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
@@ -1571,6 +1607,8 @@ void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UIn
                     out[row] = false;
             },
             getLifetime());
+
+    return result;
 }
 
 BlockInputStreamPtr SSDCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
