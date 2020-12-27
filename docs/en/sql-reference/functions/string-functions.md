@@ -558,4 +558,36 @@ Result:
 └─────┘
 ```
 
+## encodeXMLComponent {#encode-xml-component}
+
+Escape characters to place string into XML text node or attribute.
+
+**Syntax** 
+
+``` sql
+encodeXMLComponent(x)
+```
+
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+-   Sequence of characters.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+```
+
+Result:
+
+``` text
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
