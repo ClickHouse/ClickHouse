@@ -262,6 +262,9 @@ struct SimHashImpl
                 words.emplace_back(BytesRef{word_start, length});
         }
 
+        if (words.empty())
+            return 0;
+
         UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(words);
         updateFingerVector(finger_vec, hash_value);
 
@@ -487,6 +490,9 @@ struct MinHashImpl
             if (length >= min_word_size)
                 words.emplace_back(BytesRef{word_start, length});
         }
+
+        if (words.empty())
+            return;
 
         UInt64 hash_value = Hash::shingleHash<CaseInsensitive>(words);
         {
