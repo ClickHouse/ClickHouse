@@ -22,6 +22,15 @@ struct ASTExistsTableQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "EXISTS TEMPORARY TABLE";
 };
 
+struct ASTExistsViewQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ExistsViewQuery";
+    static constexpr auto Query = "EXISTS VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
+};
+
+
 struct ASTExistsDictionaryQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsDictionaryQuery";
@@ -61,6 +70,7 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
 
 using ASTExistsDatabaseQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>;
 using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
+using ASTExistsViewQuery = ASTQueryWithTableAndOutputImpl<ASTExistsViewQueryIDAndQueryNames>;
 using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
 using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
