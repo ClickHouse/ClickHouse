@@ -78,6 +78,11 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     bool skip_delayed = (num_finished + num_delayed) < port_pairs.size();
     bool need_data = false;
 
+    if (!updated_outputs.empty())
+        for (const auto & pair : port_pairs)
+            if (!pair.output_port)
+                pair.input_port->setNeeded();
+
     for (const auto & output_number : updated_outputs)
     {
         auto pair_num = output_to_pair[output_number];
