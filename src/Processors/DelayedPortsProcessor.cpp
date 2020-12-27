@@ -3,8 +3,10 @@
 namespace DB
 {
 
-DelayedPortsProcessor::DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports)
-    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header))
+DelayedPortsProcessor::DelayedPortsProcessor(
+    const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_delayed_ports_empty)
+    : IProcessor(InputPorts(num_ports, header),
+                 OutputPorts(num_ports - (assert_delayed_ports_empty ? delayed_ports.size() : 0), header))
     , num_delayed(delayed_ports.size())
 {
     port_pairs.resize(num_ports);
@@ -14,9 +16,13 @@ DelayedPortsProcessor::DelayedPortsProcessor(const Block & header, size_t num_po
     for (size_t i = 0; i < num_ports; ++i)
     {
         port_pairs[i].input_port = &*input_it;
-        port_pairs[i].output_port = &*output_it;
         ++input_it;
-        ++output_it;
+
+        if (output_it != outputs.end())
+        {
+            port_pairs[i].output_port = &*output_it;
+            ++output_it;
+        }
     }
 
     for (const auto & delayed : delayed_ports)
@@ -34,7 +40,7 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
         }
     };
 
-    if (pair.output_port->isFinished())
+    if (pair.output_port && pair.output_port->isFinished())
     {
         pair.input_port->close();
         finish();
@@ -43,17 +49,24 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
 
     if (pair.input_port->isFinished())
     {
-        pair.output_port->finish();
+        if (pair.output_port)
+            pair.output_port->finish();
         finish();
         return false;
     }
 
-    if (!pair.output_port->canPush())
+    if (pair.output_port && !pair.output_port->canPush())
         return false;
 
     pair.input_port->setNeeded();
     if (pair.input_port->hasData())
+    {
+        if (!pair.output_port)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Input port for DelayedPortsProcessor is assumed to have no data, but it has one");
+
         pair.output_port->pushData(pair.input_port->pullData());
+    }
 
     return true;
 }
