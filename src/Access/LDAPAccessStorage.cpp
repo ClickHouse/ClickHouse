@@ -102,10 +102,11 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
     role_search_params.swap(role_search_params_cfg);
     common_role_names.swap(common_roles_cfg);
 
+    external_role_hashes.clear();
     users_per_roles.clear();
+    roles_per_users.clear();
     granted_role_names.clear();
     granted_role_ids.clear();
-    external_role_hashes.clear();
 
     role_change_subscription = access_control_manager->subscribeForChanges<Role>(
         [this] (const UUID & id, const AccessEntityPtr & entity)
@@ -113,46 +114,37 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
             return this->processRoleChange(id, entity);
         }
     );
-
-    // Update granted_role_* with the initial values: resolved ids of roles from common_role_names.
-    for (const auto & role_name : common_role_names)
-    {
-        if (const auto role_id = access_control_manager->find<Role>(role_name))
-        {
-            granted_role_names.insert_or_assign(*role_id, role_name);
-            granted_role_ids.insert_or_assign(role_name, *role_id);
-        }
-    }
 }
 
 
 void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
 {
     std::scoped_lock lock(mutex);
-    auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
+    const auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
     const auto it = granted_role_names.find(id);
 
-    if (role) // Added or renamed role.
+    if (role) // Added or renamed a role.
     {
         const auto & new_role_name = role->getName();
-        if (it != granted_role_names.end())
+        if (it != granted_role_names.end()) // Renamed a granted role.
         {
-            // Revoke the old role if its name has been changed.
             const auto & old_role_name = it->second;
             if (new_role_name != old_role_name)
             {
+                // Revoke the old role first, then grant the new role.
                 applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
+                applyRoleChangeNoLock(true /* grant */, id, new_role_name);
             }
         }
-
-        // Grant the role.
-        applyRoleChangeNoLock(true /* grant */, id, new_role_name);
-    }
-    else // Removed role.
-    {
-        if (it != granted_role_names.end())
+        else // Added a role.
         {
-            // Revoke the old role.
+            applyRoleChangeNoLock(true /* grant */, id, new_role_name);
+        }
+    }
+    else // Removed a role.
+    {
+        if (it != granted_role_names.end()) // Removed a granted role.
+        {
             const auto & old_role_name = it->second;
             applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
         }
@@ -164,7 +156,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
 {
     std::vector<UUID> user_ids;
 
-    // Find relevant user ids.
+    // Build a list of ids of the relevant users.
     if (common_role_names.count(role_name))
     {
         user_ids = memory_storage.findAll<User>();
@@ -176,6 +168,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
         {
             const auto & user_names = it->second;
             user_ids.reserve(user_names.size());
+
             for (const auto & user_name : user_names)
             {
                 if (const auto user_id = memory_storage.find<User>(user_name))
@@ -184,7 +177,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
         }
     }
 
-    // Update relevant users' granted roles.
+    // Update the granted roles of the relevant users.
     if (!user_ids.empty())
     {
         auto update_func = [&role_id, &grant] (const AccessEntityPtr & entity_) -> AccessEntityPtr
@@ -205,129 +198,135 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
         };
 
         memory_storage.update(user_ids, update_func);
+    }
 
-        if (grant)
+    // Actualize granted_role_* mappings.
+    if (grant)
+    {
+        if (!user_ids.empty())
         {
             granted_role_names.insert_or_assign(role_id, role_name);
             granted_role_ids.insert_or_assign(role_name, role_id);
         }
-        else
-        {
-            granted_role_names.erase(role_id);
-            granted_role_ids.erase(role_name);
-        }
+    }
+    else
+    {
+        granted_role_names.erase(role_id);
+        granted_role_ids.erase(role_name);
     }
 }
 
 
-void LDAPAccessStorage::grantRolesNoLock(User & user, const LDAPSearchResultsList & external_roles) const
+void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPSearchResultsList & external_roles) const
+{
+    const auto external_roles_hash = boost::hash<LDAPSearchResultsList>{}(external_roles);
+    return assignRolesNoLock(user, external_roles, external_roles_hash);
+}
+
+
+void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPSearchResultsList & external_roles, const std::size_t external_roles_hash) const
 {
     const auto & user_name = user.getName();
-    const auto new_hash = boost::hash<LDAPSearchResultsList>{}(external_roles);
     auto & granted_roles = user.granted_roles.roles;
+    const auto local_role_names = mapExternalRolesNoLock(external_roles);
 
-    // Map external role names to local role names.
-    const auto user_role_names = mapExternalRolesNoLock(external_roles);
-
-    external_role_hashes.erase(user_name);
-    granted_roles.clear();
-
-    // Grant the common roles.
-
-    // Initially, all the available ids of common roles were resolved in setConfiguration(),
-    // and, then, maintained by processRoleChange(), so here we just grant those that exist (i.e., resolved).
-    for (const auto & role_name : common_role_names)
+    auto grant_role = [this, &user_name, &granted_roles] (const String & role_name, const bool common)
     {
-        const auto it = granted_role_ids.find(role_name);
-        if (it == granted_role_ids.end())
-        {
-            LOG_WARNING(getLogger(), "Unable to grant common role '{}' to user '{}': role not found", role_name, user_name);
-        }
-        else
-        {
-            const auto & role_id = it->second;
-            granted_roles.insert(role_id);
-        }
-    }
-
-    // Grant the mapped external roles.
-
-    // Cleanup helper relations.
-    for (auto it = users_per_roles.begin(); it != users_per_roles.end();)
-    {
-        const auto & role_name = it->first;
-        auto & user_names = it->second;
-        if (user_role_names.count(role_name) == 0)
-        {
-            user_names.erase(user_name);
-            if (user_names.empty())
-            {
-                if (common_role_names.count(role_name) == 0)
-                {
-                    auto rit = granted_role_ids.find(role_name);
-                    if (rit != granted_role_ids.end())
-                    {
-                        granted_role_names.erase(rit->second);
-                        granted_role_ids.erase(rit);
-                    }
-                }
-                users_per_roles.erase(it++);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-        else
-        {
-            ++it;
-        }
-    }
-
-    // Resolve and assign mapped external role ids.
-    for (const auto & role_name : user_role_names)
-    {
-        users_per_roles[role_name].insert(user_name);
-        const auto it = granted_role_ids.find(role_name);
+        auto it = granted_role_ids.find(role_name);
         if (it == granted_role_ids.end())
         {
             if (const auto role_id = access_control_manager->find<Role>(role_name))
             {
-                granted_roles.insert(*role_id);
                 granted_role_names.insert_or_assign(*role_id, role_name);
-                granted_role_ids.insert_or_assign(role_name, *role_id);
-            }
-            else
-            {
-                LOG_WARNING(getLogger(), "Unable to grant mapped role '{}' to user '{}': role not found", role_name, user_name);
+                it = granted_role_ids.insert_or_assign(role_name, *role_id).first;
             }
         }
-        else
+
+        if (it != granted_role_ids.end())
         {
             const auto & role_id = it->second;
             granted_roles.insert(role_id);
         }
+        else
+        {
+            LOG_WARNING(getLogger(), "Unable to grant {} role '{}' to user '{}': role not found", (common ? "common" : "mapped"), role_name, user_name);
+        }
+    };
+
+    external_role_hashes.erase(user_name);
+    granted_roles.clear();
+    const auto old_role_names = std::move(roles_per_users[user_name]);
+
+    // Grant the common roles first.
+    for (const auto & role_name : common_role_names)
+    {
+        grant_role(role_name, true /* common */);
     }
 
-    external_role_hashes[user_name] = new_hash;
+    // Grant the mapped external roles and actualize users_per_roles mapping.
+    // local_role_names allowed to overlap with common_role_names.
+    for (const auto & role_name : local_role_names)
+    {
+        grant_role(role_name, false /* mapped */);
+        users_per_roles[role_name].insert(user_name);
+    }
+
+    // Cleanup users_per_roles and granted_role_* mappings.
+    for (const auto & old_role_name : old_role_names)
+    {
+        if (local_role_names.count(old_role_name))
+            continue;
+
+        const auto rit = users_per_roles.find(old_role_name);
+        if (rit == users_per_roles.end())
+            continue;
+
+        auto & user_names = rit->second;
+        user_names.erase(user_name);
+
+        if (!user_names.empty())
+            continue;
+
+        users_per_roles.erase(rit);
+
+        if (common_role_names.count(old_role_name))
+            continue;
+
+        const auto iit = granted_role_ids.find(old_role_name);
+        if (iit == granted_role_ids.end())
+            continue;
+
+        const auto old_role_id = iit->second;
+        granted_role_names.erase(old_role_id);
+        granted_role_ids.erase(iit);
+    }
+
+    // Actualize roles_per_users mapping and external_role_hashes cache.
+    if (local_role_names.empty())
+        roles_per_users.erase(user_name);
+    else
+        roles_per_users[user_name] = std::move(local_role_names);
+
+    external_role_hashes[user_name] = external_roles_hash;
 }
 
 
-void LDAPAccessStorage::updateRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const
+void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const
 {
-    // common_role_names are not included since they don't change.
-    const auto new_hash = boost::hash<LDAPSearchResultsList>{}(external_roles);
+    // No need to include common_role_names in this hash each time, since they don't change.
+    const auto external_roles_hash = boost::hash<LDAPSearchResultsList>{}(external_roles);
 
+    // Map and grant the roles from scratch only if the list of external role has changed.
     const auto it = external_role_hashes.find(user_name);
-    if (it != external_role_hashes.end() && it->second == new_hash)
+    if (it != external_role_hashes.end() && it->second == external_roles_hash)
         return;
 
-    auto update_func = [this, &external_roles] (const AccessEntityPtr & entity_) -> AccessEntityPtr
+    auto update_func = [this, &external_roles, external_roles_hash] (const AccessEntityPtr & entity_) -> AccessEntityPtr
     {
         if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
         {
             auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
-            grantRolesNoLock(*changed_user, external_roles);
+            assignRolesNoLock(*changed_user, external_roles, external_roles_hash);
             return changed_user;
         }
         return entity_;
@@ -529,7 +528,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
             throwAddressNotAllowed(address);
 
         // Just in case external_roles are changed. This will be no-op if they are not.
-        updateRolesNoLock(*id, user_name, external_roles);
+        updateAssignedRolesNoLock(*id, user_name, external_roles);
 
         return *id;
     }
@@ -547,7 +546,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
 
-        grantRolesNoLock(*user, external_roles);
+        assignRolesNoLock(*user, external_roles);
 
         return memory_storage.insert(user);
     }
@@ -570,9 +569,10 @@ UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
         user->authentication.setServerName(ldap_server);
 
         LDAPSearchResultsList external_roles;
-        // TODO: mapped external roles are not available here. Implement?
 
-        grantRolesNoLock(*user, external_roles);
+        // TODO: mapped external roles are not available here. Without a password we can't authenticate and retrieve roles from LDAP server.
+
+        assignRolesNoLock(*user, external_roles);
 
         return memory_storage.insert(user);
     }
