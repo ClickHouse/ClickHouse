@@ -2472,12 +2472,12 @@ Default value: `0`.
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
-Allows data types without explicit modifiers in table definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Allows data types without explicit modifiers in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
 
 Possible values:
 
-- 1 — `Nullable`-type expressions are allowed in a table definition.
-- 0 — `Nullable`-type expressions are not allowed in a table definition.
+- 1 — The data type in a column definition is `Nullable`.
+- 0 — The data type in a column definition is not `Nullable`.
 
 Default value: `0`.
 
