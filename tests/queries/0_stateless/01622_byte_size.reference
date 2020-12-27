@@ -1,0 +1,30 @@
+
+# byteSize
+
+byteSize for numbers #0
+1	UInt8	1	UInt16	2	UInt32	4	UInt64	8	UInt256	32
+2	UInt8	1	UInt16	2	UInt32	4	UInt64	8	UInt256	32
+1	Int8	1	Int16	2	Int32	4	Int64	8	Int128	16	UInt256	32
+2	Int8	1	Int16	2	Int32	4	Int64	8	Int128	16	UInt256	32
+1	Float32	4	Float64	8
+2	Float32	4	Float64	8
+
+byteSize for numbers #1
+1	97	Date	2	DateTime	4	DateTime64(3)	8	UUID	16
+2	97	Date	2	DateTime	4	DateTime64(3)	8	UUID	16
+
+byteSize for strings
+1	39		9	a	10	\0\0\0\0\0\0\0\0	8	abcde\0\0\0	8
+2	43	abced	14		9	abcde\0\0\0	8	\0\0\0\0\0\0\0\0	8
+
+byteSize for int arrays
+1	52	[]	8	[[]]	16
+2	88	[1,2]	16	[[],[1,2]]	26
+3	118	[0,256]	16	[[],[1,2],[0,256]]	36
+4	153	[256,65536]	16	[[],[1,2],[0,256],[256,65536]]	46
+
+byteSize for string arrays
+1	52	[]	8	[[]]	16
+2	88	['']	17	[[],['']]	25
+3	118	['','a']	27	[[],[''],['','a']]	35
+4	153	['','a','abced']	41	[[],[''],['','a'],['','a','abced']]	46
