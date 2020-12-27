@@ -108,23 +108,14 @@ private:
     template <typename T>
     void addAttributeSize(const Attribute & attribute);
 
-    void calculateBytesAllocated();
-
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & name);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsStringImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
-
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
         const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
-
-    template <typename T>
-    void resize(Attribute & attribute, const Key id);
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);

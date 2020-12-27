@@ -455,53 +455,6 @@ void DirectDictionary::getItemsImpl(
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-void DirectDictionary::getItemsStringImpl(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
-{
-    const auto rows = ext::size(ids);
-
-    HashMap<Key, String> value_by_key;
-    for (const auto row : ext::range(0, rows))
-        value_by_key[ids[row]] = get_default(row);
-
-    std::vector<Key> to_load;
-    to_load.reserve(value_by_key.size());
-    for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
-        to_load.emplace_back(static_cast<Key>(it->getKey()));
-
-    auto stream = source_ptr->loadIds(to_load);
-    stream->readPrefix();
-
-    while (const auto block = stream->read())
-    {
-        const IColumn & id_column = *block.safeGetByPosition(0).column;
-
-        for (const size_t attribute_idx : ext::range(0, attributes.size()))
-        {
-
-            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-
-            for (const auto row_idx : ext::range(0, id_column.size()))
-            {
-                const auto key = id_column[row_idx].get<UInt64>();
-                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
-                {
-                    const String from_source = attribute_column[row_idx].get<String>();
-                    value_by_key[key] = from_source;
-                }
-            }
-        }
-    }
-    stream->readSuffix();
-
-    for (const auto row : ext::range(0, rows))
-        set_value(row, value_by_key[ids[row]]);
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-
-
 const DirectDictionary::Attribute & DirectDictionary::getAttribute(const std::string & attribute_name) const
 {
     const auto it = attribute_index_by_name.find(attribute_name);
