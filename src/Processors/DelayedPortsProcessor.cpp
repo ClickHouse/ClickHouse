@@ -4,9 +4,9 @@ namespace DB
 {
 
 DelayedPortsProcessor::DelayedPortsProcessor(
-    const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_delayed_ports_empty)
+    const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty)
     : IProcessor(InputPorts(num_ports, header),
-                 OutputPorts(num_ports - (assert_delayed_ports_empty ? delayed_ports.size() : 0), header))
+                 OutputPorts((assert_main_ports_empty ? delayed_ports.size() : num_ports), header))
     , num_delayed(delayed_ports.size())
 {
     port_pairs.resize(num_ports);
@@ -22,7 +22,7 @@ DelayedPortsProcessor::DelayedPortsProcessor(
         port_pairs[i].input_port = &*input_it;
         ++input_it;
 
-        if (!port_pairs[i].is_delayed || !assert_delayed_ports_empty)
+        if (port_pairs[i].is_delayed || !assert_main_ports_empty)
         {
             port_pairs[i].output_port = &*output_it;
             output_to_pair.push_back(i);

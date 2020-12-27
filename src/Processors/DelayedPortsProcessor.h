@@ -11,7 +11,7 @@ namespace DB
 class DelayedPortsProcessor : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_delayed_ports_empty = false);
+    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 
