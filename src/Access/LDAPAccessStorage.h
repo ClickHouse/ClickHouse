@@ -65,8 +65,9 @@ private:
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
-    void grantRolesNoLock(User & user, const LDAPSearchResultsList & external_roles) const;
-    void updateRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const;
+    void assignRolesNoLock(User & user, const LDAPSearchResultsList & external_roles) const;
+    void assignRolesNoLock(User & user, const LDAPSearchResultsList & external_roles, const std::size_t external_roles_hash) const;
+    void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPSearchResultsList & external_roles) const;
     bool isPasswordCorrectLDAPNoLock(const User & user, const String & password, const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const;
 
@@ -74,11 +75,12 @@ private:
     AccessControlManager * access_control_manager = nullptr;
     String ldap_server;
     LDAPSearchParamsList role_search_params;
-    std::set<String> common_role_names;
-    mutable std::map<String, std::set<String>> users_per_roles; // per-user roles: role name -> user names
-    mutable std::map<UUID, String> granted_role_names;          // currently granted roles: role id -> role name
-    mutable std::map<String, UUID> granted_role_ids;            // currently granted roles: role name -> role id
-    mutable std::map<String, std::size_t> external_role_hashes; // user name -> LDAPSearchResultsList hash
+    std::set<String> common_role_names;                         // role name that should be granted to all users at all times
+    mutable std::map<String, std::size_t> external_role_hashes; // user name -> LDAPSearchResultsList hash (most recently retrieved and processed)
+    mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
+    mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
+    mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name
+    mutable std::map<String, UUID> granted_role_ids;            // (currently granted) role name -> its id
     ext::scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };
