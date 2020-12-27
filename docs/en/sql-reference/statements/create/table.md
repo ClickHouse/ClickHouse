@@ -16,8 +16,8 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -56,6 +56,14 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+
+## NULL Or NOT NULL Modifiers {#null-modifiers}
+
+`NULL` and `NOT NULL` modifiers after data type in column definition allow or do not allow it to be [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
+
+If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
+
+See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
 ## Default Values {#create-default-values}
 
@@ -98,14 +106,6 @@ When using the ALTER query to add new columns, old data for these columns is not
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
-
-## NULL Or NOT NULL Modifiers
-
-`NULL` and `NOT NULL` modifiers after data type in table definition allow or do not allow it to be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable). 
-
-If the type is not `Nullable` and if `NULL` is specified, it will be treated as `Nullable`; if `NOT NULL` is specified, then no. For example, `INT NULL` is the same as `Nullable(INT)`. If the type is `Nullable` and `NULL` or `NOT NULL` modifiers are specified, the exception will be thrown.
-
-See also [data_type_default_nullable](../../operations/settings/settings.md#data_type_default_nullable) setting.
 
 ## Primary Key {#primary-key}
 
