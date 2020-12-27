@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 
+#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
@@ -97,7 +98,7 @@ private:
 
 
 /// Special class of exceptions, used mostly in ParallelParsingInputFormat for
-/// more convinient calculation of problem line number.
+/// more convenient calculation of problem line number.
 class ParsingException : public Exception
 {
 public:
@@ -114,7 +115,11 @@ public:
     }
 
 
-    std::string displayText() const override;
+    std::string displayText() const
+#if defined(POCO_CLICKHOUSE_PATCH)
+    override
+#endif
+    ;
 
     int getLineNumber() { return line_number_; }
     void setLineNumber(int line_number) { line_number_ = line_number;}
