@@ -31,6 +31,8 @@ private:
     size_t num_delayed;
     size_t num_finished = 0;
 
+    std::vector<size_t> output_to_pair;
+
     bool processPair(PortsPair & pair);
 };
 
