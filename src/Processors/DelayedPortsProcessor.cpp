@@ -11,6 +11,9 @@ DelayedPortsProcessor::DelayedPortsProcessor(
 {
     port_pairs.resize(num_ports);
 
+    for (const auto & delayed : delayed_ports)
+        port_pairs[delayed].is_delayed = true;
+
     auto input_it = inputs.begin();
     auto output_it = outputs.begin();
     for (size_t i = 0; i < num_ports; ++i)
@@ -18,15 +21,12 @@ DelayedPortsProcessor::DelayedPortsProcessor(
         port_pairs[i].input_port = &*input_it;
         ++input_it;
 
-        if (output_it != outputs.end())
+        if (!port_pairs[i].is_delayed || !assert_delayed_ports_empty)
         {
             port_pairs[i].output_port = &*output_it;
             ++output_it;
         }
     }
-
-    for (const auto & delayed : delayed_ports)
-        port_pairs[delayed].is_delayed = true;
 }
 
 bool DelayedPortsProcessor::processPair(PortsPair & pair)
