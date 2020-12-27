@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 // used by FunctionsStringSimilarity and FunctionsStringHash
 // includes extracting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
 struct ExtractStringImpl
