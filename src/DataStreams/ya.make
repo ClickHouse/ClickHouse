@@ -36,6 +36,7 @@ SRCS(
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
     ParallelParsingBlockInputStream.cpp
+    PostgreSQLBlockInputStream.cpp
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp

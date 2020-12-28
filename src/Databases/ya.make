@@ -25,6 +25,8 @@ SRCS(
     MySQL/MaterializeMetadata.cpp
     MySQL/MaterializeMySQLSettings.cpp
     MySQL/MaterializeMySQLSyncThread.cpp
+    PostgreSQL/DatabasePostgreSQL.cpp
+    PostgreSQL/FetchFromPostgreSQL.cpp
 
 )
 

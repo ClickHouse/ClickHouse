@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include "readInvalidateQuery.h"
-
+#endif
 
 namespace DB
 {
@@ -18,6 +18,8 @@ namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
 }
+
+#if USE_LIBPQXX
 
 static const UInt64 max_block_size = 8192;
 
@@ -154,6 +156,7 @@ std::string PostgreSQLDictionarySource::toString() const
     return "PostgreSQL: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
 
+#endif
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
@@ -188,6 +191,5 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     };
     factory.registerSource("postgresql", create_table_source);
 }
-}
-#endif
 
+}
