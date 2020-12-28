@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT --query="create table line_as_string2(
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO line_as_string2(c) values ('ClickHouse')";
 
-echo "ClickHouse is a `fast` #open-source# (OLAP) 'database' "'"management"'" :system:" | $CLICKHOUSE_CLIENT --query="INSERT INTO line_as_string2(c) FORMAT LineAsString";
+echo 'ClickHouse is a `fast` #open-source# (OLAP) database "management" :system:' | $CLICKHOUSE_CLIENT --query="INSERT INTO line_as_string2(c) FORMAT LineAsString";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM line_as_string2 order by c";
 $CLICKHOUSE_CLIENT --query="DROP TABLE line_as_string2"
