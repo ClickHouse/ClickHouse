@@ -35,6 +35,12 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     std::string getName() const override;
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & /* node */, const Context & /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return true;
+    }
 private:
 
     BridgeHelperPtr bridge_helper;

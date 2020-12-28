@@ -6,7 +6,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <IO/WriteBufferFromString.h>
@@ -88,6 +91,76 @@ public:
     }
 };
 
+class FillInSetContents
+{
+public:
+    struct Data {
+        const SelectQueryInfo & query_info;
+        Data(const SelectQueryInfo & query_info_in) : query_info(query_info_in) {} 
+    };
+
+
+    Data data;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Data & data)
+    {
+        if (const auto * func = node->as<ASTFunction>())
+        {
+            std::string func_name = func->name;
+            if (functionIsInOrGlobalInOperator(func_name))
+            {
+                LOG_WARNING(&Poco::Logger::get("setTransform"), "Found IN");
+                const ASTs & args = func->arguments->children;
+                const ASTPtr & right_arg = args[1];
+
+                if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
+                {
+                    LOG_WARNING(&Poco::Logger::get("setTransform"), "Found Subquery");
+                    auto set_it = data.query_info.sets.find(PreparedSetKey::forSubquery(*right_arg));
+                    if (set_it == data.query_info.sets.end())
+                        return;
+                    LOG_WARNING(&Poco::Logger::get("setTransform"), "Found prepared set");
+
+                    SetPtr prepared_set = set_it->second;
+                    if (!prepared_set->hasExplicitSetElements())
+                        return;
+
+                    const Columns & set_columns = prepared_set->getSetElements();
+
+                    LOG_WARNING(&Poco::Logger::get("setTransform"), "Found explicit prepared set {} {}", set_columns.size(), set_columns[0]->size());
+
+                    node = std::make_shared<ASTFunction>();
+                    node->as<ASTFunction>()->name = func_name;
+
+                    auto in_args = std::make_shared<ASTExpressionList>();
+                    node->as<ASTFunction>()->arguments = in_args;
+                    in_args->children.emplace_back(args[0]);
+
+                    auto inner_node = std::make_shared<ASTFunction>();
+                    inner_node->as<ASTFunction>()->name = "tuple";
+
+                    auto contents_node = std::make_shared<ASTExpressionList>();
+                    inner_node->as<ASTFunction>()->arguments = contents_node;
+                    inner_node->children.push_back(contents_node);
+                    for (size_t j = 0; j < set_columns[0]->size(); j++) {
+                        for (size_t i = 0; i < set_columns.size(); i++) {
+                            contents_node->children.emplace_back(std::make_shared<ASTLiteral>((*set_columns[i])[j]));
+                        }
+                    }
+                    in_args->children.emplace_back(contents_node);
+
+                    LOG_WARNING(&Poco::Logger::get("setTransform"), "Made it to the end");
+                }
+            }
+        }
+    }
+};
+
 void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     auto syntax_result = TreeRewriter(context).analyze(node, all_columns);
@@ -104,6 +177,13 @@ void dropAliases(ASTPtr & node)
     visitor.visit(node);
 }
 
+void fillInSetContents(ASTPtr & node, const SelectQueryInfo & query_info)
+{
+    LOG_WARNING(&Poco::Logger::get("setTransform"), "Running fillInSetContents");
+    FillInSetContents::Data data(query_info);
+    InDepthNodeVisitor<FillInSetContents, true> visitor(data);
+    visitor.visit(node);
+}
 
 bool isCompatible(const IAST & node)
 {
@@ -218,6 +298,7 @@ String transformQueryForExternalDatabase(
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
+    fillInSetContents(select_ptr, query_info);
 
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(out, true);
