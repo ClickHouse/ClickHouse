@@ -87,12 +87,13 @@ Format a query as usual, then place the values that you want to pass from the ap
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types).
+-   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as a parameter, in that case you would need to use `Identifier` as a data type.
 
 #### Example {#example}
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
 ## Configuring {#interfaces_cli_configuration}

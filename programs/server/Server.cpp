@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -103,6 +104,12 @@ namespace CurrentMetrics
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+
+    /// Do not fork separate process from watchdog if we attached to terminal.
+    /// Otherwise it breaks gdb usage.
+    if (argc > 0 && !isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
+        app.shouldSetupWatchdog(argv[0]);
+
     try
     {
         return app.run(argc, argv);
@@ -366,6 +373,7 @@ void checkForUsersNotInMainConfig(
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
