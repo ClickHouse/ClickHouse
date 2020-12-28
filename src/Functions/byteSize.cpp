@@ -1,25 +1,28 @@
-#include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <Common/UInt128.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Core/Types.h>
-#include <Common/UInt128.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionImpl.h>
+
+#include <common/logger_useful.h>
 #include <ext/range.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -77,10 +80,11 @@ private:
             for (size_t i = 0; i < vec_size; ++i)
                 vec_res[i] += byte_size;
         }
+        else if (byteSizeByColumn(data_type, column, vec_res))
+            ;
         else
-        {
-            byteSizeByColumn(data_type, column, vec_res);
-        }
+            LOG_WARNING(&Poco::Logger::get("FunctionByteSize"),
+                        "byteSize for \"{}\" is not supported.", data_type->getName());
     }
 
     static bool byteSizeByDataType(const IDataType * data_type, UInt64 & byte_size)
@@ -88,16 +92,11 @@ private:
         TypeIndex type_id = data_type->getTypeId();
         if (byteSizeByTypeId(type_id, byte_size))
             return true;
-
-        switch (type_id)
-        {
-            case TypeIndex::FixedString:
-                byte_size = checkAndGetDataType<DataTypeFixedString>(data_type)->getN();
-                break;
-            default:
-                return false;
+        else if (isFixedString(type_id)) {
+            byte_size = checkAndGetDataType<DataTypeFixedString>(data_type)->getN();
+            return true;
         }
-        return true;
+        return false;
     }
 
     static bool byteSizeByTypeId(TypeIndex type_id, UInt64 & byte_size)
@@ -139,14 +138,6 @@ private:
         return true;
     }
 
-#define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, \
-                          Int8, Int16, Int32, Int64, Int128, Int256, \
-                          Float32, Float64
-                          // The following is not supported by ColumnVector:
-                          //   Decimal32, Decimal64, Decimal128, Decimal256
-                          //   DataTypeEnum8, DataTypeEnum16, DataTypeDate, DataTypeDateTime, DataTypeDateTime64
-                          //   DataTypeUUID
-
     static bool byteSizeByColumn(const IDataType * data_type, const IColumn * column, ColumnUInt64::Container & vec_res)
     {
         WhichDataType which(data_type);
@@ -166,20 +157,23 @@ private:
         }
         else if (which.isArray()) // TypeIndex::Array
         {
-            if (byteSizeForConstArray(data_type, column, vec_res))
+            if (byteSizeForConstArray(column, vec_res))
                 return true;
 
             const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column);
-            return byteSizeForIntegralArray<INTEGRAL_TPL_PACK>(col_arr, data_type, vec_res)
-                   || byteSizeForGenericArray(col_arr, vec_res)
-                || byteSizeForStringArray(col_arr, vec_res)
-                || byteSizeForArrayOfArray(col_arr, vec_res);
+            return byteSizeForArrayByDataType(col_arr, vec_res)
+                   || byteSizeForArray(col_arr, vec_res);
         }
         else if (which.isNullable()) // TypeIndex::Nullable
         {
             const ColumnNullable * col_null = checkAndGetColumn<ColumnNullable>(column);
             for (size_t i = 0; i < vec_size; ++i)
-                vec_res[i] += col_null->getDataAtWithTerminatingZero(i).size + sizeof(bool);
+            {
+                UInt64 byte_size = sizeof(bool);
+                if (!col_null->isNullAt(i))
+                    byte_size += byteSizeForNestedItem(col_null->getNestedColumn(), i);
+                vec_res[i] += byte_size;
+            }
             return true;
         }
         else if (which.isTuple()) // TypeIndex::Tuple
@@ -208,38 +202,27 @@ private:
         return false;
     }
 
-#undef INTEGRAL_TPL_PACK
-
-    template <class ...Integral>
-    static inline bool byteSizeForIntegralArray(const ColumnArray * col_arr, const IDataType * data_type, ColumnUInt64::Container & vec_res)
+    static bool byteSizeForArrayByDataType(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
     {
-        return (byteSizeForIntegralArrayExpanded<Integral>(col_arr, data_type, vec_res) || ...);
-    }
-
-    template <class NestedType>
-    static bool byteSizeForIntegralArrayExpanded(const ColumnArray * col_arr, const IDataType * /*data_type*/, ColumnUInt64::Container & vec_res)
-    {
-        const ColumnVector<NestedType> * col_nested = checkAndGetColumn<ColumnVector<NestedType>>(&(col_arr->getData()));
-        if (!col_nested)
-            return false;
-
-        size_t vec_size = vec_res.size();
-        const auto & offsets = col_arr->getOffsets();
-
-        ColumnArray::Offset prev_offset = 0;
-        for (size_t i = 0; i < vec_size; ++i)
+        TypeIndex type_id = col_arr->getData().getDataType();
+        UInt64 byte_size = 0;
+        if (byteSizeByTypeId(type_id, byte_size))
         {
-            UInt64 byte_size = 0;
-            byteSizeByTypeId(TypeId<NestedType>::value, byte_size);
-
-            size_t array_size = offsets[i] - prev_offset;
-            vec_res[i] += array_size * byte_size + sizeof(offsets[0]);
-            prev_offset = offsets[i];
+            size_t vec_size = vec_res.size();
+            const auto & offsets = col_arr->getOffsets();
+            ColumnArray::Offset prev_offset = 0;
+            for (size_t i = 0; i < vec_size; ++i)
+            {
+                size_t array_size = offsets[i] - prev_offset;
+                vec_res[i] += array_size * byte_size + sizeof(offsets[0]);
+                prev_offset = offsets[i];
+            }
+            return true;
         }
-        return true;
+        return false;
     }
 
-    static inline bool byteSizeForConstArray(const IDataType * /*data_type*/, const IColumn * column, ColumnUInt64::Container & vec_res) {
+    static inline bool byteSizeForConstArray(const IColumn * column, ColumnUInt64::Container & vec_res) {
         const ColumnConst * col_arr = checkAndGetColumnConst<ColumnArray>(column);
         if (!col_arr)
             return false;
@@ -250,82 +233,25 @@ private:
         return true;
     }
 
-    static bool byteSizeForStringArray(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
+    static UInt64 byteSizeForNestedItem(const IColumn & column, size_t idx)
     {
-        const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&(col_arr->getData()));
-        if (!col_nested)
-            return false;
-
-        size_t vec_size = vec_res.size();
-        const auto & offsets = col_arr->getOffsets();
-        const auto & string_offsets = col_nested->getOffsets();
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < vec_size; ++i)
-        {
-            UInt64 byte_size = 0;
-            size_t array_size = offsets[i] - current_offset;
-            for (size_t j = 0; j < array_size; ++j)
-                byte_size += col_nested->getDataAtWithTerminatingZero(current_offset + j).size;
-            vec_res[i] += byte_size + array_size * sizeof(string_offsets[0]) + sizeof(offsets[0]);
-            current_offset = offsets[i];
-        }
-        return true;
-    }
-
-    static bool byteSizeForArrayOfArray(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
-    {
-        const ColumnArray * col_nested = checkAndGetColumn<ColumnArray>(&(col_arr->getData()));
-        if (!col_nested)
-            return false;
-
-        size_t vec_size = vec_res.size();
-        const auto & offsets = col_arr->getOffsets();
-        const auto & array_offsets = col_nested->getOffsets();
-
-        ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < vec_size; ++i)
-        {
-            UInt64 byte_size = 0;
-            size_t array_size = offsets[i] - current_offset;
-            if (!col_nested->getData().empty())
-            {
-                for (size_t j = 0; j < array_size; ++j)
-                    byte_size += col_nested->getDataAtWithTerminatingZero(current_offset + j).size;
-            }
-            vec_res[i] += byte_size + array_size * sizeof(array_offsets[0]) + sizeof(offsets[0]);
-            current_offset = offsets[i];
-        }
-        return true;
-    }
-
-    static UInt64 byteSizeForArrayItem(const IColumn & column, size_t idx /*, const ColumnArray::ColumnOffsets & upper_offsets*/)
-    {
-//        if (column.empty())
-//            return 0;
-
         if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(&column))
-        {
             return col_str->getDataAtWithTerminatingZero(idx).size + sizeof(col_str->getOffsets()[0]);
-        }
         else if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(&column))
         {
             UInt64 byte_size = 0;
             const auto & offsets = col_arr->getOffsets();
             ColumnArray::Offset current_offset = idx == 0 ? 0 : offsets[idx - 1];
             size_t array_size = offsets[idx] - current_offset;
-//            size_t array_size = offsets.size();
             for (size_t i = 0; i < array_size; ++i)
-                byte_size += byteSizeForArrayItem(col_arr->getData(), current_offset + i);
+                byte_size += byteSizeForNestedItem(col_arr->getData(), current_offset + i);
             return byte_size + sizeof(offsets[0]);
         }
         else
-        {
             return column.getDataAtWithTerminatingZero(idx).size;
-        }
     }
 
-    static bool byteSizeForGenericArray(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
+    static bool byteSizeForArray(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
     {
         const IColumn & col_nested = col_arr->getData();
         size_t vec_size = vec_res.size();
@@ -337,16 +263,12 @@ private:
             UInt64 byte_size = 0;
             size_t array_size = offsets[i] - current_offset;
             for (size_t j = 0; j < array_size; ++j)
-            {
-                // byte_size += col_nested.getDataAtWithTerminatingZero(current_offset + j).size;
-                byte_size += byteSizeForArrayItem(col_nested, current_offset + j);
-            }
+                byte_size += byteSizeForNestedItem(col_nested, current_offset + j);
             vec_res[i] += byte_size + sizeof(offsets[0]);
             current_offset = offsets[i];
         }
         return true;
     }
-
 };
 
 }

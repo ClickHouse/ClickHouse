@@ -137,7 +137,7 @@ select 'byteSize for string array of arrays';
 -- select key,byteSize(*), strs,byteSize(strs), str_strs,byteSize(str_strs) from test_byte_size_complex_array order by key;
 select key,byteSize(*), strs,byteSize(strs), str_strs,byteSize(str_strs) from test_byte_size_complex_array order by key;
 
--- drop table if exists test_byte_size_complex_array;
+drop table if exists test_byte_size_complex_array;
 
 
 -- others --
