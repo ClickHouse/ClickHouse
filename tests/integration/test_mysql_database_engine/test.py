@@ -198,10 +198,12 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
 # float_values = [0] mysql returns 0 while clickhouse returns 0.0, so cannot compare using == directly
 int32_values = [0, 1, -1, 2147483647, -2147483648]
 uint32_values = [0, 1] # [FIXME] seems client have issue with value 4294967295, it returns -1 for it
+mint = [0, 1, -1, 8388607, -8388608]
+umint = [0, 1, -1, 16777215]
 int16_values = [0, 1, -1, 32767, -32768]
 uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
-uint8_values = [0, 1, 256]
+uint8_values = [0, 1, 255]
 # string_values = ["'ClickHouse'", 'NULL']
 string_values = ["'ClickHouse'"] 
 
@@ -225,15 +227,15 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
                              ("common_types", "INT UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10)", "Nullable(Int32)", int32_values, ""),
                              ("common_types", "INT(10) NOT NULL", "Int32", int32_values, ""),
-                             ("common_types", "INT(10) UNSIGNED NOT NULL", "Int32", uint32_values, ""),
+                             ("common_types", "INT(10) UNSIGNED NOT NULL", "UInt32", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED DEFAULT NULL", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INTEGER", "Nullable(Int32)", int32_values, ""),
                              ("common_types", "INTEGER UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
 
-                             ("common_types", "MEDIUMINT", "Nullable(Int32)", int32_values, ""),
-                             ("common_types", "MEDIUMINT UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
+                             ("common_types", "MEDIUMINT", "Nullable(Int32)", mint_values, ""),
+                             ("common_types", "MEDIUMINT UNSIGNED", "Nullable(UInt32)", umint_values, ""),
 
                              ("common_types", "SMALLINT", "Nullable(Int16)", int16_values, ""),
                              ("common_types", "SMALLINT UNSIGNED", "Nullable(UInt16)", uint16_values, ""),
