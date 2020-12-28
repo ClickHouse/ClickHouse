@@ -72,7 +72,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(
     Tables tables;
     auto table_names = fetchTablesList();
 
-    for (auto & table_name : table_names)
+    for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, context, true);
 
@@ -102,10 +102,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
         "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '{}'", table_name));
 
-    if (result.empty())
-        return false;
-
-    return true;
+    return !result.empty();
 }
 
 

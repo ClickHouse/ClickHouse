@@ -23,9 +23,12 @@
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Common/parseAddress.h>
 #    include <mysqlxx/Pool.h>
+#endif
+
+#if USE_MYSQL || USE_LIBPQXX
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Common/parseAddress.h>
 #endif
 
 #if USE_LIBPQXX
