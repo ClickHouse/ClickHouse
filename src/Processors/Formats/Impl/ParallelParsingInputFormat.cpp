@@ -38,7 +38,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            const bool have_more_data = file_segmentation_engine(in, unit.segment, min_chunk_bytes);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(in, unit.segment, min_chunk_bytes);
+
+            unit.offset = successfully_read_rows_count;
+            successfully_read_rows_count += currently_read_rows;
 
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
@@ -51,7 +54,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(successfully_read_rows_count);
     }
 }
 
@@ -64,12 +67,12 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
+    const auto current_unit_number = current_ticket_number % processing_units.size();
+    auto & unit = processing_units[current_unit_number];
+
     try
     {
         setThreadName("ChunkParser");
-
-        const auto current_unit_number = current_ticket_number % processing_units.size();
-        auto & unit = processing_units[current_unit_number];
 
         /*
          * This is kind of suspicious -- the input_process_creator contract with
@@ -90,7 +93,9 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         Chunk chunk;
         while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
         {
-            unit.chunk_ext.chunk.emplace_back(std::move(chunk));
+            /// Variable chunk is moved, but it is not really used in the next iteration.
+            /// NOLINTNEXTLINE(bugprone-use-after-move)
+            unit.chunk_ext.chunk.emplace_back(std::move(chunk)); 
             unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
         }
 
@@ -104,12 +109,12 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
     }
     catch (...)
     {
-        onBackgroundException();
+        onBackgroundException(unit.offset);
     }
 }
 
 
-void ParallelParsingInputFormat::onBackgroundException()
+void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -117,7 +122,11 @@ void ParallelParsingInputFormat::onBackgroundException()
     if (!background_exception)
     {
         background_exception = std::current_exception();
+        if (ParsingException * e = exception_cast<ParsingException *>(background_exception))
+            if (e->getLineNumber() != -1)
+                e->setLineNumber(e->getLineNumber() + offset);
     }
+    tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
     reader_condvar.notify_all();
     segmentator_condvar.notify_all();

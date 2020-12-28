@@ -95,8 +95,11 @@ protected:
         IOutputFormat::finalized = true;
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE);
         collector_finished.wait();
-        if (background_exception)
-            std::rethrow_exception(background_exception);
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            if (background_exception)
+                std::rethrow_exception(background_exception);
+        }
     }
 
 private:
@@ -122,8 +125,11 @@ private:
 
     void addChunk(Chunk chunk, ProcessingUnitType type)
     {
-        if (background_exception)
-            std::rethrow_exception(background_exception);
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            if (background_exception)
+                std::rethrow_exception(background_exception);
+        }
 
         const auto current_unit_number = writer_unit_number % processing_units.size();
         auto & unit = processing_units[current_unit_number];
@@ -286,7 +292,7 @@ private:
             auto & unit = processing_units[current_unit_number];
             assert(unit.status = READY_TO_FORMAT);
 
-            unit.segment.resize(0);
+            unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
             unit.actual_memory_size = 0;
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
 
