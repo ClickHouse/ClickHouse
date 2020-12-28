@@ -176,12 +176,12 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
                     visit(child, data);
             }
         }
-        
+
         if (func_node->window_partition_by)
         {
             visitChildren(func_node->window_partition_by.get(), data);
         }
-        
+
         if (func_node->window_order_by)
         {
             visitChildren(func_node->window_order_by.get(), data);
