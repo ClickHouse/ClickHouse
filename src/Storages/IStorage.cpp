@@ -3,16 +3,18 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 
-#include <Storages/AlterCommands.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/Context.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/quoteString.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/AlterCommands.h>
 
 
 namespace DB
@@ -173,6 +175,45 @@ Names IStorage::getAllRegisteredNames() const
     const NamesAndTypesList & available_columns = getInMemoryMetadata().getColumns().getAllPhysical();
     std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
     return result;
+}
+
+std::string PrewhereDAGInfo::dump() const
+{
+    WriteBufferFromOwnString ss;
+    ss << "PrewhereDagInfo\n";
+
+    if (alias_actions)
+    {
+        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
+    }
+
+    if (prewhere_actions)
+    {
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
+    }
+
+    if (remove_columns_actions)
+    {
+        ss << "remove_columns_actions " << remove_columns_actions->dumpDAG() << "\n";
+    }
+
+    ss << "remove_prewhere_column " << remove_prewhere_column
+       << ", need_filter " << need_filter << "\n";
+
+    return ss.str();
+}
+
+std::string FilterInfo::dump() const
+{
+    WriteBufferFromOwnString ss;
+    ss << "FilterInfo for column '" << column_name <<"', do_remove_column "
+       << do_remove_column << "\n";
+    if (actions_dag)
+    {
+        ss << "actions_dag " << actions_dag->dumpDAG() << "\n";
+    }
+
+    return ss.str();
 }
 
 }

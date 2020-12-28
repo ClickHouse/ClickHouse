@@ -886,7 +886,7 @@ if __name__ == '__main__':
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
-    group.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
+    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
 
     args = parser.parse_args()
 
