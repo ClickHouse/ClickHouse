@@ -1364,9 +1364,6 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            // if (context.getSettingsRef().output_format_parallel_formatting)
-            //     need_render_progress = false;
-
             connection->forceConnected(connection_parameters.timeouts);
 
             ASTPtr input_function;
@@ -1939,7 +1936,7 @@ private:
 
             if (!is_interactive && !need_render_progress)
                 block_out_stream = context.getOutputFormatParallelIfPossible(current_format, *out_buf, block);
-            
+
             if (!block_out_stream)
                 block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
 

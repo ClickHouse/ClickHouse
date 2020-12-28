@@ -13,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class Context;
 
 /**
@@ -52,7 +58,7 @@ class Context;
 class ParallelParsingInputFormat : public IInputFormat
 {
 public:
-  /* Used to recreate parser on every new data piece. */
+    /* Used to recreate parser on every new data piece.*/
     using InternalParserCreator = std::function<InputFormatPtr(ReadBuffer & buf)>;
 
     struct Params
