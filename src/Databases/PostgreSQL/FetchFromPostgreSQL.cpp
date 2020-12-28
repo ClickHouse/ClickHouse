@@ -92,8 +92,8 @@ DataTypePtr getDataType(std::string & type, bool is_nullable, uint16_t dimension
         if (result.size() < 3)
             throw Exception("Numeric lacks precision and scale in its definition", ErrorCodes::UNKNOWN_TYPE);
 
-        uint32_t precision = std::atoi(result[1].data());
-        uint32_t scale = std::atoi(result[2].data());
+        uint32_t precision = pqxx::from_string<uint32_t>(result[1]);
+        uint32_t scale = pqxx::from_string<uint32_t>(result[2]);
 
         if (precision <= DecimalUtils::maxPrecision<Decimal32>())
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
