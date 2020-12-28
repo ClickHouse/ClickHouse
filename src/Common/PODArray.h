@@ -315,7 +315,9 @@ protected:
     template <typename It1, typename It2>
     inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
     {
-        assert(!((from_begin >= begin() && from_begin <= end()) || (from_end >= begin() && from_end <= end())));
+        /// Only compare pointers of the same type.
+        if constexpr (std::is_same_v<std::decay_t<decltype(*from_begin)>, T> && std::is_same_v<std::decay_t<decltype(*from_end)>, T>)
+            assert(!((from_begin >= begin() && from_begin <= end()) || (from_end >= begin() && from_end <= end())));
     }
 
 public:
