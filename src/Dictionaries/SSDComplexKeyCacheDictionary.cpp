@@ -24,6 +24,7 @@
 #include <city.h>
 #include <fcntl.h>
 
+#include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
 {
@@ -1376,90 +1377,152 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     createAttributes();
 }
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
-    }
+ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr &,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const ColumnPtr default_untyped) const
+{
+    dict_struct.validateKeyTypes(key_types);
 
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    const auto index = getAttributeIndex(attribute_name);
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t row) { return def[row]; }); /* NOLINT */ \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    ColumnPtr result;
 
-#define DECLARE(TYPE) \
-    void SSDComplexKeyCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto index = getAttributeIndex(attribute_name); \
-        checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return def; }); /* NOLINT */ \
-    }
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
+    
+    auto keys_size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
+                }
+            }
+            else
+            {
+                const auto null_value = StringRef{std::get<String>(null_values[index])};
+
+                getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(keys_size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        key_columns,
+                        key_types,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        key_columns,
+                        key_types,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(null_values[index]); /* NOLINT */
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    index,
+                    key_columns,
+                    key_types,
+                    out,
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(keys_size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        key_columns,
+                        key_types,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        index,
+                        key_columns,
+                        key_types,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(null_values[index]); /* NOLINT */
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    index,
+                    key_columns,
+                    key_types,
+                    out,
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
+   
+    return result;
+}
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
@@ -1506,42 +1569,6 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
                     out[row] = get_default(row);
             },
             getLifetime());
-}
-
-void SSDComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name,
-    const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    const auto null_value = StringRef{std::get<String>(null_values[index])};
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return null_value; });
-}
-
-void SSDComplexKeyCacheDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns, const DataTypes & key_types,
-        const ColumnString * const def, ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return def->getDataAt(row); });
-}
-
-void SSDComplexKeyCacheDictionary::getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const String & def,
-        ColumnString * const out) const
-{
-    const auto index = getAttributeIndex(attribute_name);
-    checkAttributeType(this, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
-
-    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
 }
 
 template <typename DefaultGetter>
@@ -1639,12 +1666,19 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     }
 }
 
-void SSDComplexKeyCacheDictionary::has(
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr SSDComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
+
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
+
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = false;
 
     const auto now = std::chrono::system_clock::now();
 
@@ -1652,7 +1686,7 @@ void SSDComplexKeyCacheDictionary::has(
     TemporalComplexKeysPool not_found_pool;
     storage.has(key_columns, key_types, out, not_found_keys, not_found_pool, now);
     if (not_found_keys.empty())
-        return;
+        return result;
 
     std::vector<KeyRef> required_keys(not_found_keys.size());
     std::transform(std::begin(not_found_keys), std::end(not_found_keys), std::begin(required_keys), [](const auto & pair) { return pair.first; });
@@ -1681,6 +1715,8 @@ void SSDComplexKeyCacheDictionary::has(
                     out[row] = false;
             },
             getLifetime());
+
+    return result;
 }
 
 BlockInputStreamPtr SSDComplexKeyCacheDictionary::getBlockInputStream(
