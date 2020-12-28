@@ -41,6 +41,11 @@
 
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric MaxDDLEntryID;
+}
+
 namespace DB
 {
 
@@ -312,6 +317,7 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & 
     , pool_size(pool_size_)
     , worker_pool(pool_size_)
 {
+    CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, 0);
     last_tasks.reserve(pool_size);
 
     queue_dir = zk_root_dir;
@@ -804,6 +810,22 @@ void DDLWorker::processTask(DDLTask & task)
 
         /// We need to distinguish ZK errors occurred before and after query executing
         task.was_executed = true;
+    }
+
+    {
+        DB::ReadBufferFromString in(task.entry_name);
+        DB::assertString("query-", in);
+        UInt64 id;
+        readText(id, in);
+        auto prev_id = max_id.load(std::memory_order_relaxed);
+        while (prev_id < id)
+        {
+            if (max_id.compare_exchange_weak(prev_id, id))
+            {
+                CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
+                break;
+            }
+        }
     }
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.

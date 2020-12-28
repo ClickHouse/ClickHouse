@@ -35,6 +35,7 @@ limitations under the License. */
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Access/AccessFlags.h>
@@ -301,6 +302,11 @@ Block StorageLiveView::getHeader() const
         }
     }
     return sample_block;
+}
+
+StoragePtr StorageLiveView::getParentStorage() const
+{
+    return DatabaseCatalog::instance().getTable(select_table_id, global_context);
 }
 
 ASTPtr StorageLiveView::getInnerBlocksQuery()

@@ -64,7 +64,14 @@ function stop_server
 function start_server
 {
     set -m # Spawn server in its own process groups
-    clickhouse-server --config-file="$FASTTEST_DATA/config.xml" -- --path "$FASTTEST_DATA" --user_files_path "$FASTTEST_DATA/user_files" &>> "$FASTTEST_OUTPUT/server.log" &
+    local opts=(
+        --config-file="$FASTTEST_DATA/config.xml"
+        --
+        --path "$FASTTEST_DATA"
+        --user_files_path "$FASTTEST_DATA/user_files"
+        --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
+    )
+    clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
     set +m
 
@@ -155,6 +162,7 @@ function clone_submodules
             contrib/miniselect
             contrib/xz
             contrib/dragonbox
+            contrib/fast_float
         )
 
         git submodule sync
@@ -318,6 +326,9 @@ function run_tests
         01545_system_errors
         # Checks system.errors
         01563_distributed_query_finish
+
+        # nc - command not found
+        01601_proxy_protocol
     )
 
     time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"

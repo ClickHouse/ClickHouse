@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -16,6 +15,7 @@ namespace DB
 
 class Block;
 class Context;
+struct Settings;
 
 struct ExpressionActionsChain;
 class ExpressionActions;
@@ -60,6 +60,10 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
 
+    bool has_window = false;
+    WindowDescriptions window_descriptions;
+    NamesAndTypesList window_columns;
+
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
@@ -80,10 +84,7 @@ private:
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
 
-        ExtractedSettings(const Settings & settings_)
-        :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
-            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
-        {}
+        ExtractedSettings(const Settings & settings_);
     };
 
 public:
@@ -118,6 +119,9 @@ public:
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
+
+    /// A list of windows for window functions.
+    const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
 protected:
     ExpressionAnalyzer(
@@ -162,6 +166,8 @@ protected:
     void analyzeAggregation();
     bool makeAggregateDescriptions(ActionsDAGPtr & actions);
 
+    bool makeWindowDescriptions(ActionsDAGPtr & actions);
+
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const { return syntax->is_remote_storage; }
@@ -172,6 +178,8 @@ class SelectQueryExpressionAnalyzer;
 /// Result of SelectQueryExpressionAnalyzer: expressions for InterpreterSelectQuery
 struct ExpressionAnalysisResult
 {
+    std::string dump() const;
+
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -179,6 +187,7 @@ struct ExpressionAnalysisResult
 
     bool need_aggregate = false;
     bool has_order_by   = false;
+    bool has_window = false;
 
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
@@ -192,6 +201,7 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
+    ActionsDAGPtr before_window;
     ActionsDAGPtr before_order_and_select;
     ActionsDAGPtr before_limit_by;
     ActionsDAGPtr final_projection;
@@ -259,6 +269,7 @@ public:
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
+    bool hasWindow() const { return has_window; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
@@ -329,6 +340,7 @@ private:
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
+    void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

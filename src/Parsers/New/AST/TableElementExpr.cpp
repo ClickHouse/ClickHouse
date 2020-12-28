@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/New/AST/ColumnExpr.h>
 #include <Parsers/New/AST/ColumnTypeExpr.h>

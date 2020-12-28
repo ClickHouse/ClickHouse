@@ -58,7 +58,7 @@ check_cxx_compiler_flag("-Wshadow" HAS_SHADOW)
 
 target_compile_options (clickhouse_parsers_new
     PRIVATE
-        -Wno-c++20-compat
+        -Wno-c++2a-compat
         -Wno-deprecated-this-capture
         -Wno-documentation-html
         -Wno-documentation
