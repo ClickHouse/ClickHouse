@@ -174,7 +174,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     auto granules_to_write = getGranulesToWrite(index_granularity, block.rows(), getCurrentMark(), rows_written_in_last_mark);
 
-    auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
     Block primary_key_block;
     if (settings.rewrite_primary_key)
         primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
@@ -183,7 +182,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     std::unique_ptr<ThreadPool> writing_thread_pool;
     std::vector<WrittenOffsetColumns> offset_columns_per_column;
-    std::vector<ColumnWriteResult> write_results(columns_list.size());
+    std::vector<bool> column_data_written(columns_list.size());
     if (settings.max_threads_per_block != 1)
     {
         offset_columns_per_column.reserve(columns_list.size());
@@ -218,7 +217,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
         auto write_column_job = [&, i, it]
         {
-            ColumnWriteResult result;
+            bool written;
+
             if (permutation)
             {
                 if (primary_key_block.has(it->name))
@@ -242,7 +242,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
             {
                 written = writeColumn(column.name, *column.type, *column.column, offset_columns, granules_to_write);
             }
-            write_results[i] = result;
+
+            column_data_written[i] = written;
         };
 
         if (writing_thread_pool)
@@ -391,7 +392,6 @@ MergeTreeDataPartWriterOnDisk::WrittenOffsetColumns MergeTreeDataPartWriterWide:
 void MergeTreeDataPartWriterWide::prepareWriteColumn(
     const String & name,
     const IDataType & type,
-    const IColumn & column,
     WrittenOffsetColumns & offset_columns)
 {
     auto [it, inserted] = serialization_states.emplace(name, nullptr);
@@ -430,7 +430,7 @@ bool MergeTreeDataPartWriterWide::writeColumn(
            type,
            column,
            offset_columns,
-           it->second,
+           serialization_states[name],
            serialize_settings,
            granule
         );
