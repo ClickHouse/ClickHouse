@@ -155,7 +155,6 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::Wait: break;
                     case IProcessor::Status::ExpandPipeline:
                         throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
                                              " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
@@ -217,6 +216,8 @@ private:
         ChunkExt chunk_ext;
         Memory<> segment;
         std::atomic<ProcessingUnitStatus> status;
+        /// Needed for better exception message.
+        size_t offset = 0;
         bool is_last{false};
     };
 
@@ -225,6 +226,9 @@ private:
     /// We use deque instead of vector, because it does not require a move
     /// constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
+
+    /// Compute it to have a more understandable error message.
+    size_t successfully_read_rows_count{0};
 
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
@@ -265,7 +269,7 @@ private:
     /// threads. This function is used by segmentator and parsed threads.
     /// readImpl() is called from the main thread, so the exception handling
     /// is different.
-    void onBackgroundException();
+    void onBackgroundException(size_t offset);
 };
 
 }
