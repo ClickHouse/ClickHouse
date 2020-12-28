@@ -10,6 +10,7 @@
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include <Functions/FunctionHelpers.h>
 
 
 namespace ProfileEvents
@@ -70,48 +71,145 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     createAttributes();
 }
 
-
-void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
-{
-    dict_struct.validateKeyTypes(key_types);
-
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
-
-    getItemsString(attribute, key_columns, out, [&](const size_t) { return null_value; });
-}
-
-void ComplexKeyCacheDictionary::getString(
+ColumnPtr ComplexKeyCacheDictionary::getColumn(
     const std::string & attribute_name,
+    const DataTypePtr &,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnString * const def,
-    ColumnString * const out) const
+    const ColumnPtr default_untyped) const
 {
     dict_struct.validateKeyTypes(key_types);
 
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsString(attribute, key_columns, out, [&](const size_t row) { return def->getDataAt(row); });
-}
-
-void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const String & def,
-    ColumnString * const out) const
-{
-    dict_struct.validateKeyTypes(key_types);
+    ColumnPtr result;
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(this, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
+    /// TODO: Check that attribute type is same as result type
+    /// TODO: Check if const will work as expected
+    
+    auto keys_size = key_columns.front()->size();
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto column_string = ColumnString::create();
+            auto out = column_string.get();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                {
+                    getItemsString(attribute, key_columns, out, [&](const size_t row) { return default_col->getDataAt(row); });
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<String>();
+
+                    getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
+                }
+            }
+            else
+            {
+                    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+
+                    getItemsString(attribute, key_columns, out, [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column_string);
+        }
+        else if constexpr (IsNumber<AttributeType>)
+        {
+            auto column = ColumnVector<AttributeType>::create(keys_size);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    out,
+                    [&](const size_t) { return null_value; });
+            }
+
+            result = std::move(column);
+        }
+        else if constexpr (IsDecimalNumber<AttributeType>)
+        {
+            // auto scale = getDecimalScale(*attribute.type);
+            auto column = ColumnDecimal<AttributeType>::create(keys_size, 0);
+            auto& out = column->getData();
+
+            if (default_untyped != nullptr)
+            {
+                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
+                {
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        out,
+                        [&](const size_t row) { return default_col->getData()[row]; }
+                    );
+                }
+                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                {
+                    const auto & def = default_col_const->template getValue<AttributeType>();
+
+                    getItemsNumberImpl<AttributeType, AttributeType>(
+                        attribute,
+                        key_columns,
+                        out,
+                        [&](const size_t) { return def; }
+                    );
+                }
+            }
+            else
+            {
+                const auto null_value = std::get<AttributeType>(attribute.null_values);
+
+                getItemsNumberImpl<AttributeType, AttributeType>(
+                    attribute,
+                    key_columns,
+                    out,
+                    [&](const size_t) { return null_value; }
+                );
+            }
+
+            result = std::move(column);
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+   
+    return result;
 }
 
 /// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag,
@@ -158,15 +256,21 @@ ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata
     return {oldest_id, false, false};
 }
 
-void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
+ColumnUInt8::Ptr ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
+
+    const auto rows_num = key_columns.front()->size();
+
+    auto result = ColumnUInt8::create(rows_num);
+    auto& out = result->getData();
+
+    for (const auto row : ext::range(0, rows_num))
+        out[row] = false;
 
     /// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
     MapType<std::vector<size_t>> outdated_keys;
 
-
-    const auto rows_num = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
     StringRefs keys(keys_size);
     Arena temporary_keys_pool;
@@ -212,7 +316,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
     hit_count.fetch_add(rows_num - outdated_keys.size(), std::memory_order_release);
 
     if (outdated_keys.empty())
-        return;
+        return result;
 
     std::vector<size_t> required_rows(outdated_keys.size());
     std::transform(
@@ -233,6 +337,8 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
             for (const auto out_idx : outdated_keys[key])
                 out[out_idx] = false;
         });
+
+    return result;
 }
 
 void ComplexKeyCacheDictionary::createAttributes()
@@ -261,6 +367,102 @@ ComplexKeyCacheDictionary::Attribute & ComplexKeyCacheDictionary::getAttribute(c
         throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
+}
+
+void ComplexKeyCacheDictionary::setDefaultAttributeValue(Attribute & attribute, const size_t idx) const
+{
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            const auto & null_value_ref = std::get<String>(attribute.null_values);
+            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
+
+            if (string_ref.data != null_value_ref.data())
+            {
+                if (string_ref.data)
+                    string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
+
+                string_ref = StringRef{null_value_ref};
+            }
+        }
+        else
+        {
+            std::get<ContainerPtrType<AttributeType>>(attribute.arrays)[idx] = std::get<AttributeType>(attribute.null_values); 
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+}
+
+ComplexKeyCacheDictionary::Attribute
+ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+{
+    Attribute attr{type, {}, {}};
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            attr.null_values = null_value.get<String>();
+            attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
+            bytes_allocated += size * sizeof(StringRef);
+            if (!string_arena)
+                string_arena = std::make_unique<ArenaWithFreeLists>();
+        }
+        else
+        {
+            attr.null_values = AttributeType(null_value.get<NearestFieldType<AttributeType>>()); /* NOLINT */
+            attr.arrays = std::make_unique<ContainerType<AttributeType>>(size); /* NOLINT */
+            bytes_allocated += size * sizeof(AttributeType);
+        }
+    };
+
+    callOnDictionaryAttributeType(type, type_call);
+
+    return attr;
+}
+
+void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const size_t idx, const Field & value) const
+{
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            const auto & string = value.get<String>();
+            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
+            const auto & null_value_ref = std::get<String>(attribute.null_values);
+
+            /// free memory unless it points to a null_value
+            if (string_ref.data && string_ref.data != null_value_ref.data())
+                string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
+
+            const auto str_size = string.size();
+            if (str_size != 0)
+            {
+                auto * str_ptr = string_arena->alloc(str_size);
+                std::copy(string.data(), string.data() + str_size, str_ptr);
+                string_ref = StringRef{str_ptr, str_size};
+            }
+            else
+                string_ref = {};
+        }
+        else
+        {
+            std::get<ContainerPtrType<AttributeType>>(attribute.arrays)[idx] = value.get<NearestFieldType<AttributeType>>();
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const
