@@ -160,16 +160,12 @@ static void logQuery(const String & query, const Context & context, bool interna
 
         const Settings & settings = context.getSettingsRef();
         const auto & log_comment = settings.log_comment;
-        if (!log_comment.toString().empty())
-        {
-            query = query + log_comment;
-        }
 
         LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
+            (context.getSettingsRef().use_antlr_parser ? "new" : "old"), (!log_comment.empty() ? ", comment: " + log_comment : std::string() : ""),
             joinLines(query));
 
         if (client_info.client_trace_context.trace_id)
@@ -178,22 +174,6 @@ static void logQuery(const String & query, const Context & context, bool interna
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
-
-        QueryLogElement elem;
-
-        elem.type = QueryLogElementType::QUERY_START;
-        elem.event_time = current_time_us / 1000000;
-        elem.event_time_microseconds = current_time_us;
-        elem.query_start_time = current_time_us / 1000000;
-        elem.query_start_time_microseconds = current_time_us;
-
-        elem.current_database = context.getCurrentDatabase();
-        elem.query = query;
-        elem.normalized_query_hash = normalizedQueryHash(query);
-
-        elem.client_info = client_info;
-        if (auto query_log = context.getQueryLog())
-            query_log->add(elem);
     }
 }
 
@@ -649,6 +629,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
+
+                if (!settings.log_comment.toString().empty() && settings.log_comment.toString().length() <= max_query_size)
+                    elem.log_comment = settings.log_comment.toString();
 
                 if (elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
