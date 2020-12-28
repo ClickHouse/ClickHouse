@@ -46,7 +46,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <Poco/DirectoryIterator.h>
 
