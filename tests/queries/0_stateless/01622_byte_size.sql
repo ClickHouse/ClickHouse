@@ -65,7 +65,7 @@ select key,byteSize(*), toTypeName(date),byteSize(date), toTypeName(dt),byteSize
 drop table if exists test_byte_size_number1;
 
 
--- string --
+-- strings --
 select '';
 select 'byteSize for strings';
 drop table if exists test_byte_size_string;
@@ -86,9 +86,35 @@ select key,byteSize(*), str1,byteSize(str1), str2,byteSize(str2), fstr1,byteSize
 drop table if exists test_byte_size_string;
 
 
--- array --
+-- simple arrays --
 drop table if exists test_byte_size_array;
 create table test_byte_size_array
+(
+    key Int32,
+    uints8 Array(UInt8),
+    ints8 Array(Int8),
+    ints32 Array(Int32),
+    floats32 Array(Float32),
+    decs32 Array(Decimal32(4)),
+    dates Array(Date),
+    uuids Array(UUID)
+) engine MergeTree order by key;
+
+insert into test_byte_size_array values(1, [], [], [], [], [], [], []);
+insert into test_byte_size_array values(2, [1], [-1], [256], [1.1], [1.1], ['2020-01-01'], ['61f0c404-5cb3-11e7-907b-a6006ad3dba0']);
+insert into test_byte_size_array values(3, [1,1], [-1,-1], [256,256], [1.1,1.1], [1.1,1.1], ['2020-01-01','2020-01-01'], ['61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0']);
+insert into test_byte_size_array values(4, [1,1,1], [-1,-1,-1], [256,256,256], [1.1,1.1,1.1], [1.1,1.1,1.1], ['2020-01-01','2020-01-01','2020-01-01'], ['61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0','61f0c404-5cb3-11e7-907b-a6006ad3dba0']);
+
+select '';
+select 'byteSize for simple array';
+select key,byteSize(*), uints8,byteSize(uints8), ints8,byteSize(ints8), ints32,byteSize(ints32), floats32,byteSize(floats32), decs32,byteSize(decs32), dates,byteSize(dates), uuids,byteSize(uuids) from test_byte_size_array order by key;
+
+drop table if exists test_byte_size_array;
+
+
+-- complex arrays --
+drop table if exists test_byte_size_complex_array;
+create table test_byte_size_complex_array
 (
     key Int32,
     ints Array(Int32),
@@ -97,18 +123,40 @@ create table test_byte_size_array
     str_strs Array(Array(String))
 ) engine MergeTree order by key;
 
-insert into test_byte_size_array values(1, [], [[]], [], [[]]);
-insert into test_byte_size_array values(2, [1,2], [[], [1,2]], [''], [[], ['']]);
-insert into test_byte_size_array values(3, [0,256], [[], [1,2], [0,256]], ['','a'], [[], [''], ['','a']]);
-insert into test_byte_size_array values(4, [256,65536], [[], [1,2], [0,256], [256,65536]], ['','a','abced'], [[], [''], ['','a'], ['','a','abced']]);
+insert into test_byte_size_complex_array values(1, [], [[]], [], [[]]);
+insert into test_byte_size_complex_array values(2, [1,2], [[], [1,2]], [''], [[], ['']]);
+insert into test_byte_size_complex_array values(3, [0,256], [[], [1,2], [0,256]], ['','a'], [[], [''], ['','a']]);
+insert into test_byte_size_complex_array values(4, [256,65536], [[], [1,2], [0,256], [256,65536]], ['','a','abced'], [[], [''], ['','a'], ['','a','abced']]);
 
 select '';
-select 'byteSize for int arrays';
-select key,byteSize(*), ints,byteSize(ints), int_ints,byteSize(int_ints) from test_byte_size_array order by key;
+select 'byteSize for int array of arrays';
+select key,byteSize(*), ints,byteSize(ints), int_ints,byteSize(int_ints) from test_byte_size_complex_array order by key;
 
 select '';
-select 'byteSize for string arrays';
-select key,byteSize(*), strs,byteSize(strs), str_strs,byteSize(str_strs) from test_byte_size_array order by key;
--- select key, int_ints,byteSize(int_ints) from test_byte_size_array order by key;
+select 'byteSize for string array of arrays';
+-- select key,byteSize(*), strs,byteSize(strs), str_strs,byteSize(str_strs) from test_byte_size_complex_array order by key;
+select key,byteSize(*), strs,byteSize(strs), str_strs,byteSize(str_strs) from test_byte_size_complex_array order by key;
 
-drop table if exists test_byte_size_array;
+-- drop table if exists test_byte_size_complex_array;
+
+
+-- others --
+drop table if exists test_byte_size_other;
+create table test_byte_size_other
+(
+    key Int32,
+    opt_int32 Nullable(Int32),
+    opt_str Nullable(String),
+    tuple Tuple(Int32, Nullable(String)),
+    strings LowCardinality(String)
+) engine MergeTree order by key;
+
+insert into test_byte_size_other values(1, NULL, NULL, tuple(1, NULL), '');
+insert into test_byte_size_other values(2, 1, 'a', tuple(1, 'a'), 'a');
+insert into test_byte_size_other values(3, 256, 'abcde', tuple(256, 'abcde'), 'abcde');
+
+select '';
+select 'byteSize for others: Nullable, Tuple, LowCardinality';
+select key,byteSize(*), opt_int32,byteSize(opt_int32), opt_str,byteSize(opt_str), tuple,byteSize(tuple), strings,byteSize(strings) from test_byte_size_other order by key;
+
+drop table if exists test_byte_size_other;

@@ -24,18 +24,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int ILLEGAL_COLUMN;
-}
-
-template <> struct NativeType<DataTypeDate>         { using Type = DataTypeDate::FieldType; };
-template <> struct NativeType<DataTypeDateTime>     { using Type = DataTypeDateTime::FieldType; };
-template <> struct NativeType<DataTypeDateTime64>   { using Type = NativeType<DataTypeDateTime64::FieldType>::Type; };
-template <> struct NativeType<DataTypeUUID>         { using Type = DataTypeUUID::FieldType; };
-template <> struct NativeType<DataTypeEnum8>        { using Type = DataTypeEnum8::FieldType; };
-template <> struct NativeType<DataTypeEnum16>       { using Type = DataTypeEnum16::FieldType; };
-
 namespace
 {
 
@@ -52,25 +40,13 @@ public:
         return std::make_shared<FunctionByteSize>();
     }
 
-    /// Get the function name.
-    String getName() const override
-    {
-        return name;
-    }
-
+    String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
-
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isVariadic() const override { return true; }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -194,16 +170,16 @@ private:
                 return true;
 
             const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(column);
-            return byteSizeForStringArray(col_arr, vec_res)
-                || byteSizeForArrayOfArray(col_arr, vec_res)
-                || byteSizeForGenericArray(col_arr, vec_res)
-                || byteSizeForIntegralArray<INTEGRAL_TPL_PACK>(col_arr, data_type, vec_res);
+            return byteSizeForIntegralArray<INTEGRAL_TPL_PACK>(col_arr, data_type, vec_res)
+                   || byteSizeForGenericArray(col_arr, vec_res)
+                || byteSizeForStringArray(col_arr, vec_res)
+                || byteSizeForArrayOfArray(col_arr, vec_res);
         }
         else if (which.isNullable()) // TypeIndex::Nullable
         {
             const ColumnNullable * col_null = checkAndGetColumn<ColumnNullable>(column);
             for (size_t i = 0; i < vec_size; ++i)
-                vec_res[i] += col_null->getDataAt(i).size + sizeof(bool);
+                vec_res[i] += col_null->getDataAtWithTerminatingZero(i).size + sizeof(bool);
             return true;
         }
         else if (which.isTuple()) // TypeIndex::Tuple
@@ -290,13 +266,8 @@ private:
             UInt64 byte_size = 0;
             size_t array_size = offsets[i] - current_offset;
             for (size_t j = 0; j < array_size; ++j)
-            {
-                const ColumnArray::Offset string_pos = current_offset + j == 0
-                                                       ? 0
-                                                       : string_offsets[current_offset + j - 1];
-                byte_size += string_offsets[current_offset + j] - string_pos;
-            }
-            vec_res[i] += byte_size + sizeof(offsets[0]) + array_size * sizeof(string_offsets[0]);
+                byte_size += col_nested->getDataAtWithTerminatingZero(current_offset + j).size;
+            vec_res[i] += byte_size + array_size * sizeof(string_offsets[0]) + sizeof(offsets[0]);
             current_offset = offsets[i];
         }
         return true;
@@ -317,37 +288,61 @@ private:
         {
             UInt64 byte_size = 0;
             size_t array_size = offsets[i] - current_offset;
-            for (size_t j = 0; j < array_size; ++j)
+            if (!col_nested->getData().empty())
             {
-                const ColumnArray::Offset pos = current_offset + j == 0
-                                                    ? 0
-                                                    : array_offsets[current_offset + j - 1];
-                byte_size += array_offsets[current_offset + j] - pos;
+                for (size_t j = 0; j < array_size; ++j)
+                    byte_size += col_nested->getDataAtWithTerminatingZero(current_offset + j).size;
             }
-            vec_res[i] += byte_size + sizeof(offsets[0]) + array_size * sizeof(array_offsets[0]);
+            vec_res[i] += byte_size + array_size * sizeof(array_offsets[0]) + sizeof(offsets[0]);
             current_offset = offsets[i];
         }
         return true;
     }
 
+    static UInt64 byteSizeForArrayItem(const IColumn & column, size_t idx /*, const ColumnArray::ColumnOffsets & upper_offsets*/)
+    {
+//        if (column.empty())
+//            return 0;
+
+        if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(&column))
+        {
+            return col_str->getDataAtWithTerminatingZero(idx).size + sizeof(col_str->getOffsets()[0]);
+        }
+        else if (const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(&column))
+        {
+            UInt64 byte_size = 0;
+            const auto & offsets = col_arr->getOffsets();
+            ColumnArray::Offset current_offset = idx == 0 ? 0 : offsets[idx - 1];
+            size_t array_size = offsets[idx] - current_offset;
+//            size_t array_size = offsets.size();
+            for (size_t i = 0; i < array_size; ++i)
+                byte_size += byteSizeForArrayItem(col_arr->getData(), current_offset + i);
+            return byte_size + sizeof(offsets[0]);
+        }
+        else
+        {
+            return column.getDataAtWithTerminatingZero(idx).size;
+        }
+    }
+
     static bool byteSizeForGenericArray(const ColumnArray * col_arr, ColumnUInt64::Container & vec_res)
     {
         const IColumn & col_nested = col_arr->getData();
-//        if (TypeIndex::Array==col_nested.getDataType() // `col_nested.getDataAt()` will panic when array in array is empty.
-//            && checkAndGetColumn<ColumnArray>(col_nested)->getData().empty())
-//            return true;
         size_t vec_size = vec_res.size();
         const auto & offsets = col_arr->getOffsets();
 
-        ColumnArray::Offset prev_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < vec_size; ++i)
         {
-            size_t array_size = offsets[i] - prev_offset;
             UInt64 byte_size = 0;
+            size_t array_size = offsets[i] - current_offset;
             for (size_t j = 0; j < array_size; ++j)
-                byte_size += col_nested.getDataAt(prev_offset + j).size;
+            {
+                // byte_size += col_nested.getDataAtWithTerminatingZero(current_offset + j).size;
+                byte_size += byteSizeForArrayItem(col_nested, current_offset + j);
+            }
             vec_res[i] += byte_size + sizeof(offsets[0]);
-            prev_offset = offsets[i];
+            current_offset = offsets[i];
         }
         return true;
     }

@@ -156,4 +156,7 @@ public:
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;
 
+template <> struct NativeType<DataTypeEnum8> { using Type = DataTypeEnum8::FieldType; };
+template <> struct NativeType<DataTypeEnum16> { using Type = DataTypeEnum16::FieldType; };
+
 }
