@@ -32,6 +32,11 @@ void AddingDelayedSourceStep::transformPipeline(QueryPipeline & pipeline)
 {
     source->setQueryPlanStep(this);
     pipeline.addDelayedStream(source);
+
+    /// Now, after adding delayed stream, it has implicit dependency on other port.
+    /// Here we add resize processor to remove this dependency.
+    /// Otherwise, if we add MergeSorting + MergingSorted transform to pipeline, we could get `Pipeline stuck`
+    pipeline.resize(pipeline.getNumStreams(), true);
 }
 
 }
