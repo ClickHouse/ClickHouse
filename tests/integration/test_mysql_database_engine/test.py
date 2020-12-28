@@ -193,9 +193,9 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE test")
 
 
-# test tool cannot support null by now. TSV format returns \N for null, so cannot comparing use == directly
+# test tool cannot support null by now. TSV format returns \N for null, so cannot compare using == directly
 # float_values = ['NULL']
-float_values = [0.0]
+# float_values = [0] mysql returns 0 while clickhouse returns 0.0, so cannot compare using == directly
 int32_values = [0, 1, -1, 2147483647, -2147483648]
 uint32_values = [0, 1] # [FIXME] seems client have issue with value 4294967295, it returns -1 for it
 int16_values = [0, 1, -1, 32767, -32768]
@@ -214,23 +214,21 @@ timestamp_values_no_subsecond = ["'2015-05-18 07:40:01'", "'2019-09-16 19:20:11'
 @pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values, setting_mysql_datatypes_support_level",
                          [
                              # test common type mapping
-                             ("common_types", "FLOAT", "Nullable(Float32)", float_values, ""),
-                             ("common_types", "FLOAT UNSIGNED", "Nullable(Float32)", float_values, ""),
+                             # ("common_types", "FLOAT", "Nullable(Float32)", float_values, ""),
+                             # ("common_types", "FLOAT UNSIGNED", "Nullable(Float32)", float_values, ""),
 
                              ("common_types", "INT", "Nullable(Int32)", int32_values, ""),
                              ("common_types", "INT NOT NULL", "Int32", int32_values, ""),
-                             ("common_types", "INT UNSIGNED NOT NULL", "Int32", uint32_values, ""),
+                             ("common_types", "INT UNSIGNED NOT NULL", "UInt32", uint32_values, ""),
                              ("common_types", "INT UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT UNSIGNED DEFAULT NULL", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
-                             ("common_types", "INT UNSIGNED ZERO FILL", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10)", "Nullable(Int32)", int32_values, ""),
                              ("common_types", "INT(10) NOT NULL", "Int32", int32_values, ""),
                              ("common_types", "INT(10) UNSIGNED NOT NULL", "Int32", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED DEFAULT NULL", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INT(10) UNSIGNED DEFAULT '1'", "Nullable(UInt32)", uint32_values, ""),
-                             ("common_types", "INT(10) UNSIGNED ZERO FILL", "Nullable(UInt32)", uint32_values, ""),
                              ("common_types", "INTEGER", "Nullable(Int32)", int32_values, ""),
                              ("common_types", "INTEGER UNSIGNED", "Nullable(UInt32)", uint32_values, ""),
 
