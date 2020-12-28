@@ -148,7 +148,7 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(ASTPtr & node, Data & data)
+void QueryNormalizer::visitChildren(IAST * node, Data & data)
 {
     if (auto * func_node = node->as<ASTFunction>())
     {
@@ -159,26 +159,32 @@ void QueryNormalizer::visitChildren(ASTPtr & node, Data & data)
             /// Don't go into query argument.
             return;
         }
+        /// We skip the first argument. We also assume that the lambda function can not have parameters.
+        size_t first_pos = 0;
+        if (func_node->name == "lambda")
+            first_pos = 1;
 
-        // Process all function node children (arguments + window definition for
-        // window functions).
-        // We have to skip the first argument if it's the "lambda" function,
-        // because it contains formal parameters like x->x + 1;
-        const IAST * argument_to_skip = nullptr;
-        if (func_node->name == "lambda"
-            && func_node->arguments
-            && !func_node->arguments->children.empty())
+        if (func_node->arguments)
         {
-            argument_to_skip = func_node->arguments->children[0].get();
-        }
+            auto & func_children = func_node->arguments->children;
 
-        for (auto & child : func_node->children)
-        {
-            if (child.get() != argument_to_skip
-                && needVisitChild(child))
+            for (size_t i = first_pos; i < func_children.size(); ++i)
             {
-                visit(child, data);
+                auto & child = func_children[i];
+
+                if (needVisitChild(child))
+                    visit(child, data);
             }
+        }
+        
+        if (func_node->window_partition_by)
+        {
+            visitChildren(func_node->window_partition_by.get(), data);
+        }
+        
+        if (func_node->window_order_by)
+        {
+            visitChildren(func_node->window_order_by.get(), data);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -225,7 +231,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast, data);
+        visitChildren(ast.get(), data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());

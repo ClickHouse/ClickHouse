@@ -122,14 +122,14 @@ select * from (select * from numbers(5) order by rand()) order by count() over (
 2
 3
 4
-select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number)) over (order by min(number) desc) desc;
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't
 -- want to change reference all the time
 
-1
 0
+1
 2
 3
 4
@@ -204,4 +204,16 @@ select distinct sum(0) over () from numbers(2);
 0
 select distinct any(number) over () from numbers(2);
 
+-- Various kinds of aliases are properly substituted into various parts of window
+-- function definition.
+
 0
+with number + 1 as x select intDiv(number, 3) as y, sum(x + y) over (partition by y order by x) from numbers(7);
+
+0	1
+0	3
+0	6
+1	5
+1	11
+1	18
+2	9

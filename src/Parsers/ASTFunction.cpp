@@ -67,17 +67,20 @@ ASTPtr ASTFunction::clone() const
 
     if (window_name)
     {
-        res->set(res->window_name, window_name->clone());
+        res->window_name = window_name->clone();
+        res->children.push_back(res->window_name);
     }
 
     if (window_partition_by)
     {
-        res->set(res->window_partition_by, window_partition_by->clone());
+        res->window_partition_by = window_partition_by->clone();
+        res->children.push_back(res->window_partition_by);
     }
 
     if (window_order_by)
     {
-        res->set(res->window_order_by, window_order_by->clone());
+        res->window_order_by = window_order_by->clone();
+        res->children.push_back(res->window_order_by);
     }
 
     return res;
