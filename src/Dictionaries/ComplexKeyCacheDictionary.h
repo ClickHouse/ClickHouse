@@ -89,93 +89,16 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
 
-/// In all functions below, key_columns must be full (non-constant) columns.
-/// See the requirement in IDataType.h for text-serialization functions.
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-        const std::string & attribute_name,
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnString * const def,
-        ColumnString * const out) const;
+        const ColumnPtr default_untyped) const override;
 
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const String & def,
-        ColumnString * const out) const;
-
-    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override; 
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
