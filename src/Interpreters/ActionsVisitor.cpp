@@ -738,15 +738,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
-        // Requiring a constant reference to a shared pointer to non-const AST
-        // doesn't really look sane, but the visitor does indeed require it.
         if (node.window_partition_by)
         {
-            visit(node.window_partition_by->clone(), data);
+            visit(node.window_partition_by, data);
         }
         if (node.window_order_by)
         {
-            visit(node.window_order_by->clone(), data);
+            visit(node.window_order_by, data);
         }
 
         // Also manually add columns for arguments of the window function itself.

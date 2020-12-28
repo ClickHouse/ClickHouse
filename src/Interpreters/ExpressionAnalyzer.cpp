@@ -983,36 +983,14 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             getRootActionsNoMakeSet(f.function_node->clone(),
                 true /* no_subqueries */, step.actions());
 
-            // FIXME rewrite this comment
-            // 1.2) result of window function: an empty INPUT.
-            // It is an aggregate function, so it won't be added by getRootActions.
-            // This is something of a hack. Other options:
-            //  a] do it like aggregate function -- break the chain of actions
-            //     and manually add window functions to the starting list of
-            //     input columns. Logically this is similar to what we're doing
-            //     now, but would require to split the window function processing
-            //     into a full-fledged step after plain functions. This would be
-            //     somewhat cumbersome. With INPUT hack we can avoid a separate
-            //     step and pretend that window functions are almost "normal"
-            //     select functions. The limitation of both these ways is that
-            //     we can't reference window functions in other SELECT
-            //     expressions.
-            //  b] add a WINDOW action type, then sort, then split the chain on
-            //     each WINDOW action and insert the Window pipeline between the
-            //     Expression pipelines. This is a "proper" way that would allow
-            //     us to depend on window functions in other functions. But it's
-            //     complicated so I avoid doing it for now.
-            columns_after_window.push_back({f.column_name,
-                f.aggregate_function->getReturnType()});
-
+            // 2.1) function arguments;
             for (const auto & a : f.function_node->arguments->children)
             {
-                // 2.1) function arguments;
                 step.required_output.push_back(a->getColumnName());
             }
         }
 
-        // 2.3) PARTITION BY and ORDER BY columns.
+        // 2.1) PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
             step.required_output.push_back(c.column_name);
@@ -1433,10 +1411,22 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
 
-
+            // Build a list of output columns of the window step.
+            // 1) We need the columns that are the output of ExpressionActions.
             for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
             {
                 query_analyzer.columns_after_window.push_back(x);
+            }
+            // 2) We also have to manually add the output of the window function
+            // to the list of the output columns of the window step, because the
+            // window functions are not in the ExpressionActions.
+            for (const auto & [_, w] : query_analyzer.window_descriptions)
+            {
+                for (const auto & f : w.window_functions)
+                {
+                    query_analyzer.columns_after_window.push_back(
+                        {f.column_name, f.aggregate_function->getReturnType()});
+                }
             }
 
             before_window = chain.getLastActions();
