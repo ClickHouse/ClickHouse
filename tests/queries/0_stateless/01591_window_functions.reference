@@ -1,0 +1,149 @@
+set allow_experimental_window_functions = 1;
+
+-- just something basic
+
+select number, count() over (partition by intDiv(number, 3) order by number) from numbers(10);
+
+-- proper calculation across blocks
+
+0	1
+1	2
+2	3
+3	1
+4	2
+5	3
+6	1
+7	2
+8	3
+9	1
+select number, max(number) over (partition by intDiv(number, 3) order by number desc) from numbers(10) settings max_block_size = 2;
+
+-- not a window function
+
+2	2
+1	2
+0	2
+5	5
+4	5
+3	5
+8	8
+7	8
+6	8
+9	9
+select number, abs(number) over (partition by toString(intDiv(number, 3))) from numbers(10); -- { serverError 63 }
+
+-- no partition by
+
+select number, avg(number) over (order by number) from numbers(10);
+
+-- no order by
+
+0	0
+1	0.5
+2	1
+3	1.5
+4	2
+5	2.5
+6	3
+7	3.5
+8	4
+9	4.5
+select number, quantileExact(number) over (partition by intDiv(number, 3)) from numbers(10);
+
+-- can add an alias after window spec
+
+0	0
+1	1
+2	1
+3	3
+4	4
+5	4
+6	6
+7	7
+8	7
+9	9
+select number, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10);
+
+-- can't reference it yet -- the window functions are calculated at the
+-- last stage of select, after all other functions.
+
+0	0
+1	1
+2	1
+3	3
+4	4
+5	4
+6	6
+7	7
+8	7
+9	9
+select q * 10, quantileExact(number) over (partition by intDiv(number, 3)) q from numbers(10); -- { serverError 47 }
+
+-- should work in ORDER BY though
+
+select number, max(number) over (partition by intDiv(number, 3) order by number desc) m from numbers(10) order by m desc, number;
+
+-- this one doesn't work yet -- looks like the column names clash, and the
+-- window count() is overwritten with aggregate count()
+-- select number, count(), count() over (partition by intDiv(number, 3)) from numbers(10) group by number order by count() desc;
+
+-- different windows
+-- an explain test would also be helpful, but it's too immature now and I don't
+-- want to change reference all the time
+
+9	9
+6	8
+7	8
+8	8
+3	5
+4	5
+5	5
+0	2
+1	2
+2	2
+select number, max(number) over (partition by intDiv(number, 3) order by number desc), count(number) over (partition by intDiv(number, 5) order by number) as m from numbers(31) order by number settings max_block_size = 2;
+
+-- two functions over the same window
+-- an explain test would also be helpful, but it's too immature now and I don't
+-- want to change reference all the time
+
+0	2	1
+1	2	2
+2	2	3
+3	5	4
+4	5	5
+5	5	1
+6	8	2
+7	8	3
+8	8	4
+9	11	5
+10	11	1
+11	11	2
+12	14	3
+13	14	4
+14	14	5
+15	17	1
+16	17	2
+17	17	3
+18	20	4
+19	20	5
+20	20	1
+21	23	2
+22	23	3
+23	23	4
+24	26	5
+25	26	1
+26	26	2
+27	29	3
+28	29	4
+29	29	5
+30	30	1
+select number, max(number) over (partition by intDiv(number, 3) order by number desc), count(number) over (partition by intDiv(number, 3) order by number desc) as m from numbers(7) order by number settings max_block_size = 2;
+
+0	2	3
+1	2	2
+2	2	1
+3	5	3
+4	5	2
+5	5	1
+6	6	1

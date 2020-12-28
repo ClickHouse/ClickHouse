@@ -138,11 +138,22 @@ void DistributedBlockOutputStream::write(const Block & block)
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
-    if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-        return writeSplitAsync(block);
+    const Settings & settings = context.getSettingsRef();
+    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
 
-    writeAsyncImpl(block);
-    ++inserted_blocks;
+    if (random_shard_insert)
+    {
+        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
+    }
+    else
+    {
+
+        if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
+            return writeSplitAsync(block);
+
+        writeAsyncImpl(block);
+        ++inserted_blocks;
+    }
 }
 
 
@@ -175,18 +186,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
+void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = shards_info.size();
+    size_t num_shards = end - start;
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(0, shards_info.size()))
+    for (size_t shard_index : ext::range(start, end))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -242,10 +253,11 @@ void DistributedBlockOutputStream::waitForJobs()
 }
 
 
-ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
+ThreadPool::Job
+DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards)
 {
     auto thread_group = CurrentThread::getGroup();
-    return [this, thread_group, &job, &current_block]()
+    return [this, thread_group, &job, &current_block, num_shards]()
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -262,7 +274,6 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         });
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
-        size_t num_shards = cluster->getShardsInfo().size();
         auto & shard_job = per_shard_jobs[job.shard_index];
         const auto & addresses = cluster->getShardsAddresses();
 
@@ -356,12 +367,19 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = shards_info.size();
+    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
+    size_t start = 0, end = shards_info.size();
+    if (random_shard_insert)
+    {
+        start = storage.getRandomShardIndex(shards_info);
+        end = start + 1;
+    }
+    size_t num_shards = end - start;
 
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block);
+        initWritingJobs(block, start, end);
 
         pool.emplace(remote_jobs_count + local_jobs_count);
 
@@ -394,7 +412,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : ext::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
     }
     catch (...)
     {

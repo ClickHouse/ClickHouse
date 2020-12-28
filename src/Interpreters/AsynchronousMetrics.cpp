@@ -212,18 +212,18 @@ void AsynchronousMetrics::update()
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_peak = data.resident;
+            Int64 new_amount = data.resident;
 
             LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
                 "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                 ReadableSize(amount),
                 ReadableSize(peak),
-                ReadableSize(new_peak),
-                ReadableSize(new_peak - peak)
+                ReadableSize(new_amount),
+                ReadableSize(new_amount - amount)
             );
 
-            total_memory_tracker.set(new_peak);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_peak);
+            total_memory_tracker.set(new_amount);
+            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
 #endif
@@ -355,16 +355,22 @@ void AsynchronousMetrics::update()
                 return it->second;
         };
 
-        for (const auto & server : servers_to_start_before_tables)
+        if (servers_to_start_before_tables)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers_to_start_before_tables)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
 
-        for (const auto & server : servers)
+        if (servers)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
     }
 
