@@ -246,7 +246,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     bool is_first_row = getTotalRows() == 1;
-    if (!in.eof()) 
+    if (!in.eof())
     {
         /// There may be optional ',' (but not before the first row)
         if (!is_first_row && *in.position() == ',')

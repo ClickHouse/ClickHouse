@@ -224,7 +224,7 @@ BlockOutputStreamPtr FormatFactory::getOutputParallelIfPossible(const String & n
         /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
-        
+
         auto formatter_creator = [output_getter, sample, callback, format_settings]
             (WriteBuffer & output) -> OutputFormatPtr
             { return output_getter(output, sample, {std::move(callback)}, format_settings);};
@@ -244,7 +244,6 @@ BlockOutputStreamPtr FormatFactory::getOutputParallelIfPossible(const String & n
 }
 
 
-
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     WriteBuffer & buf, const Block & sample, const Context & context,
     WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
@@ -256,7 +255,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
     {
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
     }
-    
+
     auto format = getOutputFormat(name, buf, sample, context, std::move(callback), format_settings);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }

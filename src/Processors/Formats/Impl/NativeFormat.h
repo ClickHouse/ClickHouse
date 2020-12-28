@@ -1,3 +1,4 @@
+#pragma once
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Formats/FormatFactory.h>

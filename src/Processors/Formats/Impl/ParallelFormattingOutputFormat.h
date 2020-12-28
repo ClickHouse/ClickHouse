@@ -52,7 +52,7 @@ public:
     ~ParallelFormattingOutputFormat() override
     {
         need_flush = true;
-        if (!IOutputFormat::finalized) 
+        if (!IOutputFormat::finalized)
             finalize();
         finishAndWait();
     }
@@ -64,12 +64,12 @@ public:
         need_flush = true;
     }
 
-    void doWritePrefix() override 
+    void doWritePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START);
     }
 
-    void onCancel() override 
+    void onCancel() override
     {
         finishAndWait();
     }
@@ -260,7 +260,7 @@ private:
                     IOutputFormat::flush();
 
                 ++collector_unit_number;
-                
+
                 {
                     /// Notify other threads.
                     std::lock_guard<std::mutex> lock(mutex);
@@ -292,13 +292,18 @@ private:
             auto & unit = processing_units[current_unit_number];
             assert(unit.status = READY_TO_FORMAT);
 
+            /// We want to preallocate memory buffer (increase capacity)
+            /// and put the pointer at the beginning of the buffer
+            /// FIXME: Implement reserve() method in Memory.
             unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
+            unit.segment.resize(0);
+
             unit.actual_memory_size = 0;
             BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
 
             auto formatter = internal_formatter_creator(out_buffer);
 
-            switch (unit.type) 
+            switch (unit.type)
             {
                 case ProcessingUnitType::START :
                 {
