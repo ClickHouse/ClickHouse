@@ -45,7 +45,23 @@ timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_kill"
-$CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2"
+
+# with timeout alter query can be not finished yet, so to execute new alter
+# we use retries
+counter=0
+while true; do
+    if $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2" 2> /dev/null ; then
+        break
+    fi
+
+    if [ "$counter" -gt 120 ]
+    then
+        break
+    fi
+    sleep 0.5
+    counter=$(($counter + 1))
+done
+
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE concurrent_mutate_kill"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_mutate_kill FINAL"
 $CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM concurrent_mutate_kill"
