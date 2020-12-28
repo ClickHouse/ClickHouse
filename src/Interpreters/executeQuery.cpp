@@ -163,8 +163,8 @@ static void logQuery(const String & query, const Context & context, bool interna
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
-            (!context.getSettingsRef().log_comment.empty()
-                     && context.getSettingsRef().log_comment.length() <= context.getSettingsRef().max_query_size
+            (!context.getSettingsRef().log_comment.toString().empty()
+                     && context.getSettingsRef().log_comment.toString().length() <= context.getSettingsRef().max_query_size
                  ? ", comment: " + context.getSettingsRef().log_comment
                  : std::string()),
             joinLines(query));
@@ -252,6 +252,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
+
+    if (!settings.log_comment.toString().empty() && settings.log_comment.toString().length() <= max_query_size)
+        elem.log_comment = settings.log_comment.toString();
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
