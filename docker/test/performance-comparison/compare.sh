@@ -50,13 +50,13 @@ function configure
 
     local setup_left_server_opts=(
         # server options
-        --config-file=left/config/config.xml
+        --config-file left/config/config.xml
         --
         # server *config* directives overrides
         --path db0
         --user_files_path db0/user_files
         --top_level_domains_path /top_level_domains
-        --tcp_port $LEFT_SERVER_PORT
+        --tcp_port "$LEFT_SERVER_PORT"
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
     left_pid=$!
@@ -98,13 +98,13 @@ function restart
 
     local left_server_opts=(
         # server options
-        --config-file=left/config/config.xml
+        --config-file left/config/config.xml
         --
         # server *config* directives overrides
         --path left/db
         --user_files_path left/db/user_files
         --top_level_domains_path /top_level_domains
-        --tcp_port $LEFT_SERVER_PORT
+        --tcp_port "$LEFT_SERVER_PORT"
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -113,13 +113,13 @@ function restart
 
     local right_server_opts=(
         # server options
-        --config-file=right/config/config.xml
+        --config-file right/config/config.xml
         --
         # server *config* directives overrides
         --path right/db
         --user_files_path right/db/user_files
         --top_level_domains_path /top_level_domains
-        --tcp_port $RIGHT_SERVER_PORT
+        --tcp_port "$RIGHT_SERVER_PORT"
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
@@ -1109,7 +1109,7 @@ function upload_results
     then
         echo Database for test results is not specified, will not upload them.
         return 0
-    fi 
+    fi
 
     # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
     # so I have to extract host and port with clickhouse-local. I tried to use
@@ -1117,7 +1117,7 @@ function upload_results
     # parse host:port.
     set +x # Don't show password in the log
     clickhouse-client \
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
+        "$(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")" \
         --secure \
         --user "${CHPC_DATABASE_USER}" \
         --password "${CHPC_DATABASE_PASSWORD}" \

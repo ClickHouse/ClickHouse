@@ -3,6 +3,8 @@
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+# shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 # This test reproduces "Directory not empty" error in DROP DATABASE query.
