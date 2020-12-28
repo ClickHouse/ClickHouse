@@ -37,5 +37,5 @@ byteSize for string array of arrays
 
 byteSize for others: Nullable, Tuple, LowCardinality
 1	12	\N	1	\N	1	(1,NULL)	5		1
-2	18	1	5	a	2	(1,'a')	6	a	1
-3	26	256	5	abcde	6	(256,'abcde')	10	abcde	1
+2	36	1	5	a	11	(1,'a')	15	a	1
+3	44	256	5	abcde	15	(256,'abcde')	19	abcde	1
