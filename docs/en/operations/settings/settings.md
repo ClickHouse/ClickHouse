@@ -1312,7 +1312,7 @@ See also:
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
