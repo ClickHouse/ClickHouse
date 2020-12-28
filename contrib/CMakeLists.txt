@@ -307,5 +307,9 @@ if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
 endif()
 
+if (USE_NURAFT)
+  add_subdirectory(nuraft-cmake)
+endif()
+
 add_subdirectory(fast_float)
 
