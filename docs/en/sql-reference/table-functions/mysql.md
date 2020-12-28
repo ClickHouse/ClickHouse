@@ -5,10 +5,12 @@ toc_title: mysql
 
 # mysql {#mysql}
 
-Allows `SELECT` queries to be performed on data that is stored on a remote MySQL server.
+Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote MySQL server.
+
+**Syntax**
 
 ``` sql
-mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 ```
 
 **Parameters**
@@ -39,7 +41,7 @@ The rest of the conditions and the `LIMIT` sampling constraint are executed in C
 
 A table object with the same columns as the original MySQL table.
 
-## Usage Example {#usage-example}
+**Examples**
 
 Table in MySQL:
 
@@ -50,18 +52,15 @@ mysql> CREATE TABLE `test`.`test` (
     ->   `float` FLOAT NOT NULL,
     ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
 
 mysql> insert into test (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from test;
-+------+----------+-----+----------+
++--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
-+------+----------+-----+----------+
++--------+--------------+-------+----------------+
 |      1 |         NULL |     2 |           NULL |
-+------+----------+-----+----------+
-1 row in set (0,00 sec)
++--------+--------------+-------+----------------+
 ```
 
 Selecting data from ClickHouse:
@@ -76,9 +75,24 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also {#see-also}
+Replacing and inserting:
+
+```sql
+INSERT INTO mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) ('int_id', 'float') VALUES (1, 3);
+INSERT INTO mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') ('int_id', 'float') VALUES (1, 4);
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     3 │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     4 │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴────────────────┘
+```
+
+**See Also**
 
 -   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table_functions/mysql/) <!--hide-->
