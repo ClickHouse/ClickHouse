@@ -82,7 +82,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## core_dump {#server_configuration_parameters-core_dump}
 
-Задает мягкое ограничение для размера файла дампа ядра.
+Задает мягкое ограничение для размера файла дампа памяти.
 
 Возможные значения:
 
