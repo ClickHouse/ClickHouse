@@ -159,13 +159,13 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & current_user = client_info.current_user;
 
         const Settings & settings = context.getSettingsRef();
-        const auto & log_comment = settings.log_comment;
+        const String & log_comment = settings.log_comment;
 
         LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context.getSettingsRef().use_antlr_parser ? "new" : "old"), (!log_comment.empty() ? ", comment: " + log_comment : std::string() : ""),
+            (context.getSettingsRef().use_antlr_parser ? "new" : "old"), (!log_comment.empty() && log_comment.length() < context.getSettingsRef().max_query_size ? ", comment: " + log_comment : std::string()),
             joinLines(query));
 
         if (client_info.client_trace_context.trace_id)
