@@ -419,7 +419,7 @@ ORDER BY h ASC
 Bir değeri, bazı öğelerin açıkça tanımlanmış eşlemesine göre diğer öğelere dönüştürür.
 Bu fonksiyonun iki varyasyonu vardır:
 
-### transform (x, array_from, array_to, varsayılan) {#transformx-array-from-array-to-default}
+### transform (x, array\_from, array\_to, varsayılan) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -439,7 +439,7 @@ Türler:
 Aynı harfin belirtildiği (t veya U), sayısal türler için bunlar eşleşen türler değil, ortak bir türe sahip türler olabilir.
 Örneğin, ilk bağımsız değişken Int64 türüne sahip olabilir, ikincisi ise Array(Uİnt16) türüne sahiptir.
 
-Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array_from’ array, varolan öğeyi döndürür (aynı numaralandırılır) ‘array_to’ dizi. Aksi takdirde, döner ‘default’. İçinde birden fazla eşleşen öğe varsa ‘array_from’, maçlardan birini döndürür.
+Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, varolan öğeyi döndürür (aynı numaralandırılır) ‘array\_to’ dizi. Aksi takdirde, döner ‘default’. İçinde birden fazla eşleşen öğe varsa ‘array\_from’, maçlardan birini döndürür.
 
 Örnek:
 
@@ -461,10 +461,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform (x, array_from, array_to) {#transformx-array-from-array-to}
+### transform (x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 İlk vary thatasyon differsdan farklıdır. ‘default’ argüman atlandı.
-Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array_from’ array, eşleşen öğeyi (aynı numaralandırılmış) döndürür ‘array_to’ dizi. Aksi takdirde, döner ‘x’.
+Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, eşleşen öğeyi (aynı numaralandırılmış) döndürür ‘array\_to’ dizi. Aksi takdirde, döner ‘x’.
 
 Türler:
 
@@ -1082,7 +1082,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Anahtarların listesine karşılık gelen değerlerin listesini döndürür.
 
-Kaynak tabloda kesin yoksa o zaman `0` veya `null` esas alınarak iade edilecektir [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) ayar.
+Kaynak tabloda kesin yoksa o zaman `0` veya `null` esas alınarak iade edilecektir [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) ayar.
 
 Hakkında daha fazla bilgi `join_use_nulls` içinde [Birleştirme işlemi](../../engines/table-engines/special/join.md).
 
@@ -1121,15 +1121,15 @@ Sonuç:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Dış modeli değerlendirin.
 Bir model adı ve model bağımsız değişkenleri kabul eder. Float64 Döndürür.
 
-## throwİf(x \[, custom_message\]) {#throwifx-custom-message}
+## throwİf(x \[, custom\_message\]) {#throwifx-custom-message}
 
 Argüman sıfır değilse bir istisna atın.
-custom_message-isteğe bağlı bir parametredir: sabit bir dize, bir hata mesajı sağlar
+custom\_message-isteğe bağlı bir parametredir: sabit bir dize, bir hata mesajı sağlar
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

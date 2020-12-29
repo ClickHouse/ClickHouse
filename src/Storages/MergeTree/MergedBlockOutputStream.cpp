@@ -46,16 +46,16 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
-        storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         aio_threshold,
-        /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
+    writer->initPrimaryIndex();
+    writer->initSkipIndices();
 }
 
 /// If data is pre-sorted.
@@ -90,7 +90,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->finish(checksums, sync);
+    writer->finishDataSerialization(checksums, sync);
+    writer->finishPrimaryIndexSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums, sync);
 
     NamesAndTypesList part_columns;
     if (!total_columns_list)
@@ -119,18 +121,6 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
-    if (new_part->uuid != UUIDHelpers::Nil)
-    {
-        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
-        HashingWriteBuffer out_hashing(*out);
-        writeUUIDText(new_part->uuid, out_hashing);
-        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-        checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-        out->finalize();
-        if (sync)
-            out->sync();
-    }
-
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
         new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
@@ -204,7 +194,19 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    writer->write(block, permutation);
+    std::unordered_set<String> skip_indexes_column_names_set;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        std::copy(index.column_names.cbegin(), index.column_names.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+
+    Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
+
+    writer->write(block, permutation, primary_key_block, skip_indexes_block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block);
+    writer->calculateAndSerializePrimaryIndex(primary_key_block);
+    writer->next();
 
     rows_count += rows;
 }

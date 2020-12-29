@@ -31,7 +31,7 @@ Le [clickhouse-client](../../interfaces/cli.md) applique le fuseau horaire du se
 
 Clickhouse affiche les valeurs dans `YYYY-MM-DD hh:mm:ss` format de texte par défaut. Vous pouvez modifier la sortie avec le [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime) fonction.
 
-Lorsque vous insérez des données dans ClickHouse, vous pouvez utiliser différents formats de chaînes de date et d'heure, en fonction de la valeur du [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) paramètre.
+Lorsque vous insérez des données dans ClickHouse, vous pouvez utiliser différents formats de chaînes de date et d'heure, en fonction de la valeur du [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format) paramètre.
 
 ## Exemple {#examples}
 

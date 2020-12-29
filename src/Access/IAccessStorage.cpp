@@ -14,8 +14,6 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
-    extern const int WRONG_PASSWORD;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -420,21 +418,9 @@ UUID IAccessStorage::login(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators,
-    bool replace_exception_with_cannot_authenticate) const
+    const ExternalAuthenticators & external_authenticators) const
 {
-    try
-    {
-        return loginImpl(user_name, password, address, external_authenticators);
-    }
-    catch (...)
-    {
-        if (!replace_exception_with_cannot_authenticate)
-            throw;
-
-        tryLogCurrentException(getLogger(), user_name + ": Authentication failed");
-        throwCannotAuthenticate(user_name);
-    }
+    return loginImpl(user_name, password, address, external_authenticators);
 }
 
 
@@ -448,16 +434,11 @@ UUID IAccessStorage::loginImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (!isPasswordCorrectImpl(*user, password, external_authenticators))
-                throwInvalidPassword();
-
-            if (!isAddressAllowedImpl(*user, address))
-                throwAddressNotAllowed(address);
-
-            return *id;
+            if (isPasswordCorrectImpl(*user, password, external_authenticators) && isAddressAllowedImpl(*user, address))
+                return *id;
         }
     }
-    throwNotFound(EntityType::USER, user_name);
+    throwCannotAuthenticate(user_name);
 }
 
 
@@ -573,19 +554,10 @@ void IAccessStorage::throwReadonlyCannotRemove(EntityType type, const String & n
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
-void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
-{
-    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-}
-
-void IAccessStorage::throwInvalidPassword()
-{
-    throw Exception("Invalid password", ErrorCodes::WRONG_PASSWORD);
-}
 
 void IAccessStorage::throwCannotAuthenticate(const String & user_name)
 {
-    /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
+    /// We use the same message for all authentification failures because we don't want to give away any unnecessary information for security reasons,
     /// only the log will show the exact reason.
     throw Exception(user_name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 }

@@ -241,7 +241,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## بیت مپمن {#bitmapmin}
 
-Retrun کوچکترین مقدار از نوع UInt64 در مجموعه UINT32_MAX اگر این مجموعه خالی است.
+Retrun کوچکترین مقدار از نوع UInt64 در مجموعه UINT32\_MAX اگر این مجموعه خالی است.
 
     bitmapMin(bitmap)
 
@@ -288,8 +288,8 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 **پارامترها**
 
 -   `bitmap` – bitmap object.
--   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
--   `to_array` – UInt32 array, its size shall be the same to from_array.
+-   `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
+-   `to_array` – UInt32 array, its size shall be the same to from\_array.
 
 **مثال**
 

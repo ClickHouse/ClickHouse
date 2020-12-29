@@ -61,17 +61,27 @@ public:
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
-    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    DecimalComparison(ColumnsWithTypeAndName & data, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if (!apply(data, result, col_left, col_right))
+            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    static bool apply(ColumnsWithTypeAndName & data, size_t result [[maybe_unused]],
+                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         if constexpr (_actual)
         {
             ColumnPtr c_res;
             Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-            return applyWithScale(col_left.column, col_right.column, shift);
+            c_res = applyWithScale(col_left.column, col_right.column, shift);
+            if (c_res)
+                data[result].column = std::move(c_res);
+            return true;
         }
-        else
-            return nullptr;
+        return false;
     }
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
@@ -114,15 +124,15 @@ private:
     static std::enable_if_t<IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
-        const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
-        const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
 
         Shift shift;
         if (decimal0 && decimal1)
         {
-            auto result_type = DecimalUtils::binaryOpResult<false, false>(*decimal0, *decimal1);
-            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(decimal0->getTrait(), false).value);
-            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(decimal1->getTrait(), false).value);
+            auto result_type = decimalResultType<false, false>(*decimal0, *decimal1);
+            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal0, false).value);
+            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(*decimal1, false).value);
         }
         else if (decimal0)
             shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
@@ -137,7 +147,7 @@ private:
     getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
-        const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
         if (decimal0)
             shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
         return shift;
@@ -148,7 +158,7 @@ private:
     getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
-        const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
         if (decimal1)
             shift.a = static_cast<CompareInt>(decimal1->getScaleMultiplier().value);
         return shift;

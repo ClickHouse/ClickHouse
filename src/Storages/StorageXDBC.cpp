@@ -1,19 +1,17 @@
 #include "StorageXDBC.h"
-
-#include <DataStreams/IBlockOutputStream.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
-#include <Processors/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Path.h>
+#include <DataStreams/IBlockOutputStream.h>
+
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -35,7 +33,6 @@ StorageXDBC::StorageXDBC(
                       context_,
                       table_id_,
                       IXDBCBridgeHelper::DEFAULT_FORMAT,
-                      getFormatSettings(context_),
                       columns_,
                       ConstraintsDescription{},
                       "" /* CompressionMethod */)
@@ -90,7 +87,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
 Pipe StorageXDBC::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
@@ -124,7 +121,6 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     return std::make_shared<StorageURLBlockOutputStream>(
         request_uri,
         format_name,
-        getFormatSettings(context),
         metadata_snapshot->getSampleBlock(),
         context,
         ConnectionTimeouts::getHTTPTimeouts(context),

@@ -1,8 +1,3 @@
----
-toc_priority: 37
-toc_title: file
----
-
 # file {#file}
 
 Создаёт таблицу из файла. Данная табличная функция похожа на табличные функции [file](file.md) и [hdfs](hdfs.md).
@@ -13,7 +8,7 @@ file(path, format, structure)
 
 **Входные параметры**
 
--   `path` — относительный путь до файла от [user_files_path](../../sql-reference/table-functions/file.md#server_configuration_parameters-user_files_path). Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
+-   `path` — относительный путь до файла от [user\_files\_path](../../sql-reference/table-functions/file.md#server_configuration_parameters-user_files_path). Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
 -   `format` — [формат](../../interfaces/formats.md#formats) файла.
 -   `structure` — структура таблицы. Формат `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
 
@@ -63,12 +58,12 @@ LIMIT 2
 
 1.  Предположим у нас есть несколько файлов со следующими относительными путями:
 
--   ‘some_dir/some_file_1’
--   ‘some_dir/some_file_2’
--   ‘some_dir/some_file_3’
--   ‘another_dir/some_file_1’
--   ‘another_dir/some_file_2’
--   ‘another_dir/some_file_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  Запросим количество строк в этих файлах:
 

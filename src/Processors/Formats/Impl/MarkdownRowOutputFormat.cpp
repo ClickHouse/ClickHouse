@@ -5,8 +5,8 @@
 namespace DB
 {
 
-MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_) {}
+MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_) {}
 
 void MarkdownRowOutputFormat::writePrefix()
 {
@@ -60,10 +60,10 @@ void registerOutputFormatProcessorMarkdown(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, callback, settings);
     });
 }
 

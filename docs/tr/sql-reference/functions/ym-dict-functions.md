@@ -17,12 +17,12 @@ ClickHouse, belirli bölgelerin hangi ülkelere ait olduğu konusunda çeşitli 
 
 Bu ‘clickhouse-server’ config, dosyayı bölgesel hiyerarşi ile belirtir::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Bu dosyanın yanı sıra, yakındaki _ sembolüne ve isme eklenen herhangi bir sonek (dosya uzantısından önce) olan dosyaları da arar.
+Bu dosyanın yanı sıra, yakındaki \_ sembolüne ve isme eklenen herhangi bir sonek (dosya uzantısından önce) olan dosyaları da arar.
 Örneğin, dosyayı da bulacaktır `/opt/geo/regions_hierarchy_ua.txt` varsa.
 
 `ua` sözlük anahtarı denir. Soneksiz bir sözlük için anahtar boş bir dizedir.
 
-Tüm sözlükler çalışma zamanında yeniden yüklenir (buıltın_dıctıonarıes_reload_ınterval yapılandırma parametresinde tanımlandığı gibi belirli sayıda saniyede bir kez veya varsayılan olarak saatte bir kez). Ancak, sunucu başladığında kullanılabilir sözlüklerin listesi bir kez tanımlanır.
+Tüm sözlükler çalışma zamanında yeniden yüklenir (buıltın\_dıctıonarıes\_reload\_ınterval yapılandırma parametresinde tanımlandığı gibi belirli sayıda saniyede bir kez veya varsayılan olarak saatte bir kez). Ancak, sunucu başladığında kullanılabilir sözlüklerin listesi bir kez tanımlanır.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Örnek:
@@ -107,7 +107,7 @@ Bir bölgeyi bir ülkeye dönüştürür. Diğer her şekilde, bu işlev aynıd�
 Bir bölgeyi bir kıtaya dönüştürür. Diğer her şekilde, bu işlev aynıdır ‘regionToCity’.
 Örnek: `regionToContinent(toUInt32(213)) = 10001` Moskova'yı (213) Avrasya'ya (10001) dönüştürür.
 
-### regionToTopContinent (#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
+### regionToTopContinent (\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
 Bölgenin hiyerarşisinde en yüksek kıtayı bulur.
 

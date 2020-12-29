@@ -82,9 +82,6 @@ public:
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
 
-    /// Changes the number of output ports if needed. Adds ResizeTransform.
-    void resize(size_t num_streams, bool force = false, bool strict = false);
-
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
     /// Transform Pipe in general way.

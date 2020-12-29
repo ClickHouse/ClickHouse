@@ -10,9 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-#include <Interpreters/Cluster.h>
 
-#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -25,6 +23,9 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -41,6 +42,21 @@ class StorageDistributed final : public ext::shared_ptr_helper<StorageDistribute
 public:
     ~StorageDistributed() override;
 
+    static StoragePtr createWithOwnCluster(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const String & remote_database_,       /// database on remote servers.
+        const String & remote_table_,          /// The name of the table on the remote servers.
+        ClusterPtr owned_cluster_,
+        const Context & context_);
+
+    static StoragePtr createWithOwnCluster(
+            const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
+        ClusterPtr & owned_cluster_,
+        const Context & context_);
+
     std::string getName() const override { return "Distributed"; }
 
     bool supportsSampling() const override { return true; }
@@ -50,26 +66,16 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    void read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -91,7 +97,6 @@ public:
     void shutdown() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
@@ -125,13 +130,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
-
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & global_context;
+    std::unique_ptr<Context> global_context;
     Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
@@ -162,8 +165,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        bool attach_);
 
     StorageDistributed(
         const StorageID & id_,
@@ -175,8 +177,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        bool attach,
-        ClusterPtr owned_cluster_ = {});
+        bool attach);
 
     String relative_data_path;
 
@@ -199,9 +200,6 @@ protected:
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
 
-    // For random shard index generation
-    mutable std::mutex rng_mutex;
-    pcg64 rng;
 };
 
 }

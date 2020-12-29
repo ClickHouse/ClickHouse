@@ -11,8 +11,10 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/StorageView.h>
+#include <sstream>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/printPipeline.h>
 
@@ -220,14 +222,14 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-    WriteBufferFromOwnString buf;
+    std::stringstream ss;
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
 
-        dumpAST(*ast.getExplainedQuery(), buf);
+        dumpAST(*ast.getExplainedQuery(), ss);
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
@@ -237,7 +239,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         ExplainAnalyzedSyntaxVisitor::Data data{.context = context};
         ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-        ast.getExplainedQuery()->format(IAST::FormatSettings(buf, false));
+        ast.getExplainedQuery()->format(IAST::FormatSettings(ss, false));
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPlan)
     {
@@ -253,7 +255,8 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (settings.optimize)
             plan.optimize();
 
-        plan.explainPlan(buf, settings.query_plan_options);
+        WriteBufferFromOStream buffer(ss);
+        plan.explainPlan(buffer, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
@@ -267,6 +270,8 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
         auto pipeline = plan.buildQueryPipeline();
 
+        WriteBufferFromOStream buffer(ss);
+
         if (settings.graph)
         {
             /// Pipe holds QueryPlan, should not go out-of-scope
@@ -274,17 +279,17 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             const auto & processors = pipe.getProcessors();
 
             if (settings.compact)
-                printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
+                printPipelineCompact(processors, buffer, settings.query_pipeline_options.header);
             else
-                printPipeline(processors, buf);
+                printPipeline(processors, buffer);
         }
         else
         {
-            plan.explainPipeline(buf, settings.query_pipeline_options);
+            plan.explainPipeline(buffer, settings.query_pipeline_options);
         }
     }
 
-    fillColumn(*res_columns[0], buf.str());
+    fillColumn(*res_columns[0], ss.str());
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }

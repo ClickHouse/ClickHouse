@@ -125,11 +125,11 @@ Yolu döndürür. Örnek: `/top/news.html` Yol sorgu dizesini içermez.
 
 ### pathFull {#pathfull}
 
-Yukarıdaki ile aynı, ancak sorgu dizesi ve parça dahil. Örnek: / top / haberler.html?Sayfa = 2 # yorumlar
+Yukarıdaki ile aynı, ancak sorgu dizesi ve parça dahil. Örnek: / top / haberler.html?Sayfa = 2 \# yorumlar
 
 ### queryString {#querystring}
 
-Sorgu dizesini döndürür. Örnek: Sayfa = 1 & lr = 213. sorgu dizesi, ilk soru işaretinin yanı sıra # ve # sonrası her şeyi içermez.
+Sorgu dizesini döndürür. Örnek: Sayfa = 1 & lr = 213. sorgu dizesi, ilk soru işaretinin yanı sıra \# ve \# sonrası her şeyi içermez.
 
 ### parça {#fragment}
 
@@ -137,7 +137,7 @@ Parça tanımlayıcısını döndürür. fragment ilk karma sembolü içermez.
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Sorgu dizesini ve parça tanımlayıcısını döndürür. Örnek: Sayfa = 1#29390.
+Sorgu dizesini ve parça tanımlayıcısını döndürür. Örnek: Sayfa = 1\#29390.
 
 ### extractURLParameter (URL, isim) {#extracturlparameterurl-name}
 

@@ -26,7 +26,7 @@ def bootstrap():
         # just after server starts (+ 2 seconds, reload timeout).
         #
         # And on configuration reload the clusters will be re-created, so some
-        # internal stuff will be reset:
+        # internal stuff will be reseted:
         # - error_count
         # - last_used (round_robing)
         #

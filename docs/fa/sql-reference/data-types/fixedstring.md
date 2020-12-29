@@ -22,7 +22,7 @@ toc_title: "\u0631\u0634\u062A\u0647 \u062B\u0627\u0628\u062A)"
 نمونه هایی از مقادیر است که می تواند موثر در ذخیره می شود `FixedString`- ستون های تایپ شده:
 
 -   نمایندگی دودویی نشانی های اینترنتی (`FixedString(16)` برای ایپو6).
--   Language codes (ru_RU, en_US … ).
+-   Language codes (ru\_RU, en\_US … ).
 -   Currency codes (USD, RUB … ).
 -   نمایش دودویی رشته هش (`FixedString(16)` برای ام دی 5, `FixedString(32)` برای شی256).
 

@@ -45,7 +45,6 @@
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -55,7 +54,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
@@ -77,7 +75,6 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Formats/registerFormats.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -137,6 +134,7 @@ private:
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
+    String query_id;                     /// Current query_id.
     String full_query; /// Current query as it was given to the client.
 
     // Current query as it will be sent to the server. It may differ from the
@@ -221,12 +219,6 @@ private:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
-    std::optional<Suggest> suggest;
-
-    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
-    std::vector<std::pair<String, String>> query_id_formats;
-    QueryProcessingStage::Enum query_processing_stage;
-
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
@@ -251,17 +243,6 @@ private:
         /// Set path for format schema files
         if (config().has("format_schema_path"))
             context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
-
-        /// Initialize query_id_formats if any
-        if (config().has("query_id_formats"))
-        {
-            Poco::Util::AbstractConfiguration::Keys keys;
-            config().keys("query_id_formats", keys);
-            for (const auto & name : keys)
-                query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-        }
-        if (query_id_formats.empty())
-            query_id_formats.emplace_back("Query id:", " {query_id}\n");
     }
 
 
@@ -467,7 +448,6 @@ private:
     {
         UseSSL use_ssl;
 
-        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 
@@ -476,15 +456,8 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        /// - -qf (--queries-file) command line option is present.
-        ///   The value of the option is used as file with query (or of multiple queries) to execute.
-        if (!stdin_is_a_tty || config().has("query") || config().has("queries-file"))
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
-
-        if (config().has("query") && config().has("queries-file"))
-        {
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
-        }
 
         std::cout << std::fixed << std::setprecision(3);
         std::cerr << std::fixed << std::setprecision(3);
@@ -586,16 +559,15 @@ private:
 
         if (is_interactive)
         {
-            if (config().has("query_id"))
+            if (!query_id.empty())
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-            suggest.emplace();
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
                 /// Load suggestion data from the server.
-                suggest->load(connection_parameters, config().getInt("suggestion_limit"));
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
             /// Load command history if present.
@@ -622,7 +594,7 @@ private:
                 highlight_callback = highlight;
 
             ReplxxLineReader lr(
-                *suggest,
+                Suggest::instance(),
                 history_file,
                 config().has("multiline"),
                 query_extenders,
@@ -630,7 +602,7 @@ private:
                 highlight_callback);
 
 #elif defined(USE_READLINE) && USE_READLINE
-            ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
+            ReadlineLineReader lr(Suggest::instance(), history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
             LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
@@ -693,9 +665,7 @@ private:
         }
         else
         {
-            auto query_id = config().getString("query_id", "");
-            if (!query_id.empty())
-                context.setCurrentQueryId(query_id);
+            query_id = config().getString("query_id", "");
             if (query_fuzzer_runs)
             {
                 nonInteractiveWithFuzzing();
@@ -794,15 +764,8 @@ private:
     {
         String text;
 
-        if (config().has("queries-file"))
-        {
-            ReadBufferFromFile in(config().getString("queries-file"));
-            readStringUntilEOF(text, in);
-            processMultiQuery(text);
-            return;
-        }
-        else if (config().has("query"))
-            text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+        if (config().has("query"))
+            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -949,11 +912,6 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'none'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
         }
 
         /// Several queries separated by ';'.
@@ -1180,13 +1138,13 @@ private:
                 ASTPtr ast_to_process;
                 try
                 {
-                    WriteBufferFromOwnString dump_before_fuzz;
+                    std::stringstream dump_before_fuzz;
                     fuzz_base->dumpTree(dump_before_fuzz);
                     auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
                     ast_to_process = fuzz_base->clone();
 
-                    WriteBufferFromOwnString dump_of_cloned_ast;
+                    std::stringstream dump_of_cloned_ast;
                     ast_to_process->dumpTree(dump_of_cloned_ast);
 
                     // Run the original query as well.
@@ -1208,9 +1166,7 @@ private:
                         fprintf(stderr, "dump of cloned ast:\n%s\n",
                             dump_of_cloned_ast.str().c_str());
                         fprintf(stderr, "dump after fuzz:\n");
-                        WriteBufferFromOStream cerr_buf(std::cerr, 4096);
-                        fuzz_base->dumpTree(cerr_buf);
-                        cerr_buf.next();
+                        fuzz_base->dumpTree(std::cerr);
 
                         fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
@@ -1231,15 +1187,8 @@ private:
                 }
                 catch (...)
                 {
-                    // Some functions (e.g. protocol parsers) don't throw, but
-                    // set last_exception instead, so we'll also do it here for
-                    // uniformity.
                     last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     received_exception_from_server = true;
-                }
-
-                if (received_exception_from_server)
-                {
                     fmt::print(stderr, "Error on processing query '{}': {}\n",
                         ast_to_process->formatForErrorMessage(),
                         last_exception_received_from_server->message());
@@ -1249,30 +1198,29 @@ private:
                 {
                     // Probably the server is dead because we found an assertion
                     // failure. Fail fast.
-                    fmt::print(stderr, "Lost connection to the server\n");
                     return begin;
                 }
 
-                // The server is still alive so we're going to continue fuzzing.
-                // Determine what we're going to use as the starting AST.
                 if (received_exception_from_server)
                 {
-                    // Query completed with error, keep the previous starting AST.
-                    // Also discard the exception that we now know to be non-fatal,
-                    // so that it doesn't influence the exit code.
-                    last_exception_received_from_server.reset(nullptr);
+                    // Query completed with error, ignore it and fuzz again.
+                    fprintf(stderr, "Got error, will fuzz again\n");
+
                     received_exception_from_server = false;
+                    last_exception_received_from_server.reset();
+
+                    continue;
                 }
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
                     // ast too long, start from original ast
-                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
+                    fprintf(stderr, "current ast too long, won't elaborate\n");
                     fuzz_base = orig_ast;
                 }
                 else
                 {
                     // fuzz starting from this successful query
-                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
+                    fprintf(stderr, "using this ast as etalon\n");
                     fuzz_base = ast_to_process;
                 }
             }
@@ -1324,19 +1272,6 @@ private:
             writeString(full_query, std_out);
             writeChar('\n', std_out);
             std_out.next();
-        }
-
-        if (is_interactive)
-        {
-            // Generate a new query_id
-            context.setCurrentQueryId("");
-            for (const auto & query_id_format : query_id_formats)
-            {
-                writeString(query_id_format.first, std_out);
-                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context.getCurrentQueryId())), std_out);
-                writeChar('\n', std_out);
-                std_out.next();
-            }
         }
 
         watch.restart();
@@ -1464,8 +1399,8 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    context.getCurrentQueryId(),
-                    query_processing_stage,
+                    query_id,
+                    QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
                     true);
@@ -1505,8 +1440,8 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            context.getCurrentQueryId(),
-            query_processing_stage,
+            query_id,
+            QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
             true);
@@ -1528,7 +1463,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, true);
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();
@@ -1553,9 +1488,7 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl;
-            WriteBufferFromOStream res_buf(std::cout, 4096);
-            formatAST(*res, res_buf);
-            res_buf.next();
+            formatAST(*res, std::cout);
             std::cout << std::endl << std::endl;
         }
 
@@ -1927,7 +1860,7 @@ private:
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
-                    current_format = id.name();
+                    current_format = id.name;
                 }
             }
 
@@ -2330,7 +2263,6 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -2340,7 +2272,6 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("queries-file", po::value<std::string>(), "file path with queries to execute")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")
@@ -2357,9 +2288,6 @@ public:
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
-            ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
-            ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-            ("history_file", po::value<std::string>(), "path to history file")
         ;
 
         Settings cmd_settings;
@@ -2456,8 +2384,6 @@ public:
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
-
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
@@ -2469,8 +2395,6 @@ public:
             config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
-        if (options.count("queries-file"))
-            config().setString("queries-file", options["queries-file"].as<std::string>());
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
@@ -2520,8 +2444,6 @@ public:
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
         if (options.count("highlight"))
             config().setBool("highlight", options["highlight"].as<bool>());
-        if (options.count("history_file"))
-            config().setString("history_file", options["history_file"].as<std::string>());
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
@@ -2532,25 +2454,6 @@ public:
             // TODO stop using parseQuery.
             config().setBool("ignore-error", true);
             ignore_error = true;
-        }
-
-        if (options.count("opentelemetry-traceparent"))
-        {
-            std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
-            std::string error;
-            if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
-                traceparent, error))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot parse OpenTelemetry traceparent '{}': {}",
-                    traceparent, error);
-            }
-        }
-
-        if (options.count("opentelemetry-tracestate"))
-        {
-            context.getClientInfo().client_trace_context.tracestate =
-                options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);

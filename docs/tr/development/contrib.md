@@ -19,6 +19,7 @@ toc_title: "Kullan\u0131lan \xDC\xE7\xFCnc\xFC Taraf K\xFCt\xFCphaneleri"
 | googletest          | [BSD 3-Clause Lisansı](https://github.com/google/googletest/blob/master/LICENSE)                                                                       |
 | h33                 | [Apache Lic 2.0ense 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                               |
 | hyperscan           | [BSD 3-Clause Lisansı](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                         |
+| libbtrie            | [BSD 2-Clause Lisansı](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                                  |
 | libcxxabi           | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                                    |
 | libdivide           | [Zlib Lisansı](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                                     |
 | libgsasl            | [LGPL v2. 1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                                      |
@@ -27,7 +28,7 @@ toc_title: "Kullan\u0131lan \xDC\xE7\xFCnc\xFC Taraf K\xFCt\xFCphaneleri"
 | libpcg-rastgele     | [Apache Lic 2.0ense 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                                |
 | libressl            | [OpenSSL Lisansı](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                                        |
 | librdkafka          | [BSD 2-Clause Lisansı](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                                   |
-| libwidechar_width  | [CC0 1.0 Evrensel](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                                |
+| libwidechar\_width  | [CC0 1.0 Evrensel](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                                |
 | llvm                | [BSD 3-Clause Lisansı](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)                       |
 | lz4                 | [BSD 2-Clause Lisansı](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                               |
 | mariadb-bağlayıcı-c | [LGPL v2. 1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                                            |

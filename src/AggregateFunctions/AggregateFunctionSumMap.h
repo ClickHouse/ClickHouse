@@ -56,7 +56,7 @@ struct AggregateFunctionMapData
   * minMap and maxMap share the same idea, but calculate min and max correspondingly.
   */
 
-template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument, bool compact>
+template <typename T, typename Derived, typename Visitor, bool overflow, bool tuple_argument>
 class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
@@ -255,28 +255,23 @@ public:
     {
         // Final step does compaction of keys that have zero values, this mutates the state
         auto & merged_maps = this->data(place).merged_maps;
-
-        // Remove keys which are zeros or empty. This should be enabled only for sumMap.
-        if constexpr (compact)
+        for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
         {
-            for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
+            // Key is not compacted if it has at least one non-zero value
+            bool erase = true;
+            for (size_t col = 0; col < values_types.size(); ++col)
             {
-                // Key is not compacted if it has at least one non-zero value
-                bool erase = true;
-                for (size_t col = 0; col < values_types.size(); ++col)
+                if (it->second[col] != values_types[col]->getDefault())
                 {
-                    if (it->second[col] != values_types[col]->getDefault())
-                    {
-                        erase = false;
-                        break;
-                    }
+                    erase = false;
+                    break;
                 }
-
-                if (erase)
-                    it = merged_maps.erase(it);
-                else
-                    ++it;
             }
+
+            if (erase)
+                it = merged_maps.erase(it);
+            else
+                ++it;
         }
 
         size_t size = merged_maps.size();
@@ -319,11 +314,11 @@ public:
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument, true>
+    public AggregateFunctionMapBase<T, AggregateFunctionSumMap<T, overflow, tuple_argument>, FieldVisitorSum, overflow, tuple_argument>
 {
 private:
     using Self = AggregateFunctionSumMap<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
 
 public:
     AggregateFunctionSumMap(const DataTypePtr & keys_type_,
@@ -347,12 +342,11 @@ class AggregateFunctionSumMapFiltered final :
         AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>,
         FieldVisitorSum,
         overflow,
-        tuple_argument,
-        true>
+        tuple_argument>
 {
 private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument>;
 
     /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
     static constexpr const bool allow_hash = !OverBigInt<T>;
@@ -480,11 +474,11 @@ public:
 
 template <typename T, bool tuple_argument>
 class AggregateFunctionMinMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument, false>
+    public AggregateFunctionMapBase<T, AggregateFunctionMinMap<T, tuple_argument>, FieldVisitorMin, true, tuple_argument>
 {
 private:
     using Self = AggregateFunctionMinMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMin, true, tuple_argument, false>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMin, true, tuple_argument>;
 
 public:
     AggregateFunctionMinMap(const DataTypePtr & keys_type_,
@@ -504,11 +498,11 @@ public:
 
 template <typename T, bool tuple_argument>
 class AggregateFunctionMaxMap final :
-    public AggregateFunctionMapBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument, false>
+    public AggregateFunctionMapBase<T, AggregateFunctionMaxMap<T, tuple_argument>, FieldVisitorMax, true, tuple_argument>
 {
 private:
     using Self = AggregateFunctionMaxMap<T, tuple_argument>;
-    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMax, true, tuple_argument, false>;
+    using Base = AggregateFunctionMapBase<T, Self, FieldVisitorMax, true, tuple_argument>;
 
 public:
     AggregateFunctionMaxMap(const DataTypePtr & keys_type_,

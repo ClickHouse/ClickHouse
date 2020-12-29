@@ -134,7 +134,7 @@ Bir kafka tablosu istediğiniz kadar materialized görüşe sahip olabilir, kafk
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Performansı artırmak için, alınan iletiler bloklar halinde gruplandırılır [max_ınsert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). İçinde blok oluş ifma ifdıysa [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milisaniye, veri blok bütünlüğü ne olursa olsun tabloya temizlendi.
+Performansı artırmak için, alınan iletiler bloklar halinde gruplandırılır [max\_ınsert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). İçinde blok oluş ifma ifdıysa [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) milisaniye, veri blok bütünlüğü ne olursa olsun tabloya temizlendi.
 
 Konu verilerini almayı durdurmak veya dönüşüm mantığını değiştirmek için, hayata geçirilmiş görünümü ayırın:
 

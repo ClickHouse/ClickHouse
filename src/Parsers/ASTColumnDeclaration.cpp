@@ -1,6 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -56,11 +55,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     if (type)
     {
         settings.ostr << ' ';
-
-        FormatStateStacked type_frame = frame;
-        type_frame.indent = 0;
-
-        type->formatImpl(settings, state, type_frame);
+        type->formatImpl(settings, state, frame);
     }
 
     if (null_modifier)

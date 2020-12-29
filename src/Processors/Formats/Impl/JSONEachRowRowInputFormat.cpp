@@ -163,7 +163,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of key " + columnName(index) + ")");
+        e.addMessage("(while read the value of key " + columnName(index) + ")");
         throw;
     }
 }
@@ -173,7 +173,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(in);
 
     if (in.eof())
-        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
     else if (*in.position() == '}')
     {
         ++in.position();
