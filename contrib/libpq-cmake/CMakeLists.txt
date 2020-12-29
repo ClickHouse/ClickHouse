@@ -33,6 +33,7 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/common/stringinfo.c
         ${LIBPQ_SOURCE_DIR}/common/psprintf.c
         ${LIBPQ_SOURCE_DIR}/common/encnames.c
+        ${LIBPQ_SOURCE_DIR}/common/logging.c
 
         ${LIBPQ_SOURCE_DIR}/port/snprintf.c
         ${LIBPQ_SOURCE_DIR}/port/strlcpy.c
