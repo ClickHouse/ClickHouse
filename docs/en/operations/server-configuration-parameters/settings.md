@@ -569,7 +569,11 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## metric_log {#metric_log}
 
-To turn on metrics history collection on [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+It is enabled by default. If it`s not, you can do this manually.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
 ``` xml
 <yandex>
@@ -579,6 +583,16 @@ To turn on metrics history collection on [`system.metric_log`](../../operations/
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
+</yandex>
+```
+
+**Disabling**
+
+To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
 </yandex>
 ```
 
