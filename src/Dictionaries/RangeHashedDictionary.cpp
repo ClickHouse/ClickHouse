@@ -147,14 +147,27 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
             result = std::move(column_string);
         }
-        else if constexpr (IsNumber<AttributeType>)
+        else
         {
-            auto column = ColumnVector<AttributeType>::create(size);
+            using ResultColumnType
+                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
+            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
+
+            ResultColumnPtr column;
+
+            if constexpr (IsDecimalNumber<AttributeType>)
+            {
+                // auto scale = getDecimalScale(*attribute.type);
+                column = ColumnDecimal<AttributeType>::create(size, 0);
+            }
+            else if constexpr (IsNumber<AttributeType>)
+                column = ColumnVector<AttributeType>::create(size);
+ 
             auto& out = column->getData();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
@@ -163,49 +176,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t) { return def; }
-                    );
-                }
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column);
-        }
-        else if constexpr (IsDecimalNumber<AttributeType>)
-        {
-            // auto scale = getDecimalScale(*attribute.type);
-            auto column = ColumnDecimal<AttributeType>::create(size, 0);
-            auto& out = column->getData();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 
@@ -341,61 +312,6 @@ void RangeHashedDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
-
-        // switch (attribute.type)
-        // {
-        //     case AttributeUnderlyingType::utUInt8:
-        //         addAttributeSize<UInt8>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utUInt16:
-        //         addAttributeSize<UInt16>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utUInt32:
-        //         addAttributeSize<UInt32>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utUInt64:
-        //         addAttributeSize<UInt64>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utUInt128:
-        //         addAttributeSize<UInt128>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utInt8:
-        //         addAttributeSize<Int8>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utInt16:
-        //         addAttributeSize<Int16>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utInt32:
-        //         addAttributeSize<Int32>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utInt64:
-        //         addAttributeSize<Int64>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utFloat32:
-        //         addAttributeSize<Float32>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utFloat64:
-        //         addAttributeSize<Float64>(attribute);
-        //         break;
-
-        //     case AttributeUnderlyingType::utDecimal32:
-        //         addAttributeSize<Decimal32>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utDecimal64:
-        //         addAttributeSize<Decimal64>(attribute);
-        //         break;
-        //     case AttributeUnderlyingType::utDecimal128:
-        //         addAttributeSize<Decimal128>(attribute);
-        //         break;
-
-        //     case AttributeUnderlyingType::utString:
-        //     {
-        //         addAttributeSize<StringRef>(attribute);
-        //         bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-        //         break;
-        //     }
-        // }
     }
 }
 
