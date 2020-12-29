@@ -78,100 +78,18 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override;
 
+    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
+
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr default_untyped) const override;
+
+    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
-
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
-
-    /** Functions used to retrieve attributes of specific type by key. */
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const;
-        DECLARE(UInt8)
-        DECLARE(UInt16)
-        DECLARE(UInt32)
-        DECLARE(UInt64)
-        DECLARE(UInt128)
-        DECLARE(Int8)
-        DECLARE(Int16)
-        DECLARE(Int32)
-        DECLARE(Int64)
-        DECLARE(Float32)
-        DECLARE(Float64)
-        DECLARE(Decimal32)
-        DECLARE(Decimal64)
-        DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes &, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-        DECLARE(UInt8)
-        DECLARE(UInt16)
-        DECLARE(UInt32)
-        DECLARE(UInt64)
-        DECLARE(UInt128)
-        DECLARE(Int8)
-        DECLARE(Int16)
-        DECLARE(Int32)
-        DECLARE(Int64)
-        DECLARE(Float32)
-        DECLARE(Float64)
-        DECLARE(Decimal32)
-        DECLARE(Decimal64)
-        DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-            const std::string & attribute_name,
-            const Columns & key_columns,
-            const DataTypes &,
-            const ColumnString * const def,
-            ColumnString * const out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes &, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const;
-        DECLARE(UInt8)
-        DECLARE(UInt16)
-        DECLARE(UInt32)
-        DECLARE(UInt64)
-        DECLARE(UInt128)
-        DECLARE(Int8)
-        DECLARE(Int16)
-        DECLARE(Int32)
-        DECLARE(Int64)
-        DECLARE(Float32)
-        DECLARE(Float64)
-        DECLARE(Decimal32)
-        DECLARE(Decimal64)
-        DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-            const std::string & attribute_name,
-            const Columns & key_columns,
-            const DataTypes & key_types,
-            const String & def,
-            ColumnString * const out) const;
-
-    /** Checks whether or not a point can be found in one of the polygons in the dictionary.
-     *  The check is performed for multiple points represented by columns of their x and y coordinates.
-     *  The boolean result is written to out.
-     */
-    // TODO: Refactor the whole dictionary design to perform stronger checks, i.e. make this an override.
-    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
     /** Single coordinate type. */
     using Coord = Float32;
