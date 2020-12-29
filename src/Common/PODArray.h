@@ -319,7 +319,7 @@ protected:
         const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
         const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
 
-        assert(!((ptr_begin >= c_begin && ptr_begin <= c_end) || (ptr_end >= c_begin && ptr_end <= c_end)));
+        assert(!((ptr_begin >= this->c_begin && ptr_begin <= this->c_end) || (ptr_end >= this->c_begin && ptr_end <= this->c_end)));
 #endif
     }
 
