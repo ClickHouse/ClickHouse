@@ -405,8 +405,11 @@ class IColumn;
     M(Bool, optimize_skip_merged_partitions, false, "Skip partitions with one part with level > 0 in optimize final", 0) \
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
     M(Bool, allow_experimental_map_type, false, "Allow data type Map", 0) \
+    M(Bool, allow_experimental_window_functions, false, "Allow experimental window functions", 0) \
     \
     M(Bool, use_antlr_parser, false, "Parse incoming queries using ANTLR-generated parser", 0) \
+    \
+    M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
@@ -487,7 +490,9 @@ class IColumn;
     \
     M(Bool, output_format_enable_streaming, false, "Enable streaming in output formats that support it.", 0) \
     M(Bool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \
-    M(Bool, output_format_pretty_row_numbers, false, "Add row numbers before each row for pretty output format", 0)
+    M(Bool, output_format_pretty_row_numbers, false, "Add row numbers before each row for pretty output format", 0) \
+    M(Bool, insert_distributed_one_random_shard, false, "If setting is enabled, inserting into distributed table will choose a random shard to write when there is no sharding key", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.

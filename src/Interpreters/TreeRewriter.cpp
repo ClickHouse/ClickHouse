@@ -132,7 +132,7 @@ struct CustomizeAggregateFunctionsSuffixData
     }
 };
 
-// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we shoule rewrite to sumOrNullIf
+// Used to rewrite aggregate functions with -OrNull suffix in some cases, such as sumIfOrNull, we should rewrite to sumOrNullIf
 struct CustomizeAggregateFunctionsMoveSuffixData
 {
     using TypeToVisit = ASTFunction;
@@ -439,10 +439,44 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
     /// There can not be other aggregate functions within the aggregate functions.
     for (const ASTFunction * node : data.aggregates)
+    {
         if (node->arguments)
+        {
             for (auto & arg : node->arguments->children)
+            {
                 assertNoAggregates(arg, "inside another aggregate function");
+                assertNoWindows(arg, "inside an aggregate function");
+            }
+        }
+    }
     return data.aggregates;
+}
+
+std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
+{
+    /// There can not be window functions inside the WHERE and PREWHERE.
+    if (select_query.where())
+        assertNoWindows(select_query.where(), "in WHERE");
+    if (select_query.prewhere())
+        assertNoWindows(select_query.prewhere(), "in PREWHERE");
+
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(query);
+
+    /// There can not be other window functions within the aggregate functions.
+    for (const ASTFunction * node : data.window_functions)
+    {
+        if (node->arguments)
+        {
+            for (auto & arg : node->arguments->children)
+            {
+                assertNoAggregates(arg, "inside a window function");
+                assertNoWindows(arg, "inside another window function");
+            }
+        }
+    }
+
+    return data.window_functions;
 }
 
 }
@@ -738,6 +772,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
     result.aggregates = getAggregates(query, *select_query);
+    result.window_function_asts = getWindowFunctions(query, *select_query);
     result.collectUsedColumns(query, true);
     result.ast_join = select_query->join();
 

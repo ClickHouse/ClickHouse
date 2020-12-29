@@ -230,19 +230,28 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (!is_dictionary)
     {
-        std::string what = "TABLE";
+        String action = "CREATE";
+        if (attach)
+            action = "ATTACH";
+        else if (replace_view)
+            action = "CREATE OR REPLACE";
+        else if (replace_table && create_or_replace)
+            action = "CREATE OR REPLACE";
+        else if (replace_table)
+            action = "REPLACE";
+
+        String what = "TABLE";
         if (is_ordinary_view)
             what = "VIEW";
-        if (is_materialized_view)
+        else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        if (is_live_view)
+        else if (is_live_view)
             what = "LIVE VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
-                << (attach ? "ATTACH " : "CREATE ")
+                << action << " "
                 << (temporary ? "TEMPORARY " : "")
-                << (replace_view ? "OR REPLACE " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")

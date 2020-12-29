@@ -19,6 +19,7 @@
 00800_low_cardinality_distributed_insert
 00821_distributed_storage_with_join_on
 00829_bitmap_function
+00829_bitmap64_function
 00850_global_join_dups
 00858_issue_4756
 00877_memory_limit_for_new_delete
