@@ -25,13 +25,18 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 -   `password` — User password.
 
--   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
+-   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:
+    - `0` - The query is executed as `INSERT INTO`.
+    - `1` - The query is executed as `REPLACE INTO`.
 
--   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
 
-        Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
+    Example: 
+    ```sql
+    INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`
+    ```
 
-        To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+    `on_duplicate_clause` here is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
@@ -53,9 +58,9 @@ mysql> CREATE TABLE `test`.`test` (
     ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
 
-mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+mysql> INSERT INTO test (`int_id`, `float`) VALUES (1,2);
 
-mysql> select * from test;
+mysql> SELECT * FROM test;
 +--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
 +--------+--------------+-------+----------------+
