@@ -445,6 +445,8 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+        /// Stop zookeeper connection
+        zookeeper.reset();
         /// Stop test_keeper storage
         test_keeper_storage.reset();
     }
@@ -930,6 +932,17 @@ bool Context::hasScalar(const String & name) const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
+}
+
+
+void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+    query_access_info.databases.emplace(quoted_database_name);
+    query_access_info.tables.emplace(full_quoted_table_name);
+    for (const auto & column_name : column_names)
+        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 

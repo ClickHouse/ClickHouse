@@ -28,12 +28,16 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
+
 protected:
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;
     Block result_header;
     SelectQueryOptions options;
     size_t max_streams = 1;
+    bool settings_limit_offset_needed = false;
+    bool settings_limit_offset_done = false;
 };
 }
 
