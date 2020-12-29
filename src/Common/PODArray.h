@@ -292,6 +292,17 @@ public:
 #endif
     }
 
+    template <typename It1, typename It2>
+    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
+    {
+#if !defined(NDEBUG)
+        const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
+        const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
+
+        assert(!((ptr_begin >=  && ptr_begin <= c_end) || (ptr_end >= c_start && ptr_end <= c_end)));
+#endif
+    }
+
     ~PODArrayBase()
     {
         dealloc();
@@ -311,17 +322,6 @@ protected:
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
     const T * t_end_of_storage() const { return reinterpret_cast<const T *>(this->c_end_of_storage); }
-
-    template <typename It1, typename It2>
-    inline void assertNotIntersects(It1 from_begin [[maybe_unused]], It2 from_end [[maybe_unused]])
-    {
-#if !defined(NDEBUG)
-        const char * ptr_begin = reinterpret_cast<const char *>(&*from_begin);
-        const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
-
-        assert(!((ptr_begin >= this->c_begin && ptr_begin <= this->c_end) || (ptr_end >= this->c_begin && ptr_end <= this->c_end)));
-#endif
-    }
 
 public:
     using value_type = T;
@@ -458,7 +458,7 @@ public:
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertPrepare(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
-        assertNotIntersects(from_begin, from_end);
+        this->assertNotIntersects(from_begin, from_end);
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
@@ -510,7 +510,7 @@ public:
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
-        assertNotIntersects(from_begin, from_end);
+        this->assertNotIntersects(from_begin, from_end);
 
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         if (bytes_to_copy)
@@ -648,7 +648,7 @@ public:
     void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
-        assertNotIntersects(from_begin, from_end);
+        this->assertNotIntersects(from_begin, from_end);
 
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
