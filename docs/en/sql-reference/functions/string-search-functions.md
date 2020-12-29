@@ -538,7 +538,7 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCas
 
 ## countSubstrings {#countSubstrings}
 
-Counts the number of substring occurrences.
+Returns the number of substring occurrences.
 
 For a case-insensitive search, use [countSubstringsCaseInsensitive](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitive) or [countSubstringsCaseInsensitiveUTF8](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitiveUTF8) functions.
 
@@ -606,7 +606,7 @@ Result:
 
 ## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
 
-Counts the number of substring occurrences case-insensitive.
+Returns the number of substring occurrences case-insensitive.
 
 **Syntax**
 
@@ -672,7 +672,7 @@ Result:
 
 ## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
 
-Counts the number of substring occurrences in `UTF-8` case-insensitive.
+Returns the number of substring occurrences in `UTF-8` case-insensitive.
 
 **Syntax**
 
