@@ -71,7 +71,7 @@ mysql> SELECT * FROM test;
 Selecting data from ClickHouse:
 
 ``` sql
-SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
 ``` text
