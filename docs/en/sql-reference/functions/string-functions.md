@@ -560,9 +560,9 @@ Result:
 
 ## encodeXMLComponent {#encode-xml-component}
 
-Escape characters to place string into XML text node or attribute.
+Escapes characters to place string into XML text node or attribute.
 
-The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `\'`.
+The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
 
 **Syntax** 
 
