@@ -26,7 +26,6 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (!block)
         return;
 
-
     /// If we read not all table columns. E.g. while mutation.
     if (!block.has(column_name))
         return;
