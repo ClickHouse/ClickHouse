@@ -12,6 +12,7 @@
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -26,15 +27,21 @@ namespace ErrorCodes
 {
     extern const int SYSTEM_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int LOGICAL_ERROR;
 }
 
-static constexpr UInt8 RESPONSE_BYTE = 1;
-static constexpr UInt8 WATCH_RESPONSE_BYTE = 2;
+struct PollResult
+{
+    std::vector<size_t> ready_responses;
+    bool has_requests;
+    bool error;
+};
 
 struct SocketInterruptablePollWrapper
 {
     int sockfd;
     PipeFDs pipe;
+    ReadBufferFromFileDescriptor response_in;
 
 #if defined(POCO_HAVE_FD_EPOLL)
     int epollfd;
@@ -42,17 +49,11 @@ struct SocketInterruptablePollWrapper
     epoll_event pipe_event{};
 #endif
 
-    using PollStatus = size_t;
-    static constexpr PollStatus TIMEOUT = 0x0;
-    static constexpr PollStatus HAS_REQUEST = 0x1;
-    static constexpr PollStatus HAS_RESPONSE = 0x2;
-    static constexpr PollStatus HAS_WATCH_RESPONSE = 0x4;
-    static constexpr PollStatus ERROR = 0x8;
-
     using InterruptCallback = std::function<void()>;
 
     explicit SocketInterruptablePollWrapper(const Poco::Net::StreamSocket & poco_socket_)
         : sockfd(poco_socket_.impl()->sockfd())
+        , response_in(pipe.fds_rw[0])
     {
         pipe.setNonBlockingReadWrite();
 
@@ -83,7 +84,7 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollStatus poll(Poco::Timespan remaining_time)
+    PollResult poll(Poco::Timespan remaining_time)
     {
         std::array<int, 2> outputs = {-1, -1};
 #if defined(POCO_HAVE_FD_EPOLL)
@@ -139,10 +140,11 @@ struct SocketInterruptablePollWrapper
             outputs[1] = pipe.fds_rw[0];
 #endif
 
-        PollStatus result = TIMEOUT;
+        PollResult result{};
         if (rc < 0)
         {
-            return ERROR;
+            result.error = true;
+            return result;
         }
         else if (rc == 0)
         {
@@ -155,28 +157,15 @@ struct SocketInterruptablePollWrapper
                 if (fd != -1)
                 {
                     if (fd == sockfd)
-                        result |= HAS_REQUEST;
+                        result.has_requests = true;
                     else
                     {
-                        int read_result;
                         do
                         {
-                            UInt8 byte;
-                            read_result = read(pipe.fds_rw[0], &byte, sizeof(byte));
-                            if (read_result > 0)
-                            {
-                                if (byte == WATCH_RESPONSE_BYTE)
-                                    result |= HAS_WATCH_RESPONSE;
-                                else if (byte == RESPONSE_BYTE)
-                                    result |= HAS_RESPONSE;
-                                else
-                                    throw Exception("Unexpected byte received from signaling pipe", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-                            }
-                        }
-                        while (read_result > 0 || (read_result < 0 && errno == EINTR));
-
-                        if (read_result < 0 && errno != EAGAIN)
-                            throwFromErrno("Got error reading from pipe", ErrorCodes::SYSTEM_ERROR);
+                            size_t response_position;
+                            readIntBinary(response_position, response_in);
+                            result.ready_responses.push_back(response_position);
+                        } while (response_in.available());
                     }
                 }
             }
@@ -297,8 +286,8 @@ void TestKeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            auto state = poll_wrapper->poll(session_timeout);
-            if (state & SocketInterruptablePollWrapper::HAS_REQUEST)
+            PollResult result = poll_wrapper->poll(session_timeout);
+            if (result.has_requests)
             {
                 do
                 {
@@ -306,16 +295,20 @@ void TestKeeperTCPHandler::runImpl()
 
                     if (received_op == Coordination::OpNum::Close)
                     {
+                        auto last_response = responses.find(response_id_counter - 1);
+                        if (last_response == responses.end())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Just inserted response #{} not found in responses", response_id_counter - 1);
                         LOG_DEBUG(log, "Received close request for session #{}", session_id);
-                        if (responses.back().wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+                        if (last_response->second.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
                         {
                             LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
                         }
                         else
                         {
                             LOG_DEBUG(log, "Sent close for session #{}", session_id);
-                            responses.back().get()->write(*out);
+                            last_response->second.get()->write(*out);
                         }
+
                         close_received = true;
 
                         break;
@@ -332,41 +325,31 @@ void TestKeeperTCPHandler::runImpl()
             if (close_received)
                 break;
 
-            if (state & SocketInterruptablePollWrapper::HAS_RESPONSE)
+            for (size_t response_id : result.ready_responses)
             {
-                while (!responses.empty())
-                {
-                    if (responses.front().wait_for(0s) != std::future_status::ready)
-                        break;
+                auto response_future = responses.find(response_id);
+                if (response_future == responses.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get unknown response #{}", response_id);
 
-                    auto response = responses.front().get();
+                if (response_future->second.wait_for(0s) != std::future_status::ready)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Response #{} was market as ready but corresponding future not ready yet", response_id);
+
+                auto response = response_future->second.get();
+                if (response->error == Coordination::Error::ZOK)
+                {
                     response->write(*out);
-                    responses.pop();
                 }
-            }
-
-            if (state & SocketInterruptablePollWrapper::HAS_WATCH_RESPONSE)
-            {
-                for (auto it = watch_responses.begin(); it != watch_responses.end();)
+                else
                 {
-                    if (it->wait_for(0s) == std::future_status::ready)
-                    {
-                        auto response = it->get();
-                        if (response->error == Coordination::Error::ZOK)
-                            response->write(*out);
-                        it = watch_responses.erase(it);
-                    }
-                    else
-                    {
-                        ++it;
-                    }
+                    /// TODO Get rid of this
+                    if (!dynamic_cast<Coordination::ZooKeeperWatchResponse *>(response.get()))
+                        response->write(*out);
                 }
+                responses.erase(response_future);
             }
 
-            if (state == SocketInterruptablePollWrapper::ERROR)
-            {
+            if (result.error)
                 throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
-            }
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
@@ -419,34 +402,47 @@ Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
     request->readImpl(*in);
-    int response_fd = poll_wrapper->getResponseFD();
     auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-    zkutil::ResponseCallback callback = [response_fd, promise] (const Coordination::ZooKeeperResponsePtr & response)
+    if (opnum != Coordination::OpNum::Close)
     {
-        promise->set_value(response);
-        [[maybe_unused]] int result = write(response_fd, &RESPONSE_BYTE, sizeof(RESPONSE_BYTE));
-    };
-
-    if (request->has_watch)
-    {
-        auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-        zkutil::ResponseCallback watch_callback = [response_fd, watch_promise] (const Coordination::ZooKeeperResponsePtr & response)
+        int response_fd = poll_wrapper->getResponseFD();
+        size_t response_num = response_id_counter++;
+        zkutil::ResponseCallback callback = [response_fd, promise, response_num] (const Coordination::ZooKeeperResponsePtr & response)
         {
-            watch_promise->set_value(response);
-            [[maybe_unused]] int result = write(response_fd, &WATCH_RESPONSE_BYTE, sizeof(WATCH_RESPONSE_BYTE));
+            promise->set_value(response);
+            [[maybe_unused]] int result = write(response_fd, &response_num, sizeof(response_num));
         };
-        test_keeper_storage->putRequest(request, session_id, callback, watch_callback);
-        responses.push(promise->get_future());
-        watch_responses.emplace_back(watch_promise->get_future());
+
+        if (request->has_watch)
+        {
+            auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
+            size_t watch_response_num = response_id_counter++;
+            zkutil::ResponseCallback watch_callback = [response_fd, watch_promise, watch_response_num] (const Coordination::ZooKeeperResponsePtr & response)
+            {
+                watch_promise->set_value(response);
+                [[maybe_unused]] int result = write(response_fd, &watch_response_num, sizeof(watch_response_num));
+            };
+            test_keeper_storage->putRequest(request, session_id, callback, watch_callback);
+            responses.try_emplace(response_num, promise->get_future());
+            responses.try_emplace(watch_response_num, watch_promise->get_future());
+        }
+        else
+        {
+            test_keeper_storage->putRequest(request, session_id, callback);
+            responses.try_emplace(response_num, promise->get_future());
+        }
     }
     else
     {
+        zkutil::ResponseCallback callback = [promise] (const Coordination::ZooKeeperResponsePtr & response)
+        {
+            promise->set_value(response);
+        };
         test_keeper_storage->putRequest(request, session_id, callback);
-        responses.push(promise->get_future());
+        responses.try_emplace(response_id_counter++, promise->get_future());
     }
 
     return opnum;
 }
-
 
 }

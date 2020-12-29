@@ -28,8 +28,8 @@ enum class AggregateOperation
  * During array aggregation we derive result type from operation.
  * For array min or array max we use array element as result type.
  * For array average we use Float64.
- * For array sum for decimal numbers we use Decimal128, for floating point numbers Float64, for numeric unsigned Int64,
- * and for numeric signed UInt64.
+ * For array sum for for big integers, we use same type representation, decimal numbers we use Decimal128,
+ * for floating point numbers Float64, for numeric unsigned Int64, and for numeric signed UInt64.
  */
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -56,13 +56,14 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
-    using Result = std::conditional_t<
-        IsDecimalNumber<ArrayElement>,
-        Decimal128,
-        std::conditional_t<
-            std::is_floating_point_v<ArrayElement>,
-            Float64,
-            std::conditional_t<std::is_signed_v<ArrayElement>, Int64, UInt64>>>;
+    using Result =
+        std::conditional_t<std::is_same_v<ArrayElement, Int128>, Int128,
+            std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
+                std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
+                    std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
+                        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
+                            std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
+                                UInt64>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -126,12 +127,12 @@ struct ArrayAggregateImpl
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
         using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
-        /// For average on decimal array we return Float64 as result,
-        /// but to keep decimal presisision we convert to Float64 as last step of average computation
-        static constexpr bool use_decimal_for_average_aggregation
-            = aggregate_operation == AggregateOperation::average && IsDecimalNumber<Element>;
+        /// For average of array we return Float64 as result, but we want to keep precision
+        /// so we convert to Float64 as last step, but intermediate sum is represented as result of sum operation
+        static constexpr bool is_average_operation = aggregate_operation == AggregateOperation::average;
+        using SummAggregationType = ArrayAggregateResult<Element, AggregateOperation::sum>;
 
-        using AggregationType = std::conditional_t<use_decimal_for_average_aggregation, Decimal128, Result>;
+        using AggregationType = std::conditional_t<is_average_operation, SummAggregationType, Result>;
 
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
@@ -246,12 +247,15 @@ struct ArrayAggregateImpl
 
             if constexpr (aggregate_operation == AggregateOperation::average)
             {
-                s = s / count;
-            }
-
-            if constexpr (use_decimal_for_average_aggregation)
-            {
-                res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
+                if constexpr (IsDecimalNumber<Element>)
+                {
+                    s = s / count;
+                    res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
+                }
+                else
+                {
+                    res[i] = static_cast<Result>(s) / count;
+                }
             }
             else
             {
@@ -272,10 +276,13 @@ struct ArrayAggregateImpl
             executeType<UInt16>(mapped, offsets, res) ||
             executeType<UInt32>(mapped, offsets, res) ||
             executeType<UInt64>(mapped, offsets, res) ||
+            executeType<UInt256>(mapped, offsets, res) ||
             executeType<Int8>(mapped, offsets, res) ||
             executeType<Int16>(mapped, offsets, res) ||
             executeType<Int32>(mapped, offsets, res) ||
             executeType<Int64>(mapped, offsets, res) ||
+            executeType<Int128>(mapped, offsets, res) ||
+            executeType<Int256>(mapped, offsets, res) ||
             executeType<Float32>(mapped, offsets, res) ||
             executeType<Float64>(mapped, offsets, res) ||
             executeType<Decimal32>(mapped, offsets, res) ||

@@ -624,7 +624,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                                     ErrorCodes::THERE_IS_NO_COLUMN);
 
                 src_node = actions_dag->inputs[input.front()];
@@ -641,12 +641,12 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 if (ignore_constant_values)
                    src_node = const_cast<Node *>(&actions_dag->addColumn(res_elem, true));
                 else if (res_const->getField() != src_const->getField())
-                    throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
+                    throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
                                     ErrorCodes::ILLEGAL_COLUMN);
             }
             else
-                throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
+                throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
                                 ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -662,10 +662,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             auto * right_arg = const_cast<Node *>(&actions_dag->addColumn(std::move(column), true));
             auto * left_arg = src_node;
 
-            CastOverloadResolver::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
+            FunctionCast::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
             FunctionOverloadResolverPtr func_builder_cast =
                     std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver::createImpl(false, std::move(diagnostic)));
+                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
 
             Inputs children = { left_arg, right_arg };
             src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);

@@ -31,8 +31,10 @@
 #include <Storages/StorageDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/processColumnTransformers.h>
 
 namespace
 {
@@ -50,7 +52,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
 }
-
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
@@ -94,27 +95,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 
     Block table_sample = metadata_snapshot->getSampleBlock();
 
-    /// Process column transformers (e.g. * EXCEPT(a)), asterisks and qualified columns.
-    const auto & columns = metadata_snapshot->getColumns();
-    auto names_and_types = columns.getOrdinary();
-    removeDuplicateColumns(names_and_types);
-    auto table_expr = std::make_shared<ASTTableExpression>();
-    table_expr->database_and_table_name = createTableIdentifier(table->getStorageID());
-    table_expr->children.push_back(table_expr->database_and_table_name);
-    TablesWithColumns tables_with_columns;
-    tables_with_columns.emplace_back(DatabaseAndTableWithAlias(*table_expr, context.getCurrentDatabase()), names_and_types);
-
-    tables_with_columns[0].addHiddenColumns(columns.getMaterialized());
-    tables_with_columns[0].addHiddenColumns(columns.getAliases());
-    tables_with_columns[0].addHiddenColumns(table->getVirtuals());
-
-    NameSet source_columns_set;
-    for (const auto & identifier : query.columns->children)
-        source_columns_set.insert(identifier->getColumnName());
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
-    TranslateQualifiedNamesVisitor visitor(visitor_data);
-    auto columns_ast = query.columns->clone();
-    visitor.visit(columns_ast);
+    const auto columns_ast = processColumnTransformers(context.getCurrentDatabase(), table, metadata_snapshot, query.columns);
 
     /// Form the block based on the column names from the query
     Block res;
@@ -287,7 +268,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & selects = select_query.list_of_selects->children;
                 const auto & union_modes = select_query.list_of_modes;
 
-                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some querys which can be Trivial select querys
+                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
                 is_trivial_insert_select
                     = std::all_of(
                           union_modes.begin(),
@@ -443,6 +424,18 @@ BlockIO InterpreterInsertQuery::execute()
 StorageID InterpreterInsertQuery::getDatabaseTable() const
 {
     return query_ptr->as<ASTInsertQuery &>().table_id;
+}
+
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context & context_) const
+{
+    elem.query_kind = "Insert";
+    const auto & insert_table = context_.getInsertionTable();
+    if (!insert_table.empty())
+    {
+        elem.query_databases.insert(insert_table.getDatabaseName());
+        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+    }
 }
 
 }

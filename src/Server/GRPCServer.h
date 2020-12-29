@@ -35,6 +35,9 @@ public:
     /// Returns the number of currently handled connections.
     size_t currentConnections() const;
 
+    /// Returns the number of current threads.
+    size_t currentThreads() const { return currentConnections(); }
+
 private:
     using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
     class Runner;
