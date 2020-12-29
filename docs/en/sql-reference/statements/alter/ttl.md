@@ -27,7 +27,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE TTL
 
 Requests and results:
 
-Firstly we should create a table to work with:
+Consider the table:
 
 ```sql
 CREATE TABLE table_with_ttl
@@ -50,26 +50,30 @@ Trigger `TTL` works clearly with `OPTIMIZE` query. Make this to start the backgr
 
 ```sql
 OPTIMIZE TABLE table_with_ttl FINAL;
-SELECT * FROM table_with_ttl;
+SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
 As a result you see that the second line was deleted.
 
 ```text
-2020-12-11 12:44:57    1       username1
+┌─────────event_time────┬──UserID─┬─────Comment──┐
+│   2020-12-11 12:44:57 │       1 │    username1 │
+└───────────────────────┴─────────┴──────────────┘
 ```
 
 ```sql
 ALTER TABLE table_with_ttl REMOVE TTL;
 INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
 OPTIMIZE TABLE table_with_ttl FINAL;
-SELECT * FROM table_with_ttl;
+SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
 
 Now TTL-property was removed and there is nothing to be deleted.
 
 ```text
-|2020-12-11 12:44:57  |  1  |     username1|
-|2020-08-11 12:44:57  |  2  |     username2|
+┌─────────event_time────┬──UserID─┬─────Comment──┐
+│   2020-12-11 12:44:57 │       1 │    username1 │
+│   2020-08-11 12:44:57 │       2 │    username2 │
+└───────────────────────┴─────────┴──────────────┘
 ```
 
 ### See Also
