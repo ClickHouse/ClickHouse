@@ -4,12 +4,6 @@ if (NOT ENABLE_LIBPQXX)
     return()
 endif()
 
-if (OS_FREEBSD OR OS_DARWIN)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "libpq library is disabled on FreeBSD and Darwin")
-    set (USE_LIBPQXX 0)
-    return()
-endif()
-
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpqxx/CMakeLists.txt")
     message (WARNING "submodule contrib/libpqxx is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libpqxx library")
