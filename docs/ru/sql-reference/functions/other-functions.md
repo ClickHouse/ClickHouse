@@ -1686,4 +1686,44 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 10	10	19	19	39	39
 ```
 
+## tcpPort {#tcpPort}
+
+Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
+
+**Синтаксис**
+
+``` sql
+tcpPort()
+```
+
+**Параметры**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Номер TCP порта.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tcpPort();
+```
+
+Результат:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**Смотрите также**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->
