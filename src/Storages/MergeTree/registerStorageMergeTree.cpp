@@ -719,7 +719,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach)
+    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
