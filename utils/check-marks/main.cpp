@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 
-/** This program checks correctness of .mrk (marks) file for corresponding compressed .bin file.
+/** This program checks correctness of .mrk/.mrk2 (marks) file for corresponding compressed .bin file.
   */
 
 static void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
@@ -62,7 +62,7 @@ int main(int argc, char ** argv)
 
     if (options.count("help") || argc != 3)
     {
-        std::cout << "Usage: " << argv[0] << " file.mrk file.bin" << std::endl;
+        std::cout << "Usage: " << argv[0] << " file.mrk[2] file.bin" << std::endl;
         std::cout << desc << std::endl;
         return 1;
     }
