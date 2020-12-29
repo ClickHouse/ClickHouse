@@ -194,7 +194,8 @@ public:
 
     ~ThreadFromGlobalPool()
     {
-        if (joinable()) {
+        if (joinable())
+        {
             std::cerr << StackTrace().toString() << std::endl;
             std::terminate();
         }
@@ -202,7 +203,8 @@ public:
 
     void join()
     {
-        if (!joinable()) {
+        if (!joinable())
+        {
             std::cerr << StackTrace().toString() << std::endl;
             std::terminate();
         }
