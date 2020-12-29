@@ -522,4 +522,190 @@ SELECT * FROM Months WHERE ilike(name, '%j%')
 !!! note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами – могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` – мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 – это работает для латиницы и почти для всех кириллических букв.
 
+## countSubstrings {#countSubstrings}
+
+Вычисляет количество вхождений подстроки.
+
+Для поиска без учета регистра, используйте функции [countSubstringsCaseInsensitive](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitive) или [countSubstringsCaseInsensitiveUTF8](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitiveUTF8)
+
+**Синтаксис**
+
+``` sql
+countSubstrings(haystack, needle[, start_pos])
+```
+
+**Параметры**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT countSubstrings('foobar.com', '.');
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('foobar.com', '.')─┐
+│                                  1 │
+└────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstrings('aaaa', 'aa');
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('aaaa', 'aa')─┐
+│                             2 │
+└───────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT countSubstrings('abc___abc', 'abc', 4);
+```
+
+Результат:
+
+``` text
+┌─countSubstrings('abc___abc', 'abc', 4)─┐
+│                                      1 │
+└────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
+
+Вычисляет количество вхождений подстроки без учета регистра.
+
+**Синтаксис**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Параметры**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+select countSubstringsCaseInsensitive('aba', 'B');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('aba', 'B')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('foobar.com', 'CoM');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('foobar.com', 'CoM')─┐
+│                                                   1 │
+└─────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitive('abC___abC', 'aBc', 2)─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
+
+Вычисляет количество вхождений подстроки в `UTF-8` без учета регистра.
+
+**Синтаксис**
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Параметры**
+
+-   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Число вхождений.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('абв', 'A');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('абв', 'A')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
+```
+
+Результат:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв')─┐
+│                                                          3 │
+└────────────────────────────────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->
