@@ -5,7 +5,7 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 . "$CURDIR"/../shell_config.sh
 
 
-function test()
+function test_func()
 {
     ENGINE=$1
     MAX_MEM=4096
@@ -32,9 +32,9 @@ function test()
     $CLICKHOUSE_CLIENT --query "DROP TABLE log";
 }
 
-test TinyLog | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
-test StripeLog | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
-test Log | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
+test_func TinyLog | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
+test_func StripeLog | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
+test_func Log | grep -v -P '^(Memory limit|0\t0|File not found|[1-9]000000\t)'
 
 rm "${CLICKHOUSE_TMP}/insert_result"
 rm "${CLICKHOUSE_TMP}/select_result"

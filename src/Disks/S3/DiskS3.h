@@ -24,6 +24,7 @@ public:
     friend class DiskS3Reservation;
 
     class AwsS3KeyKeeper;
+    struct Metadata;
 
     DiskS3(
         String name_,
@@ -33,7 +34,7 @@ public:
         String s3_root_path_,
         String metadata_path_,
         size_t min_upload_part_size_,
-        size_t min_multi_part_upload_size_,
+        size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_);
 
@@ -121,6 +122,9 @@ private:
     void removeAws(const AwsS3KeyKeeper & keys);
     std::optional<ObjectMetadata> createObjectMetadata(const String & path) const;
 
+    Metadata readMeta(const String & path) const;
+    Metadata createMeta(const String & path) const;
+
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
@@ -129,7 +133,7 @@ private:
     const String s3_root_path;
     const String metadata_path;
     size_t min_upload_part_size;
-    size_t min_multi_part_upload_size;
+    size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
 

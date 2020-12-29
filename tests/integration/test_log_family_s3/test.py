@@ -27,7 +27,6 @@ def cluster():
 def assert_objects_count(cluster, objects_count, path='data/'):
     minio = cluster.minio_client
     s3_objects = list(minio.list_objects(cluster.minio_bucket, path))
-    print(s3_objects, file=sys.stderr)
     if objects_count != len(s3_objects):
         for s3_object in s3_objects:
             object_meta = minio.stat_object(cluster.minio_bucket, s3_object.object_name)
@@ -41,7 +40,7 @@ def assert_objects_count(cluster, objects_count, path='data/'):
 def test_log_family_s3(cluster, log_engine, files_overhead, files_overhead_per_insert):
     node = cluster.instances["node"]
 
-    node.query("CREATE TABLE s3_test (id UInt64) Engine={}".format(log_engine))
+    node.query("CREATE TABLE s3_test (id UInt64) ENGINE={} SETTINGS disk = 's3'".format(log_engine))
 
     node.query("INSERT INTO s3_test SELECT number FROM numbers(5)")
     assert node.query("SELECT * FROM s3_test") == "0\n1\n2\n3\n4\n"

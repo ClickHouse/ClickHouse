@@ -53,7 +53,7 @@ def privilege_check(grant_target_name, user_name, node=None):
 
             with Then("I attempt to attach a table"):
                 node.query(f"ATTACH TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", user_name)],
-                    exitcode=80, message="DB::Exception: UUID must be specified")
+                    exitcode=80, message="DB::Exception: Incorrect ATTACH TABLE query")
 
         finally:
             with Finally("I drop the table"):

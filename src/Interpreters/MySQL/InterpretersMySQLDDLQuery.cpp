@@ -21,6 +21,8 @@
 #include <Common/assert_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -200,10 +202,10 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                 keys->arguments->children.insert(keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
             else if (startsWith(declare_index->index_type, "UNIQUE_"))
-                unique_keys->arguments->children.insert(keys->arguments->children.end(),
+                unique_keys->arguments->children.insert(unique_keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
             if (startsWith(declare_index->index_type, "PRIMARY_KEY_"))
-                primary_keys->arguments->children.insert(keys->arguments->children.end(),
+                primary_keys->arguments->children.insert(primary_keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
         }
     }
