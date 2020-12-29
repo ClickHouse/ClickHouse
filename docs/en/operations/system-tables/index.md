@@ -20,14 +20,14 @@ System tables:
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
-Unlike other system tables, the system log tables [metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log), [query_log](../../operations/system-tables/query_log.md#system_tables-query_log), [query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log), [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log), [part_log](../../operations/system-tables/part_log.md#system.part_log), [crash_log](../../operations/system-tables/crash_log.md#system.crash_log) and [text_log](../../operations/system-tables/crash_log.md#system.text_log) are served by [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem by default. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
+Unlike other system tables, the system log tables [metric_log](../../operations/system-tables/metric-log.md), [query_log](../../operations/system-tables/query-log.md), [query_thread_log](../../operations/system-tables/query-thread-log.md), [trace_log](../../operations/system-tables/trace-log.md), [part_log](../../operations/system-tables/part-log.md), [crash_log](../../operations/system-tables/crash-log.md) and [text_log](../../operations/system-tables/text-log.md) are served by [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a storage filesystem by default. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
 
 System log tables can be customized by creating a config file with the same name as the table under `/etc/clickhouse-server/config.d/`, or setting corresponding elements in `/etc/clickhouse-server/config.xml`. Elements can be customized are:
 
 -   `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
 -   `table`: table to insert data.
 -   `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
--   `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl) expression.
+-   `ttl`: specify table [TTL](../../sql-reference/statements/alter.md) expression.
 -   `flush_interval_milliseconds`: interval of flushing data to disk.
 -   `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option is contradict with `partition_by` and `ttl`. If set together, the server would raise an exception and exit.
 
