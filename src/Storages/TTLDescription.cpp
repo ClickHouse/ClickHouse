@@ -211,9 +211,12 @@ TTLDescription TTLDescription::getTTLFromAST(
             const auto & primary_key_expressions = primary_key.expression_list_ast->children;
             for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
             {
-                ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
-                aggregations.emplace_back(pk_columns[i], std::move(expr));
-                aggregation_columns_set.insert(pk_columns[i]);
+                if (!aggregation_columns_set.count(pk_columns[i]))
+                {
+                    ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
+                    aggregations.emplace_back(pk_columns[i], std::move(expr));
+                    aggregation_columns_set.insert(pk_columns[i]);
+                }
             }
 
             for (const auto & column : columns.getOrdinary())
