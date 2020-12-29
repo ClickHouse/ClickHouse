@@ -77,7 +77,7 @@ public:
         {
             if constexpr (is_simhash)
                 throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                                "Function {} expect no more then two arguments (text, shingle size), got {}",
+                                "Function {} expect no more than two arguments (text, shingle size), got {}",
                                 getName(), arguments.size());
 
             if (!isUnsignedInteger(arguments[2].type))
@@ -95,7 +95,7 @@ public:
         if (arguments.size() > 3)
         {
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                            "Function {} expect no more then three arguments (text, shingle size, num hashes), got {}",
+                            "Function {} expect no more than three arguments (text, shingle size, num hashes), got {}",
                             getName(), arguments.size());
         }
 

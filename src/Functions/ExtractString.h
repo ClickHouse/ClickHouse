@@ -20,8 +20,7 @@ namespace DB
 // includes extracting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
 struct ExtractStringImpl
 {
-    // read a ASCII word
-    static ALWAYS_INLINE inline const UInt8 * readOneASCIIWord(const UInt8 *& pos, const UInt8 * end)
+    static ALWAYS_INLINE inline const UInt8 * readOneWord(const UInt8 *& pos, const UInt8 * end)
     {
         // jump separators
         while (pos < end && isUTF8Sep(*pos))
@@ -31,22 +30,6 @@ struct ExtractStringImpl
         const UInt8 * word_start = pos;
         while (pos < end && !isUTF8Sep(*pos))
             ++pos;
-
-        return word_start;
-    }
-
-    // read one UTF8 word from pos to word
-    static ALWAYS_INLINE inline const UInt8 * readOneUTF8Word(const UInt8 *& pos, const UInt8 * end)
-    {
-        // jump UTF8 separator
-        while (pos < end && isUTF8Sep(*pos))
-            ++pos;
-
-        // UTF8 word's character number
-        const UInt8 * word_start = pos;
-
-        while (pos < end && !isUTF8Sep(*pos))
-            readOneUTF8Code(pos, end);
 
         return word_start;
     }
