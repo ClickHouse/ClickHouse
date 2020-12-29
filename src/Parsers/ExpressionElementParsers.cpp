@@ -419,7 +419,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function->set(function->window_name, window_name_ast);
+            function->children.push_back(window_name_ast);
+            function->window_name = window_name_ast;
             return true;
         }
         else
@@ -442,7 +443,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ASTPtr partition_by_ast;
         if (columns_partition_by.parse(pos, partition_by_ast, expected))
         {
-            function->set(function->window_partition_by, partition_by_ast);
+            function->children.push_back(partition_by_ast);
+            function->window_partition_by = partition_by_ast;
         }
         else
         {
@@ -455,7 +457,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         ASTPtr order_by_ast;
         if (columns_order_by.parse(pos, order_by_ast, expected))
         {
-            function->set(function->window_order_by, order_by_ast);
+            function->children.push_back(order_by_ast);
+            function->window_order_by = order_by_ast;
         }
         else
         {
