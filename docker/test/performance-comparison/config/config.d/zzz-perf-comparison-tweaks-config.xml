@@ -3,6 +3,7 @@
     <mysql_port remove="remove"/>
     <interserver_http_port remove="remove"/>
     <tcp_with_proxy_port remove="remove"/>
+    <test_keeper_server remove="remove"/>
     <listen_host>::</listen_host>
 
     <logger>

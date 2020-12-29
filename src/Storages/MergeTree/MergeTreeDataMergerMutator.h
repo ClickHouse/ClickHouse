@@ -127,7 +127,8 @@ public:
         time_t time_of_merge,
         const Context & context,
         const ReservationPtr & space_reservation,
-        bool deduplicate);
+        bool deduplicate,
+        const Names & deduplicate_by_columns);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(

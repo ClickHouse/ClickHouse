@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 DROP TABLE IF EXISTS tags;
 
 CREATE TABLE tags (

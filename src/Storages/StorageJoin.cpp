@@ -8,6 +8,7 @@
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
@@ -35,6 +36,7 @@ namespace ErrorCodes
 }
 
 StorageJoin::StorageJoin(
+    DiskPtr disk_,
     const String & relative_path_,
     const StorageID & table_id_,
     const Names & key_names_,
@@ -45,9 +47,8 @@ StorageJoin::StorageJoin(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool overwrite_,
-    const Context & context_,
     bool persistent_)
-    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_, persistent_}
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, persistent_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -69,9 +70,9 @@ StorageJoin::StorageJoin(
 void StorageJoin::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
 {
-    Poco::File(path).remove(true);
-    Poco::File(path).createDirectories();
-    Poco::File(path + "tmp/").createDirectories();
+    disk->removeRecursive(path);
+    disk->createDirectories(path);
+    disk->createDirectories(path + "tmp/");
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
@@ -124,6 +125,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto join_any_take_last_row = settings.join_any_take_last_row;
         auto old_any_join = settings.any_join_distinct_right_table_keys;
         bool persistent = true;
+        String disk_name = "default";
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -141,6 +143,8 @@ void registerStorageJoin(StorageFactory & factory)
                     join_any_take_last_row = setting.value;
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
+                else if (setting.name == "disk")
+                    disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
                 {
                     auto join_settings = std::make_unique<JoinSettings>();
@@ -148,11 +152,11 @@ void registerStorageJoin(StorageFactory & factory)
                     persistent = join_settings->persistent;
                 }
                 else
-                    throw Exception(
-                        "Unknown setting " + setting.name + " for storage " + args.engine_name,
-                        ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
             }
         }
+
+        DiskPtr disk = args.context.getDisk(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(
@@ -219,6 +223,7 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         return StorageJoin::create(
+            disk,
             args.relative_data_path,
             args.table_id,
             key_names,
@@ -229,7 +234,6 @@ void registerStorageJoin(StorageFactory & factory)
             args.columns,
             args.constraints,
             join_any_take_last_row,
-            args.context,
             persistent);
     };
 

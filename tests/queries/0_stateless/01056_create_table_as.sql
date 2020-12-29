@@ -49,3 +49,7 @@ DROP DICTIONARY dict;
 DROP TABLE test_01056_dict_data.dict_data;
 
 DROP DATABASE test_01056_dict_data;
+
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+DROP TABLE t1;

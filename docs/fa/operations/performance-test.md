@@ -48,7 +48,7 @@ toc_title: "\u0633\u062E\u062A \u0627\u0641\u0632\u0627\u0631 \u062A\u0633\u062A
 
 <!-- -->
 
-      wget https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+      wget https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 

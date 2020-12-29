@@ -29,11 +29,14 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-/// There is no dragonbox in Arcadia
-#if !defined(ARCADIA_BUILD)
-#   include <dragonbox/dragonbox_to_chars.h>
-#else
-#   include <ryu/ryu.h>
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#endif
+#include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
 #endif
 
 #include <Formats/FormatSettings.h>
@@ -233,22 +236,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-#else
-            result = d2s_buffered_n(x, buffer);
-#endif
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-#else
-            result = f2s_buffered_n(x, buffer);
-#endif
     }
 
     if (result <= 0)
@@ -594,9 +589,65 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
+inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
+{
+    const char * pos = begin;
+    while (true)
+    {
+        const char * next_pos = find_first_symbols<'<', '&', '>', '"', '\''>(pos, end);
+
+        if (next_pos == end)
+        {
+            buf.write(pos, end - pos);
+            break;
+        }
+        else if (*next_pos == '<')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&lt;", buf);
+        }
+        else if (*next_pos == '&')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&amp;", buf);
+        }
+        else if (*next_pos == '>')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&gt;", buf);
+        }
+        else if (*next_pos == '"')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&quot;", buf);
+        }
+        else if (*next_pos == '\'')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&apos;", buf);
+        }
+
+        pos = next_pos;
+    }
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
+}
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
-inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -626,14 +677,14 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-inline void writeXMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>

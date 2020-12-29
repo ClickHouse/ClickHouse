@@ -1,6 +1,6 @@
 # system.distribution_queue {#system_tables-distribution_queue}
 
-Contains information about local files that are in the queue to be sent to the shards. This local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
+Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.
 
 Columns:
 
@@ -38,5 +38,9 @@ data_files:            1
 data_compressed_bytes: 499
 last_exception:        
 ```
+
+**See Also**
+
+-   [Distributed table engine](../../engines/table-engines/special/distributed.md)
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/distribution_queue) <!--hide-->

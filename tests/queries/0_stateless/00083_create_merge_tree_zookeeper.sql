@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 DROP TABLE IF EXISTS merge_tree;
 DROP TABLE IF EXISTS collapsing_merge_tree;
 DROP TABLE IF EXISTS versioned_collapsing_merge_tree;
