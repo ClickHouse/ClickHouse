@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
-
 
 namespace DB
 {
+
+class ASTFunction;
 
 /** name BY expr TYPE typename(args) GRANULARITY int in create query
   */

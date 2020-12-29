@@ -1172,7 +1172,104 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (finalized state).
+Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
+
+**Syntax** 
+
+``` sql
+finalizeAggregation(state)
+```
+
+**Parameters**
+
+-   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+
+**Returned value(s)**
+
+-   Value/values that was aggregated.
+
+Type: Value of any types that was aggregated. 
+
+**Examples**
+
+Query:
+
+```sql
+SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
+```
+
+Result:
+
+```text
+┌─finalizeAggregation(_subquery16)─┐
+│                               10 │
+└──────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
+```
+
+Result:
+
+```text
+┌─finalizeAggregation(_subquery20)─┐
+│                               45 │
+└──────────────────────────────────┘
+```
+
+Note that `NULL` values are ignored. 
+
+Query:
+
+```sql
+SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
+```
+
+Result:
+
+```text
+┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
+│                                                          2 │
+└────────────────────────────────────────────────────────────┘
+```
+
+Combined example:
+
+Query:
+
+```sql
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(10);
+```
+
+Result:
+
+```text
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+│      5 │           5 │             15 │
+│      6 │           6 │             21 │
+│      7 │           7 │             28 │
+│      8 │           8 │             36 │
+│      9 │           9 │             45 │
+└────────┴─────────────┴────────────────┘
+```
+
+**See Also** 
+
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1676,5 +1773,45 @@ Result:
 ``` text
 UNSUPPORTED_METHOD
 ```
+
+## tcpPort {#tcpPort}
+
+Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
+
+**Syntax**
+
+``` sql
+tcpPort()
+```
+
+**Parameters**
+
+-   None.
+
+**Returned value**
+
+-   The TCP port number.
+
+Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tcpPort();
+```
+
+Result:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**See Also**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

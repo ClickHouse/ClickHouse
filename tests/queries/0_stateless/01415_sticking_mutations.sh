@@ -43,7 +43,7 @@ function check_sticky_mutations()
 
     $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES sticking_mutations"
 
-    # just to be sure, that previous mutations finished
+    # Just to be sure, that previous mutations finished
     $CLICKHOUSE_CLIENT --query "ALTER TABLE sticking_mutations DELETE WHERE value2 % 31 == 0 SETTINGS mutations_sync = 1"
 
     $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE sticking_mutations FINAL"
