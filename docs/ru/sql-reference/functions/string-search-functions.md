@@ -524,7 +524,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%')
 
 ## countSubstrings {#countSubstrings}
 
-Вычисляет количество вхождений подстроки.
+Возвращает количество вхождений подстроки.
 
 Для поиска без учета регистра, используйте функции [countSubstringsCaseInsensitive](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitive) или [countSubstringsCaseInsensitiveUTF8](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitiveUTF8)
 
@@ -592,7 +592,7 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 
 ## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
 
-Вычисляет количество вхождений подстроки без учета регистра.
+Возвращает количество вхождений подстроки без учета регистра.
 
 **Синтаксис**
 
@@ -658,7 +658,7 @@ SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
 
 ## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
 
-Вычисляет количество вхождений подстроки в `UTF-8` без учета регистра.
+Возвращает количество вхождений подстроки в `UTF-8` без учета регистра.
 
 **Синтаксис**
 
