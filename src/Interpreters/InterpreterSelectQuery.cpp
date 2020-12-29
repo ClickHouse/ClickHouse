@@ -482,7 +482,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     pushdown_limit_to_shards = context->getSettingsRef().enable_pushdown_limit_to_shards &&
         analysis_result.need_aggregate &&
-        options.to_stage <= QueryProcessingStage::WithMergeableState;
+        options.to_stage <= QueryProcessingStage::WithMergeableState &&
+        !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)

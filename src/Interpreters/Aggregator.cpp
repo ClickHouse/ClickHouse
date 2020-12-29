@@ -1052,7 +1052,8 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, arena);
     else
     {
-        convertToBlockImplPreliminaryFinal<Method, Table>(data, key_columns, final_aggregate_columns, arena);
+        if (params.pushdown_limit_to_shards)
+            convertToBlockImplPreliminaryFinal<Method, Table>(data, key_columns, final_aggregate_columns, arena);
         convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns);
     }
 
