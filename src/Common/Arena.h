@@ -83,10 +83,11 @@ private:
     /// Last contiguous chunk of memory.
     Chunk * head;
     size_t size_in_bytes;
+    size_t page_size;
 
-    static size_t roundUpToPageSize(size_t s)
+    static size_t roundUpToPageSize(size_t s, size_t page_size)
     {
-        return (s + 4096 - 1) / 4096 * 4096;
+        return (s + page_size - 1) / page_size * page_size;
     }
 
     /// If chunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
@@ -113,7 +114,7 @@ private:
         }
 
         assert(size_after_grow >= min_next_size);
-        return roundUpToPageSize(size_after_grow);
+        return roundUpToPageSize(size_after_grow, page_size);
     }
 
     /// Add next contiguous chunk of memory with size not less than specified.
@@ -129,7 +130,8 @@ private:
 public:
     Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
         : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
-        head(new Chunk(initial_size_, nullptr)), size_in_bytes(head->size())
+        head(new Chunk(initial_size_, nullptr)), size_in_bytes(head->size()),
+        page_size(static_cast<size_t>(::getPageSize()))
     {
     }
 

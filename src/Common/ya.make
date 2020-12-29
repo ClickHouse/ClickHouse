@@ -7,7 +7,7 @@ ADDINCL (
     GLOBAL clickhouse/src
     contrib/libs/libcpuid
     contrib/libs/libunwind/include
-    GLOBAL contrib/restricted/ryu
+    GLOBAL contrib/restricted/dragonbox
 )
 
 PEERDIR(
@@ -18,7 +18,7 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/restricted/ryu
+    contrib/restricted/dragonbox
 )
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
@@ -75,6 +75,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp

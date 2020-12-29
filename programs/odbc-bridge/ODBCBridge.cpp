@@ -89,7 +89,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(Poco::Util::Option("http-port", "", "port to listen").argument("http-port", true).binding("http-port"));
     options.addOption(
-        Poco::Util::Option("listen-host", "", "hostname to listen, default localhost").argument("listen-host").binding("listen-host"));
+        Poco::Util::Option("listen-host", "", "hostname or address to listen, default 127.0.0.1").argument("listen-host").binding("listen-host"));
     options.addOption(
         Poco::Util::Option("http-timeout", "", "http timeout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
 
@@ -161,7 +161,7 @@ void ODBCBridge::initialize(Application & self)
     BaseDaemon::logRevision();
 
     log = &logger();
-    hostname = config().getString("listen-host", "localhost");
+    hostname = config().getString("listen-host", "127.0.0.1");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
         throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);

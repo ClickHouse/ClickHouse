@@ -14,10 +14,6 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 # Minimal supported SDK version
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 
-# Global libraries
-
-add_library(global-libs INTERFACE)
-
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)

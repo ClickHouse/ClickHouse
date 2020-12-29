@@ -17,3 +17,5 @@ SELECT 'TSV';
 SELECT * FROM map_formats ORDER BY m['k1'] FORMAT TSV;
 SELECT 'TSKV';
 SELECT * FROM map_formats ORDER BY m['k1'] FORMAT TSKV;
+
+DROP TABLE map_formats;
