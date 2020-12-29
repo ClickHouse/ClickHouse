@@ -94,7 +94,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     {
         std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
         std::cout << desc << std::endl;
-        return 1;
+        return 0;
     }
 
     try
