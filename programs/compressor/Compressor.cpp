@@ -6,6 +6,8 @@
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -68,6 +70,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
+        ("input", boost::program_options::value<std::string>()->value_name("INPUT"), "input file")
+        ("output", boost::program_options::value<std::string>()->value_name("OUTPUT"), "output file")
         ("decompress,d", "decompress")
         ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
@@ -78,12 +82,16 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("stat", "print block statistics of compressed data")
     ;
 
+    boost::program_options::positional_options_description positional_desc;
+    positional_desc.add("input", 1);
+    positional_desc.add("output", 1);
+
     boost::program_options::variables_map options;
-    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
 
     if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << " [options] < in > out" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
         std::cout << desc << std::endl;
         return 1;
     }
@@ -132,25 +140,35 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codec = CompressionCodecFactory::instance().get(method_family, level);
 
 
-        ReadBufferFromFileDescriptor rb(STDIN_FILENO);
-        WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
+        std::unique_ptr<ReadBufferFromFileBase> rb;
+        std::unique_ptr<WriteBufferFromFileBase> wb;
+
+        if (options.count("input"))
+            rb = std::make_unique<ReadBufferFromFile>(options["input"].as<std::string>());
+        else
+            rb = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+
+        if (options.count("output"))
+            wb = std::make_unique<WriteBufferFromFile>(options["output"].as<std::string>());
+        else
+            wb = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
 
         if (stat_mode)
         {
             /// Output statistic for compressed file.
-            checkAndWriteHeader(rb, wb);
+            checkAndWriteHeader(*rb, *wb);
         }
         else if (decompress)
         {
             /// Decompression
-            CompressedReadBuffer from(rb);
-            copyData(from, wb);
+            CompressedReadBuffer from(*rb);
+            copyData(from, *wb);
         }
         else
         {
             /// Compression
-            CompressedWriteBuffer to(wb, codec, block_size);
-            copyData(rb, to);
+            CompressedWriteBuffer to(*wb, codec, block_size);
+            copyData(*rb, to);
         }
     }
     catch (...)
