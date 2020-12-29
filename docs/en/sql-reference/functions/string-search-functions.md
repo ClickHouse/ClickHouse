@@ -552,7 +552,7 @@ countSubstrings(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -618,7 +618,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -672,7 +672,7 @@ Result:
 
 ## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
 
-Counts the number of substring occurrences in `UTF8` case-insensitive.
+Counts the number of substring occurrences in `UTF-8` case-insensitive.
 
 **Syntax**
 
@@ -684,7 +684,7 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
