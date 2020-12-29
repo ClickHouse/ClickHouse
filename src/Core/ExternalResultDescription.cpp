@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -79,6 +80,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtDecimal256, is_nullable);
         else if (typeid_cast<const DataTypeArray *>(type))
             types.emplace_back(ValueType::vtArray, is_nullable);
+        else if (typeid_cast<const DataTypeFixedString *>(type))
+            types.emplace_back(ValueType::vtFixedString, is_nullable);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
     }
