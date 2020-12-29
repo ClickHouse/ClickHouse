@@ -2482,6 +2482,18 @@ Possible values:
 
 Default value: 0.
 
+## data_type_default_nullable {#data_type_default_nullable}
+
+Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+Possible values:
+
+- 1 — The data types in column definitions are set to `Nullable` by default.
+- 0 — The data types in column definitions are set to not `Nullable` by default.
+
+Default value: `0`.
+
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
