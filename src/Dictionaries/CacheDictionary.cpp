@@ -299,14 +299,27 @@ ColumnPtr CacheDictionary::getColumn(
 
             result = std::move(column_string);
         }
-        else if constexpr (IsNumber<AttributeType>)
+        else
         {
-            auto column = ColumnVector<AttributeType>::create(identifiers_size);
+            using ResultColumnType
+                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
+            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
+
+            ResultColumnPtr column;
+
+            if constexpr (IsDecimalNumber<AttributeType>)
+            {
+                // auto scale = getDecimalScale(*attribute.type);
+                column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
+            }
+            else if constexpr (IsNumber<AttributeType>)
+                column = ColumnVector<AttributeType>::create(identifiers_size);
+ 
             auto& out = column->getData();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnVector<AttributeType>>(*default_untyped))
+                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsNumberImpl<AttributeType, AttributeType>(
                         attribute,
@@ -315,49 +328,7 @@ ColumnPtr CacheDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<AttributeType>>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        out,
-                        [&](const size_t) { return def; }
-                    );
-                }
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_value);
-
-                getItemsNumberImpl<AttributeType, AttributeType>(
-                    attribute,
-                    ids,
-                    out,
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column);
-        }
-        else if constexpr (IsDecimalNumber<AttributeType>)
-        {
-            // auto scale = getDecimalScale(*attribute.type);
-            auto column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
-            auto& out = column->getData();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto default_col = checkAndGetColumn<ColumnDecimal<AttributeType>>(*default_untyped))
-                {
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        out,
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnDecimal<AttributeType>>(default_untyped.get()))
+                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 
