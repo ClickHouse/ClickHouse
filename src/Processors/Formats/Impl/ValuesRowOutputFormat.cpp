@@ -51,7 +51,6 @@ void registerOutputFormatProcessorValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesRowOutputFormat>(buf, sample, params, settings);
     });
-    factory.markOutputFormatSupportsParallelFormatting("Values");
 }
 
 }
