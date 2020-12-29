@@ -28,9 +28,6 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
-    software-properties-common \
-    libkrb5-dev \
-    krb5-user \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -39,22 +36,6 @@ RUN apt-get update \
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 5:19.03.13~3-0~ubuntu-bionic
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
-
-RUN apt-get update \
-    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        docker-ce \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get clean
-
-RUN dockerd --version; docker --version
 
 RUN python3 -m pip install \
     PyMySQL \
@@ -77,8 +58,29 @@ RUN python3 -m pip install \
     pytest-timeout \
     redis \
     tzlocal \
-    urllib3 \
-    requests-kerberos
+    urllib3
+
+ENV DOCKER_CHANNEL stable
+ENV DOCKER_VERSION 17.09.1-ce
+
+RUN set -eux; \
+  \
+# this "case" statement is generated via "update.sh"
+  \
+  if ! wget -nv -O docker.tgz "https://download.docker.com/linux/static/${DOCKER_CHANNEL}/x86_64/docker-${DOCKER_VERSION}.tgz"; then \
+    echo >&2 "error: failed to download 'docker-${DOCKER_VERSION}' from '${DOCKER_CHANNEL}' for '${x86_64}'"; \
+    exit 1; \
+  fi; \
+  \
+  tar --extract \
+    --file docker.tgz \
+    --strip-components 1 \
+    --directory /usr/local/bin/ \
+  ; \
+  rm docker.tgz; \
+  \
+  dockerd --version; \
+  docker --version
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

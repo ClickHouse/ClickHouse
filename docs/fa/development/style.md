@@ -580,7 +580,7 @@ ready_any.set();
 
 **14.** ارزش بازگشت.
 
-در اکثر موارد فقط استفاده کنید `return`. ننویس `return std::move(res)`.
+در اکثر موارد فقط استفاده کنید `return`. ننویس `[return std::move(res)]{.strike}`.
 
 اگر تابع یک شی در پشته اختصاص و بازده, استفاده `shared_ptr` یا `unique_ptr`.
 
@@ -674,7 +674,7 @@ Loader() {}
 **24.** استفاده نشود `trailing return type` برای توابع مگر اینکه لازم باشد.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** اعلامیه و مقدار دهی اولیه از متغیرهای.

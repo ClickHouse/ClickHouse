@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME({MIN min_val MAX max_val | max_val})
+LIFETIME([MIN val1] MAX val2)
 ```
 
 ایجاد [فرهنگ لغت خارجی](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) با توجه به [ساختار](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [متن](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [طرحبندی](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) و [طول عمر](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

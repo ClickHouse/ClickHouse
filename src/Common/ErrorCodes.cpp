@@ -519,45 +519,34 @@
     M(550, CONDITIONAL_TREE_PARENT_NOT_FOUND) \
     M(551, ILLEGAL_PROJECTION_MANIPULATOR) \
     M(552, UNRECOGNIZED_ARGUMENTS) \
-    M(553, LZMA_STREAM_ENCODER_FAILED) \
-    M(554, LZMA_STREAM_DECODER_FAILED) \
-    M(555, ROCKSDB_ERROR) \
-    M(556, SYNC_MYSQL_USER_ACCESS_ERROR)\
-    M(557, UNKNOWN_UNION) \
-    M(558, EXPECTED_ALL_OR_DISTINCT) \
-    M(559, INVALID_GRPC_QUERY_INFO) \
-    M(560, ZSTD_ENCODER_FAILED) \
-    M(561, ZSTD_DECODER_FAILED) \
-    M(562, TLD_LIST_NOT_FOUND) \
-    M(563, CANNOT_READ_MAP_FROM_TEXT) \
-    M(564, INTERSERVER_SCHEME_DOESNT_MATCH) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
-    M(1002, UNKNOWN_EXCEPTION)
+    M(1002, UNKNOWN_EXCEPTION) \
 
 /* See END */
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-#define M(VALUE, NAME) extern const Value NAME = VALUE;
-    APPLY_FOR_ERROR_CODES(M)
-#undef M
+    #define M(VALUE, NAME) extern const Value NAME = VALUE;
+        APPLY_FOR_ERROR_CODES(M)
+    #undef M
 
     constexpr Value END = 3000;
-    std::atomic<Value> values[END + 1]{};
+    std::atomic<Value> values[END + 1] {};
 
     struct ErrorCodesNames
     {
         std::string_view names[END + 1];
         ErrorCodesNames()
         {
-#define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
-            APPLY_FOR_ERROR_CODES(M)
-#undef M
+            #define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
+                APPLY_FOR_ERROR_CODES(M)
+            #undef M
         }
     } error_codes_names;
 
@@ -568,7 +557,7 @@ namespace ErrorCodes
         return error_codes_names.names[error_code];
     }
 
-    ErrorCode end() { return END + 1; }
+    ErrorCode end() { return END+1; }
 }
 
 }

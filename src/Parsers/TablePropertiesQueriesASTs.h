@@ -7,14 +7,6 @@
 namespace DB
 {
 
-struct ASTExistsDatabaseQueryIDAndQueryNames
-{
-    static constexpr auto ID = "ExistsDatabaseQuery";
-    static constexpr auto Query = "EXISTS DATABASE";
-    /// No temporary databases are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
-};
-
 struct ASTExistsTableQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsTableQuery";
@@ -59,7 +51,6 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "DESCRIBE TEMPORARY TABLE";
 };
 
-using ASTExistsDatabaseQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>;
 using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
 using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;

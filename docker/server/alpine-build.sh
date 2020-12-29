@@ -47,13 +47,13 @@ cp "${DOCKER_BUILD_FOLDER}/entrypoint.alpine.sh"      "${CONTAINER_ROOT_FOLDER}/
 ## get glibc components from ubuntu 20.04 and put them to expected place
 docker pull ubuntu:20.04
 ubuntu20image=$(docker create --rm ubuntu:20.04)
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libc.so.6       "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libdl.so.2      "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libm.so.6       "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libpthread.so.0 "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/librt.so.1      "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libnss_dns.so.2 "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib/x86_64-linux-gnu/libresolv.so.2  "${CONTAINER_ROOT_FOLDER}/lib"
-docker cp -L "${ubuntu20image}":/lib64/ld-linux-x86-64.so.2           "${CONTAINER_ROOT_FOLDER}/lib64"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libc.so.6       "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libdl.so.2      "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libm.so.6       "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libpthread.so.0 "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/librt.so.1      "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libnss_dns.so.2 "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib/x86_64-linux-gnu/libresolv.so.2  "${CONTAINER_ROOT_FOLDER}/lib"
+docker cp -L ${ubuntu20image}:/lib64/ld-linux-x86-64.so.2           "${CONTAINER_ROOT_FOLDER}/lib64"
 
 docker build "$DOCKER_BUILD_FOLDER" -f Dockerfile.alpine -t "yandex/clickhouse-server:${VERSION}-alpine" --pull

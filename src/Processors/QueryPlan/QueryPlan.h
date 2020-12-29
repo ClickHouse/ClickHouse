@@ -2,9 +2,6 @@
 #include <memory>
 #include <list>
 #include <vector>
-#include <set>
-
-#include <Core/Names.h>
 
 namespace DB
 {
@@ -20,11 +17,6 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 class Context;
 class WriteBuffer;
 
-class QueryPlan;
-using QueryPlanPtr = std::unique_ptr<QueryPlan>;
-
-class Pipe;
-
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimisations.
@@ -36,7 +28,7 @@ public:
     QueryPlan(QueryPlan &&);
     QueryPlan & operator=(QueryPlan &&);
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
+    void unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
@@ -46,9 +38,6 @@ public:
     void optimize();
 
     QueryPipelinePtr buildQueryPipeline();
-
-    /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe();
 
     struct ExplainPlanOptions
     {
@@ -72,7 +61,6 @@ public:
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
-    size_t getMaxThreads() const { return max_threads; }
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 

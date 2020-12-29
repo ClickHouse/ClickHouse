@@ -116,7 +116,7 @@ template <typename FromDataType, typename ToDataType>
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
         const auto op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
