@@ -36,6 +36,8 @@ public:
         const size_t max_threads_for_parallel_formatting;
     };
 
+    ParallelFormattingOutputFormat() = delete;
+
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
@@ -51,9 +53,6 @@ public:
 
     ~ParallelFormattingOutputFormat() override
     {
-        need_flush = true;
-        if (!IOutputFormat::finalized)
-            finalize();
         finishAndWait();
     }
 
@@ -66,7 +65,7 @@ public:
 
     void doWritePrefix() override
     {
-        addChunk(Chunk{}, ProcessingUnitType::START);
+        addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
     }
 
     void onCancel() override
@@ -77,24 +76,31 @@ public:
 protected:
     void consume(Chunk chunk) override final
     {
-        addChunk(std::move(chunk), ProcessingUnitType::PLAIN);
+        addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
     }
 
     void consumeTotals(Chunk totals) override
     {
-        addChunk(std::move(totals), ProcessingUnitType::TOTALS);
+        addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
     }
 
     void consumeExtremes(Chunk extremes) override
     {
-        addChunk(std::move(extremes), ProcessingUnitType::EXTREMES);
+        addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
     void finalize() override
     {
+        need_flush = true;
         IOutputFormat::finalized = true;
-        addChunk(Chunk{}, ProcessingUnitType::FINALIZE);
+        /// Don't throw any background_exception here, because we want to finalize the execution.
+        /// Exception will be checked after main thread is finished.
+        addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
         collector_finished.wait();
+
+        if (collector_thread.joinable())
+            collector_thread.join();
+
         {
             std::unique_lock<std::mutex> lock(mutex);
             if (background_exception)
@@ -123,11 +129,11 @@ private:
         FINALIZE
     };
 
-    void addChunk(Chunk chunk, ProcessingUnitType type)
+    void addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
     {
         {
             std::unique_lock<std::mutex> lock(mutex);
-            if (background_exception)
+            if (background_exception && can_throw_exception)
                 std::rethrow_exception(background_exception);
         }
 

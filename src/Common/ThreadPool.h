@@ -194,14 +194,18 @@ public:
 
     ~ThreadFromGlobalPool()
     {
-        if (joinable())
+        if (joinable()) {
+            std::cerr << StackTrace().toString() << std::endl;
             std::terminate();
+        }
     }
 
     void join()
     {
-        if (!joinable())
+        if (!joinable()) {
+            std::cerr << StackTrace().toString() << std::endl;
             std::terminate();
+        }
 
         state->wait();
         state.reset();

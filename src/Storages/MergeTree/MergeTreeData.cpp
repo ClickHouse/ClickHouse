@@ -60,7 +60,6 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace ProfileEvents
 {
