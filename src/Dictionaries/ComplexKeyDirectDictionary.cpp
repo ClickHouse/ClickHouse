@@ -47,10 +47,10 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
-    
+
     auto size = key_columns.front()->size();
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -125,8 +125,8 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -168,7 +168,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 

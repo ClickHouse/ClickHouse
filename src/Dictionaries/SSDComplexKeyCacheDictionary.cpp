@@ -1392,7 +1392,7 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
-    
+
     auto keys_size = key_columns.front()->size();
 
     auto type_call = [&](const auto &dictionary_attribute_type)
@@ -1442,8 +1442,8 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(keys_size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -1488,7 +1488,7 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
-   
+
     return result;
 }
 

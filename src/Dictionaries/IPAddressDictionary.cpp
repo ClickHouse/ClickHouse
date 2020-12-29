@@ -282,7 +282,7 @@ ColumnPtr IPAddressDictionary::getColumn(
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
-    
+
     auto size = key_columns.front()->size();
 
     auto type_call = [&](const auto &dictionary_attribute_type)
@@ -344,8 +344,8 @@ ColumnPtr IPAddressDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -387,7 +387,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 
@@ -840,7 +840,8 @@ void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T v
 
 void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field & value)
 {
-    auto type_call = [&](const auto & dictionary_attribute_type) {
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
@@ -848,7 +849,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         {
             const auto & string = value.get<String>();
             const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()}); 
+            setAttributeValueImpl<StringRef>(attribute, StringRef{string_in_arena, string.size()});
         }
         else
         {

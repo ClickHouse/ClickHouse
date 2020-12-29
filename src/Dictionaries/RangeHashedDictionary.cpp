@@ -162,8 +162,8 @@ ColumnPtr RangeHashedDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -205,7 +205,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 
@@ -304,7 +304,7 @@ void RangeHashedDictionary::calculateBytesAllocated()
 
     for (const auto & attribute : attributes)
     {
-        auto type_call = [&](const auto & dictionary_attribute_type) 
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
             using Type = std::decay_t<decltype(dictionary_attribute_type)>;
             using AttributeType = typename Type::AttributeType;

@@ -16,7 +16,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
-    extern const int ILLEGAL_COLUMN;
 }
 
 static const auto initial_array_size = 1024;
@@ -115,8 +114,8 @@ ColumnPtr FlatDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
-    
+    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
     const auto & attribute = getAttribute(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
@@ -183,8 +182,8 @@ ColumnPtr FlatDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -226,7 +225,7 @@ ColumnPtr FlatDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 
