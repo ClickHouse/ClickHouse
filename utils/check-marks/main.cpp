@@ -42,9 +42,10 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
             out << ", has rows after " << index_granularity_rows;
         }
 
-        out << ".\n" << DB::flush;
-
         bin_in.seek(offset_in_compressed_file, offset_in_decompressed_block);
+        out << ", decompressed size " << bin_in.available();
+
+        out << ".\n" << DB::flush;
     }
 }
 
