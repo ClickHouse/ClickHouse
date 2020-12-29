@@ -511,7 +511,7 @@ ClickHouse支持[NULL](../sql-reference/syntax.md), 在JSON输出中显示为`nu
 
 在这种格式中，一个JSON对象被解释为一个值。如果输入有几个JSON对象(逗号分隔)，它们将被解释为独立的行。
 
-这种格式只能对具有单个字段类型的表进行解析[String](../sql-reference/data-types/string.md)。其余的列必须设置为[DEFAULT](../sql-reference/statements/create/table.md#default)或[MATERIALIZED](../sql-reference/statements/create/table.md#materialized)，或者忽略。一旦将整个JSON对象收集为字符串，就可以使用[JSON函数](../sql-reference/functions/json-functions.md)运行它。
+这种格式只能对具有单个字段类型的表进行解析[String](../sql-reference/data-types/string.md)。其余的列必须设置为[DEFAULT](../sql-reference/statements/create.md)或[MATERIALIZED](../sql-reference/statements/create.md)，或者忽略。一旦将整个JSON对象收集为字符串，就可以使用[JSON函数](../sql-reference/functions/json-functions.md)运行它。
 
 **示例**
 
