@@ -1312,7 +1312,7 @@ See also:
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
@@ -2480,5 +2480,24 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 
 Default value: `0`.
+
+## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
+
+Enables special logic to perform merges on replicas.
+
+Possible values:
+
+-   Positive integer (in seconds).
+-   0 — Special merges logic is not used. Merges happen in the usual way on all the replicas.
+
+Default value: `0`.
+
+**Usage**
+
+Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform the merge, then the merge is performed on other replicas as usual.
+
+High values for that threshold may lead to replication delays.
+
+It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
