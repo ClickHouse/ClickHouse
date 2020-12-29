@@ -1774,4 +1774,44 @@ Result:
 UNSUPPORTED_METHOD
 ```
 
+## tcpPort {#tcpPort}
+
+Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
+
+**Syntax**
+
+``` sql
+tcpPort()
+```
+
+**Parameters**
+
+-   None.
+
+**Returned value**
+
+-   The TCP port number.
+
+Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tcpPort();
+```
+
+Result:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**See Also**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
