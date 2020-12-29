@@ -31,7 +31,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , save_marks_in_cache(save_marks_in_cache_)
     , columns_in_mark(columns_in_mark_) {}
 
-const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
+MarkInCompressedFile MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
     if (!is_initialized)
         loadMarks();

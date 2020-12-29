@@ -47,14 +47,14 @@ public:
 
     MarksInCompressedFile(size_t marks_size_)
         : marks_size(marks_size_)
-        , owns_marks_data(true)
         , marks_data(Allocator::alloc(marks_size * sizeof(MarkInCompressedFile)))
+        , owns_marks_data(true)
     {}
 
     MarksInCompressedFile(size_t marks_size_, void * marks_data_)
         : marks_size(marks_size_)
-        , owns_marks_data(false)
         , marks_data(marks_data_)
+        , owns_marks_data(false)
     {}
 
     MarksInCompressedFile(MarksInCompressedFile&& rhs)
@@ -101,8 +101,8 @@ private:
     }
 
     size_t marks_size = 0;
-    bool owns_marks_data = false;
     void * marks_data = nullptr;
+    bool owns_marks_data = false;
 };
 
 }
