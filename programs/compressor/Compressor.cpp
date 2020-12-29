@@ -67,30 +67,31 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
     using namespace DB;
+    namespace po = boost::program_options;
 
-    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
-        ("input", boost::program_options::value<std::string>()->value_name("INPUT"), "input file")
-        ("output", boost::program_options::value<std::string>()->value_name("OUTPUT"), "output file")
+        ("input", po::value<std::string>()->value_name("INPUT"), "input file")
+        ("output", po::value<std::string>()->value_name("OUTPUT"), "output file")
         ("decompress,d", "decompress")
-        ("offset-in-compressed-file", boost::program_options::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
-        ("offset-in-decompressed-block", boost::program_options::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
-        ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+        ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
+        ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
+        ("block-size,b", po::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
-        ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
-        ("level", boost::program_options::value<int>(), "compression level for codecs specified via flags")
+        ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
+        ("level", po::value<int>(), "compression level for codecs specified via flags")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
 
-    boost::program_options::positional_options_description positional_desc;
+    po::positional_options_description positional_desc;
     positional_desc.add("input", 1);
     positional_desc.add("output", 1);
 
-    boost::program_options::variables_map options;
-    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
+    po::variables_map options;
+    po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
 
     if (options.count("help"))
     {
