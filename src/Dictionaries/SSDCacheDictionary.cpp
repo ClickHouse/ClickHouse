@@ -1421,7 +1421,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
             }
             else
             {
-                const auto null_value = std::get<AttributeType>(null_values[index]);;
+                const auto null_value = std::get<AttributeType>(null_values[index]);
 
                 getItemsNumberImpl<AttributeType, AttributeType>(
                     index,
