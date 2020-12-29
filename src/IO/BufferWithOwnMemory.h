@@ -174,7 +174,7 @@ public:
 private:
     void nextImpl() override final
     {
-        const size_t prev_size = memory.size();
+        const size_t prev_size = Base::position() - memory.data();
         memory.resize(2 * prev_size + 1);
         Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
     }

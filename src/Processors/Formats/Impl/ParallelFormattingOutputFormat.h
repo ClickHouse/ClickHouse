@@ -21,6 +21,37 @@
 namespace DB
 {
 
+/**
+ * ORDER-PRESERVING parallel formatting of data formats.
+ * The idea is similar to ParallelParsingInputFormat.
+ * You add several Chunks through consume() method, each Chunk is formatted by some thread
+ * in ThreadPool into a temporary buffer. (Formatting is being done in parallel.)
+ * Then, another thread add temporary buffers into a "real" WriteBuffer.
+ *
+ *                   Formatters
+ *      |   |   |   |   |   |   |   |   |   |
+ *      v   v   v   v   v   v   v   v   v   v
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | <-- Processing units
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *      ^               ^
+ *      |               |
+ *   Collector       addChunk
+ * 
+ * There is a container of ProcessingUnits - internal entity, storing a Chunk to format,
+ * a continuous memory buffer to store the formatted Chunk and some flags for synchronization needs.
+ * Each ProcessingUnits has a unique number - the place in the container.
+ * So, Chunk is added through addChunk method, which waits until current ProcessingUnit would be ready to insert
+ * (ProcessingUnitStatus = READY_TO_INSERT), changes status to READY_TO_PARSE and spawns a new task in ThreadPool to parse it.
+ * The other thread, we call it Collector waits until a ProcessingUnit which it points to would be READY_TO_READ.
+ * Then it adds a temporary buffer to a real WriteBuffer.
+ * Both Collector and a thread which adds Chunks have unit_number - a pointer to ProcessingUnit which they are aim to work with.
+ * 
+ * Note, that collector_unit_number is always less or equal to current_unit_number, that's why the formatting is order-preserving.
+ * 
+ * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
+ * function is blocked until the Collector thread is done.
+*/
 class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
@@ -288,7 +319,7 @@ private:
         }
     }
 
-
+    /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
     void formatterThreadFunction(size_t current_unit_number)
     {
         setThreadName("Formatter");
