@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
@@ -73,6 +74,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("input", boost::program_options::value<std::string>()->value_name("INPUT"), "input file")
         ("output", boost::program_options::value<std::string>()->value_name("OUTPUT"), "output file")
         ("decompress,d", "decompress")
+        ("offset-in-compressed-file", boost::program_options::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
+        ("offset-in-decompressed-block", boost::program_options::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
         ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
@@ -161,8 +164,25 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (decompress)
         {
             /// Decompression
-            CompressedReadBuffer from(*rb);
-            copyData(from, *wb);
+
+            size_t offset_in_compressed_file = options["offset-in-compressed-file"].as<size_t>();
+            size_t offset_in_decompressed_block = options["offset-in-decompressed-block"].as<size_t>();
+
+            if (offset_in_compressed_file || offset_in_decompressed_block)
+            {
+                if (!options.count("input"))
+                {
+                    throw DB::Exception("--offset-in-compressed-file/--offset-in-decompressed-block requires --input", DB::ErrorCodes::BAD_ARGUMENTS);
+                }
+                CompressedReadBufferFromFile compressed_file(options["input"].as<std::string>(), 0, 0, 0);
+                compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
+                copyData(compressed_file, *wb);
+            }
+            else
+            {
+                CompressedReadBuffer from(*rb);
+                copyData(from, *wb);
+            }
         }
         else
         {
