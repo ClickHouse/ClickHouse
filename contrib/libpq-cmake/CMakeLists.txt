@@ -45,6 +45,7 @@ set(SRCS
         ${LIBPQ_SOURCE_DIR}/port/pg_strong_random.c
         ${LIBPQ_SOURCE_DIR}/port/pgstrcasecmp.c
         ${LIBPQ_SOURCE_DIR}/port/thread.c
+        ${LIBPQ_SOURCE_DIR}/port/path.c
         )
 
 add_library(libpq ${SRCS})
