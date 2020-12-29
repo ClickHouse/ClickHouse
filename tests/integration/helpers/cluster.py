@@ -137,6 +137,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
+        self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
@@ -172,7 +173,7 @@ class ClickHouseCluster:
                      macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
-                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
+                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
@@ -194,6 +195,12 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = self.docker_base_tag
+        if not env_variables:
+            env_variables = {}
+
+        # Code coverage files will be placed in database directory
+        # (affect only WITH_COVERAGE=1 build)
+        env_variables['LLVM_PROFILE_FILE'] = '/var/lib/clickhouse/server_%h_%p_%m.profraw'
 
         instance = ClickHouseInstance(
             cluster=self,
@@ -210,6 +217,7 @@ class ClickHouseCluster:
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
+            with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -219,7 +227,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             hostname=hostname,
-            env_variables=env_variables or {},
+            env_variables=env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -314,6 +322,14 @@ class ClickHouseCluster:
                                   self.project_name, '--file',
                                   p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
+
+        if with_kerberized_hdfs and not self.with_kerberized_hdfs:
+            self.with_kerberized_hdfs = True
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
+            self.base_kerberized_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                             self.project_name, '--file',
+                                             p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
+            cmds.append(self.base_kerberized_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
@@ -476,12 +492,35 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
+    def make_hdfs_api(self, timeout=60, kerberized=False):
+        if kerberized:
+            keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
+            krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb_long.conf"))
+            hdfs_ip = self.get_instance_ip('kerberizedhdfs1')
+            # print("kerberizedhdfs1 ip ", hdfs_ip)
+            kdc_ip = self.get_instance_ip('hdfskerberos')
+            # print("kdc_ip ", kdc_ip)
+            self.hdfs_api = HDFSApi(user="root",
+                               timeout=timeout,
+                               kerberized=True,
+                               principal="root@TEST.CLICKHOUSE.TECH",
+                               keytab=keytab,
+                               krb_conf=krb_conf,
+                               host="kerberizedhdfs1",
+                               protocol="http",
+                               proxy_port=50070,
+                               data_port=1006,
+                               hdfs_ip=hdfs_ip,
+                               kdc_ip=kdc_ip)
+        else:
+            self.hdfs_api = HDFSApi(user="root", host="hdfs1")
+
+
     def wait_hdfs_to_start(self, timeout=60):
-        hdfs_api = HDFSApi("root")
         start = time.time()
         while time.time() - start < timeout:
             try:
-                hdfs_api.write_data("/somefilewithrandomname222", "1")
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 print("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
@@ -620,6 +659,7 @@ class ClickHouseCluster:
                 self.wait_schema_registry_to_start(120)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
+                print('Setup kerberized kafka')
                 env = os.environ.copy()
                 env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
                 subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
@@ -631,7 +671,16 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 print('Setup HDFS')
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.make_hdfs_api()
                 self.wait_hdfs_to_start(120)
+
+            if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
+                print('Setup kerberized HDFS')
+                env = os.environ.copy()
+                env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
+                subprocess.check_call(self.base_kerberized_hdfs_cmd + common_opts, env=env)
+                self.make_hdfs_api(kerberized=True)
+                self.wait_hdfs_to_start(timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 print('Setup Mongo')
@@ -716,9 +765,11 @@ class ClickHouseCluster:
 
         if kill:
             try:
-                subprocess_check_call(self.base_cmd + ['kill'])
+                subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
             except Exception as e:
-                print("Kill command failed durung shutdown. {}".format(repr(e)))
+                print("Kill command failed during shutdown. {}".format(repr(e)))
+                print("Trying to kill forcefully")
+                subprocess_check_call(self.base_cmd + ['kill'])
 
         try:
             subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
@@ -840,8 +891,8 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_mongo,
-            with_redis, with_minio,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
+            with_mongo, with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
@@ -871,6 +922,7 @@ class ClickHouseInstance:
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
+        self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
@@ -885,7 +937,7 @@ class ClickHouseInstance:
         else:
             self.odbc_ini_path = ""
 
-        if with_kerberized_kafka:
+        if with_kerberized_kafka or with_kerberized_hdfs:
             self.keytab_path = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets:/tmp/keytab"
             self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb.conf:/etc/krb5.conf:ro"
         else:
@@ -1231,7 +1283,7 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if self.with_kerberized_kafka:
+        if self.with_kerberized_kafka or self.with_kerberized_hdfs:
             shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config.d configs
@@ -1271,6 +1323,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")
+
+        if self.with_kerberized_hdfs:
+            depends_on.append("kerberizedhdfs1")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")

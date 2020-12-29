@@ -47,6 +47,7 @@ class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory &);
+void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
@@ -104,6 +105,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorIf(factory);
         registerAggregateFunctionCombinatorArray(factory);
         registerAggregateFunctionCombinatorForEach(factory);
+        registerAggregateFunctionCombinatorSimpleState(factory);
         registerAggregateFunctionCombinatorState(factory);
         registerAggregateFunctionCombinatorMerge(factory);
         registerAggregateFunctionCombinatorNull(factory);

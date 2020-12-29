@@ -15,11 +15,21 @@
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
+}
+
+namespace
+{
+    [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database, const String & source_table_regexp)
+    {
+        throw Exception(
+            "Error while executing table function merge. In database " + source_database
+                + " no one matches regular expression: " + source_table_regexp,
+            ErrorCodes::UNKNOWN_TABLE);
+    }
 }
 
 
@@ -43,25 +53,25 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Conte
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
     source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 
-const Tables & TableFunctionMerge::getMatchingTables(const Context & context) const
+const Strings & TableFunctionMerge::getSourceTables(const Context & context) const
 {
-    if (tables)
-        return *tables;
+    if (source_tables)
+        return *source_tables;
 
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
 
-    OptimizedRegularExpression re(table_name_regexp);
+    OptimizedRegularExpression re(source_table_regexp);
     auto table_name_match = [&](const String & table_name_) { return re.match(table_name_); };
 
     auto access = context.getAccess();
     bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, source_database);
     bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, source_database);
 
-    tables.emplace();
+    source_tables.emplace();
     for (auto it = database->getTablesIterator(context, table_name_match); it->isValid(); it->next())
     {
         if (!it->table())
@@ -71,22 +81,28 @@ const Tables & TableFunctionMerge::getMatchingTables(const Context & context) co
             continue;
         if (!granted_select_on_all_tables)
             access->checkAccess(AccessType::SELECT, source_database, it->name());
-        tables->emplace(it->name(), it->table());
+        source_tables->emplace_back(it->name());
     }
 
-    if (tables->empty())
-        throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular expression: "
-            + table_name_regexp, ErrorCodes::UNKNOWN_TABLE);
+    if (source_tables->empty())
+        throwNoTablesMatchRegexp(source_database, source_table_regexp);
 
-    return *tables;
+    return *source_tables;
 }
 
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(const Context & context) const
 {
-    auto first_table = getMatchingTables(context).begin()->second;
-    return ColumnsDescription{first_table->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+    for (const auto & table_name : getSourceTables(context))
+    {
+        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{source_database, table_name}, context);
+        if (storage)
+            return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
+    }
+
+    throwNoTablesMatchRegexp(source_database, source_table_regexp);
 }
+
 
 StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
@@ -94,7 +110,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, cons
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context),
         source_database,
-        getMatchingTables(context),
+        getSourceTables(context),
         context);
 
     res->startup();

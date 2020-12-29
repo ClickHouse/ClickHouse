@@ -19,6 +19,7 @@
 00800_low_cardinality_distributed_insert
 00821_distributed_storage_with_join_on
 00829_bitmap_function
+00829_bitmap64_function
 00850_global_join_dups
 00858_issue_4756
 00877_memory_limit_for_new_delete
@@ -174,5 +175,7 @@
 01584_distributed_buffer_cannot_find_column
 01018_ip_dictionary
 01582_distinct_subquery_groupby
+01558_ttest
 01558_ttest_scipy
 01561_mann_whitney_scipy
+01601_custom_tld

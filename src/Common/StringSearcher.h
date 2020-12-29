@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -37,7 +38,7 @@ struct StringSearcherBase
 {
 #ifdef __SSE2__
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = getpagesize();
+    const int page_size = ::getPageSize();
 
     bool pageSafe(const void * const ptr) const
     {

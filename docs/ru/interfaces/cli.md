@@ -11,9 +11,9 @@ ClickHouse предоставляет собственный клиент ком
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 19.17.1.1579 (official build).
+ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```
@@ -63,7 +63,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 По умолчанию, в качестве формата, используется формат PrettyCompact (красивые таблички). Вы можете изменить формат с помощью секции FORMAT запроса, или с помощью указания `\G` на конце запроса, с помощью аргумента командной строки `--format` или `--vertical`, или с помощью конфигурационного файла клиента.
 
-Чтобы выйти из клиента, нажмите Ctrl+D (или Ctrl+C), или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
+Чтобы выйти из клиента, нажмите Ctrl+D, или наберите вместо запроса одно из: «exit», «quit», «logout», «учше», «йгше», «дщпщге», «exit;», «quit;», «logout;», «учшеж», «йгшеж», «дщпщгеж», «q», «й», «q», «Q», «:q», «й», «Й», «Жй»
 
 При выполнении запроса, клиент показывает:
 
@@ -93,12 +93,13 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 ```
 
 -   `name` — идентификатор подстановки. В консольном клиенте его следует использовать как часть имени параметра `--param_<name> = value`.
--   `data type` — [тип данных](../sql-reference/data-types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql-reference/data-types/int-uint.md) тип может быть и другим).
+-   `data type` — [тип данных](../sql-reference/data-types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql-reference/data-types/int-uint.md) тип может быть и другим). В качестве параметра можно передать название столбца, таблицы и базы данных, в этом случае используется тип данных`Identifier` .
 
 #### Пример {#primer}
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
 ## Конфигурирование {#interfaces_cli_configuration}
@@ -130,6 +131,8 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 -   `--config-file` — имя конфигурационного файла.
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
+
+Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
 
 ### Конфигурационные файлы {#konfiguratsionnye-faily}
 

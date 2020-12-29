@@ -72,11 +72,11 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & source_database_,
-    const String & table_name_regexp_,
+    const Strings & source_tables_,
     const Context & context_)
     : IStorage(table_id_)
     , source_database(source_database_)
-    , table_name_regexp(table_name_regexp_)
+    , source_tables(std::in_place, source_tables_.begin(), source_tables_.end())
     , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -88,11 +88,11 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & source_database_,
-    const Tables & tables_,
+    const String & source_table_regexp_,
     const Context & context_)
     : IStorage(table_id_)
     , source_database(source_database_)
-    , tables(tables_)
+    , source_table_regexp(source_table_regexp_)
     , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -456,11 +456,16 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
         throw;
     }
 
-    if (tables)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(*tables, source_database);
-
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
-    auto table_name_match = [this](const String & table_name_) { return table_name_regexp->match(table_name_); };
+
+    auto table_name_match = [this](const String & table_name_) -> bool
+    {
+        if (source_tables)
+            return source_tables->count(table_name_);
+        else
+            return source_table_regexp->match(table_name_);
+    };
+
     return database->getTablesIterator(context, table_name_match);
 }
 
