@@ -28,9 +28,6 @@ enum class CompressionMethod
     /// LZMA2-based content compression
     /// This option corresponds to HTTP Content-Encoding: xz
     Xz,
-    /// Zstd compressor
-    ///  This option corresponds to HTTP Content-Encoding: zstd
-    Zstd,
     Brotli
 };
 

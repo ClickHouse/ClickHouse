@@ -64,7 +64,6 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
-    format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
@@ -163,7 +162,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
-    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+    if (settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
 
     if (parallel_parsing && name == "JSONEachRow")
@@ -258,6 +257,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
     auto format = input_getter(buf, sample, params, format_settings);
+
 
     /// It's a kludge. Because I cannot remove context from values format.
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))

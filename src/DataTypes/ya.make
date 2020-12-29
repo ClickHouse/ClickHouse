@@ -27,7 +27,6 @@ SRCS(
     DataTypeInterval.cpp
     DataTypeLowCardinality.cpp
     DataTypeLowCardinalityHelpers.cpp
-    DataTypeMap.cpp
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp

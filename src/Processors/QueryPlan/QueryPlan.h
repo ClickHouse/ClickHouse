@@ -2,9 +2,6 @@
 #include <memory>
 #include <list>
 #include <vector>
-#include <set>
-
-#include <Core/Names.h>
 
 namespace DB
 {

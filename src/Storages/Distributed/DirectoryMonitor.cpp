@@ -17,7 +17,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>

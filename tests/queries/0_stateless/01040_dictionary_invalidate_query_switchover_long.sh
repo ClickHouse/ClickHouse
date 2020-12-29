@@ -24,7 +24,7 @@ CREATE DICTIONARY dictdb.invalidate
   two UInt8 EXPRESSION dummy
 )
 PRIMARY KEY dummy
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict_invalidate' DB 'dictdb' INVALIDATE_QUERY 'select max(last_time) from dictdb.dict_invalidate'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict_invalidate' DB 'dictdb' INVALIDATE_QUERY 'select max(last_time) from dictdb.dict_invalidate'))
 LIFETIME(MIN 0 MAX 1)
 LAYOUT(FLAT())"
 
@@ -51,7 +51,7 @@ function check_exception_detected()
 export -f check_exception_detected;
 timeout 30 bash -c check_exception_detected 2> /dev/null
 
-$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1 | grep -Eo "Table dictdb.dict_invalidate .* exist"
+$CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'" 2>&1 | grep -Eo "Table dictdb.dict_invalidate .* exist."
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE dictdb.dict_invalidate

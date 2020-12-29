@@ -21,67 +21,53 @@ def without_privilege(self, table_type, node=None):
     """
     user_name = f"user_{getuid()}"
     table_name = f"table_{getuid()}"
-
     if node is None:
         node = self.context.node
-
     with table(node, table_name, table_type):
         with user(node, user_name):
-
             with When("I run INSERT without privilege"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
-
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Grant("1.0"),
 )
 def user_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table on which they have insert privilege.
     """
     user_name = f"user_{getuid()}"
     table_name = f"table_{getuid()}"
-
     if node is None:
         node = self.context.node
-
     with table(node, table_name, table_type):
         with user(node, user_name):
-
             with When("I grant insert privilege"):
                 node.query(f"GRANT INSERT ON {table_name} TO {user_name}")
-
             with And("I use INSERT"):
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)])
-
             with Then("I check the insert functioned"):
                 output = node.query(f"SELECT d FROM {table_name} FORMAT JSONEachRow").output
                 assert output == '{"d":"2020-01-01"}', error()
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Revoke("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to insert into a table after insert privilege on that table has been revoked from user.
     """
     user_name = f"user_{getuid()}"
     table_name = f"table_{getuid()}"
-
     if node is None:
         node = self.context.node
-
     with table(node, table_name, table_type):
         with user(node, user_name):
-
             with When("I grant insert privilege"):
                 node.query(f"GRANT INSERT ON {table_name} TO {user_name}")
-
             with And("I revoke insert privilege"):
                 node.query(f"REVOKE INSERT ON {table_name} FROM {user_name}")
-
             with And("I use INSERT"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')",
@@ -138,7 +124,7 @@ def user_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Grant("1.0"),
 )
 def role_with_privilege(self, table_type, node=None):
     """Check that user can insert into a table after being granted a role that
@@ -163,7 +149,7 @@ def role_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Insert_Revoke("1.0"),
 )
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has insert privilege on a table

@@ -17,7 +17,6 @@ SRCS(
     Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
-    Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
@@ -124,7 +123,6 @@ SRCS(
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
-    QueryPlan/WindowStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
     Sources/RemoteSource.cpp
@@ -157,7 +155,6 @@ SRCS(
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
-    Transforms/WindowTransform.cpp
     printPipeline.cpp
 
 )

@@ -3,7 +3,6 @@
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
@@ -272,14 +271,6 @@ BlockIO InterpreterSystemQuery::execute()
             context.checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context.reloadConfig();
             break;
-        case Type::RELOAD_SYMBOLS:
-#if defined(__ELF__) && !defined(__FreeBSD__)
-            context.checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            (void)SymbolIndex::instance(true);
-            break;
-#else
-            throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
-#endif
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -611,11 +602,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_CONFIG:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
-            break;
-        }
-        case Type::RELOAD_SYMBOLS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_SYMBOLS);
             break;
         }
         case Type::STOP_MERGES: [[fallthrough]];

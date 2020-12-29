@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
 #include <Common/tests/gtest_global_context.h>

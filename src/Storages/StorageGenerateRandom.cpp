@@ -319,7 +319,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::DateTime64:
         {
             auto column = type->createColumn();
-            auto & column_concrete = typeid_cast<ColumnDecimal<DateTime64> &>(*column);
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
             column_concrete.getData().resize(limit);
 
             UInt64 range = (1ULL << 32) * intExp10(typeid_cast<const DataTypeDateTime64 &>(*type).getScale());

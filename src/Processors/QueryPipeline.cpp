@@ -298,7 +298,7 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
     pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
 
-    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
+    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams);
     addTransform(std::move(processor));
 }
 

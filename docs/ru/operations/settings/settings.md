@@ -1258,7 +1258,7 @@ ClickHouse генерирует исключение
 
 Время ожидания кворумной записи в миллисекундах. Если время прошло, а запись так не состоялась, то ClickHouse сгенерирует исключение и клиент должен повторить запрос на запись того же блока на эту же или любую другую реплику.
 
-Значение по умолчанию: 600 000 миллисекунд (10 минут).
+Значение по умолчанию: 600000 миллисекунд (10 минут).
 
 См. также:
 
@@ -2099,48 +2099,6 @@ SELECT TOP 3 name, value FROM system.settings;
    └─────────────────────────┴─────────┘
 ```
 
-## system_events_show_zero_values {#system_events_show_zero_values}
-
-Позволяет выбрать события с нулевыми значениями из таблицы [`system.events`](../../operations/system-tables/events.md).
-
-В некоторые системы мониторинга вам нужно передать значения всех измерений (для каждой контрольной точки), даже если в результате — "0".
-
-Возможные значения:
-
--   0 — настройка отключена — вы получите все события.
--   1 — настройка включена — вы сможете отсортировать события по нулевым и остальным значениям.
-
-Значение по умолчанию: `0`.
-
-**Примеры**
-
-Запрос
-
-```sql
-SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
-```
-
-Результат
-
-```text
-Ok.
-```
-
-Запрос
-
-```sql
-SET system_events_show_zero_values = 1;
-SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
-```
-
-Результат
-
-```text
-┌─event────────────────────┬─value─┬─description───────────────────────────────────────────┐
-│ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
-└──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
-```
-
 ## allow_experimental_bigint_types {#allow_experimental_bigint_types}
 
 Включает или отключает поддержку целочисленных значений, превышающих максимальное значение, допустимое для типа `int`.
@@ -2231,116 +2189,8 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
+Позволяет настраивать представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Настройка управляет форматом выходных данных, `\N` является единственным поддерживаемым представлением для формата входных данных TSV.
 
 Значение по умолчанию: `\N`.
-
-**Примеры**
-
-Запрос
-
-```sql
-SELECT * FROM tsv_custom_null FORMAT TSV;
-```
-
-Результат
-
-```text
-788
-\N
-\N
-```
-
-Запрос
-
-```sql
-SET output_format_tsv_null_representation = 'My NULL';
-SELECT * FROM tsv_custom_null FORMAT TSV;
-```
-
-Результат
-
-```text
-788
-My NULL
-My NULL
-```
-
-## output_format_json_array_of_rows {#output-format-json-array-of-rows}
-
-Позволяет выводить все строки в виде массива JSON в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
-
-Возможные значения:
-
--   1 — ClickHouse выводит все строки в виде массива и при этом каждую строку в формате `JSONEachRow`.
--   0 — ClickHouse выводит каждую строку отдельно в формате `JSONEachRow`.
-
-Значение по умолчанию: `0`.
-
-**Пример запроса с включенной настройкой**
-
-Запрос:
-
-```sql
-SET output_format_json_array_of_rows = 1;
-SELECT number FROM numbers(3) FORMAT JSONEachRow;
-```
-
-Результат:
-
-```text
-[
-{"number":"0"},
-{"number":"1"},
-{"number":"2"}                                                                                                                                                                                  
-]
-```
-
-**Пример запроса с отключенной настройкой**
-
-Запрос:
-
-```sql
-SET output_format_json_array_of_rows = 0;
-SELECT number FROM numbers(3) FORMAT JSONEachRow;
-```
-
-Результат:
-
-```text
-{"number":"0"}
-{"number":"1"}
-{"number":"2"}
-```
-
-## allow_nullable_key {#allow-nullable-key}
-
-Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
-
-Возможные значения:
-
-- 1 — включает поддержку типа `Nullable` для ключей таблиц.
-- 0 — отключает поддержку типа `Nullable` для ключей таблиц.
-
-Значение по умолчанию: `0`.
-
-## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
-
-Включает особую логику выполнения слияний на репликах.
-
-Возможные значения:
-
--   Положительное целое число (в секундах).
--   0 — не используется особая логика выполнения слияний. Слияния происходят обычным образом на всех репликах.
-
-Значение по умолчанию: `0`.
-
-**Использование**
-
-Выбирается одна реплика для выполнения слияния. Устанавливается порог времени с момента начала слияния. Другие реплики ждут завершения слияния, а затем скачивают результат. Если время выполнения слияния превышает установленный порог и выбранная реплика не выполняет слияние, тогда слияние выполняется на других репликах как обычно.
-
-Большие значения этой настройки могут привести к задержкам репликации.
-
-Эта настройка полезна, когда скорость слияния ограничивается мощностью процессора, а не скоростью операций ввода-вывода (при выполнении "тяжелого" сжатия данных, при расчете агрегатных функций или выражений по умолчанию, требующих большого объема вычислений, или просто при большом количестве мелких слияний).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

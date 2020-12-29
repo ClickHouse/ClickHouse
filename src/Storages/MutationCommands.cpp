@@ -47,7 +47,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
-            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression());
+            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
             if (!insertion.second)
                 throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
                     ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
@@ -120,11 +120,11 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
 }
 
 
-std::shared_ptr<ASTExpressionList> MutationCommands::ast() const
+std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = std::make_shared<ASTAlterCommandList>();
     for (const MutationCommand & command : *this)
-        res->children.push_back(command.ast->clone());
+        res->add(command.ast->clone());
     return res;
 }
 
@@ -144,9 +144,8 @@ void MutationCommands::readText(ReadBuffer & in)
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    for (const auto & child : commands_ast->children)
+    for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
-        auto * command_ast = child->as<ASTAlterCommand>();
         auto command = MutationCommand::parse(command_ast, true);
         if (!command)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);

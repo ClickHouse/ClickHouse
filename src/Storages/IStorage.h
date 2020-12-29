@@ -78,7 +78,7 @@ struct ColumnSize
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
 {
 public:
     IStorage() = delete;
@@ -87,6 +87,7 @@ public:
         : storage_id(std::move(storage_id_))
         , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
+    virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
@@ -168,7 +169,6 @@ public:
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
-    Names getAllRegisteredNames() const override;
 protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
@@ -380,7 +380,6 @@ public:
         const ASTPtr & /*partition*/,
         bool /*final*/,
         bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
         const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);

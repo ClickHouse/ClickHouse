@@ -7,11 +7,6 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-# upstream/master
-LEFT_SERVER_PORT=9001
-# patched version
-RIGHT_SERVER_PORT=9002
-
 function wait_for_server # port, pid
 {
     for _ in {1..60}
@@ -42,33 +37,25 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
+
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
-
-    local setup_left_server_opts=(
-        # server options
-        --config-file=left/config/config.xml
-        --
-        # server *config* directives overrides
-        --path db0
-        --user_files_path db0/user_files
-        --top_level_domains_path /top_level_domains
-        --tcp_port $LEFT_SERVER_PORT
-    )
-    left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml -- --path db0 --user_files_path db0/user_files &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
     set +m
 
-    wait_for_server $LEFT_SERVER_PORT $left_pid
+    wait_for_server 9001 $left_pid
     echo Server for setup started
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
-    clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
+    clickhouse-client --port 9001 --query "create database test" ||:
+    clickhouse-client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
 
     while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
@@ -96,32 +83,16 @@ function restart
 
     set -m # Spawn servers in their own process groups
 
-    local left_server_opts=(
-        # server options
-        --config-file=left/config/config.xml
-        --
-        # server *config* directives overrides
-        --path left/db
-        --user_files_path left/db/user_files
-        --top_level_domains_path /top_level_domains
-        --tcp_port $LEFT_SERVER_PORT
-    )
-    left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml \
+           -- --path left/db --user_files_path left/db/user_files \
+           &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    local right_server_opts=(
-        # server options
-        --config-file=right/config/config.xml
-        --
-        # server *config* directives overrides
-        --path right/db
-        --user_files_path right/db/user_files
-        --top_level_domains_path /top_level_domains
-        --tcp_port $RIGHT_SERVER_PORT
-    )
-    right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+     right/clickhouse-server --config-file=right/config/config.xml \
+         -- --path right/db --user_files_path right/db/user_files \
+         &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -130,16 +101,16 @@ function restart
 
     unset MALLOC_CONF
 
-    wait_for_server $LEFT_SERVER_PORT $left_pid
+    wait_for_server 9001 $left_pid
     echo left ok
 
-    wait_for_server $RIGHT_SERVER_PORT $right_pid
+    wait_for_server 9002 $right_pid
     echo right ok
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.tables where database != 'system'"
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database != 'system'"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
+    clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port 9001 --query "select * from system.build_options"
+    clickhouse-client --port 9002 --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port 9002 --query "select * from system.build_options"
 
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
@@ -228,9 +199,9 @@ function run_tests
     for test in $test_files
     do
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port 9001 --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port 9002 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -244,7 +215,7 @@ function run_tests
         # The grep is to filter out set -x output and keep only time output.
         # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
         { \
-            time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
+            time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 \
                 --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
                 --profile-seconds "$profile_seconds" \
                 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
@@ -286,36 +257,36 @@ function get_profiles_watchdog
 function get_profiles
 {
     # Collect the profiles
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port $LEFT_SERVER_PORT --query "system flush logs" &
+    clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "system flush logs" &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "system flush logs" &
+    clickhouse-client --port 9002 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9002 --query "system flush logs" &
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > right-async-metric-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > right-async-metric-log.tsv ||: &
 
     wait
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
+    clickhouse-client --port 9001 --query "select 1"
+    clickhouse-client --port 9002 --query "select 1"
 }
 
 function build_log_column_definitions

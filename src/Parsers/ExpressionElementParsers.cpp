@@ -263,7 +263,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword distinct("DISTINCT");
     ParserExpressionList contents(false);
     ParserSelectWithUnionQuery select;
-    ParserKeyword over("OVER");
 
     bool has_distinct_modifier = false;
 
@@ -383,93 +382,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
-    if (over.ignore(pos, expected))
-    {
-        function_node->is_window_function = true;
-
-        // We are slightly breaking the parser interface by parsing the window
-        // definition into an existing ASTFunction. Normally it would take a
-        // reference to ASTPtr and assign it the new node. We only have a pointer
-        // of a different type, hence this workaround with a temporary pointer.
-        ASTPtr function_node_as_iast = function_node;
-
-        ParserWindowDefinition window_definition;
-        if (!window_definition.parse(pos, function_node_as_iast, expected))
-        {
-            return false;
-        }
-    }
-
     node = function_node;
-    return true;
-}
-
-bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
-
-    // Variant 1:
-    // function_name ( * ) OVER window_name
-    // FIXME doesn't work anyway for now -- never used anywhere, window names
-    // can't be defined, and TreeRewriter thinks the window name is a column so
-    // the query fails.
-    if (pos->type != TokenType::OpeningRoundBracket)
-    {
-        ASTPtr window_name_ast;
-        ParserIdentifier window_name_parser;
-        if (window_name_parser.parse(pos, window_name_ast, expected))
-        {
-            function->set(function->window_name, window_name_ast);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
-    ++pos;
-
-    // Variant 2:
-    // function_name ( * ) OVER ( window_definition )
-    ParserKeyword keyword_partition_by("PARTITION BY");
-    ParserNotEmptyExpressionList columns_partition_by(
-        false /* we don't allow declaring aliases here*/);
-    ParserKeyword keyword_order_by("ORDER BY");
-    ParserOrderByExpressionList columns_order_by;
-
-    if (keyword_partition_by.ignore(pos, expected))
-    {
-        ASTPtr partition_by_ast;
-        if (columns_partition_by.parse(pos, partition_by_ast, expected))
-        {
-            function->set(function->window_partition_by, partition_by_ast);
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (keyword_order_by.ignore(pos, expected))
-    {
-        ASTPtr order_by_ast;
-        if (columns_order_by.parse(pos, order_by_ast, expected))
-        {
-            function->set(function->window_order_by, order_by_ast);
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-    {
-        expected.add(pos, "')'");
-        return false;
-    }
-    ++pos;
-
     return true;
 }
 
@@ -528,7 +441,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         expr_list_args->children.push_back(std::move(type_literal));
 
         auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "cast";
+        func_node->name = "CAST";
         func_node->arguments = std::move(expr_list_args);
         func_node->children.push_back(func_node->arguments);
 
@@ -1197,10 +1110,6 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
-            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
-            {
-                ++pos;
-            }
             else
             {
                 expected.add(pos, "comma or closing bracket");
@@ -1221,7 +1130,6 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1346,7 +1254,7 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         res->children.push_back(regex_node);
     }
 
-    ParserColumnsTransformers transformers_p(allowed_transformers);
+    ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
@@ -1365,7 +1273,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword as("AS");
     ParserKeyword strict("STRICT");
 
-    if (allowed_transformers.isSet(ColumnTransformer::APPLY) && apply.ignore(pos, expected))
+    if (apply.ignore(pos, expected))
     {
         bool with_open_round_bracket = false;
 
@@ -1418,7 +1326,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    else if (allowed_transformers.isSet(ColumnTransformer::EXCEPT) && except.ignore(pos, expected))
+    else if (except.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -1458,7 +1366,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
-    else if (allowed_transformers.isSet(ColumnTransformer::REPLACE) && replace.ignore(pos, expected))
+    else if (replace.ignore(pos, expected))
     {
         if (strict.ignore(pos, expected))
             is_strict = true;
@@ -1521,7 +1429,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
-        ParserColumnsTransformers transformers_p(allowed_transformers);
+        ParserColumnsTransformers transformers_p;
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
         {
@@ -1656,7 +1564,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserSubquery().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
-        || ParserMapOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)
@@ -1798,21 +1705,12 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
     }
 
-    auto elem = std::make_shared<ASTOrderByElement>();
-
-    elem->direction = direction;
-    elem->nulls_direction = nulls_direction;
-    elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    elem->collation = locale_node;
-    elem->with_fill = has_with_fill;
-    elem->fill_from = fill_from;
-    elem->fill_to = fill_to;
-    elem->fill_step = fill_step;
-    elem->children.push_back(expr_elem);
+    node = std::make_shared<ASTOrderByElement>(
+            direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node,
+            has_with_fill, fill_from, fill_to, fill_step);
+    node->children.push_back(expr_elem);
     if (locale_node)
-        elem->children.push_back(locale_node);
-
-    node = elem;
+        node->children.push_back(locale_node);
 
     return true;
 }
@@ -1989,18 +1887,13 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     ParserIdentifierWithParameters parametric;
 
     if (parametric.parse(pos, node, expected))
-    {
-        auto * func = node->as<ASTFunction>();
-        func->no_empty_args = true;
         return true;
-    }
 
     ASTPtr ident;
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
         tryGetIdentifierNameInto(ident, func->name);
-        func->no_empty_args = true;
         node = func;
         return true;
     }

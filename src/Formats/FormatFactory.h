@@ -16,6 +16,7 @@ namespace DB
 
 class Block;
 class Context;
+struct FormatSettings;
 struct Settings;
 struct FormatFactorySettings;
 
@@ -54,7 +55,7 @@ public:
       * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
       * Used in ParallelParsingBlockInputStream.
       */
-    using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
+    using FileSegmentationEngine = std::function<bool(
         ReadBuffer & buf,
         DB::Memory<> & memory,
         size_t min_chunk_bytes)>;

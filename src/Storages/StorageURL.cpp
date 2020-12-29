@@ -10,8 +10,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -76,19 +74,16 @@ namespace
             ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
 
             // Propagate OpenTelemetry trace context, if any, downstream.
-            if (CurrentThread::isInitialized())
+            const auto & client_info = context.getClientInfo();
+            if (client_info.opentelemetry_trace_id)
             {
-                const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
-                if (thread_trace_context.trace_id)
-                {
-                    header.emplace_back("traceparent",
-                        thread_trace_context.composeTraceparentHeader());
+                header.emplace_back("traceparent",
+                    client_info.composeTraceparentHeader());
 
-                    if (!thread_trace_context.tracestate.empty())
-                    {
-                        header.emplace_back("tracestate",
-                            thread_trace_context.tracestate);
-                    }
+                if (!client_info.opentelemetry_tracestate.empty())
+                {
+                    header.emplace_back("tracestate",
+                        client_info.opentelemetry_tracestate);
                 }
             }
 

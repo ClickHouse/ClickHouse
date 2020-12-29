@@ -46,7 +46,6 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
-        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;

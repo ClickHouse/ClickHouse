@@ -40,8 +40,7 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t quorum_timeout_ms_,
     size_t max_parts_per_block_,
     bool quorum_parallel_,
-    bool deduplicate_,
-    bool optimize_on_insert_)
+    bool deduplicate_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
@@ -50,7 +49,6 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
-    , optimize_on_insert(optimize_on_insert_)
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
@@ -123,6 +121,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
     last_block_is_duplicate = false;
 
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
@@ -142,7 +142,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, optimize_on_insert);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot);
 
         String block_id;
 
@@ -491,8 +491,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 if (!zookeeper->tryGet(quorum_info.status_path, value, nullptr, event))
                     break;
 
-                LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_info.status_path);
-
                 ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
                 /// If the node has time to disappear, and then appear again for the next insert.
@@ -501,8 +499,6 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
                 if (!event->tryWait(quorum_timeout_ms))
                     throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
-
-                LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_info.status_path);
             }
 
             /// And what if it is possible that the current replica at this time has ceased to be active
@@ -526,9 +522,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
 void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 {
-    /// Only check "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+    storage.throwInsertIfNeeded();
 }
 
 

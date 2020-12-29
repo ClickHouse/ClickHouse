@@ -6,7 +6,6 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/MongoDB
-    contrib/restricted/boost/libs
 )
 
 NO_COMPILER_WARNINGS()

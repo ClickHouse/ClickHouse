@@ -16,10 +16,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <common/getResource.h>
-#include <common/errnoToString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -236,7 +234,7 @@ static std::string layerFromHost()
 {
     utsname buf;
     if (uname(&buf))
-        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
+        throw Poco::Exception(std::string("uname failed: ") + std::strerror(errno));
 
     std::string layer = numberFromHost(buf.nodename);
     if (layer.empty())

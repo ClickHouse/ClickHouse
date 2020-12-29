@@ -120,7 +120,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
             {
                 /// FLUSH DISTRIBUTED requires table
-                /// START/STOP DISTRIBUTED SENDS does not require table
+                /// START/STOP DISTRIBUTED SENDS does not requires table
                 if (res->type == Type::FLUSH_DISTRIBUTED)
                     return false;
             }

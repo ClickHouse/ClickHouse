@@ -345,6 +345,30 @@ void ASTAlterCommand::formatImpl(
 }
 
 
+ASTPtr ASTAlterCommandList::clone() const
+{
+    auto res = std::make_shared<ASTAlterCommandList>();
+    for (ASTAlterCommand * command : commands)
+        res->add(command->clone());
+    return res;
+}
+
+void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+    for (size_t i = 0; i < commands.size(); ++i)
+    {
+        static_cast<IAST *>(commands[i])->formatImpl(settings, state, frame);
+
+        std::string comma = (i < (commands.size() - 1)) ? "," : "";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << comma << (settings.hilite ? hilite_none : "");
+
+        settings.ostr << settings.nl_or_ws;
+    }
+}
+
+
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
