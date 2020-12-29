@@ -479,6 +479,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header, true);
+
+    pushdown_limit_to_shards = context->getSettingsRef().enable_pushdown_limit_to_shards &&
+        analysis_result.need_aggregate &&
+        options.to_stage <= QueryProcessingStage::WithMergeableState;
 }
 
 void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
@@ -657,7 +661,6 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
-
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
@@ -761,19 +764,18 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         auto preliminary_sort = [&]()
         {
-            bool limit_pushdown = !aggregate_final && settings.enable_limit_pushdown;
             /** For distributed query processing,
               *  if no GROUP, HAVING set,
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
               *
-              * When limit_pushdown is set, aggregation-columns used by sorting has already been finalized.
-              *  In order to achieve limit_pushdown, the results must be sorted and limited.
+              * When pushdown_limit_to_shards is set, aggregation-columns used by sorting has already been finalized.
+              *  In order to achieve pushdown_limit_to_shards, the results must be sorted and limited.
               */
-            if ((!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving()) || limit_pushdown)
+            if ((!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving()) || pushdown_limit_to_shards)
             {
                 if (expressions.has_order_by)
-                    executeOrder(query_plan, query_info.input_order_info, limit_pushdown);
+                    executeOrder(query_plan, query_info.input_order_info);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
@@ -785,7 +787,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
 
                 if (query.limitLength())
-                    executePreLimit(query_plan, true, limit_pushdown);
+                    executePreLimit(query_plan, true);
             }
         };
 
@@ -953,7 +955,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
-                    executeOrder(query_plan, query_info.input_order_info, false);
+                    executeOrder(query_plan, query_info.input_order_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -977,7 +979,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
                 !has_withfill)
             {
-                executePreLimit(query_plan, false, false);
+                executePreLimit(query_plan, false);
                 has_prelimit = true;
             }
 
@@ -1578,7 +1580,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
                               context->getTemporaryVolume(),
                               settings.max_threads,
                               settings.min_free_disk_space_for_temporary_data,
-                              settings.enable_limit_pushdown);
+                              pushdown_limit_to_shards);
 
     SortDescription group_by_sort_description;
 
@@ -1688,7 +1690,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
-                              settings.enable_limit_pushdown);
+                              pushdown_limit_to_shards);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -1782,16 +1784,16 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
     query_plan.addStep(std::move(finish_sorting_step));
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, bool limit_pushdown)
+void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
 
-    /** In this step for limit_pushdown, aggregation columns hasn't been finalized.
-      * So that names of columns are replaced with sorting_column_names that temporarily has been finalized.
+    /** In this step, aggregation columns hasn't been finalized.
+      * In order to support pushdown_limit_to_shards, names of columns are replaced with sorting_column_names that temporarily has been finalized, 
       */
-    if (limit_pushdown)
+    if (pushdown_limit_to_shards)
     {
         for (auto & descr : output_order_descr)
         {
@@ -1910,7 +1912,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset, bool limit_pushdown)
+void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
@@ -1918,7 +1920,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
 
-        if (limit_pushdown)
+        if (pushdown_limit_to_shards)
             limit_length *= context->getSettingsRef().limit_pushdown_fetch_multiplier;
 
         if (do_not_skip_offset)

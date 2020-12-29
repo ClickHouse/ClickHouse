@@ -884,7 +884,7 @@ public:
         const size_t min_free_disk_space;
 
         /// Settings is used to finalize aggregating columns used by limit_pushdown.
-        bool enable_limit_pushdown;
+        bool pushdown_limit_to_shards;
 
         Params(
             const Block & src_header_,
@@ -895,7 +895,7 @@ public:
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_,
-            bool enable_limit_pushdown_)
+            bool pushdown_limit_to_shards_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -904,7 +904,7 @@ public:
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_),
-            enable_limit_pushdown(enable_limit_pushdown_)
+            pushdown_limit_to_shards(pushdown_limit_to_shards_)
         {
         }
 
@@ -922,11 +922,11 @@ public:
             const ColumnNumbers & keys,
             const AggregateDescriptions & aggregates,
             bool final,
-            bool enable_limit_pushdown);
+            bool pushdown_limit_to_shards);
 
         Block getHeader(bool final) const
         {
-            return getHeader(src_header, intermediate_header, keys, aggregates, final, enable_limit_pushdown);
+            return getHeader(src_header, intermediate_header, keys, aggregates, final, pushdown_limit_to_shards);
         }
 
         /// Returns keys and aggregated for EXPLAIN query

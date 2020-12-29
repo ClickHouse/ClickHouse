@@ -108,7 +108,7 @@ Block Aggregator::Params::getHeader(
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
     bool final,
-    bool enable_limit_pushdown)
+    bool pushdown_limit_to_shards)
 {
     Block res;
 
@@ -147,7 +147,7 @@ Block Aggregator::Params::getHeader(
 
             res.insert({ type, aggregate.column_name });
 
-            if (!final && enable_limit_pushdown && aggregate.is_sorting_key)
+            if (!final && pushdown_limit_to_shards && aggregate.is_sorting_key)
             {
                 type = aggregate.function->getReturnType();
                 res.insert({ type, aggregate.sorting_column_name });
@@ -1144,7 +1144,7 @@ inline void Aggregator::insertAggregatesIntoColumnsPreliminary(
     {
         for (; insert_i < params.aggregates_size; ++insert_i)
         {
-            if (params.enable_limit_pushdown && params.aggregates[insert_i].is_sorting_key)
+            if (params.pushdown_limit_to_shards && params.aggregates[insert_i].is_sorting_key)
             {
                 aggregate_functions[insert_i]->insertResultInto(
                     mapped + offsets_of_aggregate_states[insert_i],
@@ -1281,7 +1281,7 @@ Block Aggregator::prepareBlockAndFill(
             aggregate_columns_data[i] = &column_aggregate_func.getData();
             aggregate_columns_data[i]->reserve(rows);
 
-            if (params.enable_limit_pushdown && params.aggregates[i].is_sorting_key)
+            if (params.pushdown_limit_to_shards && params.aggregates[i].is_sorting_key)
             {
                 final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
                 final_aggregate_columns[i]->reserve(rows);
@@ -1333,7 +1333,7 @@ Block Aggregator::prepareBlockAndFill(
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
     /// Outputs preliminary finalized columns for limit pushdown.
-    if (!final && params.enable_limit_pushdown)
+    if (!final && params.pushdown_limit_to_shards)
         for (size_t i = 0; i < params.aggregates_size; ++i)
             if (params.aggregates[i].is_sorting_key)
                 res.getByName(params.aggregates[i].sorting_column_name).column = std::move(final_aggregate_columns[i]);
