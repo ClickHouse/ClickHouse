@@ -33,7 +33,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
     Example: 
     ```sql
-    INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`
+    INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;
     ```
 
     `on_duplicate_clause` here is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
