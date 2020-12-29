@@ -49,7 +49,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
-    
+
     auto size = key_columns.front()->size();
 
     auto type_call = [&](const auto &dictionary_attribute_type)
@@ -111,8 +111,8 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -154,7 +154,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 

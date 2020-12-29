@@ -328,7 +328,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             is_array = true;
             type = array_type->getNestedType();
         }
-        
+
         if (type->isNullable())
         {
             is_nullable = true;

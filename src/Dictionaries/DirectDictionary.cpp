@@ -138,8 +138,8 @@ ColumnPtr DirectDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
-    
+    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
     const auto & attribute = getAttribute(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
@@ -222,8 +222,8 @@ ColumnPtr DirectDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -265,7 +265,7 @@ ColumnPtr DirectDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 

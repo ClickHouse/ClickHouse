@@ -70,7 +70,7 @@ public:
         const DataTypes & key_types,
         const ColumnPtr default_untyped) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override; 
+    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 

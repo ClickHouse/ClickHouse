@@ -134,7 +134,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
-                    getItemsImpl<StringRef, StringRef>(
+                    getItemsImpl<String, StringRef>(
                         index,
                         key_columns,
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -169,8 +169,8 @@ ColumnPtr IPolygonDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -212,7 +212,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
-   
+
     return result;
 }
 

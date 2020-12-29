@@ -1338,8 +1338,8 @@ ColumnPtr SSDCacheDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
-    
+    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
     const auto index = getAttributeIndex(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
@@ -1393,8 +1393,8 @@ ColumnPtr SSDCacheDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(identifiers_size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -1436,7 +1436,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
-   
+
     return result;
 }
 

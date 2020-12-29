@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TYPE_MISMATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
@@ -275,9 +274,8 @@ private:
 
         /// TODO: Use accurateCast if argument is integer
         if (!WhichDataType(arguments[2].type).isUInt64() && !isTuple(arguments[2].type))
-            throw Exception{
-                "Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
-                    + ", must be UInt64 or tuple(...).",
+            throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function "
+                    + getName() + ", must be UInt64 or tuple(...).",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto dictionary_identifier_type = dictionary->getIdentifierType();
@@ -298,9 +296,8 @@ private:
             range_col_type = arguments[current_arguments_index].type;
 
             if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
-                throw Exception{
-                    "Illegal type " + range_col_type->getName() + " of fourth argument of function " + getName()
-                        + " must be convertible to Int64.",
+                throw Exception{"Illegal type " + range_col_type->getName() + " of fourth argument of function "
+                        + getName() + " must be convertible to Int64.",
                     ErrorCodes::ILLEGAL_COLUMN};
 
             ++current_arguments_index;

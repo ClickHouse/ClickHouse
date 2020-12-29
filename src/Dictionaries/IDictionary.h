@@ -207,8 +207,7 @@ getColumnDataAsPaddedPODArray(const IDictionaryBase * dictionary, const ColumnPt
 
     if (!vector_col)
     {
-        throw Exception{
-            ErrorCodes::TYPE_MISMATCH,
+        throw Exception{ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
             "" /* TODO: Type name*/};

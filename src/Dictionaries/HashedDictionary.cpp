@@ -137,14 +137,14 @@ ColumnPtr HashedDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
-    
+    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+
     const auto & attribute = getAttribute(attribute_name);
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -205,8 +205,8 @@ ColumnPtr HashedDictionary::getColumn(
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
- 
-            auto& out = column->getData();
+
+            auto & out = column->getData();
 
             if (default_untyped != nullptr)
             {
@@ -248,7 +248,7 @@ ColumnPtr HashedDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-   
+
     return result;
 }
 
@@ -706,14 +706,14 @@ template <>
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds<String>(const Attribute & attribute) const
 {
     return getIds<StringRef>(attribute);
-} 
+}
 
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 {
     const auto & attribute = attributes.front();
     PaddedPODArray<HashedDictionary::Key> result;
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
