@@ -693,18 +693,18 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Минимальное время выполнения запроса для перехода к следующим таблицам:
+Минимальное время выполнения запроса для логгирования в системные таблицы:
 
 - `system.query_log`
 - `system.query_thread_log`
 
-В лог попадут только запросы следующего типа:
+В случае ненулевого порога `log_queries_min_query_duration_ms`, в лог будут записываться лишь события об окончании выполнения запроса:
 
 - `QUERY_FINISH`
 - `EXCEPTION_WHILE_PROCESSING`
 
 -   Тип: milliseconds
--   Значение по умолчанию: 0 (для любого запроса)
+-   Значение по умолчанию: 0 (логгировать все запросы)
 
 ## log_queries_min_type {#settings-log-queries-min-type}
 
