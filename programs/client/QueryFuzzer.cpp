@@ -405,8 +405,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         if (fn->is_window_function)
         {
-            fuzzColumnLikeExpressionList(fn->window_partition_by);
-            fuzzOrderByList(fn->window_order_by);
+            fuzzColumnLikeExpressionList(fn->window_partition_by.get());
+            fuzzOrderByList(fn->window_order_by.get());
         }
 
         fuzz(fn->children);
