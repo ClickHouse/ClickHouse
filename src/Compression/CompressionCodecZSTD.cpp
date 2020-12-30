@@ -43,7 +43,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     if (enable_long_range)
     {
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableLongDistanceMatching, 1);
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_windowLog, window_log);
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_windowLog, window_log); // NB zero window_log means "use default" for libzstd
     }
     size_t compressed_size = ZSTD_compress2(cctx, dest, ZSTD_compressBound(source_size), source, source_size);
     ZSTD_freeCCtx(cctx);
@@ -94,7 +94,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             level = literal->value.safeGet<UInt64>();
             if (level > ZSTD_maxCLevel())
                 throw Exception(
-                    "ZSTD codec can't have level more that " + toString(ZSTD_maxCLevel()) + ", given " + toString(level),
+                    "ZSTD codec can't have level more than " + toString(ZSTD_maxCLevel()) + ", given " + toString(level),
                     ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             if (arguments->children.size() > 1)
             {
@@ -107,11 +107,12 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
                 ZSTD_bounds window_log_bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
                 if (ZSTD_isError(window_log_bounds.error))
                     throw Exception(
-                        "ZSTD windowLog paramater is not supported " + std::string(ZSTD_getErrorName(window_log_bounds.error)),
+                        "ZSTD windowLog parameter is not supported " + std::string(ZSTD_getErrorName(window_log_bounds.error)),
                         ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                // 0 means "use default" for libzstd
                 if (window_log != 0 && (window_log > window_log_bounds.upperBound || window_log < window_log_bounds.lowerBound))
                     throw Exception(
-                        "ZSTD codec can't have window log more that " + toString(window_log_bounds.upperBound) + " and lower than "
+                        "ZSTD codec can't have window log more than " + toString(window_log_bounds.upperBound) + " and lower than "
                             + toString(window_log_bounds.lowerBound) + ", given " + toString(window_log),
                         ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 
