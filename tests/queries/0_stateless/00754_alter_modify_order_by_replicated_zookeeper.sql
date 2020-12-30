@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS old_style;

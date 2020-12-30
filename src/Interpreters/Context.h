@@ -40,6 +40,7 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
+    class TestKeeperStorage;
 }
 
 
@@ -189,6 +190,16 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+
+    /// Record entities accessed by current query, and store this information in system.query_log.
+    struct QueryAccessInfo
+    {
+        std::set<std::string> databases;
+        std::set<std::string> tables;
+        std::set<std::string> columns;
+    };
+
+    QueryAccessInfo query_access_info;
 
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -355,6 +366,9 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
+    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
@@ -493,6 +507,9 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+
+
+    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);

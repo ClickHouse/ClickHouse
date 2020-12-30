@@ -64,7 +64,14 @@ function stop_server
 function start_server
 {
     set -m # Spawn server in its own process groups
-    clickhouse-server --config-file="$FASTTEST_DATA/config.xml" -- --path "$FASTTEST_DATA" --user_files_path "$FASTTEST_DATA/user_files" &>> "$FASTTEST_OUTPUT/server.log" &
+    local opts=(
+        --config-file "$FASTTEST_DATA/config.xml"
+        --
+        --path "$FASTTEST_DATA"
+        --user_files_path "$FASTTEST_DATA/user_files"
+        --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
+    )
+    clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
     set +m
 

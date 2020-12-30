@@ -5,8 +5,15 @@
 #include <common/shift10.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
-#include <fast_float/fast_float.h>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunneeded-internal-declaration"
+#endif
+#include <fast_float/fast_float.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 /** Methods for reading floating point numbers from text with decimal representation.
   * There are "precise", "fast" and "simple" implementations.
@@ -153,7 +160,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return ReturnType(false);
         }
@@ -236,7 +243,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return ReturnType(false);
         }
@@ -248,6 +255,19 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     }
 }
 
+
+// credit: https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
+static inline bool is_made_of_eight_digits_fast(uint64_t val) noexcept
+{
+    return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
+}
+
+static inline bool is_made_of_eight_digits_fast(const char * chars) noexcept
+{
+    uint64_t val;
+    ::memcpy(&val, chars, 8);
+    return is_made_of_eight_digits_fast(val);
+}
 
 template <size_t N, typename T>
 static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
@@ -266,9 +286,6 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
             else
                 return;
         }
-
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
     }
     else
     {
@@ -283,10 +300,16 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
             else
                 return;
         }
-
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
     }
+
+    while (!buf.eof() && (buf.position() + 8 <= buf.buffer().end()) &&
+         is_made_of_eight_digits_fast(buf.position()))
+    {
+        buf.position() += 8;
+    }
+
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+        ++buf.position();
 }
 
 
@@ -308,7 +331,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
     if (in.eof())
     {
         if constexpr (throw_exception)
-            throw Exception("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
+            throw ParsingException("Cannot read floating point value", ErrorCodes::CANNOT_PARSE_NUMBER);
         else
             return false;
     }
@@ -318,7 +341,6 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         negative = true;
         ++in.position();
     }
-
 
     auto count_after_sign = in.count();
 
@@ -365,7 +387,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value: nothing after exponent", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
         }
@@ -403,7 +425,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         if (in.eof())
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
+                throw ParsingException("Cannot read floating point value: no digits read", ErrorCodes::CANNOT_PARSE_NUMBER);
             else
                 return false;
         }
@@ -414,14 +436,14 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
             if (in.eof())
             {
                 if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException("Cannot read floating point value: nothing after plus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
                 else
                     return false;
             }
             else if (negative)
             {
                 if constexpr (throw_exception)
-                    throw Exception("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw ParsingException("Cannot read floating point value: plus after minus sign", ErrorCodes::CANNOT_PARSE_NUMBER);
                 else
                     return false;
             }

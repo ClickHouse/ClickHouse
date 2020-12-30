@@ -515,11 +515,32 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         return true;
     }
 
-    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
-    if (isNaN(value) && std::is_floating_point_v<To>)
+    if constexpr (std::is_floating_point_v<From> && std::is_floating_point_v<To>)
     {
-        result = value;
-        return true;
+        /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
+        if (isNaN(value))
+        {
+            result = value;
+            return true;
+        }
+
+        if (value == std::numeric_limits<From>::infinity())
+        {
+            result = std::numeric_limits<To>::infinity();
+            return true;
+        }
+
+        if (value == -std::numeric_limits<From>::infinity())
+        {
+            result = -std::numeric_limits<To>::infinity();
+            return true;
+        }
+    }
+
+    if (accurate::greaterOp(value, std::numeric_limits<To>::max())
+        || accurate::greaterOp(std::numeric_limits<To>::lowest(), value))
+    {
+        return false;
     }
 
     result = static_cast<To>(value);

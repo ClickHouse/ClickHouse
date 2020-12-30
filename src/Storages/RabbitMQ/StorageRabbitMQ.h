@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 #include <mutex>
@@ -18,6 +17,8 @@
 
 namespace DB
 {
+
+class Context;
 
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 

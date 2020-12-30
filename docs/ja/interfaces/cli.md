@@ -59,7 +59,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 既定では、使用される形式はPrettyCompactです。 クエリのFORMAT句で書式を変更するか、次のように指定することができます `\G` クエリの最後に、 `--format` または `--vertical` コマンドラインでの引数、またはクライアント構成ファイルの使用。
 
-クライアントを終了するには、Ctrl+D(またはCtrl+C)を押すか、クエリの代わりに次のいずれかを入力します: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+クライアントを終了するには、Ctrl+Dを押すか、クエリの代わりに次のいずれかを入力します: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
 が処理クエリー、クライアントを示し:
 

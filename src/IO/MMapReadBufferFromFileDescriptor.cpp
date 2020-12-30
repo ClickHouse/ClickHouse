@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
+#include <common/getPageSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 
@@ -38,7 +39,9 @@ void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset, size_t lengt
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         BufferBase::set(static_cast<char *>(buf), length, 0);
-        ReadBuffer::padded = (length % 4096) > 0 && (length % 4096) <= (4096 - 15); /// TODO determine page size
+
+        size_t page_size = static_cast<size_t>(::getPageSize());
+        ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
     }
 }
 
