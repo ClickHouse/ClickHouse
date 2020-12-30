@@ -157,7 +157,7 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 
 ## farmHash64 {#farmhash64}
 
-Создает 64-битное значение [FarmHash](https://github.com/google/farmhash) или значение Fingerprint. `farmFingerprint64` предпочтительнее для стабильных и перемещаемых значений.
+Создает 64-битное значение [FarmHash](https://github.com/google/farmhash), независимое от платформы (архитектуры сервера), что важно, если значения сохраняются или используются для разбиения данных на группы.
 
 ``` sql
 farmFingerprint64(par1, ...)
