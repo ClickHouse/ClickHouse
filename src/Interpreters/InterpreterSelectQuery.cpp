@@ -209,6 +209,18 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Returns true if we should ignore quotas and limits for a specified table in the system database.
+static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+{
+    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(table_id.table_name))
+            return true;
+    }
+    return false;
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -251,14 +263,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
+    bool got_storage_from_query = false;
     if (!has_input && !storage)
+    {
         storage = joined_tables.getLeftTableStorage();
+        got_storage_from_query = true;
+    }
 
     if (storage)
     {
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
-        if (metadata_snapshot == nullptr)
+        if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
@@ -276,9 +292,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage && joined_tables.isLeftTableSubquery())
         {
             /// Rewritten with subquery. Free storage locks here.
-            storage = {};
+            storage = nullptr;
             table_lock.reset();
             table_id = StorageID::createEmpty();
+            metadata_snapshot = nullptr;
         }
     }
 
@@ -441,16 +458,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const StorageID & left_table_id = joined_tables.leftTableID();
-
-    if (left_table_id)
-        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
-
-    /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system")
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        /// The current user should have the SELECT privilege.
+        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
+        context->checkAccess(AccessType::SELECT, table_id, required_columns);
+
+        /// Remove limits for some tables in the `system` database.
+        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
             options.ignore_limits = true;
