@@ -483,11 +483,6 @@ public:
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
-
-        if (!writer)
-            writer = FormatFactory::instance().getOutputStream(storage.format_name,
-                *write_buf, metadata_snapshot->getSampleBlock(), context,
-                {}, format_settings);
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
