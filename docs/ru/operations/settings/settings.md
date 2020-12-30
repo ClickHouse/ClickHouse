@@ -408,11 +408,11 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 -   `'best_effort'` — включает расширенный парсинг.
 
-        ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
 
 -   `'basic'` — используется базовый парсер.
 
-        ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS`. Например, `'2019-08-20 10:18:56'`.
+ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `'2019-08-20 10:18:56'` или `2019-08-20`.
 
 Значение по умолчанию: `'basic'`.
 
@@ -690,6 +690,21 @@ ClickHouse использует этот параметр при чтении д
 ``` text
 log_queries=1
 ```
+
+## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
+
+Минимальное время выполнения запроса для логгирования в системные таблицы:
+
+- `system.query_log`
+- `system.query_thread_log`
+
+В случае ненулевого порога `log_queries_min_query_duration_ms`, в лог будут записываться лишь события об окончании выполнения запроса:
+
+- `QUERY_FINISH`
+- `EXCEPTION_WHILE_PROCESSING`
+
+-   Тип: milliseconds
+-   Значение по умолчанию: 0 (логгировать все запросы)
 
 ## log_queries_min_type {#settings-log-queries-min-type}
 
