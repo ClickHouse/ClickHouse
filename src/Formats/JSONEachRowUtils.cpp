@@ -9,7 +9,6 @@ std::pair<bool, size_t> fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, D
     skipWhitespaceIfAny(in);
 
     char * pos = in.position();
-
     size_t balance = 0;
     bool quotes = false;
     size_t number_of_rows = 0;
