@@ -22,7 +22,7 @@ struct BackgroundTaskSchedulingSettings
 
     double task_sleep_seconds_when_no_work_random_part = 1.0;
 
-     /// deprected settings, don't affect background execution
+     /// Deprecated settings, don't affect background execution
     double thread_sleep_seconds = 10;
     double task_sleep_seconds_when_no_work_min = 10;
 };
@@ -33,6 +33,7 @@ enum class PoolType
 {
     MERGE_MUTATE,
     MOVE,
+    FETCH,
 };
 
 /// Result from background job providers. Function which will be executed in pool and pool type.
@@ -116,7 +117,9 @@ private:
     /// Function that executes in background scheduling pool
     void jobExecutingTask();
     /// Recalculate timeouts when we have to check for a new job
-    void scheduleTask(bool job_done, bool with_backoff=false);
+    void scheduleTask(bool with_backoff);
+    /// Run background task as fast as possible and reset errors counter
+    void runTaskWithoutDelay();
     /// Return random add for sleep in case of error
     double getSleepRandomAdd();
 };

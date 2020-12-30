@@ -1,5 +1,6 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {

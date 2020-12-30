@@ -67,7 +67,7 @@ public:
       * If the data type require single stream (it's true for most of data types), the stream will have empty path.
       * Otherwise, the path can have components like "array elements", "array sizes", etc.
       *
-      * For multidimensional arrays, path can have arbiraty length.
+      * For multidimensional arrays, path can have arbitrary length.
       * As an example, for 2-dimensional arrays of numbers we have at least three streams:
       * - array sizes;                      (sizes of top level arrays)
       * - array elements / array sizes;     (sizes of second level (nested) arrays)
@@ -90,6 +90,8 @@ public:
             NullMap,
 
             TupleElement,
+
+            MapElement,
 
             DictionaryKeys,
             DictionaryIndexes,
@@ -449,6 +451,7 @@ public:
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
+    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
@@ -466,75 +469,67 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    WhichDataType(TypeIndex idx_ = TypeIndex::Nothing)
-        : idx(idx_)
-    {}
+    constexpr WhichDataType(TypeIndex idx_ = TypeIndex::Nothing) : idx(idx_) {}
+    constexpr WhichDataType(const IDataType & data_type) : idx(data_type.getTypeId()) {}
+    constexpr WhichDataType(const IDataType * data_type) : idx(data_type->getTypeId()) {}
 
-    WhichDataType(const IDataType & data_type)
-        : idx(data_type.getTypeId())
-    {}
+    // shared ptr -> is non-constexpr in gcc
+    WhichDataType(const DataTypePtr & data_type) : idx(data_type->getTypeId()) {}
 
-    WhichDataType(const IDataType * data_type)
-        : idx(data_type->getTypeId())
-    {}
+    constexpr bool isUInt8() const { return idx == TypeIndex::UInt8; }
+    constexpr bool isUInt16() const { return idx == TypeIndex::UInt16; }
+    constexpr bool isUInt32() const { return idx == TypeIndex::UInt32; }
+    constexpr bool isUInt64() const { return idx == TypeIndex::UInt64; }
+    constexpr bool isUInt128() const { return idx == TypeIndex::UInt128; }
+    constexpr bool isUInt256() const { return idx == TypeIndex::UInt256; }
+    constexpr bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isUInt256(); }
+    constexpr bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
 
-    WhichDataType(const DataTypePtr & data_type)
-        : idx(data_type->getTypeId())
-    {}
+    constexpr bool isInt8() const { return idx == TypeIndex::Int8; }
+    constexpr bool isInt16() const { return idx == TypeIndex::Int16; }
+    constexpr bool isInt32() const { return idx == TypeIndex::Int32; }
+    constexpr bool isInt64() const { return idx == TypeIndex::Int64; }
+    constexpr bool isInt128() const { return idx == TypeIndex::Int128; }
+    constexpr bool isInt256() const { return idx == TypeIndex::Int256; }
+    constexpr bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isInt256(); }
+    constexpr bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
 
-    bool isUInt8() const { return idx == TypeIndex::UInt8; }
-    bool isUInt16() const { return idx == TypeIndex::UInt16; }
-    bool isUInt32() const { return idx == TypeIndex::UInt32; }
-    bool isUInt64() const { return idx == TypeIndex::UInt64; }
-    bool isUInt128() const { return idx == TypeIndex::UInt128; }
-    bool isUInt256() const { return idx == TypeIndex::UInt256; }
-    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isUInt256(); }
-    bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
+    constexpr bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
+    constexpr bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
+    constexpr bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
+    constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
+    constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
-    bool isInt8() const { return idx == TypeIndex::Int8; }
-    bool isInt16() const { return idx == TypeIndex::Int16; }
-    bool isInt32() const { return idx == TypeIndex::Int32; }
-    bool isInt64() const { return idx == TypeIndex::Int64; }
-    bool isInt128() const { return idx == TypeIndex::Int128; }
-    bool isInt256() const { return idx == TypeIndex::Int256; }
-    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isInt256(); }
-    bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
+    constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
+    constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
+    constexpr bool isFloat() const { return isFloat32() || isFloat64(); }
 
-    bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
-    bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
-    bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
-    bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
-    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
+    constexpr bool isEnum8() const { return idx == TypeIndex::Enum8; }
+    constexpr bool isEnum16() const { return idx == TypeIndex::Enum16; }
+    constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
 
-    bool isFloat32() const { return idx == TypeIndex::Float32; }
-    bool isFloat64() const { return idx == TypeIndex::Float64; }
-    bool isFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isDate() const { return idx == TypeIndex::Date; }
+    constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
+    constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
+    constexpr bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
 
-    bool isEnum8() const { return idx == TypeIndex::Enum8; }
-    bool isEnum16() const { return idx == TypeIndex::Enum16; }
-    bool isEnum() const { return isEnum8() || isEnum16(); }
+    constexpr bool isString() const { return idx == TypeIndex::String; }
+    constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
+    constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
-    bool isDate() const { return idx == TypeIndex::Date; }
-    bool isDateTime() const { return idx == TypeIndex::DateTime; }
-    bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
+    constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
+    constexpr bool isArray() const { return idx == TypeIndex::Array; }
+    constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isMap() const {return idx == TypeIndex::Map; }
+    constexpr bool isSet() const { return idx == TypeIndex::Set; }
+    constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
-    bool isString() const { return idx == TypeIndex::String; }
-    bool isFixedString() const { return idx == TypeIndex::FixedString; }
-    bool isStringOrFixedString() const { return isString() || isFixedString(); }
+    constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
+    constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
+    constexpr bool isFunction() const { return idx == TypeIndex::Function; }
+    constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 
-    bool isUUID() const { return idx == TypeIndex::UUID; }
-    bool isArray() const { return idx == TypeIndex::Array; }
-    bool isTuple() const { return idx == TypeIndex::Tuple; }
-    bool isSet() const { return idx == TypeIndex::Set; }
-    bool isInterval() const { return idx == TypeIndex::Interval; }
-
-    bool isNothing() const { return idx == TypeIndex::Nothing; }
-    bool isNullable() const { return idx == TypeIndex::Nullable; }
-    bool isFunction() const { return idx == TypeIndex::Function; }
-    bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
-
-    bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
+    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -613,6 +608,14 @@ inline bool isColumnedAsDecimal(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isDecimal() || which.isDateTime64();
+}
+
+// Same as isColumnedAsDecimal but also checks value type of underlyig column.
+template <typename T, typename DataType>
+inline bool isColumnedAsDecimalT(const DataType & data_type)
+{
+    const WhichDataType which(data_type);
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
 }
 
 template <typename T>

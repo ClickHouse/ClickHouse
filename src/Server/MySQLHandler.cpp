@@ -87,6 +87,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 void MySQLHandler::run()
 {
     connection_context.makeSessionContext();
+    connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -328,6 +329,16 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         Context query_context = connection_context;
 
+        std::atomic<size_t> affected_rows {0};
+        auto prev = query_context.getProgressCallback();
+        query_context.setProgressCallback([&, prev = prev](const Progress & progress)
+        {
+            if (prev)
+                prev(progress);
+
+            affected_rows += progress.written_rows;
+        });
+
         executeQuery(should_replace ? replacement : payload, *out, true, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
             {
@@ -336,7 +347,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         );
 
         if (!with_output)
-            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, 0, 0, 0), true);
+            packet_endpoint->sendPacket(OKPacket(0x00, client_capability_flags, affected_rows, 0, 0), true);
     }
 }
 

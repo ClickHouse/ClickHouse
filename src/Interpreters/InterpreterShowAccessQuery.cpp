@@ -34,13 +34,12 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    std::stringstream ss;
-    ss.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString buf;
     for (const auto & query : queries)
     {
-        ss.str("");
-        formatAST(*query, ss, false, true);
-        column->insert(ss.str());
+        buf.restart();
+        formatAST(*query, buf, false, true);
+        column->insert(buf.str());
     }
 
     String desc = "ACCESS";
@@ -78,7 +77,7 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
-        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::USER))
+        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::ROLE))
             boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
     }
 

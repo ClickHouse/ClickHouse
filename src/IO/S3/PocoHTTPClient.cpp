@@ -7,6 +7,8 @@
 #include <utility>
 #include <IO/HTTPCommon.h>
 #include <IO/S3/PocoHTTPResponseStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
@@ -48,9 +50,11 @@ namespace DB::S3
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
         const Aws::Client::ClientConfiguration & cfg,
-        const RemoteHostFilter & remote_host_filter_)
+        const RemoteHostFilter & remote_host_filter_,
+        unsigned int s3_max_redirects_)
     : Aws::Client::ClientConfiguration(cfg)
     , remote_host_filter(remote_host_filter_)
+    , s3_max_redirects(s3_max_redirects_)
 {
 }
 
@@ -81,6 +85,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
+    , s3_max_redirects(clientConfiguration.s3_max_redirects)
 {
 }
 
@@ -155,10 +160,9 @@ void PocoHTTPClient::makeRequestInternal(
 
     ProfileEvents::increment(select_metric(S3MetricType::Count));
 
-    static constexpr int max_redirect_attempts = 10;
     try
     {
-        for (int attempt = 0; attempt < max_redirect_attempts; ++attempt)
+        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI poco_uri(uri);
 
@@ -168,12 +172,16 @@ void PocoHTTPClient::makeRequestInternal(
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
+            {
+                /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
+                bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && poco_uri.getScheme() == "https";
                 session->setProxy(
                     request_configuration.proxyHost,
                     request_configuration.proxyPort,
                     Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
-                    false /// Disable proxy tunneling by default
+                    use_tunnel
                 );
+            }
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -247,8 +255,7 @@ void PocoHTTPClient::makeRequestInternal(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            std::stringstream headers_ss;
-            headers_ss.exceptions(std::ios::failbit);
+            WriteBufferFromOwnString headers_ss;
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);

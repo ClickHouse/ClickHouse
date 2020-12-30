@@ -1,4 +1,3 @@
-#include <sstream>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -220,8 +219,7 @@ String transformQueryForExternalDatabase(
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
 
-    std::stringstream out;
-    out.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString out;
     IAST::FormatSettings settings(out, true);
     settings.identifier_quoting_style = identifier_quoting_style;
     settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;

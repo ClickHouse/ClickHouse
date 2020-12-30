@@ -48,6 +48,7 @@ using Processors = std::vector<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
+using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
@@ -77,7 +78,7 @@ struct ColumnSize
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
 {
 public:
     IStorage() = delete;
@@ -86,7 +87,6 @@ public:
         : storage_id(std::move(storage_id_))
         , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
 
-    virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
@@ -168,6 +168,7 @@ public:
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
+    Names getAllRegisteredNames() const override;
 protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
@@ -285,17 +286,13 @@ public:
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     virtual void read(
         QueryPlan & query_plan,
-        TableLockHolder table_lock,
-        StorageMetadataPtr metadata_snapshot,
-        StreamLocalLimits & limits,
-        SizeLimits & leaf_limits,
-        std::shared_ptr<const EnabledQuota> quota,
-        const Names & column_names,
-        SelectQueryInfo & query_info,
-        std::shared_ptr<Context> context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams);
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -383,6 +380,7 @@ public:
         const ASTPtr & /*partition*/,
         bool /*final*/,
         bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
         const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -442,6 +440,8 @@ public:
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkTableCanBeDropped() const {}
+    /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
+    virtual void checkTableCanBeDetached() const {}
 
     /// Checks that Partition could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -464,7 +464,7 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalRows() const { return {}; }
+    virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, const Context &) const { return {}; }
@@ -482,7 +482,7 @@ public:
     /// Memory part should be estimated as a resident memory size.
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
-    virtual std::optional<UInt64> totalBytes() const { return {}; }
+    virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

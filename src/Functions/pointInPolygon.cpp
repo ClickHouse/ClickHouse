@@ -150,7 +150,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * point_col = arguments[0].column.get();
         const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
@@ -469,7 +469,7 @@ private:
         }
     }
 
-    void parseConstPolygonWithHolesFromMultipleColumns(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void parseConstPolygonWithHolesFromMultipleColumns(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         for (size_t i = 1; i < arguments.size(); ++i)
         {
@@ -507,7 +507,7 @@ private:
         }
     }
 
-    void parseConstPolygonFromSingleColumn(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void parseConstPolygonFromSingleColumn(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (isTwoDimensionalArray(*arguments[1].type))
         {
@@ -540,7 +540,7 @@ private:
         }
     }
 
-    void parseConstPolygon(ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
             parseConstPolygonFromSingleColumn(arguments, out_polygon);

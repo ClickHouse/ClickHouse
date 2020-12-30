@@ -19,3 +19,5 @@ ${CLICKHOUSE_CLIENT} --query "create table squashed_numbers (SomeID UInt64, Diff
 ${CLICKHOUSE_CURL} -sS --data-binary "@${CLICKHOUSE_TMP}/test_squashing_block_without_column.out" "${CLICKHOUSE_URL}&query=insert%20into%20squashed_numbers%20format%20Native"
 
 ${CLICKHOUSE_CLIENT} --query "select 'Still alive'"
+
+${CLICKHOUSE_CLIENT} --query "drop table squashed_numbers"

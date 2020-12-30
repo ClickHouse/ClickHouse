@@ -45,7 +45,7 @@ public:
         return getLeastSupertype(dst_array_types);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",

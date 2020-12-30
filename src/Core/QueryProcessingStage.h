@@ -43,6 +43,14 @@ namespace QueryProcessingStage
             ? data[stage]
             : "Unknown stage";
     }
+
+    /// This method is used for the program options,
+    /// hence it accept under_score notation for stage:
+    /// - complete
+    /// - fetch_columns
+    /// - with_mergeable_state
+    /// - with_mergeable_state_after_aggregation
+    Enum fromString(const std::string & stage_string);
 }
 
 }

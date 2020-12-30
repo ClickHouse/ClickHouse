@@ -2,6 +2,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB

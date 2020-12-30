@@ -3,7 +3,6 @@
 #if !defined(ARCADIA_BUILD) && USE_STATS
 
 #include <math.h>
-#include <sstream>
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -214,7 +213,7 @@ public:
         return true;
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
             return ColumnString::create();
@@ -237,7 +236,7 @@ public:
         if (const ColumnConst * col_higher_is_better = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()))
             higher_is_better = col_higher_is_better->getBool(0);
         else
-            throw Exception("Second argument for function " + getName() + " must be Constatnt boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument for function " + getName() + " must be Constant boolean", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get()))
         {

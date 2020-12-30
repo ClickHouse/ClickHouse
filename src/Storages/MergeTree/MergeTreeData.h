@@ -43,6 +43,7 @@ struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 namespace ErrorCodes
 {
@@ -422,7 +423,6 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
-    void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -498,6 +498,8 @@ public:
     /// Must be called with locked lockForShare() because use relative_data_path.
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
+    void clearEmptyParts();
+
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
@@ -562,6 +564,11 @@ public:
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     void checkPartCanBeDropped(const ASTPtr & part);
+
+    Pipe alterPartition(
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartitionCommands & commands,
+        const Context & query_context) override;
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -725,6 +732,7 @@ protected:
     friend class MergeTreeDataMergerMutator;
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
+    friend class MergeTreeDataWriter;
 
     bool require_part_metadata;
 
@@ -868,7 +876,16 @@ protected:
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
 
+    // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
+
+    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop = true) = 0;
+    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) = 0;
+    virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) = 0;
+    virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) = 0;
+
+    /// Makes sense only for replicated tables
+    virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
 
     void writePartLog(
         PartLogElement::Type type,
@@ -888,7 +905,7 @@ protected:
     /// Used to receive AlterConversions for part and apply them on fly. This
     /// method has different implementations for replicated and non replicated
     /// MergeTree because they store mutations in different way.
-    virtual MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
@@ -928,6 +945,18 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key{};
+
+    void addPartContributionToDataVolume(const DataPartPtr & part);
+    void removePartContributionToDataVolume(const DataPartPtr & part);
+
+    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
+    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
+
+    void setDataVolume(size_t bytes, size_t rows, size_t parts);
+
+    std::atomic<size_t> total_active_size_bytes = 0;
+    std::atomic<size_t> total_active_size_rows = 0;
+    std::atomic<size_t> total_active_size_parts = 0;
 };
 
 }

@@ -462,69 +462,6 @@ kurtSamp(expr)
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid,timestamp,value) {#agg-function-timeseriesgroupsum}
-
-`timeSeriesGroupSum` 可以聚合不同的时间序列，即采样时间戳不对齐。
-它将在两个采样时间戳之间使用线性插值，然后将时间序列和在一起。
-
--   `uid` 是时间序列唯一id, `UInt64`.
--   `timestamp` 是Int64型，以支持毫秒或微秒。
--   `value` 是指标。
-
-函数返回元组数组 `(timestamp, aggregated_value)` 对。
-
-在使用此功能之前，请确保 `timestamp` 按升序排列
-
-示例:
-
-``` text
-┌─uid─┬─timestamp─┬─value─┐
-│ 1   │     2     │   0.2 │
-│ 1   │     7     │   0.7 │
-│ 1   │    12     │   1.2 │
-│ 1   │    17     │   1.7 │
-│ 1   │    25     │   2.5 │
-│ 2   │     3     │   0.6 │
-│ 2   │     8     │   1.6 │
-│ 2   │    12     │   2.4 │
-│ 2   │    18     │   3.6 │
-│ 2   │    24     │   4.8 │
-└─────┴───────────┴───────┘
-```
-
-``` sql
-CREATE TABLE time_series(
-    uid       UInt64,
-    timestamp Int64,
-    value     Float64
-) ENGINE = Memory;
-INSERT INTO time_series VALUES
-    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
-    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
-
-SELECT timeSeriesGroupSum(uid, timestamp, value)
-FROM (
-    SELECT * FROM time_series order by timestamp ASC
-);
-```
-
-其结果将是:
-
-``` text
-[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
-```
-
-## timeSeriesGroupRateSum(uid,ts,val) {#agg-function-timeseriesgroupratesum}
-
-同样 `timeSeriesGroupSum`, `timeSeriesGroupRateSum` 计算时间序列的速率，然后将速率总和在一起。
-此外，使用此函数之前，时间戳应该是上升顺序。
-
-应用此功能从数据 `timeSeriesGroupSum` 例如，您将得到以下结果:
-
-``` text
-[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
-```
-
 ## avg(x) {#agg_function-avg}
 
 计算平均值。

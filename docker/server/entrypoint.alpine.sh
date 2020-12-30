@@ -26,17 +26,17 @@ fi
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
 # port is needed to check if clickhouse-server is ready for connections
-HTTP_PORT="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=http_port)"
+HTTP_PORT="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=http_port)"
 
 # get CH directories locations
-DATA_DIR="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=path || true)"
-TMP_DIR="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=tmp_path || true)"
-USER_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=user_files_path || true)"
-LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.log || true)"
-LOG_DIR="$(dirname $LOG_PATH || true)"
-ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.errorlog || true)"
-ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
-FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
+DATA_DIR="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=path || true)"
+TMP_DIR="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=tmp_path || true)"
+USER_PATH="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=user_files_path || true)"
+LOG_PATH="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=logger.log || true)"
+LOG_DIR="$(dirname "${LOG_PATH}" || true)"
+ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=logger.errorlog || true)"
+ERROR_LOG_DIR="$(dirname "${ERROR_LOG_PATH}" || true)"
+FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "${CLICKHOUSE_CONFIG}" --key=format_schema_path || true)"
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
@@ -92,7 +92,7 @@ fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # Listen only on localhost until the initialization is done
-    $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- --listen_host=127.0.0.1 &
+    $gosu /usr/bin/clickhouse-server --config-file="${CLICKHOUSE_CONFIG}" -- --listen_host=127.0.0.1 &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
@@ -107,7 +107,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         sleep 1
     done
 
-    if [ ! -z "$CLICKHOUSE_PASSWORD" ]; then
+    if [ -n "$CLICKHOUSE_PASSWORD" ]; then
         printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
     fi
 
@@ -130,7 +130,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
                     . "$f"
                 fi
                 ;;
-            *.sql)    echo "$0: running $f"; cat "$f" | "$clickhouseclient" ; echo ;;
+            *.sql)    echo "$0: running $f"; "$clickhouseclient" < "$f" ; echo ;;
             *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "$clickhouseclient"; echo ;;
             *)        echo "$0: ignoring $f" ;;
         esac
@@ -145,7 +145,7 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    exec $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG "$@"
+    exec $gosu /usr/bin/clickhouse-server --config-file="${CLICKHOUSE_CONFIG}" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

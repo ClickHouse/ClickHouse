@@ -15,6 +15,8 @@
 #include <common/find_symbols.h>
 #include <Poco/ExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <filesystem>
 #include <mutex>
 
@@ -419,6 +421,18 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     params.http_method = client_info.http_method;
     params.address = client_info.current_address.host();
     params.quota_key = client_info.quota_key;
+
+    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
+    /// Only the last proxy can be trusted (if any).
+    Strings forwarded_addresses;
+    boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
+    if (!forwarded_addresses.empty())
+    {
+        String & last_forwarded_address = forwarded_addresses.back();
+        boost::trim(last_forwarded_address);
+        params.forwarded_address = last_forwarded_address;
+    }
+
     return getContextAccess(params);
 }
 
@@ -444,9 +458,14 @@ std::shared_ptr<const EnabledRowPolicies> AccessControlManager::getEnabledRowPol
 
 
 std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
-    const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
+    const UUID & user_id,
+    const String & user_name,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const Poco::Net::IPAddress & address,
+    const String & forwarded_address,
+    const String & custom_quota_key) const
 {
-    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, custom_quota_key);
+    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key);
 }
 
 

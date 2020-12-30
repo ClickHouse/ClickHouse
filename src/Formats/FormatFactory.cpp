@@ -64,6 +64,7 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
+    format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
@@ -78,7 +79,9 @@ FormatSettings getFormatSettings(const Context & context,
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
+    format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
@@ -160,6 +163,9 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+        parallel_parsing = false;
+
     if (parallel_parsing && name == "JSONEachRow")
     {
         /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
@@ -188,7 +194,7 @@ BlockInputStreamPtr FormatFactory::getInput(
                 row_input_format_params, format_settings};
         ParallelParsingBlockInputStream::Params params{buf, input_getter,
             input_creator_params, file_segmentation_engine,
-            static_cast<int>(settings.max_threads),
+            settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
@@ -252,7 +258,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
     auto format = input_getter(buf, sample, params, format_settings);
-
 
     /// It's a kludge. Because I cannot remove context from values format.
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
@@ -333,7 +338,6 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
         throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(file_segmentation_engine);
 }
-
 
 FormatFactory & FormatFactory::instance()
 {

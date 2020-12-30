@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 /// Helper functions for formatted input.
@@ -299,7 +300,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 else
                 {
                     if constexpr (throw_exception)
-                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw ParsingException("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
@@ -369,7 +370,14 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    readIntTextImpl<T, void, check_overflow>(x, buf);
+    if constexpr (IsDecimalNumber<T>)
+    {
+        readIntText<check_overflow>(x.value, buf);
+    }
+    else
+    {
+        readIntTextImpl<T, void, check_overflow>(x, buf);
+    }
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
@@ -378,11 +386,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
 
-template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
-void readIntText(Decimal<T> & x, ReadBuffer & buf)
-{
-    readIntText<check_overflow>(x.value, buf);
-}
 
 /** More efficient variant (about 1.5 times on real dataset).
   * Differs in following:
@@ -475,6 +478,9 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 // Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
+/// Only 0x20 as whitespace character
+void readStringUntilWhitespace(String & s, ReadBuffer & buf);
+
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -525,6 +531,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     return readJSONStringInto<Vector, bool>(s, buf);
 }
+
+template <typename Vector>
+void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullOutput
@@ -639,7 +648,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
                 if constexpr (throw_exception)
                 {
-                    throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+                    throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
                 }
                 else
                 {
@@ -660,7 +669,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
         if constexpr (throw_exception)
         {
-            throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+            throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
         }
         else
         {
@@ -815,7 +824,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     if (19 != size)
     {
         s[size] = 0;
-        throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
@@ -1007,7 +1016,7 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;
@@ -1030,7 +1039,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;
@@ -1232,5 +1241,24 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
+
+
+struct PcgDeserializer
+{
+    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
+    {
+        decltype(rng.state_) multiplier, increment, state;
+        readText(multiplier, buf);
+        assertChar(' ', buf);
+        readText(increment, buf);
+        assertChar(' ', buf);
+        readText(state, buf);
+
+        if (multiplier != rng.multiplier())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
+        if (increment != rng.increment())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+    }
+};
 
 }

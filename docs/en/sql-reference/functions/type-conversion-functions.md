@@ -325,7 +325,59 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-This function accepts FixedString, and returns UUID. Takes 16 bytes string. If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+
+**Syntax**
+
+``` sql
+reinterpretAsUUID(fixed_string)
+```
+
+**Parameters**
+
+-   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
+
+**Returned value**
+
+-   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
+
+**Examples**
+
+String to UUID.
+
+Query:
+
+``` sql
+SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
+```
+
+Result:
+
+``` text
+┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Going back and forth from String to UUID.
+
+Query:
+
+``` sql
+WITH
+    generateUUIDv4() AS uuid,
+    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
+    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
+SELECT uuid = uuid2;
+```
+
+Result:
+
+``` text
+┌─equals(uuid, uuid2)─┐
+│                   1 │
+└─────────────────────┘
+```
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
@@ -377,6 +429,63 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 **See also**
 
 -   [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable) setting
+
+## accurateCast(x, T) {#type_conversion_function-accurate-cast}
+
+Converts ‘x’ to the ‘t’ data type. The differente from cast(x, T) is that accurateCast
+does not allow overflow of numeric types during cast if type value x does not fit
+bounds of type T.
+
+Example
+``` sql
+SELECT cast(-1, 'UInt8') as uint8; 
+```
+
+
+``` text
+┌─uint8─┐
+│   255 │
+└───────┘
+```
+
+```sql
+SELECT accurateCast(-1, 'UInt8') as uint8;
+```
+
+``` text
+Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
+
+```
+
+## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
+
+Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
+if the casted value is not representable in the target type.
+
+Example:
+
+``` sql
+SELECT
+    accurateCastOrNull(-1, 'UInt8') as uint8,
+    accurateCastOrNull(128, 'Int8') as int8,
+    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
+```
+
+``` text
+┌─uint8─┬─int8─┬─fixed_string─┐
+│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
+└───────┴──────┴──────────────┘┘
+```
+
+``` sql
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
+```
+
+``` text
+┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
+│ Nullable(UInt8)                            │
+└────────────────────────────────────────────┘
+```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 

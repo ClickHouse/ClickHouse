@@ -6,6 +6,7 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -124,7 +125,6 @@ Block KafkaBlockInputStream::readImpl()
                 }
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
                 case IProcessor::Status::ExpandPipeline:
                     throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
             }

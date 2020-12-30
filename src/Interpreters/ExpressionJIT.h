@@ -22,24 +22,52 @@ struct LLVMModuleState;
 class LLVMFunction : public IFunctionBaseImpl
 {
     std::string name;
-    Names arg_names;
     DataTypes arg_types;
 
     std::vector<FunctionBasePtr> originals;
-    std::unordered_map<StringRef, CompilableExpression> subexpressions;
+    CompilableExpression expression;
 
     std::unique_ptr<LLVMModuleState> module_state;
 
 public:
-    LLVMFunction(const ExpressionActions::Actions & actions, const DB::Block & sample_block);
+
+    /// LLVMFunction is a compiled part of ActionsDAG.
+    /// We store this part as independent DAG with minial required information to compile it.
+    struct CompileNode
+    {
+        enum class NodeType
+        {
+            INPUT = 0,
+            CONSTANT = 1,
+            FUNCTION = 2,
+        };
+
+        NodeType type;
+        DataTypePtr result_type;
+
+        /// For CONSTANT
+        ColumnPtr column;
+
+        /// For FUNCTION
+        FunctionBasePtr function;
+        std::vector<size_t> arguments;
+    };
+
+    /// DAG is represented as list of nodes stored in in-order traverse order.
+    /// Expression (a + 1) + (b + 1) will be represented like chain: a, 1, a + 1, b, b + 1, (a + 1) + (b + 1).
+    struct CompileDAG : public std::vector<CompileNode>
+    {
+        std::string dump() const;
+        UInt128 hash() const;
+    };
+
+    explicit LLVMFunction(const CompileDAG & dag);
 
     bool isCompilable() const override { return true; }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
 
     String getName() const override { return name; }
-
-    const Names & getArgumentNames() const { return arg_names; }
 
     const DataTypes & getArgumentTypes() const override { return arg_types; }
 
@@ -71,10 +99,6 @@ public:
     using Base = LRUCache<UInt128, IFunctionBase, UInt128Hash>;
     using Base::Base;
 };
-
-/// For each APPLY_FUNCTION action, try to compile the function to native code; if the only uses of a compilable
-/// function's result are as arguments to other compilable functions, inline it and leave the now-redundant action as-is.
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile_expression);
 
 }
 

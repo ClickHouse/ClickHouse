@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -52,7 +54,6 @@ SRCS(
     ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowPrivilegesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
@@ -66,6 +67,7 @@ SRCS(
     ExpressionListParsers.cpp
     IAST.cpp
     IParserBase.cpp
+    InsertQuerySettingsPushDownVisitor.cpp
     Lexer.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp

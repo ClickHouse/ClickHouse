@@ -20,3 +20,7 @@ select * from dist_01319 where key = 1;
 set force_optimize_skip_unused_shards_nesting=2;
 set optimize_skip_unused_shards_nesting=1;
 select * from dist_01319 where key = 1;
+
+drop table data_01319;
+drop table dist_01319;
+drop table dist_layer_01319;

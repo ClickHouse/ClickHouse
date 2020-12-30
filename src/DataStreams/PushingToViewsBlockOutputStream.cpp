@@ -10,6 +10,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/checkStackSize.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
@@ -29,6 +30,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     , context(context_)
     , query_ptr(query_ptr_)
 {
+    checkStackSize();
+
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.

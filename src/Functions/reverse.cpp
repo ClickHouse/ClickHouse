@@ -89,7 +89,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))

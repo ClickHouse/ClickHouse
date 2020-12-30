@@ -39,3 +39,5 @@ SELECT cast(color,'String') color, timestamp
 FROM order_test1
 GROUP BY color, timestamp
 ORDER BY color ASC, timestamp DESC;
+
+DROP TABLE order_test1;

@@ -71,8 +71,8 @@ while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE que
     sleep 1
 done;
 
-$CLICKHOUSE_CLIENT -q "SELECT replaceOne(name, '_tmp', '') FROM system.tables WHERE database = currentDatabase() AND match(name, '^replica_01108_')"
-$CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^replica_01108_') GROUP BY position(_table, 'tmp')"
+$CLICKHOUSE_CLIENT -q "SELECT replaceOne(name, '_tmp', '') FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE' AND match(name, '^replica_01108_')"
+$CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge('$CLICKHOUSE_DATABASE', '^replica_01108_') GROUP BY position(_table, 'tmp')"
 
 
 for i in $(seq 4); do

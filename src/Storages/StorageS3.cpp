@@ -35,8 +35,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
-#include <sstream>
-
 
 namespace DB
 {
@@ -143,17 +141,18 @@ namespace
     public:
         StorageS3BlockOutputStream(
             const String & format,
-            UInt64 min_upload_part_size,
             const Block & sample_block_,
             const Context & context,
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
-            const String & key)
+            const String & key,
+            size_t min_upload_part_size,
+            size_t max_single_part_upload_size)
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -194,19 +193,21 @@ StorageS3::StorageS3(
     const StorageID & table_id_,
     const String & format_name_,
     UInt64 min_upload_part_size_,
+    UInt64 max_single_part_upload_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_,
+    const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
-    , context_global(context_)
+    , global_context(context_.getGlobalContext())
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
+    , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
 {
-    context_global.getRemoteHostFilter().checkURL(uri_.uri);
+    global_context.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -218,7 +219,14 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
+        uri_.endpoint,
+        uri_.is_virtual_hosted_style,
+        credentials.GetAWSAccessKeyId(),
+        credentials.GetAWSSecretKey(),
+        std::move(settings.headers),
+        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false)),
+        context_.getRemoteHostFilter(),
+        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
 }
 
 
@@ -254,18 +262,14 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
-            std::ostringstream message;
-            message.exceptions(std::ios::failbit);
-            message << "Could not list objects in bucket " << quoteString(request.GetBucket())
-                << " with prefix " << quoteString(request.GetPrefix());
-
             if (page > 1)
-                message << ", page " << std::to_string(page);
+                throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, page {}, S3 exception: {}, message: {}",
+                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()), page,
+                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
 
-            message << ", S3 exception: " + backQuote(outcome.GetError().GetExceptionName())
-                << ", message: " + quoteString(outcome.GetError().GetMessage());
-
-            throw Exception(message.str(), ErrorCodes::S3_ERROR);
+            throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
@@ -330,9 +334,15 @@ Pipe StorageS3::read(
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
-        context_global, chooseCompressionMethod(uri.endpoint, compression_method),
-        client, uri.bucket, uri.key);
+        format_name,
+        metadata_snapshot->getSampleBlock(),
+        global_context,
+        chooseCompressionMethod(uri.endpoint, compression_method),
+        client,
+        uri.bucket,
+        uri.key,
+        min_upload_part_size,
+        max_single_part_upload_size);
 }
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
@@ -361,6 +371,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         }
 
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
+        UInt64 max_single_part_upload_size = args.local_context.getSettingsRef().s3_max_single_part_upload_size;
 
         String compression_method;
         String format_name;
@@ -382,6 +393,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.table_id,
             format_name,
             min_upload_part_size,
+            max_single_part_upload_size,
             args.columns,
             args.constraints,
             args.context,

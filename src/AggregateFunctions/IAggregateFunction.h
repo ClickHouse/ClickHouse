@@ -33,6 +33,7 @@ using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -60,7 +61,7 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual ~IAggregateFunction() {}
+    virtual ~IAggregateFunction() = default;
 
     /** Data manipulating functions. */
 
@@ -103,9 +104,12 @@ public:
         return false;
     }
 
-    /// Inserts results into a column.
-    /// This method must be called once, from single thread.
-    /// After this method was called for state, you can't do anything with state but destroy.
+    /// Inserts results into a column. This method might modify the state (e.g.
+    /// sort an array), so must be called once, from single thread. The state
+    /// must remain valid though, and the subsequent calls to add/merge/
+    /// insertResultInto must work correctly. This kind of call sequence occurs
+    /// in `runningAccumulate`, or when calculating an aggregate function as a
+    /// window function.
     virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
@@ -113,7 +117,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        ColumnsWithTypeAndName & /*arguments*/,
+        const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const Context & /*context*/) const
@@ -185,7 +189,8 @@ public:
      *  arguments and params are for nested_function.
      */
     virtual AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
+        const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }
@@ -308,6 +313,9 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
+    // Derived class can `override` this to flag that DateTime64 is not supported.
+    static constexpr bool DateTime64Supported = true;
+
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 

@@ -1,11 +1,13 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL (
     GLOBAL clickhouse/src
     contrib/libs/libcpuid
     contrib/libs/libunwind/include
-    GLOBAL contrib/restricted/ryu
+    GLOBAL contrib/restricted/dragonbox
 )
 
 PEERDIR(
@@ -16,7 +18,7 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/restricted/ryu
+    contrib/restricted/dragonbox
 )
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
@@ -66,19 +68,25 @@ SRCS(
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
+    TLDListsHolder.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
     ThreadFuzzer.cpp
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
+    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperCommon.cpp
+    ZooKeeper/ZooKeeperConstants.cpp
+    ZooKeeper/ZooKeeperIO.cpp
     ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp

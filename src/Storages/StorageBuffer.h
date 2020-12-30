@@ -9,7 +9,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
-#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -65,6 +64,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
     bool supportsParallelInsert() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
@@ -72,7 +81,14 @@ public:
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
-    bool optimize(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        const Context & context) override;
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
@@ -94,15 +110,15 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
     std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
 
 
 private:
-    Context global_context;
+    const Context & global_context;
 
     struct Buffer
     {
@@ -141,7 +157,7 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void flushBack();
+    void backgroundFlush();
     void reschedule();
 
     BackgroundSchedulePool & bg_pool;
@@ -155,7 +171,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_,
+        const Context & context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,

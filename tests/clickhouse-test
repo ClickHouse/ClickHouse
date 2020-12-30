@@ -15,6 +15,7 @@ from subprocess import check_call
 from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
+from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
@@ -112,9 +113,9 @@ def get_db_engine(args):
     return ""   # Will use default engine
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
-
     # print(client_options)
 
+    start_time = datetime.now()
     if args.database:
         database = args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
@@ -130,7 +131,11 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)))
+        try:
+            clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args)), timeout=args.timeout)
+        except TimeoutExpired:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
 
@@ -149,16 +154,30 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
     command = pattern.format(**params)
-    #print(command)
+
+    # print(command)
 
     proc = Popen(command, shell=True, env=os.environ)
-    start_time = datetime.now()
+
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
     if not args.database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        clickhouse_proc_create.communicate(("DROP DATABASE " + database))
+        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
+        try:
+            clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
+        except TimeoutExpired:
+            # kill test process because it can also hung
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except OSError as e:
+                    if e.errno != ESRCH:
+                        raise
+
+            total_time = (datetime.now() - start_time).total_seconds()
+            return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
     total_time = (datetime.now() - start_time).total_seconds()
 
@@ -232,7 +251,7 @@ stop_time = None
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
-    all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
+    all_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
     global exit_code
     global SERVER_DIED
     global stop_time
@@ -304,7 +323,7 @@ def run_tests_array(all_tests_with_params):
 
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)))
+                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
 
                         if clickhouse_proc.returncode != 0:
                             failures += 1
@@ -317,6 +336,7 @@ def run_tests_array(all_tests_with_params):
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                     proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -328,6 +348,8 @@ def run_tests_array(all_tests_with_params):
                         print(MSG_FAIL, end='')
                         print_test_time(total_time)
                         print(" - Timeout!")
+                        if stderr:
+                            print(stderr)
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
@@ -347,7 +369,7 @@ def run_tests_array(all_tests_with_params):
                             if stderr:
                                 print(stderr)
 
-                            # Stop on fatal errors like segmentation fault. They are send to client via logs.
+                            # Stop on fatal errors like segmentation fault. They are sent to client via logs.
                             if ' <Fatal> ' in stderr:
                                 SERVER_DIED = True
 
@@ -486,7 +508,7 @@ def collect_build_flags(client):
         elif b'-fsanitize=memory' in stdout:
             result.append(BuildFlags.MEMORY)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'")
@@ -497,7 +519,7 @@ def collect_build_flags(client):
         elif b'RelWithDebInfo' in stdout or b'Release' in stdout:
             result.append(BuildFlags.RELEASE)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
@@ -506,7 +528,7 @@ def collect_build_flags(client):
         if b'ON' in stdout or b'1' in stdout:
             result.append(BuildFlags.UNBUNDLED)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.settings WHERE name = 'default_database_engine'")
@@ -515,7 +537,7 @@ def collect_build_flags(client):
         if b'Ordinary' in stdout:
             result.append(BuildFlags.DATABASE_ORDINARY)
     else:
-        raise Exception("Cannot get inforamtion about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
+        raise Exception("Cannot get information about build from server errorcode {}, stderr {}".format(clickhouse_proc.returncode, stderr))
 
     clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     (stdout, stderr) = clickhouse_proc.communicate(b"SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'")
@@ -544,8 +566,14 @@ def main(args):
         return stdout.startswith(b'1')
 
     if not check_server_started(args.client, args.server_check_retries):
-        raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
+        raise Exception(
+            "Server is not responding. Cannot execute 'SELECT 1' query. \
+            Note: if you are using unbundled mode, you also have to specify -c option.")
+
     build_flags = collect_build_flags(args.client)
+    if args.antlr:
+        build_flags.append('antlr')
+
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
     else:
@@ -555,6 +583,9 @@ def main(args):
         args.skip = set(args.skip) | tests_to_skip_from_list
     else:
         args.skip = tests_to_skip_from_list
+
+    if args.use_skip_list and not args.sequential:
+        args.sequential = collect_sequential_list(args.skip_list_path)
 
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
@@ -659,7 +690,7 @@ def main(args):
                 prefix, suffix = item.split('_', 1)
 
                 try:
-                    return reverse * int(prefix), suffix
+                    return reverse * int(prefix)
                 except ValueError:
                     return 99997
 
@@ -669,33 +700,42 @@ def main(args):
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
             all_tests.sort(key=key_func)
 
-            run_n, run_total = args.parallel.split('/')
-            run_n = float(run_n)
-            run_total = float(run_total)
-            tests_n = len(all_tests)
-            if run_total > tests_n:
-                run_total = tests_n
-            if run_n > run_total:
-                continue
-
             jobs = args.jobs
-            if jobs > tests_n:
-                jobs = tests_n
-            if jobs > run_total:
-                run_total = jobs
+            parallel_tests = []
+            sequential_tests = []
+            for test in all_tests:
+                if any(s in test for s in args.sequential):
+                    sequential_tests.append(test)
+                else:
+                    parallel_tests.append(test)
 
-            batch_size = len(all_tests) // jobs
-            all_tests_array = []
-            for i in range(0, len(all_tests), batch_size):
-                all_tests_array.append((all_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
+            if jobs > 1 and len(parallel_tests) > 0:
+                print("Found", len(parallel_tests), "parallel tests and", len(sequential_tests), "sequential tests")
+                run_n, run_total = args.parallel.split('/')
+                run_n = float(run_n)
+                run_total = float(run_total)
+                tests_n = len(parallel_tests)
+                if run_total > tests_n:
+                    run_total = tests_n
 
-            if jobs > 1:
+                if jobs > tests_n:
+                    jobs = tests_n
+                if jobs > run_total:
+                    run_total = jobs
+
+                batch_size = len(parallel_tests) // jobs
+                parallel_tests_array = []
+                for i in range(0, len(parallel_tests), batch_size):
+                    parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir))
+
                 with closing(multiprocessing.Pool(processes=jobs)) as pool:
-                    pool.map(run_tests_array, all_tests_array)
-            else:
-                run_tests_array(all_tests_array[int(run_n)-1])
+                    pool.map(run_tests_array, parallel_tests_array)
 
-            total_tests_run += tests_n
+                run_tests_array((sequential_tests, suite, suite_dir, suite_tmp_dir))
+                total_tests_run += len(sequential_tests) + len(parallel_tests)
+            else:
+                run_tests_array((all_tests, suite, suite_dir, suite_tmp_dir))
+                total_tests_run += len(all_tests)
 
     if args.hung_check:
 
@@ -786,12 +826,31 @@ def collect_tests_to_skip(skip_list_path, build_flags):
 
     return result
 
+
+def collect_sequential_list(skip_list_path):
+    if not os.path.exists(skip_list_path):
+        return set([])
+
+    with open(skip_list_path, 'r') as skip_list_file:
+        content = skip_list_file.read()
+        # allows to have comments in skip_list.json
+        skip_dict = json.loads(json_minify(content))
+        if 'parallel' in skip_dict:
+            return skip_dict['parallel']
+        return set([])
+
+
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
     parser.add_argument('--tmp', help='Path to tmp dir')
-    parser.add_argument('-b', '--binary', default='clickhouse', help='Path to clickhouse binary or name of binary in PATH')
-    parser.add_argument('-c', '--client', help='Client program')
+
+    parser.add_argument('-b', '--binary', default='clickhouse',
+        help='Path to clickhouse (if bundled, clickhouse-server otherwise) binary or name of binary in PATH')
+
+    parser.add_argument('-c', '--client',
+        help='Path to clickhouse-client (if unbundled, useless otherwise) binary of name of binary in PATH')
+
     parser.add_argument('--extract_from_config', help='extract-from-config program')
     parser.add_argument('--configclient', help='Client config (if you use not default ports)')
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
@@ -814,9 +873,11 @@ if __name__ == '__main__':
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
 
+    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
+    parser.add_argument('--sequential', nargs='+', help="Run these tests sequentially even if --parallel specified")
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
@@ -860,15 +921,22 @@ if __name__ == '__main__':
     if args.skip_list_path is None:
         args.skip_list_path = os.path.join(args.queries, 'skip_list.json')
 
+    if args.sequential is None:
+        args.sequential = set([])
+
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
         if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
+
+            print("Using " + args.client + " as client program (expecting unbundled mode)")
         elif find_binary(args.binary):
             args.client = args.binary + ' client'
+
+            print("Using " + args.client + " as client program (expecting bundled mode)")
         else:
-            print("No 'clickhouse' binary found in PATH", file=sys.stderr)
+            print("No 'clickhouse' or 'clickhouse-client' client binary found", file=sys.stderr)
             parser.print_help()
             exit(1)
 
@@ -897,6 +965,12 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
+    if args.antlr:
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

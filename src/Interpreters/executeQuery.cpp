@@ -15,17 +15,27 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
+#endif
+
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/queryNormalization.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageInput.h>
 
@@ -37,6 +47,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
@@ -147,19 +158,18 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
+            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
             joinLines(query));
 
-        if (client_info.opentelemetry_trace_id)
+        if (client_info.client_trace_context.trace_id)
         {
             LOG_TRACE(&Poco::Logger::get("executeQuery"),
-                "OpenTelemetry trace id {:x}, span id {}, parent span id {}",
-                client_info.opentelemetry_trace_id,
-                client_info.opentelemetry_span_id,
-                client_info.opentelemetry_parent_span_id);
+                "OpenTelemetry traceparent '{}'",
+                client_info.client_trace_context.composeTraceparentHeader());
         }
     }
 }
@@ -230,6 +240,10 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
+
+    // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
+
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
 
@@ -247,19 +261,18 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 
     if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-        context.getClientInfo().opentelemetry_trace_id
+        context.query_trace_context.trace_id
             && opentelemetry_span_log)
     {
         OpenTelemetrySpanLogElement span;
-        span.trace_id = context.getClientInfo().opentelemetry_trace_id;
-        span.span_id = context.getClientInfo().opentelemetry_span_id;
-        span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+        span.trace_id = context.query_trace_context.trace_id;
+        span.span_id = context.query_trace_context.span_id;
+        span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = current_time_us;
-        span.duration_ns = 0;
 
-        // keep values synchonized to type enum in QueryLogElement::createBlock
+        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
         span.attribute_values.push_back("ExceptionBeforeStart");
 
@@ -269,11 +282,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
 
-        if (!context.getClientInfo().opentelemetry_tracestate.empty())
+        if (!context.query_trace_context.tracestate.empty())
         {
             span.attribute_names.push_back("clickhouse.tracestate");
             span.attribute_values.push_back(
-                context.getClientInfo().opentelemetry_tracestate);
+                context.query_trace_context.tracestate);
         }
 
         opentelemetry_span_log->add(span);
@@ -324,19 +337,35 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end);
     ASTPtr ast;
     const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
-    if (!internal)
-        max_query_size = settings.max_query_size;
+    if (!internal) max_query_size = settings.max_query_size;
 
+    String query_database;
+    String query_table;
     try
     {
-        /// TODO Parser should fail early when max_query_size limit is reached.
+#if !defined(ARCADIA_BUILD)
+        if (settings.use_antlr_parser)
+        {
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
+        }
+        else
+        {
+            ParserQuery parser(end);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+#else
+        ParserQuery parser(end);
+
+        /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
@@ -349,14 +378,26 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (!select_with_union_query->list_of_selects->children.empty())
             {
-                if (auto new_settings = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>()->settings())
-                    InterpreterSetQuery(new_settings, context).executeForCurrentContext();
+                // We might have an arbitrarily complex UNION tree, so just give
+                // up if the last first-order child is not a plain SELECT.
+                // It is flattened later, when we process UNION ALL/DISTINCT.
+                const auto * last_select = select_with_union_query->list_of_selects->children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+                }
             }
         }
         else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        }
+
+        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        {
+            query_database = query_with_table_output->database;
+            query_table = query_with_table_output->table;
         }
 
         auto * insert_query = ast->as<ASTInsertQuery>();
@@ -459,7 +500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// reset Input callbacks if query is not INSERT SELECT
             context.resetInputCallbacks();
 
-        auto interpreter = InterpreterFactory::get(ast, context, stage);
+        auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -479,7 +520,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        res = interpreter->execute();
+        {
+            OpenTelemetrySpanHolder span("IInterpreter::execute()");
+            res = interpreter->execute();
+        }
+
         QueryPipeline & pipeline = res.pipeline;
         bool use_processors = pipeline.initialized();
 
@@ -560,6 +605,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
+            elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
 
             elem.client_info = context.getClientInfo();
 
@@ -568,6 +614,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Log into system table start of query execution, if need.
             if (log_queries)
             {
+                if (use_processors)
+                {
+                    const auto & info = context.getQueryAccessInfo();
+                    elem.query_databases = info.databases;
+                    elem.query_tables = info.tables;
+                    elem.query_columns = info.columns;
+                }
+
+                interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
+
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
@@ -685,19 +741,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog();
-                    context.getClientInfo().opentelemetry_trace_id
+                    context.query_trace_context.trace_id
                         && opentelemetry_span_log)
                 {
                     OpenTelemetrySpanLogElement span;
-                    span.trace_id = context.getClientInfo().opentelemetry_trace_id;
-                    span.span_id = context.getClientInfo().opentelemetry_span_id;
-                    span.parent_span_id = context.getClientInfo().opentelemetry_parent_span_id;
+                    span.trace_id = context.query_trace_context.trace_id;
+                    span.span_id = context.query_trace_context.span_id;
+                    span.parent_span_id = context.getClientInfo().client_trace_context.span_id;
                     span.operation_name = "query";
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
-                    span.duration_ns = elapsed_seconds * 1000000000;
 
-                    // keep values synchonized to type enum in QueryLogElement::createBlock
+                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
                     span.attribute_names.push_back("clickhouse.query_status");
                     span.attribute_values.push_back("QueryFinish");
 
@@ -706,11 +761,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     span.attribute_names.push_back("clickhouse.query_id");
                     span.attribute_values.push_back(elem.client_info.current_query_id);
-                    if (!context.getClientInfo().opentelemetry_tracestate.empty())
+                    if (!context.query_trace_context.tracestate.empty())
                     {
                         span.attribute_names.push_back("clickhouse.tracestate");
                         span.attribute_values.push_back(
-                            context.getClientInfo().opentelemetry_tracestate);
+                            context.query_trace_context.tracestate);
                     }
 
                     opentelemetry_span_log->add(span);
@@ -778,11 +833,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (!internal && res.in)
             {
-                std::stringstream log_str;
-                log_str.exceptions(std::ios::failbit);
-                log_str << "Query pipeline:\n";
-                res.in->dumpTree(log_str);
-                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
+                WriteBufferFromOwnString msg_buf;
+                res.in->dumpTree(msg_buf);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
             }
         }
     }
@@ -870,7 +923,7 @@ void executeQuery(
         end = istr.buffer().end();
         istr.position() += end - begin;
         /// Actually we don't know will query has additional data or not.
-        /// But we can't check istr.eof(), because begin and end pointers will became invalid
+        /// But we can't check istr.eof(), because begin and end pointers will become invalid
         may_have_tail = true;
     }
     else

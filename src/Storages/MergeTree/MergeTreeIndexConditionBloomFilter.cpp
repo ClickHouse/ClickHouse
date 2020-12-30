@@ -345,7 +345,7 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
             if (function->arguments->children.size() != 2)
                 return false;
 
-            /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's neglible.
+            /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's negligible.
 
             /// We should return true when the corresponding expression implies that the array contains the element.
             /// Example: when `indexOf(arr, x)` > 10 is written, it means that arr definitely should contain the element

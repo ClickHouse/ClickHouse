@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
 #include <common/DateLUT.h>
 #include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -35,15 +36,15 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
     }
 
-    void EventHeader::dump(std::ostream & out) const
+    void EventHeader::dump(WriteBuffer & out) const
     {
-        out << "\n=== " << to_string(this->type) << " ===" << std::endl;
-        out << "Timestamp: " << this->timestamp << std::endl;
-        out << "Event Type: " << this->type << std::endl;
-        out << "Server ID: " << this->server_id << std::endl;
-        out << "Event Size: " << this->event_size << std::endl;
-        out << "Log Pos: " << this->log_pos << std::endl;
-        out << "Flags: " << this->flags << std::endl;
+        out << "\n=== " << to_string(this->type) << " ===" << '\n';
+        out << "Timestamp: " << this->timestamp << '\n';
+        out << "Event Type: " << to_string(this->type) << '\n';
+        out << "Server ID: " << this->server_id << '\n';
+        out << "Event Size: " << this->event_size << '\n';
+        out << "Log Pos: " << this->log_pos << '\n';
+        out << "Flags: " << this->flags << '\n';
     }
 
     /// https://dev.mysql.com/doc/internals/en/format-description-event.html
@@ -56,17 +57,16 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&create_timestamp), 4);
         payload.readStrict(reinterpret_cast<char *>(&event_header_length), 1);
         assert(event_header_length == EVENT_HEADER_LENGTH);
-
         readStringUntilEOF(event_type_header_length, payload);
     }
 
-    void FormatDescriptionEvent::dump(std::ostream & out) const
+    void FormatDescriptionEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "Binlog Version: " << this->binlog_version << std::endl;
-        out << "Server Version: " << this->server_version << std::endl;
-        out << "Create Timestamp: " << this->create_timestamp << std::endl;
-        out << "Event Header Len: " << std::to_string(this->event_header_length) << std::endl;
+        out << "Binlog Version: " << this->binlog_version << '\n';
+        out << "Server Version: " << this->server_version << '\n';
+        out << "Create Timestamp: " << this->create_timestamp << '\n';
+        out << "Event Header Len: " << std::to_string(this->event_header_length) << '\n';
     }
 
     /// https://dev.mysql.com/doc/internals/en/rotate-event.html
@@ -76,11 +76,11 @@ namespace MySQLReplication
         readStringUntilEOF(next_binlog, payload);
     }
 
-    void RotateEvent::dump(std::ostream & out) const
+    void RotateEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "Position: " << this->position << std::endl;
-        out << "Next Binlog: " << this->next_binlog << std::endl;
+        out << "Position: " << this->position << '\n';
+        out << "Next Binlog: " << this->next_binlog << '\n';
     }
 
     /// https://dev.mysql.com/doc/internals/en/query-event.html
@@ -116,24 +116,24 @@ namespace MySQLReplication
         }
     }
 
-    void QueryEvent::dump(std::ostream & out) const
+    void QueryEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "Thread ID: " << this->thread_id << std::endl;
-        out << "Execution Time: " << this->exec_time << std::endl;
-        out << "Schema Len: " << std::to_string(this->schema_len) << std::endl;
-        out << "Error Code: " << this->error_code << std::endl;
-        out << "Status Len: " << this->status_len << std::endl;
-        out << "Schema: " << this->schema << std::endl;
-        out << "Query: " << this->query << std::endl;
+        out << "Thread ID: " << this->thread_id << '\n';
+        out << "Execution Time: " << this->exec_time << '\n';
+        out << "Schema Len: " << std::to_string(this->schema_len) << '\n';
+        out << "Error Code: " << this->error_code << '\n';
+        out << "Status Len: " << this->status_len << '\n';
+        out << "Schema: " << this->schema << '\n';
+        out << "Query: " << this->query << '\n';
     }
 
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
-    void XIDEvent::dump(std::ostream & out) const
+    void XIDEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "XID: " << this->xid << std::endl;
+        out << "XID: " << this->xid << '\n';
     }
 
     void TableMapEvent::parseImpl(ReadBuffer & payload)
@@ -238,21 +238,23 @@ namespace MySQLReplication
         }
     }
 
-    void TableMapEvent::dump(std::ostream & out) const
+    void TableMapEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "Table ID: " << this->table_id << std::endl;
-        out << "Flags: " << this->flags << std::endl;
-        out << "Schema Len: " << std::to_string(this->schema_len) << std::endl;
-        out << "Schema: " << this->schema << std::endl;
-        out << "Table Len: " << std::to_string(this->table_len) << std::endl;
-        out << "Table: " << this->table << std::endl;
-        out << "Column Count: " << this->column_count << std::endl;
+        out << "Table ID: " << this->table_id << '\n';
+        out << "Flags: " << this->flags << '\n';
+        out << "Schema Len: " << std::to_string(this->schema_len) << '\n';
+        out << "Schema: " << this->schema << '\n';
+        out << "Table Len: " << std::to_string(this->table_len) << '\n';
+        out << "Table: " << this->table << '\n';
+        out << "Column Count: " << this->column_count << '\n';
         for (auto i = 0U; i < column_count; i++)
         {
-            out << "Column Type [" << i << "]: " << std::to_string(column_type[i]) << ", Meta: " << column_meta[i] << std::endl;
+            out << "Column Type [" << i << "]: " << std::to_string(column_type[i]) << ", Meta: " << column_meta[i] << '\n';
         }
-        out << "Null Bitmap: " << this->null_bitmap << std::endl;
+        String bitmap_str;
+        boost::to_string(this->null_bitmap, bitmap_str);
+        out << "Null Bitmap: " << bitmap_str << '\n';
     }
 
     void RowsEvent::parseImpl(ReadBuffer & payload)
@@ -631,16 +633,16 @@ namespace MySQLReplication
         rows.push_back(row);
     }
 
-    void RowsEvent::dump(std::ostream & out) const
+    void RowsEvent::dump(WriteBuffer & out) const
     {
         FieldVisitorToString to_string;
 
         header.dump(out);
-        out << "Schema: " << this->schema << std::endl;
-        out << "Table: " << this->table << std::endl;
+        out << "Schema: " << this->schema << '\n';
+        out << "Table: " << this->table << '\n';
         for (auto i = 0U; i < rows.size(); i++)
         {
-            out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << std::endl;
+            out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << '\n';
         }
     }
 
@@ -663,22 +665,22 @@ namespace MySQLReplication
         payload.ignoreAll();
     }
 
-    void GTIDEvent::dump(std::ostream & out) const
+    void GTIDEvent::dump(WriteBuffer & out) const
     {
         WriteBufferFromOwnString ws;
         writeUUIDText(gtid.uuid, ws);
         auto gtid_next = ws.str() + ":" + std::to_string(gtid.seq_no);
 
         header.dump(out);
-        out << "GTID Next: " << gtid_next << std::endl;
+        out << "GTID Next: " << gtid_next << '\n';
     }
 
     void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignoreAll(); }
 
-    void DryRunEvent::dump(std::ostream & out) const
+    void DryRunEvent::dump(WriteBuffer & out) const
     {
         header.dump(out);
-        out << "[DryRun Event]" << std::endl;
+        out << "[DryRun Event]" << '\n';
     }
 
     /// Update binlog name/position/gtid based on the event type.
@@ -716,12 +718,12 @@ namespace MySQLReplication
         gtid_sets.parse(gtid_sets_);
     }
 
-    void Position::dump(std::ostream & out) const
+    void Position::dump(WriteBuffer & out) const
     {
-        out << "\n=== Binlog Position ===" << std::endl;
-        out << "Binlog: " << this->binlog_name << std::endl;
-        out << "Position: " << this->binlog_pos << std::endl;
-        out << "GTIDSets: " << this->gtid_sets.toString() << std::endl;
+        out << "\n=== Binlog Position ===" << '\n';
+        out << "Binlog: " << this->binlog_name << '\n';
+        out << "Position: " << this->binlog_pos << '\n';
+        out << "GTIDSets: " << this->gtid_sets.toString() << '\n';
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
@@ -742,7 +744,7 @@ namespace MySQLReplication
         // skip the generic response packets header flag.
         payload.ignore(1);
 
-        MySQLBinlogEventReadBuffer event_payload(payload);
+        MySQLBinlogEventReadBuffer event_payload(payload, checksum_signature_length);
 
         EventHeader event_header;
         event_header.parse(event_payload);
@@ -797,9 +799,8 @@ namespace MySQLReplication
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
-            case WRITE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case WRITE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<WriteRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
@@ -808,9 +809,8 @@ namespace MySQLReplication
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
-            case DELETE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case DELETE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<DeleteRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));
@@ -819,9 +819,8 @@ namespace MySQLReplication
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
-            case UPDATE_ROWS_EVENT_V2:
-            {
-                if (do_replicate())
+            case UPDATE_ROWS_EVENT_V2: {
+                if (doReplicate())
                     event = std::make_shared<UpdateRowsEvent>(table_map, std::move(event_header));
                 else
                     event = std::make_shared<DryRunEvent>(std::move(event_header));

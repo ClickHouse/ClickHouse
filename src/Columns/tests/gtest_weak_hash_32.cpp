@@ -71,7 +71,7 @@ void checkColumn(
         std::unordered_map<UInt32, T> map;
         size_t num_collisions = 0;
 
-        std::stringstream collisions_str;
+        std::stringstream collisions_str;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         collisions_str.exceptions(std::ios::failbit);
 
         for (size_t i = 0; i < eq_class.size(); ++i)

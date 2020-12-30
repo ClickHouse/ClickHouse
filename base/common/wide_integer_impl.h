@@ -5,6 +5,11 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+#include <cmath>
+#include <cfloat>
+#include <cassert>
+#include <limits>
+
 
 namespace wide
 {
@@ -192,7 +197,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename T>
-    constexpr static auto to_Integral(T f) noexcept
+    __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
         if constexpr (std::is_same_v<T, __int128>)
             return f;
@@ -225,25 +230,62 @@ struct integer<Bits, Signed>::_impl
             self.items[i] = 0;
     }
 
-    constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, double rhs) noexcept
-    {
-        if ((rhs > 0 && rhs < std::numeric_limits<uint64_t>::max()) || (rhs < 0 && rhs > std::numeric_limits<int64_t>::min()))
+    /**
+     * N.B. t is constructed from double, so max(t) = max(double) ~ 2^310
+     * the recursive call happens when t / 2^64 > 2^64, so there won't be more than 5 of them.
+     *
+     * t = a1 * max_int + b1,   a1 > max_int, b1 < max_int
+     * a1 = a2 * max_int + b2,  a2 > max_int, b2 < max_int
+     * a_(n - 1) = a_n * max_int + b2, a_n <= max_int <- base case.
+     */
+    template <class T>
+    constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept {
+        constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
+
+        /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
+        if (!std::isfinite(t))
         {
-            self = to_Integral(rhs);
+            self = 0;
             return;
         }
 
-        long double r = rhs;
-        if (r < 0)
-            r = -r;
+        const T alpha = t / max_int;
 
-        size_t count = r / std::numeric_limits<uint64_t>::max();
-        self = count;
-        self *= std::numeric_limits<uint64_t>::max();
-        long double to_diff = count;
-        to_diff *= std::numeric_limits<uint64_t>::max();
+        if (alpha <= max_int)
+            self = static_cast<uint64_t>(alpha);
+        else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
+            set_multiplier<double>(self, alpha);
 
-        self += to_Integral(r - to_diff);
+        self *= max_int;
+        self += static_cast<uint64_t>(t - alpha * max_int); // += b_i
+    }
+
+    constexpr static void wide_integer_from_bultin(integer<Bits, Signed>& self, double rhs) noexcept {
+        constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
+        constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
+
+        /// There are values in int64 that have more than 53 significant bits (in terms of double
+        /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
+        /// the result may not fit in 64 bits.
+        /// The example of such a number is 9.22337e+18.
+        /// As to_Integral does a static_cast to int64_t, it may result in UB.
+        /// The necessary check here is that long double has enough significant (mantissa) bits to store the
+        /// int64_t max value precisely.
+        static_assert(LDBL_MANT_DIG >= 64,
+            "On your system long double has less than 64 precision bits,"
+            "which may result in UB when initializing double from int64_t");
+
+        if ((rhs > 0 && rhs < max_int) || (rhs < 0 && rhs > min_int))
+        {
+            self = static_cast<int64_t>(rhs);
+            return;
+        }
+
+        const long double rhs_long_double = (static_cast<long double>(rhs) < 0)
+            ? -static_cast<long double>(rhs)
+            : rhs;
+
+        set_multiplier(self, rhs_long_double);
 
         if (rhs < 0)
             self = -self;
@@ -883,6 +925,11 @@ public:
 };
 
 // Members
+
+template <size_t Bits, typename Signed>
+constexpr integer<Bits, Signed>::integer() noexcept
+    : items{}
+{}
 
 template <size_t Bits, typename Signed>
 template <typename T>

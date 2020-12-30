@@ -4,8 +4,8 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 enum class TotalsMode;
 
@@ -16,7 +16,7 @@ public:
     TotalsHavingStep(
             const DataStream & input_stream_,
             bool overflow_row_,
-            const ExpressionActionsPtr & expression_,
+            const ActionsDAGPtr & actions_dag_,
             const std::string & filter_column_,
             TotalsMode totals_mode_,
             double auto_include_threshold_,
@@ -30,7 +30,7 @@ public:
 
 private:
     bool overflow_row;
-    ExpressionActionsPtr expression;
+    ActionsDAGPtr actions_dag;
     String filter_column_name;
     TotalsMode totals_mode;
     double auto_include_threshold;

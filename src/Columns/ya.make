@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -22,6 +24,7 @@ SRCS(
     ColumnFixedString.cpp
     ColumnFunction.cpp
     ColumnLowCardinality.cpp
+    ColumnMap.cpp
     ColumnNullable.cpp
     ColumnString.cpp
     ColumnTuple.cpp

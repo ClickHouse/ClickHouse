@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <re2/re2.h>
 #include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB

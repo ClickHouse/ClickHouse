@@ -16,3 +16,5 @@ select 'INSERT SELECT max_insert_threads max_threads';
 set max_insert_threads=2;
 insert into data_01295 select * from data_01295 final settings max_threads=2; -- no stuck for now
 select * from data_01295;
+
+drop table data_01295;
