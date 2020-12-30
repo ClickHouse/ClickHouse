@@ -32,7 +32,8 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 -   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).
 
     Example: 
-    ```sql
+
+    ``` sql 
     INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;
     ```
 
@@ -53,19 +54,17 @@ Table in MySQL:
 ``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
-    ->   `int_nullable` INT NULL DEFAULT NULL,
     ->   `float` FLOAT NOT NULL,
-    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
 
 mysql> INSERT INTO test (`int_id`, `float`) VALUES (1,2);
 
 mysql> SELECT * FROM test;
-+--------+--------------+-------+----------------+
-| int_id | int_nullable | float | float_nullable |
-+--------+--------------+-------+----------------+
-|      1 |         NULL |     2 |           NULL |
-+--------+--------------+-------+----------------+
++--------+-------+
+| int_id | float |
++--------+-------+
+|      1 |     2 |
++--------+-------+
 ```
 
 Selecting data from ClickHouse:
@@ -75,9 +74,9 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
 ``` text
-┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
-│      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
-└────────┴──────────────┴───────┴────────────────┘
+┌─int_id─┬─float─┐
+│      1 │     2 │
+└────────┴───────┘
 ```
 
 Replacing and inserting:
@@ -88,11 +87,11 @@ INSERT INTO mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
-```text
-┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
-│      1 │         ᴺᵁᴸᴸ │     3 │           ᴺᵁᴸᴸ │
-│      2 │         ᴺᵁᴸᴸ │     4 │           ᴺᵁᴸᴸ │
-└────────┴──────────────┴───────┴────────────────┘
+``` text
+┌─int_id─┬─float─┐
+│      1 │     3 │
+│      2 │     4 │
+└────────┴───────┘
 ```
 
 **See Also**
