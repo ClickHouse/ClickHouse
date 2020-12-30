@@ -75,11 +75,14 @@ public:
         /// The maximum width of the bar in characters, by default.
         Float64 max_width = arguments.size() == 4 ? extractConstant<Float64>(arguments, 3, "Fourth") : 80;
 
+        if (isNaN(max_width))
+            throw Exception("Argument 'max_width' must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         if (max_width < 1)
-            throw Exception("Max_width argument must be >= 1.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Argument 'max_width' must be >= 1", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (max_width > 1000)
-            throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Argument 'max_width' must be <= 1000", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         const auto & src = *arguments[0].column;
 

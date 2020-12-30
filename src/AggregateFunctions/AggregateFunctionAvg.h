@@ -127,10 +127,10 @@ public:
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         if constexpr (IsDecimalNumber<Numerator> || IsDecimalNumber<Denominator>)
-            static_cast<ColumnVector<Float64> &>(to).getData().push_back(
+            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
                 this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
         else
-            static_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
+            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
     }
 private:
     UInt32 num_scale;

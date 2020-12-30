@@ -7,8 +7,7 @@ PUBLISH_DIR="${BASE_DIR}/../publish"
 BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.tech}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-website-content.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
-EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases --minify --verbose}"
-HISTORY_SIZE="${HISTORY_SIZE:-5}"
+EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---minify --verbose}"
 
 if [[ -z "$1" ]]
 then
@@ -33,12 +32,14 @@ then
     git add ".nojekyll"
 
     # Push to GitHub rewriting the existing contents.
-    git commit -a -m "Add new release at $(date)"
+    git commit --quiet -m "Add new release at $(date)"
     git push --force origin master
 
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
-        python3 "${BASE_DIR}/purge_cache_for_changed_files.py"
+        # https://api.cloudflare.com/#zone-purge-files-by-cache-tags,-host-or-prefix
+        POST_DATA='{"hosts":["content.clickhouse.tech"]}'
+        curl -X POST "https://api.cloudflare.com/client/v4/zones/4fc6fb1d46e87851605aa7fa69ca6fe0/purge_cache" -H "Authorization: Bearer ${CLOUDFLARE_TOKEN}" -H "Content-Type:application/json" --data "${POST_DATA}"
     fi
 fi
