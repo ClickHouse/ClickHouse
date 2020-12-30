@@ -92,6 +92,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
     if (options.count("help"))
     {
+        std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
         std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
         std::cout << desc << std::endl;
         return 0;
