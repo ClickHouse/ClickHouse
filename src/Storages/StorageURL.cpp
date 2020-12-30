@@ -106,7 +106,6 @@ namespace
                     context.getRemoteHostFilter()),
                 compression_method);
 
-
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
             reader = std::make_shared<InputStreamFromInputFormat>(input_format);
             reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);

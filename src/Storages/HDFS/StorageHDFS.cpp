@@ -122,7 +122,6 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-
                 auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, context.getGlobalContext().getConfigRef()), compression);
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
                 auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);

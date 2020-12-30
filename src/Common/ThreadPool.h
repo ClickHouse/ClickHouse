@@ -187,7 +187,7 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            std::terminate();
+            abort();
         state = std::move(rhs.state);
         return *this;
     }
@@ -195,19 +195,13 @@ public:
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-        {
-            std::cerr << StackTrace().toString() << std::endl;
-            std::terminate();
-        }
+            abort();
     }
 
     void join()
     {
         if (!joinable())
-        {
-            std::cerr << StackTrace().toString() << std::endl;
-            std::terminate();
-        }
+            abort();
 
         state->wait();
         state.reset();
@@ -216,7 +210,7 @@ public:
     void detach()
     {
         if (!joinable())
-            std::terminate();
+            abort();
         state.reset();
     }
 
