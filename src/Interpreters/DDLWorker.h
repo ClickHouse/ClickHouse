@@ -3,7 +3,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 #include <Poco/Net/NetException.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
