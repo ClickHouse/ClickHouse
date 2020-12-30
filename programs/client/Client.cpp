@@ -949,6 +949,11 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'none'");
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            if (test_hint.echoQueries())
+                echo_queries = true;
         }
 
         /// Several queries separated by ';'.
@@ -2335,7 +2340,7 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("queries-file,qf", po::value<std::string>(), "file path with queries to execute")
+            ("queries-file", po::value<std::string>(), "file path with queries to execute")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")

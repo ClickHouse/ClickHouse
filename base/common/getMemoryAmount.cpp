@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "common/getMemoryAmount.h"
+#include "common/getPageSize.h"
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -18,7 +19,7 @@ uint64_t getMemoryAmountOrZero()
     if (num_pages <= 0)
         return 0;
 
-    int64_t page_size = sysconf(_SC_PAGESIZE);
+    int64_t page_size = getPageSize();
     if (page_size <= 0)
         return 0;
 

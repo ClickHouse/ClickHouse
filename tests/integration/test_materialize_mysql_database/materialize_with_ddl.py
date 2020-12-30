@@ -478,10 +478,16 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a=2;")
-    check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", "3\n")
 
-    assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == "2\n"
-    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == "2\n"
+    optimize_on_insert = clickhouse_node.query("SELECT value FROM system.settings WHERE name='optimize_on_insert'").strip()
+    if optimize_on_insert == "0":
+        res = ["3\n", "2\n", "2\n"]
+    else:
+        res = ["2\n", "2\n", "1\n"]
+    check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", res[0])
+
+    assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == res[1]
+    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == res[2]
 
     assert clickhouse_node.query("SELECT count() FROM db.t FORMAT TSV") == "1\n"
     assert clickhouse_node.query("SELECT count(*) FROM db.t FORMAT TSV") == "1\n"

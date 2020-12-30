@@ -22,7 +22,7 @@ SELECT * FROM replica2;
 -- drop of empty partition works
 ALTER TABLE replica2 DROP PARTITION ID 'all';
 
-SET insert_quorum=2;
+SET insert_quorum = 2, insert_quorum_parallel = 0;
 
 INSERT INTO replica2 VALUES (1);
 

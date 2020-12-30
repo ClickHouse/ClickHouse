@@ -90,8 +90,8 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
         ExpressionInfoVisitor::Data expression_info{.context = context, .tables = tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
 
-        if (expression_info.is_stateful_function)
-            return {};   /// give up the optimization when the predicate contains stateful function
+        if (expression_info.is_stateful_function || !expression_info.is_deterministic_function)
+            return {};   /// Not optimized when predicate contains stateful function or indeterministic function
 
         if (!expression_info.is_array_join)
         {

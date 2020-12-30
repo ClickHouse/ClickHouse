@@ -121,9 +121,9 @@ StorageDictionary::StorageDictionary(
 void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
-        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception("Cannot drop/detach dictionary " + backQuote(dictionary_name) + " as table, use DROP DICTIONARY or DETACH DICTIONARY query instead", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
     if (location == Location::DictionaryDatabase)
-        throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception("Cannot drop/detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 void StorageDictionary::checkTableCanBeDetached() const
