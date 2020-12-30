@@ -883,7 +883,7 @@ public:
         RIGHT_CONST,
     };
 
-    FunctionWithOptionalConstArg(const FunctionBasePtr & func_) : func(func_) { }
+    explicit FunctionWithOptionalConstArg(const FunctionBasePtr & func_) : func(func_) {}
     FunctionWithOptionalConstArg(const FunctionBasePtr & func_, const ColumnWithTypeAndName & const_arg_, Kind kind_)
         : func(func_), const_arg(const_arg_), kind(kind_)
     {
