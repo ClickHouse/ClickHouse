@@ -1,12 +1,15 @@
 #pragma once
 
+#include <DataStreams/BlockIO.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
 #include <Storages/IStorage.h>
+#include <Poco/Net/NetException.h>
+#include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
+#include <Common/ThreadPool.h>
+#include <Common/isLocalAddress.h>
+#include <common/logger_useful.h>
 
 #include <atomic>
 #include <chrono>
@@ -16,24 +19,80 @@
 
 namespace zkutil
 {
-    class ZooKeeper;
+class ZooKeeper;
 }
 
 namespace DB
 {
-
 class Context;
 class ASTAlterQuery;
 class AccessRightsElements;
-struct DDLLogEntry;
+
+struct HostID
+{
+    String host_name;
+    UInt16 port;
+
+    HostID() = default;
+
+    explicit HostID(const Cluster::Address & address) : host_name(address.host_name), port(address.port) { }
+
+    static HostID fromString(const String & host_port_str)
+    {
+        HostID res;
+        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
+        return res;
+    }
+
+    String toString() const { return Cluster::Address::toString(host_name, port); }
+
+    String readableString() const { return host_name + ":" + DB::toString(port); }
+
+    bool isLocalAddress(UInt16 clickhouse_port) const
+    {
+        try
+        {
+            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            /// Avoid "Host not found" exceptions
+            return false;
+        }
+    }
+
+    static String applyToString(const HostID & host_id) { return host_id.toString(); }
+};
+
+struct DDLLogEntry
+{
+    String query;
+    std::vector<HostID> hosts;
+    String initiator; // optional
+
+    static constexpr int CURRENT_VERSION = 1;
+
+public:
+    String toString();
+    void parse(const String & data);
+};
+
 struct DDLTask;
 using DDLTaskPtr = std::unique_ptr<DDLTask>;
 
 
 /// Pushes distributed DDL query to the queue
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(
+    const ASTPtr & query_ptr,
+    const Context & context,
+    const AccessRightsElements & query_requires_access,
+    bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(
+    const ASTPtr & query_ptr,
+    const Context & context,
+    AccessRightsElements && query_requires_access,
+    bool query_requires_grant_option = false);
 
 
 class DDLWorker

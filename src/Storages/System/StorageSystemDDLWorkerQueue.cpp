@@ -6,6 +6,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DDLWorker.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -92,7 +93,8 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
         {"port", std::make_shared<DataTypeUInt16>()},
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues())},
         {"cluster", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeString>()},
+        {"query", std::make_shared<DataTypeString>()},
+        {"initiator", std::make_shared<DataTypeString>()},
         {"query_start_time", std::make_shared<DataTypeDateTime>()},
         {"query_finish_time", std::make_shared<DataTypeDateTime>()},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>()},
@@ -159,6 +161,7 @@ static String extractPath(const ASTPtr & query, const Context & context)
     String res;
     return extractPathImpl(*select.where(), res, context) ? res : "";
 }
+
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
@@ -276,7 +279,11 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
 
                 auto query_start_time = res.stat.mtime;
 
-                res_columns[i++]->insert(res.data); // value
+                DDLLogEntry entry;
+                entry.parse(res.data);
+
+                res_columns[i++]->insert(entry.query); // query
+                res_columns[i++]->insert(entry.initiator); // initiator
                 res_columns[i++]->insert(UInt64(query_start_time / 1000)); // query_start_time
                 res_columns[i++]->insert(UInt64(query_finish_time / 1000)); // query_finish_time
                 res_columns[i++]->insert(UInt64(query_finish_time - query_start_time)); // query_duration_ms
