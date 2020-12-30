@@ -83,6 +83,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
+        input_format->setCurrentUnitNumber(current_ticket_number);
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();

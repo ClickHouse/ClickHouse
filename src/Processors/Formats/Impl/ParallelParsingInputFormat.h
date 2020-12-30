@@ -27,6 +27,16 @@ class Context;
  * The number of chunks equals to the number or parser threads.
  * The size of chunk is equal to min_chunk_bytes_for_parallel_parsing setting.
  *
+ *                    Parsers
+ *      |   |   |   |   |   |   |   |   |   |
+ *      v   v   v   v   v   v   v   v   v   v
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | <-- Processing units
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *      ^               ^
+ *      |               |
+ *   readImpl        Segmentator
+ *
  * This stream has three kinds of threads: one segmentator, multiple parsers,
  * and one reader thread -- that is, the one from which readImpl() is called.
  * They operate one after another on parts of data called "processing units".
@@ -78,9 +88,6 @@ public:
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
-        // Subtract one thread that we use for segmentation and one for
-        // reading. After that, must have at least two threads left for
-        // parsing. See the assertion below.
         , pool(params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a

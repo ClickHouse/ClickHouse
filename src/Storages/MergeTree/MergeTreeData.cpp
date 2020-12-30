@@ -61,6 +61,7 @@
 #include <typeindex>
 #include <unordered_set>
 
+
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
@@ -2891,7 +2892,6 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
-
 
         auto input_format = FormatFactory::instance().getInput("Values", buf, metadata_snapshot->getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
         auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);

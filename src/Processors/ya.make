@@ -45,6 +45,7 @@ SRCS(
     Formats/Impl/MySQLOutputFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
+    Formats/Impl/ParallelFormattingOutputFormat.cpp
     Formats/Impl/ParallelParsingInputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp

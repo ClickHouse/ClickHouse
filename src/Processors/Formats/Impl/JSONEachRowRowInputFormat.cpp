@@ -245,7 +245,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
-    bool is_first_row = getTotalRows() == 1;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
     if (!in.eof())
     {
         /// There may be optional ',' (but not before the first row)
@@ -253,8 +253,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             ++in.position();
         else if (!data_in_square_brackets && *in.position() == ';')
         {
-            return allow_new_rows = false;
             /// ';' means the end of query (but it cannot be before ']')
+            return allow_new_rows = false;
         }
         else if (data_in_square_brackets && *in.position() == ']')
         {

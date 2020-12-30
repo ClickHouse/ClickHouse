@@ -34,7 +34,7 @@ namespace DB
  *      ^               ^
  *      |               |
  *   Collector       addChunk
- * 
+ *
  * There is a container of ProcessingUnits - internal entity, storing a Chunk to format,
  * a continuous memory buffer to store the formatted Chunk and some flags for synchronization needs.
  * Each ProcessingUnits has a unique number - the place in the container.
@@ -43,9 +43,9 @@ namespace DB
  * The other thread, we call it Collector waits until a ProcessingUnit which it points to would be READY_TO_READ.
  * Then it adds a temporary buffer to a real WriteBuffer.
  * Both Collector and a thread which adds Chunks have unit_number - a pointer to ProcessingUnit which they are aim to work with.
- * 
+ *
  * Note, that collector_unit_number is always less or equal to current_unit_number, that's why the formatting is order-preserving.
- * 
+ *
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
