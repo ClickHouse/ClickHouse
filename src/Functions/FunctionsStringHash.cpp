@@ -249,13 +249,7 @@ struct SimHashImpl
         // get first word shingle
         while (start < end && words.size() < shingle_size)
         {
-            const UInt8 * word_start;
-
-            if constexpr (UTF8)
-                word_start = ExtractStringImpl::readOneUTF8Word(start, end);
-            else
-                word_start = ExtractStringImpl::readOneASCIIWord(start, end);
-
+            const UInt8 * word_start = ExtractStringImpl::readOneWord(start, end);
             size_t length = start - word_start;
 
             if (length >= min_word_size)
@@ -271,13 +265,7 @@ struct SimHashImpl
         size_t offset = 0;
         while (start < end)
         {
-            const UInt8 * word_start;
-
-            if constexpr (UTF8)
-                word_start = ExtractStringImpl::readOneUTF8Word(start, end);
-            else
-                word_start = ExtractStringImpl::readOneASCIIWord(start, end);
-
+            const UInt8 * word_start = ExtractStringImpl::readOneWord(start, end);
             size_t length = start - word_start;
 
             if (length < min_word_size)
@@ -340,7 +328,7 @@ struct MinHashImpl
 {
     static constexpr size_t min_word_size = 4;
 
-    template<typename Comp>
+    template <typename Comp>
     struct Heap
     {
         void update(UInt64 hash, BytesRef ref, size_t limit)
@@ -478,13 +466,7 @@ struct MinHashImpl
         // get first word shingle
         while (start < end && words.size() < shingle_size)
         {
-            const UInt8 * word_start;
-
-            if constexpr (UTF8)
-                word_start = ExtractStringImpl::readOneUTF8Word(start, end);
-            else
-                word_start = ExtractStringImpl::readOneASCIIWord(start, end);
-
+            const UInt8 * word_start = ExtractStringImpl::readOneWord(start, end);
             size_t length = start - word_start;
 
             if (length >= min_word_size)
@@ -506,12 +488,7 @@ struct MinHashImpl
         size_t offset = 0;
         while (start < end)
         {
-            const UInt8 * word_start;
-
-            if constexpr (UTF8)
-                word_start = ExtractStringImpl::readOneUTF8Word(start, end);
-            else
-                word_start = ExtractStringImpl::readOneASCIIWord(start, end);
+            const UInt8 * word_start = ExtractStringImpl::readOneWord(start, end);
 
             size_t length = start - word_start;
 
