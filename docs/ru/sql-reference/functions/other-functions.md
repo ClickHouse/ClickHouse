@@ -1686,6 +1686,26 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 10	10	19	19	39	39
 ```
 
+## errorCodeToName {#error-code-to-name}
+
+**Возвращаемое значение**
+
+-   Название переменной для кода ошибки.
+
+Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Синтаксис**
+
+``` sql
+errorCodeToName(1)
+```
+
+Результат:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
 ## tcpPort {#tcpPort}
 
 Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
