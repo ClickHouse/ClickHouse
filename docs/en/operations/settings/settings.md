@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimal time for the query to run to get to the following tables:
+If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -2469,6 +2469,20 @@ Possible values:
 - 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
+
+## union_default_mode {#union-default-mode}
+
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `''`.
+
+See examples in [UNION](../../sql-reference/statements/select/union.md).
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
