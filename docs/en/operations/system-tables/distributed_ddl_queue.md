@@ -10,7 +10,8 @@ Columns:
 -   `port`  ([UInt16](../../sql-reference/data-types/int-uint.md)) - Host Port.
 -   `status`  ([Enum](../../sql-reference/data-types/enum.md)) - Stats of the query.
 -   `cluster`  ([String](../../sql-reference/data-types/string.md)) - Cluster name.
--   `value`  ([String](../../sql-reference/data-types/string.md)) - Node value.
+-   `query`  ([String](../../sql-reference/data-types/string.md)) - Query executed.
+-   `initiator`  ([String](../../sql-reference/data-types/string.md)) - Nod that executed the query.
 -   `query_start_time` ([Date](../../sql-reference/data-types/date.md)) — Query start time.
 -   `query_finish_time` ([Date](../../sql-reference/data-types/date.md)) — Query finish time.
 -   `query_duration_ms` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Duration of query execution in milliseconds.
@@ -22,11 +23,11 @@ Columns:
 ``` sql
 SELECT *
 FROM system.distributed_ddl_queue
-WHERE (cluster = 'test_cluster') AND (entry = 'query-0000000000')
+WHERE cluster = 'test_cluster'
 LIMIT 2
 FORMAT Vertical
 
-Query id: 856f0efd-07c9-4f1a-815f-a19112df5bb3
+Query id: f544e72a-6641-43f1-836b-24baa1c9632a
 
 Row 1:
 ──────
@@ -36,14 +37,11 @@ host_address:      172.23.0.11
 port:              9000
 status:            finished
 cluster:           test_cluster
-value:            version: 1
-query: CREATE DATABASE test_db UUID '40ac7692-70d3-48a9-bc29-4ade18957f59' ON CLUSTER test_cluster
-hosts: ['clickhouse01:9000','clickhouse02:9000','clickhouse03:9000','clickhouse04:9000']
-initiator: clickhouse01:9000
-
-query_start_time:  2020-12-15 10:06:35
-query_finish_time: 2020-12-15 10:06:35
-query_duration_ms: 7
+query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
+initiator:         clickhouse01:9000
+query_start_time:  2020-12-30 13:07:51
+query_finish_time: 2020-12-30 13:07:51
+query_duration_ms: 6
 exception_code:    ZOK
 
 Row 2:
@@ -54,17 +52,14 @@ host_address:      172.23.0.12
 port:              9000
 status:            finished
 cluster:           test_cluster
-value:            version: 1
-query: CREATE DATABASE test_db UUID '40ac7692-70d3-48a9-bc29-4ade18957f59' ON CLUSTER test_cluster
-hosts: ['clickhouse01:9000','clickhouse02:9000','clickhouse03:9000','clickhouse04:9000']
-initiator: clickhouse01:9000
-
-query_start_time:  2020-12-15 10:06:35
-query_finish_time: 2020-12-15 10:06:35
-query_duration_ms: 7
+query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
+initiator:         clickhouse01:9000
+query_start_time:  2020-12-30 13:07:51
+query_finish_time: 2020-12-30 13:07:51
+query_duration_ms: 6
 exception_code:    ZOK
 
-2 rows in set. Elapsed: 0.032 sec. 
+2 rows in set. Elapsed: 0.025 sec.
 ```
 
 
