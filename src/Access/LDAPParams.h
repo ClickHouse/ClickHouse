@@ -2,6 +2,8 @@
 
 #include <common/types.h>
 
+#include <boost/container_hash/hash.hpp>
+
 #include <chrono>
 
 
@@ -68,10 +70,26 @@ struct LDAPServerParams
     String user;
     String password;
 
+    std::chrono::seconds verification_cooldown{0};
+
     std::chrono::seconds operation_timeout{40};
     std::chrono::seconds network_timeout{30};
     std::chrono::seconds search_timeout{20};
     std::uint32_t search_limit = 100;
+
+    std::size_t getCoreHash() const
+    {
+        std::size_t seed = 0;
+
+        boost::hash_combine(seed, host);
+        boost::hash_combine(seed, port);
+        boost::hash_combine(seed, auth_dn_prefix);
+        boost::hash_combine(seed, auth_dn_suffix);
+        boost::hash_combine(seed, user);
+        boost::hash_combine(seed, password);
+
+        return seed;
+    }
 };
 
 }
