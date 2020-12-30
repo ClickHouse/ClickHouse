@@ -97,4 +97,6 @@ private:
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
 
+std::string debugExplainStep(const IQueryPlanStep & step);
+
 }

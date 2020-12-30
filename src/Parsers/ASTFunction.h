@@ -21,9 +21,25 @@ public:
     ASTPtr parameters;
 
     bool is_window_function = false;
-    ASTIdentifier * window_name;
-    ASTExpressionList * window_partition_by;
-    ASTExpressionList * window_order_by;
+
+    // We have to make these fields ASTPtr because this is what the visitors
+    // expect. Some of them take const ASTPtr & (makes no sense), and some
+    // take ASTPtr & and modify it. I don't understand how the latter is
+    // compatible with also having an owning `children` array -- apparently it
+    // leads to some dangling children that are not referenced by the fields of
+    // the AST class itself. Some older code hints at the idea of having
+    // ownership in `children` only, and making the class fields to be raw
+    // pointers of proper type (see e.g. IAST::set), but this is not compatible
+    // with the visitor interface.
+
+    // ASTIdentifier
+    ASTPtr window_name;
+
+    // ASTExpressionList
+    ASTPtr window_partition_by;
+
+    // ASTExpressionList of
+    ASTPtr window_order_by;
 
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
