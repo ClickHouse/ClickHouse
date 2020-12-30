@@ -21,8 +21,8 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
     {
         while (!parsing_finished)
         {
-            const auto current_unit_number = segmentator_ticket_number % processing_units.size();
-            auto & unit = processing_units[current_unit_number];
+            const auto segmentator_unit_number = segmentator_ticket_number % processing_units.size();
+            auto & unit = processing_units[segmentator_unit_number];
 
             {
                 std::unique_lock<std::mutex> lock(mutex);
