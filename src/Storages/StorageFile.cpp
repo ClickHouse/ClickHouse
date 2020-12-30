@@ -481,12 +481,12 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
 
         if (!writer)
-            writer = FormatFactory::instance().getOutput(storage.format_name,
+            writer = FormatFactory::instance().getOutputStream(storage.format_name,
                 *write_buf, metadata_snapshot->getSampleBlock(), context,
                 {}, format_settings);
     }

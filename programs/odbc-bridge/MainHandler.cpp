@@ -176,7 +176,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStream(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);

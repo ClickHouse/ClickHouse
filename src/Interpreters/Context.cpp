@@ -2089,17 +2089,22 @@ BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & bu
     return std::make_shared<InputStreamFromInputFormat>(FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size));
 }
 
-BlockOutputStreamPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputParallelIfPossible(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, *this);
 }
 
-BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutput(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputStream(name, buf, sample, *this);
 }
 
-OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, *this);
+}
+
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
 }

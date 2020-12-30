@@ -184,7 +184,7 @@ public:
         : sample_block(sample_block_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context.getGlobalContext().getConfigRef()), compression_method, 3);
-        writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+        writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
     }
 
     Block getHeader() const override
