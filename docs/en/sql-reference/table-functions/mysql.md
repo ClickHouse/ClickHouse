@@ -43,6 +43,9 @@ The rest of the conditions and the `LIMIT` sampling constraint are executed in C
 
 A table object with the same columns as the original MySQL table.
 
+!!! info "Note"
+    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below. 
+
 **Examples**
 
 Table in MySQL:
@@ -78,8 +81,8 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 Replacing and inserting:
 
 ```sql
-INSERT INTO mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) ('int_id', 'float') VALUES (1, 3);
-INSERT INTO mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') ('int_id', 'float') VALUES (1, 4);
+INSERT INTO FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) ('int_id', 'float') VALUES (1, 3);
+INSERT INTO TABLE FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') ('int_id', 'float') VALUES (1, 4);
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
