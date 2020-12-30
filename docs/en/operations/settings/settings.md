@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimum query execution time to navigate to the following tables:
+If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
