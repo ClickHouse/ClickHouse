@@ -31,7 +31,7 @@ public:
         const bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
-    String getMetadataPath() const override { return metadata_path; };
+    String getMetadataPath() const override { return metadata_path; }
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }

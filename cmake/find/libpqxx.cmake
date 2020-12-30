@@ -18,13 +18,15 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpq/include")
     return()
 endif()
 
+if (NOT USE_INTERNAL_SSL_LIBRARY)
+    set (USE_LIBPQXX 0)
+    message (STATUS "Using libpqxx=${USE_LIBPQXX}. (Internal ssl library is missing)")
+else ()
 set (USE_LIBPQXX 1)
 set (LIBPQXX_LIBRARY libpqxx)
 set (LIBPQ_LIBRARY libpq)
-
 set (LIBPQXX_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpqxx/include")
 set (LIBPQ_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpq")
-
 message (STATUS "Using libpqxx=${USE_LIBPQXX}: ${LIBPQXX_INCLUDE_DIR} : ${LIBPQXX_LIBRARY}")
 message (STATUS "Using libpq: ${LIBPQ_ROOT_DIR} : ${LIBPQ_INCLUDE_DIR} : ${LIBPQ_LIBRARY}")
-
+endif()
