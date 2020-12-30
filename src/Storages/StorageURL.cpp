@@ -156,7 +156,7 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
             compression_method, 3);
-    writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block,
+    writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
 }
 

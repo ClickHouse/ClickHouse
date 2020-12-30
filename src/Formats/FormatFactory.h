@@ -116,12 +116,14 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Checks all preconditions. Returns nullptr of parallel formatting cannot be done.
-    BlockOutputStreamPtr getOutputParallelIfPossible(const String & name, WriteBuffer & buf,
+    /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
+    /// Currenly used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
+    /// Currenly used only in Client. Don't use it something else! Better look at getOutputFormat.
+    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -131,6 +133,12 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
+    OutputFormatPtr getOutputFormatParallelIfPossible(
+        const String & name, WriteBuffer & buf, const Block & sample,
+        const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(

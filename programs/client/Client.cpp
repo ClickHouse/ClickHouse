@@ -1934,11 +1934,11 @@ private:
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
 
-            if (!is_interactive && !need_render_progress)
-                block_out_stream = context.getOutputFormatParallelIfPossible(current_format, *out_buf, block);
-
-            if (!block_out_stream)
-                block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+            /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
+            if (!need_render_progress)
+                block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+            else
+                block_out_stream = context.getOutputStream(current_format, *out_buf, block);
 
             block_out_stream->writePrefix();
         }
