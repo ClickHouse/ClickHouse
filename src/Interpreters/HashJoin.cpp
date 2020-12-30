@@ -360,6 +360,17 @@ void HashJoin::init(Type type_)
 size_t HashJoin::getTotalRowCount() const
 {
     std::shared_lock lock(data->rwlock);
+    return getTotalRowCountLocked();
+}
+
+size_t HashJoin::getTotalByteCount() const
+{
+    std::shared_lock lock(data->rwlock);
+    return getTotalByteCountLocked();
+}
+
+size_t HashJoin::getTotalRowCountLocked() const
+{
     size_t res = 0;
 
     if (data->type == Type::CROSS)
@@ -375,9 +386,8 @@ size_t HashJoin::getTotalRowCount() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCount() const
+size_t HashJoin::getTotalByteCountLocked() const
 {
-    std::shared_lock lock(data->rwlock);
     size_t res = 0;
 
     if (data->type == Type::CROSS)
@@ -594,8 +604,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             return true;
 
         /// TODO: Do not calculate them every time
-        total_rows = getTotalRowCount();
-        total_bytes = getTotalByteCount();
+        total_rows = getTotalRowCountLocked();
+        total_bytes = getTotalByteCountLocked();
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
