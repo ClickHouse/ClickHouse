@@ -5,7 +5,6 @@ from contextlib import contextmanager
 
 import docker
 import pytest
-import random
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
@@ -86,14 +85,9 @@ def execute_task(task, cmd_options):
     zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
-    try:
-        zk.delete("/clickhouse-copier", recursive=True)
-    except kazoo.exceptions.NoNodeError:
-        print("No node /clickhouse-copier. It is Ok in first test.")
-
     zk_task_path = task.zk_task_path
     zk.ensure_path(zk_task_path)
-    zk.create(zk_task_path + "/description", task.copier_task_config.encode())
+    zk.create(zk_task_path + "/description", task.copier_task_config)
 
     # Run cluster-copier processes on each node
     docker_api = docker.from_env().api
@@ -105,28 +99,23 @@ def execute_task(task, cmd_options):
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
-    copiers = list(cluster.instances.keys())
+    print(cmd)
 
-    for instance_name in copiers:
-        instance = cluster.instances[instance_name]
+    for instance_name, instance in cluster.instances.items():
         container = instance.get_docker_handle()
-        instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
-                                        "/etc/clickhouse-server/config-copier.xml")
-        print("Copied copier config to {}".format(instance.name))
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
-        output = docker_api.exec_start(exec_id).decode('utf8')
-        print(output)
+        docker_api.exec_start(exec_id, detach=True)
+
         copiers_exec_ids.append(exec_id)
         print("Copier for {} ({}) has started".format(instance.name, instance.ip_address))
 
     # Wait for copiers stopping and check their return codes
-    for exec_id, instance_name in zip(copiers_exec_ids, copiers):
-        instance = cluster.instances[instance_name]
+    for exec_id, instance in zip(copiers_exec_ids, iter(cluster.instances.values())):
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
                 break
-            time.sleep(0.5)
+            time.sleep(1)
 
         assert res['ExitCode'] == 0, "Instance: {} ({}). Info: {}".format(instance.name, instance.ip_address, repr(res))
 
@@ -163,10 +152,10 @@ def test_trivial_copy(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
+        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
+        execute_task(TaskTrivial(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
 
 @pytest.mark.parametrize(
@@ -178,10 +167,10 @@ def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
 )
 def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
     if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
+        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
                                                     '--experimental-use-sample-offset', '1'])
     else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
+        execute_task(TaskTrivial(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
 
 if __name__ == '__main__':
