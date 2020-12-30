@@ -18,6 +18,7 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
