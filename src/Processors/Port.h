@@ -60,6 +60,14 @@ protected:
             /// Note: std::variant can be used. But move constructor for it can't be inlined.
             Chunk chunk;
             std::exception_ptr exception;
+
+            Chunk getChunkOrTrow()
+            {
+                if (exception)
+                    std::rethrow_exception(std::move(exception));
+
+                return std::move(chunk);
+            }
         };
 
     private:
@@ -303,12 +311,7 @@ public:
 
     Chunk ALWAYS_INLINE pull(bool set_not_needed = false)
     {
-        auto data_ = pullData(set_not_needed);
-
-        if (data_.exception)
-            std::rethrow_exception(data_.exception);
-
-        return std::move(data_.chunk);
+        return pullData(set_not_needed).getChunkOrTrow();
     }
 
     bool ALWAYS_INLINE isFinished() const
