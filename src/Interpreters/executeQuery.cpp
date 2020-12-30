@@ -162,7 +162,7 @@ static void logQuery(const String & query, const Context & context, bool interna
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
+            (context.getSettingsRef().use_antlr_parser ? "experimental" : "production"),
             joinLines(query));
 
         if (client_info.client_trace_context.trace_id)
