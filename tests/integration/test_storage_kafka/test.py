@@ -1617,8 +1617,6 @@ def test_kafka_virtual_columns2(kafka_cluster):
                      kafka_num_consumers = 2,
                      kafka_format = 'JSONEachRow';
 
-        SELECT * FROM test.kafka;
-
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
         SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
         ''')
