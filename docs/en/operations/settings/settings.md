@@ -2480,7 +2480,7 @@ Possible values:
 -   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
 -   `''` — Clickhouse generates an exception when used with `UNION`.
 
-Default value: `'DISTINCT'`.
+Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
 
