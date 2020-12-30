@@ -3,6 +3,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Interpreters/DDLWorker.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
 
@@ -29,5 +30,6 @@ public:
     std::string getName() const override { return "SystemDDLWorkerQueue"; }
 
     static NamesAndTypesList getNamesAndTypes();
+    String clusterNameFromDDLQuery(const Context & context, const DB::DDLLogEntry & entry) const;
 };
 }
