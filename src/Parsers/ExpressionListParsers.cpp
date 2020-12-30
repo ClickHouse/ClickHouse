@@ -100,6 +100,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto list = std::make_shared<ASTExpressionList>(result_separator);
     list->children = std::move(elements);
     node = list;
+
     return true;
 }
 

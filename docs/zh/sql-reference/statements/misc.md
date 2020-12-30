@@ -9,19 +9,21 @@ toc_title: "\u5176\u4ED6"
 
 ## ATTACH {#attach}
 
-这个查询是完全一样的 `CREATE`，但是
+与`CREATE`类似，但有所区别
 
--   而不是这个词 `CREATE` 它使用这个词 `ATTACH`.
--   查询不会在磁盘上创建数据，但假定数据已经在适当的位置，只是将有关表的信息添加到服务器。
-    执行附加查询后，服务器将知道表的存在。
+-   使用关键词 `ATTACH`
+-   查询不会在磁盘上创建数据。但会假定数据已经在对应位置存放，同时将与表相关的信息添加到服务器。
+    执行 `ATTACH` 查询后，服务器将知道表已经被创建。
 
-如果表之前已分离 (`DETACH`），意味着其结构是已知的，可以使用速记而不限定该结构。
+如果表之前已分离 (`DETACH`），意味着其结构是已知的，可以使用简要的写法来建立表，即不需要定义表结构的Schema细节。
 
 ``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-启动服务器时使用此查询。 服务器将表元数据作为文件存储 `ATTACH` 查询，它只是在启动时运行（除了在服务器上显式创建的系统表）。
+启动服务器时会自动触发此查询。 
+
+服务器将表的元数据作为文件存储 `ATTACH` 查询，它只是在启动时运行。有些表例外，如系统表，它们是在服务器上显式指定的。
 
 ## CHECK TABLE {#check-table}
 
@@ -31,13 +33,12 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 CHECK TABLE [db.]name
 ```
 
-该 `CHECK TABLE` 查询将实际文件大小与存储在服务器上的预期值进行比较。 如果文件大小与存储的值不匹配，则表示数据已损坏。 例如，这可能是由查询执行期间的系统崩溃引起的。
+`CHECK TABLE` 查询会比较存储在服务器上的实际文件大小与预期值。 如果文件大小与存储的值不匹配，则表示数据已损坏。 例如，这可能是由查询执行期间的系统崩溃引起的。
 
-查询响应包含 `result` 具有单行的列。 该行的值为
-[布尔值](../../sql-reference/data-types/boolean.md) 类型:
+查询返回一行结果，列名为 `result`, 该行的值为 [布尔值](../../sql-reference/data-types/boolean.md) 类型:
 
--   0-表中的数据已损坏。
--   1-数据保持完整性。
+-   0-表中的数据已损坏；
+-   1-数据保持完整性；
 
 该 `CHECK TABLE` 查询支持下表引擎:
 
@@ -56,13 +57,14 @@ CHECK TABLE [db.]name
 
 如果表已损坏，则可以将未损坏的数据复制到另一个表。 要做到这一点:
 
-1.  创建一个与损坏的表结构相同的新表。 要做到这一点，请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
+1.  创建一个与损坏的表结构相同的新表。 请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
 2.  将 [max_threads](../../operations/settings/settings.md#settings-max_threads) 值设置为1，以在单个线程中处理下一个查询。 要这样做，请运行查询 `SET max_threads = 1`.
 3.  执行查询 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. 此请求将未损坏的数据从损坏的表复制到另一个表。 只有损坏部分之前的数据才会被复制。
 4.  重新启动 `clickhouse-client` 以重置 `max_threads` 值。
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
+查看表的描述信息，返回各列的Schema，语法如下：
 ``` sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
@@ -73,24 +75,25 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 -   `type`— 列的类型。
 -   `default_type` — [默认表达式](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` 或 `ALIAS`)中使用的子句。 如果没有指定默认表达式，则列包含一个空字符串。
 -   `default_expression` — `DEFAULT` 子句中指定的值。
--   `comment_expression` — 注释。
+-   `comment_expression` — 注释信息。
 
 嵌套数据结构以 “expanded” 格式输出。 每列分别显示，列名后加点号。
 
 ## DETACH {#detach}
 
-从服务器中删除有关 ‘name’ 表的信息。 服务器停止了解该表的存在。
+从服务器中删除目标表信息（删除对象是表), 执行查询后,服务器视作该表已经不存在。
 
 ``` sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 这不会删除表的数据或元数据。 在下一次服务器启动时，服务器将读取元数据并再次查找该表。
-同样，可以使用 `ATTACH` 查询重新连接一个 “detached” 的表（系统表除外，没有为它们存储元数据）。
+也可以不停止服务器的情况下，使用前面介绍的 `ATTACH` 查询来重新关联该表（系统表除外，没有为它们存储元数据）。
 
 ## DROP {#drop}
 
 删除已经存在的实体。如果指定 `IF EXISTS`， 则如果实体不存在，则不返回错误。
+建议使用时添加 `IF EXISTS` 修饰符。
 
 ## DROP DATABASE {#drop-database}
 
@@ -135,7 +138,7 @@ DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 删除角色。
 
-已删除的角色将从授予该角色的所有实体撤销。
+同时该角色所拥有的权限也会被收回。
 
 语法:
 
@@ -199,6 +202,8 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 ## KILL QUERY {#kill-query-statement}
 
+
+
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
@@ -219,16 +224,17 @@ KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 KILL QUERY WHERE user='username' SYNC
 ```
 
-只读用户只能停止自己的查询。
+只读用户只能停止自己提交的查询。
 
-默认情况下，使用异步版本的查询 (`ASYNC`），不等待确认查询已停止。
+默认情况下，使用异步版本的查询 (`ASYNC`），不需要等待确认查询已停止。
 
-同步版本 (`SYNC`）等待所有查询停止，并在停止时显示有关每个进程的信息。
-响应包含 `kill_status` 列，该列可以采用以下值:
+而相对的，终止同步版本 (`SYNC`）的查询会显示每步停止时间。
+
+返回信息包含 `kill_status` 列，该列可以采用以下值:
 
 1.  ‘finished’ – 查询已成功终止。
 2.  ‘waiting’ – 发送查询信号终止后，等待查询结束。
-3.  其他值解释为什么查询不能停止。
+3.  其他值，会解释为什么查询不能停止。
 
 测试查询 (`TEST`）仅检查用户的权限，并显示要停止的查询列表。
 

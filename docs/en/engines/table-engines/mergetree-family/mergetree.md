@@ -98,6 +98,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
     -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — Minimum number of bytes/rows in a data part that can be stored in `Wide` format. You can set one, both or none of these settings. See [Data Storage](#mergetree-data-storage).
+    -   `max_parts_in_total` — Maximum number of parts in all partitions. 
 
 **Example of Sections Setting**
 

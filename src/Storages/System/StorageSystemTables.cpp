@@ -65,8 +65,15 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
-        column->insert(db.first);
+
+    const auto databases = DatabaseCatalog::instance().getDatabases();
+    for (const auto & database_name : databases | boost::adaptors::map_keys)
+    {
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        column->insert(database_name);
+    }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -192,7 +199,11 @@ protected:
 
                         // create_table_query
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
+                        {
+                            auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
+                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
+                            res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
+                        }
 
                         // engine_full
                         if (columns_mask[src_index++])
