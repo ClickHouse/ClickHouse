@@ -104,9 +104,12 @@ public:
         return false;
     }
 
-    /// Inserts results into a column.
-    /// This method must be called once, from single thread.
-    /// After this method was called for state, you can't do anything with state but destroy.
+    /// Inserts results into a column. This method might modify the state (e.g.
+    /// sort an array), so must be called once, from single thread. The state
+    /// must remain valid though, and the subsequent calls to add/merge/
+    /// insertResultInto must work correctly. This kind of call sequence occurs
+    /// in `runningAccumulate`, or when calculating an aggregate function as a
+    /// window function.
     virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
