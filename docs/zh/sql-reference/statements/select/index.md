@@ -46,7 +46,7 @@ SELECT [DISTINCT] expr_list
 -   [SELECT 子句](#select-clause)
 -   [DISTINCT 子句](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT 子句](../../../sql-reference/statements/select/limit.md)
--   [UNION ALL 子句](../../../sql-reference/statements/select/union-all.md)
+-   [UNION ALL 子句](../../../sql-reference/statements/select/union.md)
 -   [INTO OUTFILE 子句](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT 子句](../../../sql-reference/statements/select/format.md)
 

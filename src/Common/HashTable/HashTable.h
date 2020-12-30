@@ -1008,7 +1008,7 @@ public:
          * then deleting a erased_key_position will break search for it, so we need to move next_element
          * to erased_key_position. Now we have empty place at next_element, so we apply the identical
          * procedure for it.
-         * If an empty element is encoutered then means that there is no more next elements for which we can
+         * If an empty element is encountered then means that there is no more next elements for which we can
          * break the search so we can exit.
         */
 

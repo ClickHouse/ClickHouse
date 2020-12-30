@@ -20,6 +20,7 @@ SKIP_LIST = [
     "00505_shard_secure",
     "00506_union_distributed",  # flaky
     "00646_url_engine",
+    "00821_distributed_storage_with_join_on.sql",  # flaky
     "00834_cancel_http_readonly_queries_on_client_close",
     "00933_test_fix_extra_seek_on_compressed_cache",
     "00965_logs_level_bugfix",
@@ -31,6 +32,7 @@ SKIP_LIST = [
     "01018_ip_dictionary",
     "01023_materialized_view_query_context",  # flaky
     "01035_lc_empty_part_bug",  # flaky
+    "01037_polygon_dicts_simple_functions.sh",  # flaky
     "01046_materialized_view_with_join_over_distributed",  # flaky
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
@@ -45,6 +47,7 @@ SKIP_LIST = [
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
+    "01193_metadata_loading.sh",  # flaky
     "01274_alter_rename_column_distributed",  # flaky
     "01280_ssd_complex_key_dictionary",
     "01293_client_interactive_vertical_multiline",  # expect-test
@@ -58,6 +61,7 @@ SKIP_LIST = [
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
+    "01375_storage_file_tsv_csv_with_names_write_prefix",  # flaky
     "01376_GROUP_BY_injective_elimination_dictGet",
     "01393_benchmark_secure_port",
     "01418_custom_settings",
