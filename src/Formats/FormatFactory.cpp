@@ -165,6 +165,9 @@ InputFormatPtr FormatFactory::getInput(
     if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
 
+    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
+        parallel_parsing = false;
+
     if (parallel_parsing && name == "JSONEachRow")
     {
         /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
@@ -211,8 +214,8 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(const Stri
     const Settings & settings = context.getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
 
-    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting 
-        && !settings.output_format_json_array_of_rows && !settings.allow_experimental_live_view)
+    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
+        && !settings.output_format_json_array_of_rows)
     {
         auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
@@ -311,8 +314,8 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
     const Settings & settings = context.getSettingsRef();
 
-    if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting 
-        && !settings.output_format_json_array_of_rows && !settings.allow_experimental_live_view)
+    if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
+        && !settings.output_format_json_array_of_rows)
     {
         auto formatter_creator = [output_getter, sample, callback, format_settings]
         (WriteBuffer & output) -> OutputFormatPtr
@@ -325,7 +328,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
     return getOutputFormat(name, buf, sample, context, callback, _format_settings);
 }
-
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
