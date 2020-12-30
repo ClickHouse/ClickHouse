@@ -103,15 +103,18 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
+    assert(!create->temporary);
     create->database.clear();
     create->as_database.clear();
     create->as_table.clear();
     create->if_not_exists = false;
     create->is_populate = false;
     create->replace_view = false;
+    create->replace_table = false;
+    create->create_or_replace = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create->is_view && !create->is_materialized_view && !create->is_live_view)
+    if (!create->isView())
         create->select = nullptr;
 
     create->format = nullptr;
@@ -229,7 +232,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(const String & table_name, co
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to remove permanenty detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
 }
@@ -264,7 +267,7 @@ void DatabaseOnDisk::detachTablePermanently(const String & table_name)
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to set permanenty detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
 }

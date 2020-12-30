@@ -17,10 +17,6 @@
         "name": "yandex/clickhouse-unbundled-builder",
         "dependent": []
     },
-    "docker/test/coverage": {
-        "name": "yandex/clickhouse-coverage",
-        "dependent": []
-    },
     "docker/test/compatibility/centos": {
         "name": "yandex/clickhouse-test-old-centos",
         "dependent": []
@@ -48,18 +44,13 @@
     "docker/test/stateless": {
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
-            "docker/test/stateful"
+            "docker/test/stateful",
+            "docker/test/coverage"
         ]
     },
     "docker/test/stateless_pytest": {
         "name": "yandex/clickhouse-stateless-pytest",
         "dependent": []
-    },
-    "docker/test/stateless_with_coverage": {
-        "name": "yandex/clickhouse-stateless-test-with-coverage",
-        "dependent": [
-            "docker/test/stateful_with_coverage"
-        ]
     },
     "docker/test/stateful": {
         "name": "yandex/clickhouse-stateful-test",
@@ -67,8 +58,8 @@
             "docker/test/stress"
         ]
     },
-    "docker/test/stateful_with_coverage": {
-        "name": "yandex/clickhouse-stateful-test-with-coverage",
+    "docker/test/coverage": {
+        "name": "yandex/clickhouse-test-coverage",
         "dependent": []
     },
     "docker/test/unit": {
@@ -143,9 +134,7 @@
          "name": "yandex/clickhouse-test-base",
          "dependent": [
             "docker/test/stateless",
-            "docker/test/stateless_with_coverage",
-            "docker/test/stateless_pytest",
-            "docker/test/coverage"
+            "docker/test/stateless_pytest"
          ]
     },
     "docker/packager/unbundled": {
