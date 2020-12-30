@@ -8,10 +8,12 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <Columns/ColumnDecimal.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
+#    include <IO/Operators.h>
 #    include <Common/assert_cast.h>
 #    include <ext/range.h>
 #    include "MySQLBlockInputStream.h"
@@ -37,17 +39,15 @@ MySQLBlockInputStream::MySQLBlockInputStream(
     const std::string & query_str,
     const Block & sample_block,
     const UInt64 max_block_size_,
-    const bool auto_close_)
+    const bool auto_close_,
+    const bool fetch_by_name_)
     : connection{std::make_unique<Connection>(entry, query_str)}
     , max_block_size{max_block_size_}
     , auto_close{auto_close_}
+    , fetch_by_name(fetch_by_name_)
 {
-    if (sample_block.columns() != connection->result.getNumFields())
-        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
-                            + toString(sample_block.columns()) + " expected",
-                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
-
     description.init(sample_block);
+    initPositionMappingFromQueryResultStructure();
 }
 
 
@@ -111,6 +111,9 @@ namespace
                 data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
                 break;
             }
+            case ValueType::vtFixedString:
+                assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+                break;
         }
     }
 
@@ -135,24 +138,25 @@ Block MySQLBlockInputStream::readImpl()
     size_t num_rows = 0;
     while (row)
     {
-        for (const auto idx : ext::range(0, row.size()))
+        for (size_t index = 0; index < position_mapping.size(); ++index)
         {
-            const auto value = row[idx];
-            const auto & sample = description.sample_block.getByPosition(idx);
+            const auto value = row[position_mapping[index]];
+            const auto & sample = description.sample_block.getByPosition(index);
+
             if (!value.isNull())
             {
-                if (description.types[idx].second)
+                if (description.types[index].second)
                 {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                    insertValue(*sample.type, *columns[idx], description.types[idx].first, value);
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value);
             }
             else
-                insertDefaultValue(*columns[idx], *sample.column);
+                insertDefaultValue(*columns[index], *sample.column);
         }
 
         ++num_rows;
@@ -167,11 +171,60 @@ Block MySQLBlockInputStream::readImpl()
 MySQLBlockInputStream::MySQLBlockInputStream(
     const Block & sample_block_,
     UInt64 max_block_size_,
-    bool auto_close_)
+    bool auto_close_,
+    bool fetch_by_name_)
     : max_block_size(max_block_size_)
     , auto_close(auto_close_)
+    , fetch_by_name(fetch_by_name_)
 {
     description.init(sample_block_);
+}
+
+void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
+{
+    position_mapping.resize(description.sample_block.columns());
+
+    if (!fetch_by_name)
+    {
+        if (description.sample_block.columns() != connection->result.getNumFields())
+            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+
+        for (const auto idx : ext::range(0, connection->result.getNumFields()))
+            position_mapping[idx] = idx;
+    }
+    else
+    {
+        const auto & sample_names = description.sample_block.getNames();
+        std::unordered_set<std::string> missing_names(sample_names.begin(), sample_names.end());
+
+        size_t fields_size = connection->result.getNumFields();
+
+        for (const size_t & idx : ext::range(0, fields_size))
+        {
+            const auto & field_name = connection->result.getFieldName(idx);
+            if (description.sample_block.has(field_name))
+            {
+                const auto & position = description.sample_block.getPositionByName(field_name);
+                position_mapping[position] = idx;
+                missing_names.erase(field_name);
+            }
+        }
+
+        if (!missing_names.empty())
+        {
+            WriteBufferFromOwnString exception_message;
+            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
+            {
+                if (iter != missing_names.begin())
+                    exception_message << ", ";
+                exception_message << *iter;
+            }
+
+            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        }
+    }
 }
 
 MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
@@ -179,8 +232,9 @@ MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
     const std::string & query_str_,
     const Block & sample_block_,
     const UInt64 max_block_size_,
-    const bool auto_close_)
-    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_)
+    const bool auto_close_,
+    const bool fetch_by_name_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
     , pool(pool_)
     , query_str(query_str_)
 {
@@ -189,10 +243,7 @@ MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
 void MySQLLazyBlockInputStream::readPrefix()
 {
     connection = std::make_unique<Connection>(pool.get(), query_str);
-    if (description.sample_block.columns() != connection->result.getNumFields())
-        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
-                            + toString(description.sample_block.columns()) + " expected",
-                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+    initPositionMappingFromQueryResultStructure();
 }
 
 }

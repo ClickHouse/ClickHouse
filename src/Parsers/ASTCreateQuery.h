@@ -4,9 +4,9 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
-
 
 namespace DB
 {
@@ -64,7 +64,7 @@ public:
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * tables = nullptr;
-    //FIXME
+
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
     String as_database;
@@ -78,6 +78,11 @@ public:
 
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     bool attach_short_syntax{false};
+
+    std::optional<String> attach_from_path = std::nullopt;
+
+    bool replace_table{false};
+    bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

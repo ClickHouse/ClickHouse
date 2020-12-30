@@ -19,7 +19,6 @@ toc_title: "Biblioth\xE8ques Tierces Utilis\xE9es"
 | googletest           | [Licence BSD 3-Clause](https://github.com/google/googletest/blob/master/LICENSE)                                                               |
 | h3                   | [Licence Apache 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                           |
 | hyperscan            | [Licence BSD 3-Clause](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                 |
-| libbtrie             | [Licence BSD 2-Clause](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                          |
 | libcxxabi            | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                            |
 | libdivide            | [Licence Zlib](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                             |
 | libgsasl             | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                               |

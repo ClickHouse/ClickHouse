@@ -19,7 +19,6 @@ toc_title: "Kullan\u0131lan \xDC\xE7\xFCnc\xFC Taraf K\xFCt\xFCphaneleri"
 | googletest          | [BSD 3-Clause Lisansı](https://github.com/google/googletest/blob/master/LICENSE)                                                                       |
 | h33                 | [Apache Lic 2.0ense 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                               |
 | hyperscan           | [BSD 3-Clause Lisansı](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                         |
-| libbtrie            | [BSD 2-Clause Lisansı](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                                  |
 | libcxxabi           | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                                    |
 | libdivide           | [Zlib Lisansı](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                                     |
 | libgsasl            | [LGPL v2. 1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                                      |

@@ -3,9 +3,6 @@ from rbac.helper.common import *
 import rbac.helper.errors as errors
 
 @TestSuite
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_CreateTable_Access("1.0"),
-)
 def privilege_granted_directly_or_via_role(self, node=None):
     """Check that user is only able to execute ATTACH TABLE when they have required privilege, either directly or via role.
     """
@@ -56,7 +53,7 @@ def privilege_check(grant_target_name, user_name, node=None):
 
             with Then("I attempt to attach a table"):
                 node.query(f"ATTACH TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", user_name)],
-                    exitcode=80, message="DB::Exception: UUID must be specified")
+                    exitcode=80, message="DB::Exception: Incorrect ATTACH TABLE query")
 
         finally:
             with Finally("I drop the table"):

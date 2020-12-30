@@ -25,7 +25,7 @@ def without_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
+    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
 )
 def user_with_privilege(self, table_type, node=None):
     """Check that user can select from a table on which they have select privilege.
@@ -47,7 +47,7 @@ def user_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
+    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to select from a table after select privilege
@@ -115,7 +115,7 @@ def user_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
+    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
 )
 def role_with_privilege(self, table_type, node=None):
     """Check that user can select from a table after it is granted a role that
@@ -142,7 +142,7 @@ def role_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
+    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
 )
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has select privilege on a table is unable

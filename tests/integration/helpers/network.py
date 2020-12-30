@@ -173,22 +173,30 @@ class _NetworkManager:
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
 
-            if self._container is not None:
-                try:
-                    self._container.remove(force=True)
-                except docker.errors.NotFound:
-                    pass
-
-            # for some reason docker api may hang if image doesn't exist, so we download it
-            # before running
             for i in range(5):
-                try:
-                    subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)
-                    break
-                except:
-                    time.sleep(i)
-            else:
-                raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
+                if self._container is not None:
+                    try:
+                        self._container.remove(force=True)
+                        break
+                    except docker.errors.NotFound:
+                        break
+                    except Exception as ex:
+                        print("Error removing network blocade container, will try again", str(ex))
+                        time.sleep(i)
+
+            image = subprocess.check_output("docker images -q yandex/clickhouse-integration-helper 2>/dev/null", shell=True)
+            if not image.strip():
+                print("No network image helper, will try download")
+                # for some reason docker api may hang if image doesn't exist, so we download it
+                # before running
+                for i in range(5):
+                    try:
+                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)
+                        break
+                    except:
+                        time.sleep(i)
+                else:
+                    raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
 
             self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
                                                                  auto_remove=True,

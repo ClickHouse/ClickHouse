@@ -25,7 +25,7 @@ import clickhouse_grpc_pb2_grpc
 # Utilities
 
 node_ip = '10.5.172.77' # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-grpc_port = 9001
+grpc_port = 9100
 node_ip_with_grpc_port = node_ip + ':' + str(grpc_port)
 config_dir = os.path.join(SCRIPT_DIR, './configs')
 cluster = ClickHouseCluster(__file__)

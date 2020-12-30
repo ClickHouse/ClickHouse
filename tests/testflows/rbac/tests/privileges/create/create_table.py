@@ -17,13 +17,17 @@ def create_without_create_table_privilege(self, node=None):
         node = self.context.node
 
     with user(node, f"{user_name}"):
+        try:
+            with Given("I don't have a table"):
+                node.query(f"DROP TABLE IF EXISTS {table_name}")
 
-        with Given("I don't have a table"):
-            node.query(f"DROP TABLE IF EXISTS {table_name}")
+            with When("I try to create a table without CREATE TABLE privilege as the user"):
+                node.query(f"CREATE TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", f"{user_name}")],
+                    exitcode=exitcode, message=message)
 
-        with When("I try to create a table without CREATE TABLE privilege as the user"):
-            node.query(f"CREATE TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", f"{user_name}")],
-                exitcode=exitcode, message=message)
+        finally:
+            with Finally("I drop the table"):
+                node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestScenario
 def create_with_create_table_privilege_granted_directly_or_via_role(self, node=None):
@@ -103,18 +107,23 @@ def create_with_revoked_create_table_privilege(self, grant_target_name, user_nam
     if node is None:
         node = self.context.node
 
-    with Given("I don't have a table"):
-        node.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        with Given("I don't have a table"):
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
 
-    with When("I grant CREATE TABLE privilege"):
-        node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
+        with When("I grant CREATE TABLE privilege"):
+            node.query(f"GRANT CREATE TABLE ON {table_name} TO {grant_target_name}")
 
-    with And("I revoke CREATE TABLE privilege"):
-        node.query(f"REVOKE CREATE TABLE ON {table_name} FROM {grant_target_name}")
+        with And("I revoke CREATE TABLE privilege"):
+            node.query(f"REVOKE CREATE TABLE ON {table_name} FROM {grant_target_name}")
 
-    with Then("I try to create a table on the table as the user"):
-        node.query(f"CREATE TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", f"{user_name}")],
-            exitcode=exitcode, message=message)
+        with Then("I try to create a table on the table as the user"):
+            node.query(f"CREATE TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", f"{user_name}")],
+                exitcode=exitcode, message=message)
+
+    finally:
+        with Finally("I drop the table"):
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestScenario
 def create_without_source_table_privilege(self, node=None):
@@ -131,16 +140,21 @@ def create_without_source_table_privilege(self, node=None):
 
     with table(node, f"{source_table_name}"):
         with user(node, f"{user_name}"):
+            try:
 
-            with When("I grant CREATE TABLE privilege to a user"):
-                node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
+                with When("I grant CREATE TABLE privilege to a user"):
+                    node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
 
-            with And("I grant INSERT privilege"):
-                node.query(f"GRANT INSERT ON {table_name} TO {user_name}")
+                with And("I grant INSERT privilege"):
+                    node.query(f"GRANT INSERT ON {table_name} TO {user_name}")
 
-            with Then("I try to create a table without select privilege on the table"):
-                node.query(f"CREATE TABLE {table_name} ENGINE = Memory AS SELECT * FROM {source_table_name}", settings = [("user", f"{user_name}")],
-                    exitcode=exitcode, message=message)
+                with Then("I try to create a table without select privilege on the table"):
+                    node.query(f"CREATE TABLE {table_name} ENGINE = Memory AS SELECT * FROM {source_table_name}", settings = [("user", f"{user_name}")],
+                        exitcode=exitcode, message=message)
+
+            finally:
+                with Finally("I drop the table"):
+                    node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestScenario
 def create_without_insert_privilege(self, node=None):
@@ -158,15 +172,19 @@ def create_without_insert_privilege(self, node=None):
     with table(node, f"{source_table_name}"):
         with user(node, f"{user_name}"):
 
-            with When("I grant CREATE TABLE privilege to a user"):
-                node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
+            try:
+                with When("I grant CREATE TABLE privilege to a user"):
+                    node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
 
-            with And("I grant SELECT privilege"):
-                node.query(f"GRANT SELECT ON {source_table_name} TO {user_name}")
+                with And("I grant SELECT privilege"):
+                    node.query(f"GRANT SELECT ON {source_table_name} TO {user_name}")
 
-            with Then("I try to create a table without select privilege on the table"):
-                node.query(f"CREATE TABLE {table_name} ENGINE = Memory AS SELECT * FROM {source_table_name}", settings = [("user", f"{user_name}")],
-                    exitcode=exitcode, message=message)
+                with Then("I try to create a table without select privilege on the table"):
+                    node.query(f"CREATE TABLE {table_name} ENGINE = Memory AS SELECT * FROM {source_table_name}", settings = [("user", f"{user_name}")],
+                        exitcode=exitcode, message=message)
+            finally:
+                with Finally("I drop the table"):
+                    node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestScenario
 def create_with_source_table_privilege_granted_directly_or_via_role(self, node=None):
@@ -281,20 +299,14 @@ def create_with_subquery(self, user_name, grant_target_name, node=None):
 
                     with When(f"permutation={permutation}, tables granted = {tables_granted}"):
 
-                        with Given("I don't have a table"):
-                            node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                        with Then("I attempt to create a table as the user"):
+                        with When("I attempt to create a table as the user"):
                             node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name, table2_name=table2_name), settings = [("user", f"{user_name}")],
                                 exitcode=exitcode, message=message)
 
             with When("I grant select on all tables"):
                 with grant_select_on_table(node, max(permutations(table_count=3))+1, grant_target_name, table0_name, table1_name, table2_name):
 
-                    with Given("I don't have a table"):
-                        node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                    with Then("I attempt to create a table as the user"):
+                    with When("I attempt to create a table as the user"):
                         node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name, table2_name=table2_name), settings = [("user", f"{user_name}")])
 
         finally:
@@ -358,20 +370,14 @@ def create_with_join_query(self, grant_target_name, user_name, node=None):
 
                     with When(f"permutation={permutation}, tables granted = {tables_granted}"):
 
-                        with Given("I don't have a table"):
-                            node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                        with Then("I attempt to create a table as the user"):
+                        with When("I attempt to create a table as the user"):
                             node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name), settings = [("user", f"{user_name}")],
                                 exitcode=exitcode, message=message)
 
             with When("I grant select on all tables"):
                 with grant_select_on_table(node, max(permutations(table_count=2))+1, grant_target_name, table0_name, table1_name):
 
-                    with Given("I don't have a table"):
-                        node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                    with Then("I attempt to create a table as the user"):
+                    with When("I attempt to create a table as the user"):
                         node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name), settings = [("user", f"{user_name}")])
 
         finally:
@@ -435,20 +441,14 @@ def create_with_union_query(self, grant_target_name, user_name, node=None):
 
                     with When(f"permutation={permutation}, tables granted = {tables_granted}"):
 
-                        with Given("I don't have a table"):
-                            node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                        with Then("I attempt to create a table as the user"):
+                        with When("I attempt to create a table as the user"):
                             node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name), settings = [("user", f"{user_name}")],
                                 exitcode=exitcode, message=message)
 
             with When("I grant select on all tables"):
                 with grant_select_on_table(node, max(permutations(table_count=2))+1, grant_target_name, table0_name, table1_name):
 
-                    with Given("I don't have a table"):
-                        node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-                    with Then("I attempt to create a table as the user"):
+                    with When("I attempt to create a table as the user"):
                         node.query(create_table_query.format(table_name=table_name, table0_name=table0_name, table1_name=table1_name), settings = [("user", f"{user_name}")])
 
         finally:
@@ -622,8 +622,17 @@ def create_with_nested_tables(self, grant_target_name, user_name, node=None):
                             settings = [("user", f"{user_name}")])
 
         finally:
-            with Finally("I drop the tables"):
+            with Finally(f"I drop {table_name}"):
                 node.query(f"DROP TABLE IF EXISTS {table_name}")
+
+            with And(f"I drop {table1_name}"):
+                node.query(f"DROP TABLE IF EXISTS {table1_name}")
+
+            with And(f"I drop {table3_name}"):
+                node.query(f"DROP TABLE IF EXISTS {table3_name}")
+
+            with And(f"I drop {table5_name}"):
+                node.query(f"DROP TABLE IF EXISTS {table5_name}")
 
 @TestScenario
 def create_as_another_table(self, node=None):
@@ -697,6 +706,9 @@ def create_as_merge(self, node=None):
                 with When("I grant CREATE TABLE privilege to a user"):
                     node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
 
+                with And("I grant SELECT privilege to a user to allow executing the table function merge()"):
+                    node.query(f"GRANT SELECT ON {source_table_name} TO {user_name}")
+
                 with Then("I try to create a table as another table"):
                     node.query(f"CREATE TABLE {table_name} AS merge(default,'{source_table_name}')", settings = [("user", f"{user_name}")])
 
@@ -707,7 +719,6 @@ def create_as_merge(self, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_CreateTable("1.0"),
-    RQ_SRS_006_RBAC_Privileges_CreateTable_Access("1.0"),
 )
 @Name("create table")
 def feature(self, stress=None, parallel=None, node="clickhouse1"):

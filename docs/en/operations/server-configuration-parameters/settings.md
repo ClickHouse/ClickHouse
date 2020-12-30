@@ -80,17 +80,26 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 -   [Custom settings](../../operations/settings/index.md#custom_settings)
 
-## core_dump
+## core_dump {#server_configuration_parameters-core_dump}
 
-Configures soft limit for core dump file size, one gigabyte by default.
+Configures soft limit for core dump file size.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1073741824` (1 GB).
+
+!!! info "Note"
+    Hard limit is configured via system tools
+
+**Example**
+
 ```xml
 <core_dump>
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
-
-(Hard limit is configured via system tools)
-
 
 ## default_database {#default-database}
 
@@ -139,7 +148,7 @@ Lazy loading of dictionaries.
 
 If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, and if there is an error, the server shuts down.
+If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
 
 The default is `true`.
 
@@ -431,7 +440,7 @@ Limits total RAM usage by the ClickHouse server.
 Possible values:
 
 -   Positive integer.
--   0 (auto).
+-   0 — Auto.
 
 Default value: `0`.
 

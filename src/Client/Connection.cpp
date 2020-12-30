@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -741,8 +742,11 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT(in->setAsyncCallback({}));
+
     try
     {
         Packet res;
