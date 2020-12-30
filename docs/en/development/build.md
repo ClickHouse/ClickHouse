@@ -38,7 +38,6 @@ For other Linux distribution - check the packages avaliability (there are [prebu
 ``` bash
 $ export CC=clang-11
 $ export CXX=clang++-11
-$ LINKER_NAME=lld"
 ```
 
 ### Install GCC 10 {#install-gcc-10}
