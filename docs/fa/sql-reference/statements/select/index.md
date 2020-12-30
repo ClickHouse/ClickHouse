@@ -44,7 +44,7 @@ SELECT [DISTINCT] expr_list
 -   [داشتن بند](having.md)
 -   [انتخاب بند](#select-clause)
 -   [بند محدود](limit.md)
--   [اتحادیه همه بند](union-all.md)
+-   [اتحادیه همه بند](union.md)
 
 ## انتخاب بند {#select-clause}
 

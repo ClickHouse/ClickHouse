@@ -2470,6 +2470,20 @@ Possible values:
 
 Default value: `0`.
 
+## union_default_mode {#union-default-mode}
+
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `''`.
+
+See examples in [UNION](../../sql-reference/statements/select/union.md).
+
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
