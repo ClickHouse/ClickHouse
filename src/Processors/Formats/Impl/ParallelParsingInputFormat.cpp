@@ -90,7 +90,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         unit.chunk_ext.block_missing_values.clear();
 
         // We don't know how many blocks will be. So we have to read them all
-        // until an empty block occured.
+        // until an empty block occurred.
         Chunk chunk;
         while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
         {

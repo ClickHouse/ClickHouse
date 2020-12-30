@@ -125,7 +125,7 @@ protected:
         /*
          * The format parsers themselves are not being cancelled here, so we'll
          * have to wait until they process the current block. Given that the
-         * chunk size is on the order of megabytes, this should't be too long.
+         * chunk size is on the order of megabytes, this shouldn't be too long.
          * We can't call IInputFormat->cancel here, because the parser object is
          * local to the parser thread, and we don't want to introduce any
          * synchronization between parser threads and the other threads to get
