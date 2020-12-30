@@ -2334,7 +2334,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 -   `'ALL'` — ClickHouse выводит все строки в результате объединения результатов запросов, включая повторяющиеся строки.
 -   `''` — Clickhouse генерирует исключение при использовании с `UNION`.
 
-Значение по умолчанию: `'DISTINCT'`.
+Значение по умолчанию: `''`.
 
 Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
 
