@@ -25,7 +25,7 @@ Or cmake3 instead of cmake on older systems.
 
 ### Install clang-11 (recommended) {#install-clang-11}
 
-The easiest way to do on Ubuntu/Debian is using automatic installation script (check [official webpage](https://apt.llvm.org/))
+On Ubuntu/Debian you can use automatic installation script (check [official webpage](https://apt.llvm.org/))
 
 ```bash 
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
