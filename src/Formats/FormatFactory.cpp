@@ -306,9 +306,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
-    RowOutputFormatParams params;
-    params.callback = std::move(callback);
-
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 

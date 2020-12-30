@@ -67,8 +67,8 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
-    const auto current_unit_number = current_ticket_number % processing_units.size();
-    auto & unit = processing_units[current_unit_number];
+    const auto parser_unit_number = current_ticket_number % processing_units.size();
+    auto & unit = processing_units[parser_unit_number];
 
     try
     {
@@ -151,8 +151,8 @@ Chunk ParallelParsingInputFormat::generate()
         return {};
     }
 
-    const auto current_unit_number = reader_ticket_number % processing_units.size();
-    auto & unit = processing_units[current_unit_number];
+    const auto inserter_unit_number = reader_ticket_number % processing_units.size();
+    auto & unit = processing_units[inserter_unit_number];
 
     if (!next_block_in_current_unit.has_value())
     {
