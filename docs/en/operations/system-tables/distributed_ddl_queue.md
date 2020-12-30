@@ -14,7 +14,7 @@ Columns:
 -   `initiator`  ([String](../../sql-reference/data-types/string.md)) - Nod that executed the query.
 -   `query_start_time` ([Date](../../sql-reference/data-types/date.md)) — Query start time.
 -   `query_finish_time` ([Date](../../sql-reference/data-types/date.md)) — Query finish time.
--   `query_duration_ms` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Duration of query execution in milliseconds.
+-   `query_duration_ms` ([UInt64](../../sql-reference/data-types/datetime64.md)) — Duration of query execution in milliseconds.
 -   `exception_code`  ([Enum](../../sql-reference/data-types/enum.md)) - Exception code from ZooKeeper.
 
 
@@ -35,7 +35,7 @@ entry:             query-0000000000
 host_name:         clickhouse01
 host_address:      172.23.0.11
 port:              9000
-status:            finished
+status:            Finished
 cluster:           test_cluster
 query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
 initiator:         clickhouse01:9000
@@ -50,7 +50,7 @@ entry:             query-0000000000
 host_name:         clickhouse02
 host_address:      172.23.0.12
 port:              9000
-status:            finished
+status:            Finished
 cluster:           test_cluster
 query:             CREATE DATABASE test_db UUID '4a82697e-c85e-4e5b-a01e-a36f2a758456' ON CLUSTER test_cluster
 initiator:         clickhouse01:9000

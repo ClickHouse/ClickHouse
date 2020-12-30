@@ -30,6 +30,5 @@ public:
     std::string getName() const override { return "SystemDDLWorkerQueue"; }
 
     static NamesAndTypesList getNamesAndTypes();
-    String clusterNameFromDDLQuery(const Context & context, const DB::DDLLogEntry & entry) const;
 };
 }
