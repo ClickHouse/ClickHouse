@@ -79,6 +79,8 @@ struct ModuloByConstantImpl
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
+namespace impl_
+{
 template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloByConstantImpl<UInt64, UInt32> {};
@@ -98,7 +100,7 @@ template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : M
 template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloByConstantImpl<Int32, Int64> {};
-
+}
 
 struct NameModulo { static constexpr auto name = "modulo"; };
 using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;

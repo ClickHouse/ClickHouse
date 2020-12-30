@@ -41,6 +41,7 @@ public:
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
+
             return new TCPHandler(server, socket, parse_proxy_protocol);
         }
         catch (const Poco::Net::NetException &)

@@ -3,6 +3,7 @@
 # This is a monkey test used to trigger sanitizers.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS dictdb_01076; "
@@ -28,7 +29,7 @@ CREATE DICTIONARY IF NOT EXISTS dictdb_01076.dict_datarace
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_datarace' DB 'dictdb_01076'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_datarace' DB 'dictdb_01076'))
 LIFETIME(1)
 LAYOUT(CACHE(SIZE_IN_CELLS 10));
 "

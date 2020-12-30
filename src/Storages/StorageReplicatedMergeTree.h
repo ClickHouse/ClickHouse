@@ -39,7 +39,8 @@ namespace DB
   * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
-  * - select the leader replica (/leader_election) - this is the replica that assigns the merge;
+  * - select the leader replica (/leader_election) - these are the replicas that assigning merges, mutations and partition manipulations
+  *   (after ClickHouse version 20.5 we allow multiple leaders to act concurrently);
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
@@ -119,6 +120,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & query_context) override;
 
     void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
@@ -469,6 +471,7 @@ private:
         const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);

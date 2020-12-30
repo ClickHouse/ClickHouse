@@ -15,6 +15,7 @@ from multiprocessing.dummy import Pool
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
+
     for i in range(retry_count):
         try:
             lastest_result = clickhouse_node.query(query)
@@ -35,6 +36,7 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
     mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
     # existed before the mapping was created
+
     mysql_node.query("CREATE TABLE test_database.test_table_1 ("
                      "`key` INT NOT NULL PRIMARY KEY, "
                      "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
@@ -46,15 +48,15 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
                      "/* Need ClickHouse support read mysql decimal unsigned_decimal DECIMAL(19, 10) UNSIGNED, _decimal DECIMAL(19, 10), */"
                      "unsigned_float FLOAT UNSIGNED, _float FLOAT, "
                      "unsigned_double DOUBLE UNSIGNED, _double DOUBLE, "
-                     "_varchar VARCHAR(10), _char CHAR(10), "
+                     "_varchar VARCHAR(10), _char CHAR(10), binary_col BINARY(8), "
                      "/* Need ClickHouse support Enum('a', 'b', 'v') _enum ENUM('a', 'b', 'c'), */"
                      "_date Date, _datetime DateTime, _timestamp TIMESTAMP, _bool BOOLEAN) ENGINE = InnoDB;")
 
     # it already has some data
-    mysql_node.query(
-        "INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', "
-        "'2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', true);")
-
+    mysql_node.query("""
+        INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
+        '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', true);
+        """)
     clickhouse_node.query(
         "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
             service_name))
@@ -62,48 +64,51 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
 
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
-                "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+                "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t2020-01-01 00:00:00\t1\n")
 
-    mysql_node.query(
-        "INSERT INTO test_database.test_table_1 VALUES(2, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', "
-        "'2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', false);")
+    mysql_node.query("""
+        INSERT INTO test_database.test_table_1 VALUES(2, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
+        '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', false);
+        """)
 
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
-                "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+                "1\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
-                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\t0\n")
+                "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t2020-01-01 00:00:00\t0\n")
 
     mysql_node.query("UPDATE test_database.test_table_1 SET unsigned_tiny_int = 2 WHERE `key` = 1")
 
-    check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
-                                 " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
-                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
-                                 " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
-                                 " _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
-                "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
-                "2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
-                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t0\n")
+    check_query(clickhouse_node, """
+        SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,
+         small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, 
+         unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col,
+         _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ 
+         _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV
+        """,
+        "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
+        "2020-01-01 00:00:00\t1\n2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
+        "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t0\n")
 
     # update primary key
     mysql_node.query("UPDATE test_database.test_table_1 SET `key` = 3 WHERE `unsigned_tiny_int` = 2")
 
     check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
                                  " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
-                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
+                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col, "
                                  " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
                                  " _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
                 "2\t1\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\t"
-                "varchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t0\n3\t2\t-1\t2\t-2\t3\t-3\t"
-                "4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t2020-01-01 00:00:00\t1\n")
+                "varchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t0\n3\t2\t-1\t2\t-2\t3\t-3\t"
+                "4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t2020-01-01 00:00:00\t1\n")
 
     mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `key` = 2')
     check_query(clickhouse_node, "SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,"
                                  " small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, "
-                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, "
+                                 " unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col, "
                                  " _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ "
                                  " _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV",
-                "3\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\t2020-01-01\t"
+                "3\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
                 "2020-01-01 00:00:00\t1\n")
 
     mysql_node.query('DELETE FROM test_database.test_table_1 WHERE `unsigned_tiny_int` = 2')
@@ -472,10 +477,16 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a=2;")
-    check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", "3\n")
 
-    assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == "2\n"
-    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == "2\n"
+    optimize_on_insert = clickhouse_node.query("SELECT value FROM system.settings WHERE name='optimize_on_insert'").strip()
+    if optimize_on_insert == "0":
+        res = ["3\n", "2\n", "2\n"]
+    else:
+        res = ["2\n", "2\n", "1\n"]
+    check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", res[0])
+
+    assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == res[1]
+    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == res[2]
 
     assert clickhouse_node.query("SELECT count() FROM db.t FORMAT TSV") == "1\n"
     assert clickhouse_node.query("SELECT count(*) FROM db.t FORMAT TSV") == "1\n"
@@ -555,6 +566,12 @@ def err_sync_user_privs_with_materialize_mysql_database(clickhouse_node, mysql_n
 
     assert 'MySQL SYNC USER ACCESS ERR:' in str(exception.value)
     assert "priv_err_db" not in clickhouse_node.query("SHOW DATABASES")
+
+    mysql_node.query("GRANT SELECT ON priv_err_db.* TO 'test'@'%'")
+    time.sleep(3)
+    clickhouse_node.query("ATTACH DATABASE priv_err_db")
+    clickhouse_node.query("DROP DATABASE priv_err_db")
+    mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
 
     mysql_node.query("DROP DATABASE priv_err_db;")
     mysql_node.query("DROP USER 'test'@'%'")

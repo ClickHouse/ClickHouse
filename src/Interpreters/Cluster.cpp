@@ -5,6 +5,7 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
+#include <Core/Settings.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>

@@ -121,6 +121,14 @@ def invalid_parameters(self):
             message="DB::Exception: AAD can be only set for GCM-mode")
 
     with Example("invalid mode value", requirements=[RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Value_Invalid("1.0")]):
+        with When("using unsupported cfb1 mode"):
+            decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-cfb1'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb1")
+
+        with When("using unsupported cfb8 mode"):
+            decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-cfb8'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb8")
+
         with When("typo in the block algorithm"):
             decrypt(ciphertext=ciphertext, key="'0123456789123456'", mode="'aes-128-eeb'", exitcode=36,
                 message="DB::Exception: Invalid mode: aes-128-eeb")
@@ -149,58 +157,30 @@ def invalid_parameters(self):
 @Requirements(
     RQ_SRS008_AES_Decrypt_Function_Key_Length_InvalidLengthError("1.0"),
     RQ_SRS008_AES_Decrypt_Function_InitializationVector_Length_InvalidLengthError("1.0"),
-    RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0")
+    RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0"),
+    RQ_SRS008_AES_Decrypt_Function_NonGCMMode_KeyAndInitializationVector_Length("1.0")
 )
 @Examples("mode key_len iv_len aad", [
     # ECB
-    ("'aes-128-ecb'", 16, None, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ecb'", 24, None, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ecb'", 32, None, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_ECB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ecb'", 16, None, None),
+    ("'aes-192-ecb'", 24, None, None),
+    ("'aes-256-ecb'", 32, None, None),
     # CBC
-    ("'aes-128-cbc'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cbc'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cbc'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_CBC_KeyAndInitializationVector_Length("1.0"))),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb1'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb1'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb8'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb8'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_CFB8_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cbc'", 16, 16, None),
+    ("'aes-192-cbc'", 24, 16, None),
+    ("'aes-256-cbc'", 32, 16, None),
     # CFB128
-    ("'aes-128-cfb128'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb128'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb128'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_CFB128_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cfb128'", 16, 16, None),
+    ("'aes-192-cfb128'", 24, 16, None),
+    ("'aes-256-cfb128'", 32, 16, None),
     # OFB
-    ("'aes-128-ofb'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ofb'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ofb'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_OFB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ofb'", 16, 16, None),
+    ("'aes-192-ofb'", 24, 16, None),
+    ("'aes-256-ofb'", 32, 16, None),
     # CTR
-    ("'aes-128-ctr'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_CTR_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ctr'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_CTR_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ctr'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_CTR_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ctr'", 16, 16, None),
+    ("'aes-192-ctr'", 24, 16, None),
+    ("'aes-256-ctr'", 32, 16, None)
 ], "%-16s %-10s %-10s %-10s")
 def invalid_key_or_iv_length_for_mode_non_gcm(self, mode, key_len, iv_len, aad):
     """Check that an error is returned when key or iv length does not match
@@ -235,22 +215,17 @@ def invalid_key_or_iv_length_for_mode_non_gcm(self, mode, key_len, iv_len, aad):
 @Requirements(
     RQ_SRS008_AES_Decrypt_Function_Key_Length_InvalidLengthError("1.0"),
     RQ_SRS008_AES_Decrypt_Function_InitializationVector_Length_InvalidLengthError("1.0"),
-    RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0")
+    RQ_SRS008_AES_Decrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0"),
+    RQ_SRS008_AES_Decrypt_Function_GCMMode_KeyAndInitializationVector_Length("1.0")
 )
 @Examples("mode key_len iv_len aad", [
     # GCM
-    ("'aes-128-gcm'", 16, 8, "'hello there aad'",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-128-gcm'", 16, None, "'hello there aad'",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_128_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-gcm'", 24, 8, "''",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-gcm'", 24, None, "''",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_192_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-gcm'", 32, 8, "'a'",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-gcm'", 32, None, "'a'",
-     Requirements(RQ_SRS008_AES_Decrypt_Function_AES_256_GCM_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-gcm'", 16, 8, "'hello there aad'"),
+    ("'aes-128-gcm'", 16, None, "'hello there aad'"),
+    ("'aes-192-gcm'", 24, 8, "''"),
+    ("'aes-192-gcm'", 24, None, "''"),
+    ("'aes-256-gcm'", 32, 8, "'a'"),
+    ("'aes-256-gcm'", 32, None, "'a'")
 ], "%-16s %-10s %-10s %-10s")
 def invalid_key_or_iv_length_for_gcm(self, mode, key_len, iv_len, aad):
     """Check that an error is returned when key or iv length does not match
@@ -427,6 +402,7 @@ def syntax(self):
     RQ_SRS008_AES_Decrypt_Function_Parameters_CipherText("1.0"),
     RQ_SRS008_AES_Decrypt_Function_Parameters_Mode("1.0"),
     RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_ValuesFormat("1.0"),
+    RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Values("1.0")
 )
 def decryption(self):
     """Check that `decrypt` functions accepts `ciphertext` as the second parameter
@@ -438,15 +414,13 @@ def decryption(self):
     aad = "some random aad"
 
     with Given("I load encrypt snapshots"):
-        snapshot_module = SourceFileLoader("snapshot", os.path.join(current_dir(), "snapshots", "encrypt.py.encrypt.snapshot")).load_module()
+        snapshot_module = SourceFileLoader("snapshot", os.path.join(current_dir(),
+            "snapshots", "encrypt.py.encrypt.snapshot")).load_module()
 
     for mode, key_len, iv_len, aad_len in modes:
         for datatype, plaintext in plaintexts:
 
-            requirement = globals().get(f"""RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Value_{mode.strip("'").replace("-","_").upper()}""")("1.0")
-
-            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} iv={iv_len} aad={aad_len}""",
-                    requirements=[requirement]) as example:
+            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} iv={iv_len} aad={aad_len}""") as example:
 
                 with Given("I have ciphertext"):
                     example_name = basename(example.name)
@@ -488,7 +462,8 @@ def mismatched_key(self):
     plaintext = "'1'"
 
     with Given("I load encrypt snapshots"):
-        snapshot_module = SourceFileLoader("snapshot", os.path.join(current_dir(), "snapshots", "encrypt.py.encrypt.snapshot")).load_module()
+        snapshot_module = SourceFileLoader("snapshot", os.path.join(current_dir(),
+            "snapshots", "encrypt.py.encrypt.snapshot")).load_module()
 
     for mode, key_len, iv_len, aad_len in modes:
         with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} iv={iv_len} aad={aad_len}""") as example:

@@ -366,7 +366,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date_trunc {#date_trunc}
+## date\_trunc {#date_trunc}
 
 Truncates date and time data to the specified part of date.
 
@@ -435,7 +435,7 @@ Result:
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
-# now {#now}
+## now {#now}
 
 Returns the current date and time. 
 
@@ -662,7 +662,7 @@ Result:
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
-## FROM_UNIXTIME
+## FROM\_UNIXTIME {#fromunixfime}
 
 When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
 type.
@@ -691,4 +691,148 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 ┌─DateTime────────────┐
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
+```
+
+## toModifiedJulianDay {#tomodifiedjulianday}
+
+Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
+
+**Syntax**
+
+``` sql
+toModifiedJulianDay(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toModifiedJulianDay('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toModifiedJulianDay('2020-01-01')─┐
+│                             58849 │
+└───────────────────────────────────┘
+```
+
+## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
+
+Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+toModifiedJulianDayOrNull(date)
+```
+
+**Parameters**
+
+-   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned value**
+
+-   Modified Julian Day number.
+
+Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toModifiedJulianDayOrNull('2020-01-01');
+```
+
+Result:
+
+``` text
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+```
+
+## fromModifiedJulianDay {#frommodifiedjulianday}
+
+Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
+
+**Syntax**
+
+``` sql
+fromModifiedJulianDay(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromModifiedJulianDay(58849);
+```
+
+Result:
+
+``` text
+┌─fromModifiedJulianDay(58849)─┐
+│ 2020-01-01                   │
+└──────────────────────────────┘
+```
+
+## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
+
+Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but instead of raising exceptions it returns `NULL`.
+
+**Syntax**
+
+``` sql
+fromModifiedJulianDayOrNull(day)
+```
+
+**Parameters**
+
+-   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Date in text form.
+
+Type: [Nullable(String)](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+SELECT fromModifiedJulianDayOrNull(58849);
+```
+
+Result:
+
+``` text
+┌─fromModifiedJulianDayOrNull(58849)─┐
+│ 2020-01-01                         │
+└────────────────────────────────────┘
 ```

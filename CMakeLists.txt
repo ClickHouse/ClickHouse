@@ -112,6 +112,12 @@ if (ENABLE_FUZZING)
     set (FUZZER "libfuzzer")
 endif()
 
+# Global libraries
+# See:
+# - default_libs.cmake
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
+
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
@@ -223,16 +229,16 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (UNBUNDLED AND (COMPILER_GCC OR COMPILER_CLANG))
-    # to make numeric_limits<__int128> works for unbundled build
-    set (_CXX_STANDARD "-std=gnu++2a")
+if (COMPILER_GCC OR COMPILER_CLANG)
+    # to make numeric_limits<__int128> works with GCC
+    set (_CXX_STANDARD "gnu++2a")
 else()
-    set (_CXX_STANDARD "-std=c++2a")
+    set (_CXX_STANDARD "c++2a")
 endif()
 
 # cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
 
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -462,6 +468,7 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/rocksdb.cmake)
+include (cmake/find/nuraft.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
@@ -513,8 +520,11 @@ macro (add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # operator::new/delete for executables (MemoryTracker stuff)
-        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        # disabled for TSAN and gcc since libtsan.a provides overrides too
+        if (TARGET clickhouse_new_delete)
+            # operator::new/delete for executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        endif()
     endif()
 endmacro()
 
@@ -525,8 +535,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 
 add_subdirectory (base)
-add_subdirectory (programs)
 add_subdirectory (src)
+add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 

@@ -22,6 +22,7 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
+#include <Core/Block.h>
 
 namespace DB
 {
