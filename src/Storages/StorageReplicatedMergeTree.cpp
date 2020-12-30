@@ -6084,7 +6084,7 @@ bool StorageReplicatedMergeTree::dropPart(
         /// DROP_RANGE with detach will move this part together with source parts to `detached/` dir.
         entry.type = LogEntry::DROP_RANGE;
         entry.source_replica = replica_name;
-        entry.new_part_name = drop_part_info.getPartName();
+        entry.new_part_name = getPartNamePossiblyFake(format_version, drop_part_info);
         entry.detach = detach;
         entry.create_time = time(nullptr);
 
