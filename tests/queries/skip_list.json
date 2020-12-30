@@ -19,7 +19,8 @@
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01474_executable_dictionary" /// informational stderr from sanitizer at start
+        "01474_executable_dictionary", /// informational stderr from sanitizer at start
+        "01603_read_with_backoff_bug"
     ],
     "address-sanitizer": [
         "00877",
