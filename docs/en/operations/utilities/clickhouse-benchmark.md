@@ -35,7 +35,7 @@ SELECT 1;
 Then pass this file to a standard input of `clickhouse-benchmark`:
 
 ``` bash
-clickhouse-benchmark [keys] < queries_file
+clickhouse-benchmark [keys] < queries_file;
 ```
 
 ## Keys {#clickhouse-benchmark-keys}
