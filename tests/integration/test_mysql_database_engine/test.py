@@ -198,8 +198,8 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
 # float_values = [0] mysql returns 0 while clickhouse returns 0.0, so cannot compare using == directly
 int32_values = [0, 1, -1, 2147483647, -2147483648]
 uint32_values = [0, 1] # [FIXME] seems client have issue with value 4294967295, it returns -1 for it
-mint = [0, 1, -1, 8388607, -8388608]
-umint = [0, 1, -1, 16777215]
+mint_values = [0, 1, -1, 8388607, -8388608]
+umint_values = [0, 1, -1, 16777215]
 int16_values = [0, 1, -1, 32767, -32768]
 uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
