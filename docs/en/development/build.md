@@ -25,13 +25,13 @@ Or cmake3 instead of cmake on older systems.
 
 ### Install clang-11 (recommended) {#install-clang-11}
 
-On Ubuntu/Debian you can use automatic installation script (check [official webpage](https://apt.llvm.org/))
+On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
 ```bash 
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
-For other Linux distribution - check the packages avaliability (there are [prebuild packages](https://releases.llvm.org/download.html) for CentOS 8 Stream, SuSE, RedHad on arm and others) or build clang [from sources](https://clang.llvm.org/get_started.html). 
+For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
 #### Use clang-11 for Builds {#use-gcc-10-for-builds}
 
@@ -42,7 +42,7 @@ $ export CXX=clang++-11
 
 ### Install GCC 10 {#install-gcc-10}
 
-We recommend building ClickHouse with clang-11, GCC-10 is also supported but in some cases it produce less optimal code.
+We recommend building ClickHouse with clang-11, GCC-10 also supported, but it produces less optimal code.
 
 If you want to use GCC-10 there are several ways to install it.
 
