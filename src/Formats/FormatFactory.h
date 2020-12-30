@@ -117,12 +117,12 @@ public:
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
-    /// Currenly used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
     BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Currenly used only in Client. Don't use it something else! Better look at getOutputFormat.
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
     BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
