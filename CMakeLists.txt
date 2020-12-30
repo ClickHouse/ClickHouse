@@ -76,7 +76,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
        set (RLIMIT_DATA 10000000000)
     endif()
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS}--data=${RLIMIT_DATA}--cpu=600)
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=600)
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
