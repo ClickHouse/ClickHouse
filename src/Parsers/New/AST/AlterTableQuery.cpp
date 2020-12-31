@@ -264,7 +264,7 @@ ASTPtr AlterTableClause::convertToOld() const
             {
                 auto table = get(FROM)->convertToOld();
                 command->from_database = table->as<ASTTableIdentifier>()->getDatabaseName();
-                command->from_table = table->as<ASTTableIdentifier>()->shortName();;
+                command->from_table = table->as<ASTTableIdentifier>()->shortName();
                 command->replace = false;
                 command->type = ASTAlterCommand::REPLACE_PARTITION;
             }
@@ -358,7 +358,7 @@ ASTPtr AlterTableClause::convertToOld() const
             command->move_destination_type = DataDestinationType::TABLE;
             {
                 auto table = get(TO)->convertToOld();
-                command->to_database = table->as<ASTTableIdentifier>()->getDatabaseName();;
+                command->to_database = table->as<ASTTableIdentifier>()->getDatabaseName();
                 command->to_table = table->as<ASTTableIdentifier>()->shortName();
             }
             break;
