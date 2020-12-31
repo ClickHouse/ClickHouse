@@ -82,7 +82,7 @@ private:
 
 
 /// Tiny connection class to make it more convenient to use.
-/// Connection is not made untill actually used.
+/// Connection is not made until actually used.
 class PGConnection
 {
 public:

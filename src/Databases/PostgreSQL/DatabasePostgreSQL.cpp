@@ -256,7 +256,7 @@ void DatabasePostgreSQL::loadStoredObjects(Context & /* context */, bool, bool /
         std::lock_guard<std::mutex> lock{mutex};
         Poco::DirectoryIterator iterator(getMetadataPath());
 
-        /// Check for previously droppped tables
+        /// Check for previously dropped tables
         for (Poco::DirectoryIterator end; iterator != end; ++iterator)
         {
             if (iterator->isFile() && endsWith(iterator.name(), suffix))
