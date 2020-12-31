@@ -26,14 +26,26 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 class AsynchronousMetrics
 {
 public:
-    // The default value of update_period_seconds is for ClickHouse-over-YT
-    // in Arcadia -- it uses its own server implementation that also uses these
-    // metrics.
+#if defined(ARCADIA_BUILD)
+    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
+    /// Never use this in the ClickHouse codebase.
+    AsynchronousMetrics(
+        Context & global_context_,
+        int update_period_seconds = 60)
+        : global_context(global_context_)
+        , update_period(update_period_seconds)
+    {
+    }
+#endif
+
+    /// The default value of update_period_seconds is for ClickHouse-over-YT
+    /// in Arcadia -- it uses its own server implementation that also uses these
+    /// metrics.
     AsynchronousMetrics(
         Context & global_context_,
         int update_period_seconds,
-        const std::vector<ProtocolServerAdapter> & servers_to_start_before_tables_,
-        const std::vector<ProtocolServerAdapter> & servers_)
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
         : global_context(global_context_)
         , update_period(update_period_seconds)
         , servers_to_start_before_tables(servers_to_start_before_tables_)
@@ -55,8 +67,8 @@ public:
 private:
     Context & global_context;
     const std::chrono::seconds update_period;
-    const std::vector<ProtocolServerAdapter> & servers_to_start_before_tables;
-    const std::vector<ProtocolServerAdapter> & servers;
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables{nullptr};
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers{nullptr};
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;

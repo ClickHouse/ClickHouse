@@ -20,25 +20,18 @@ struct Granule
 {
     /// Start row in block for granule
     size_t start_row;
-    /// Amount of rows which granule have to contain according to index
-    /// granularity.
-    /// NOTE: Sometimes it's not equal to actually written rows, for example
-    /// for the last granule if it's smaller than computed granularity.
-    size_t granularity_rows;
     /// Amount of rows from block which have to be written to disk from start_row
-    size_t block_rows;
+    size_t rows_to_write;
     /// Global mark number in the list of all marks (index_granularity) for this part
     size_t mark_number;
     /// Should writer write mark for the first of this granule to disk.
     /// NOTE: Sometimes we don't write mark for the start row, because
     /// this granule can be continuation of the previous one.
     bool mark_on_start;
-
-    /// Is this granule contain amout of rows equal to the value in index granularity
-    bool isCompleted() const
-    {
-        return granularity_rows == block_rows;
-    }
+    /// if true: When this granule will be written to disk all rows for corresponding mark will
+    /// be wrtten. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
+    /// We may have a lot of small blocks between two marks and this may be the last one.
+    bool is_complete;
 };
 
 /// Multiple granules to write for concrete block.

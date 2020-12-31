@@ -282,17 +282,41 @@ public:
     }
 
     /// Vectorized version when there is no GROUP BY keys.
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *) const override
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        this->data(place).addMany(column.getData().data(), batch_size);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (flags[i])
+                    add(place, columns, i, arena);
+            }
+        }
+        else
+        {
+            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            this->data(place).addMany(column.getData().data(), batch_size);
+        }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos)
+        const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+                if (!null_map[i] && flags[i])
+                    add(place, columns, i, arena);
+        }
+        else
+        {
+            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
+        }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
