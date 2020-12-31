@@ -132,9 +132,9 @@ ASTPtr CreateTableQuery::convertToOld() const
             }
             case TableSchemaClause::ClauseType::TABLE:
             {
-                auto table_id = getTableIdentifier(get(SCHEMA)->convertToOld());
-                query->as_database = table_id.database_name;
-                query->as_table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(SCHEMA)->convertToOld());
+                query->as_database = table->getDatabaseName();
+                query->as_table = table->shortName();
                 break;
             }
             case TableSchemaClause::ClauseType::FUNCTION:

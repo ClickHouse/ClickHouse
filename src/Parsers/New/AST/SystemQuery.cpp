@@ -93,25 +93,25 @@ ASTPtr SystemQuery::convertToOld() const
         case QueryType::DISTRIBUTED_SENDS:
             query->type = stop ? ASTSystemQuery::Type::STOP_DISTRIBUTED_SENDS : ASTSystemQuery::Type::START_DISTRIBUTED_SENDS;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
         case QueryType::FETCHES:
             query->type = stop ? ASTSystemQuery::Type::STOP_FETCHES : ASTSystemQuery::Type::START_FETCHES;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
         case QueryType::FLUSH_DISTRIBUTED:
             query->type = ASTSystemQuery::Type::FLUSH_DISTRIBUTED;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
         case QueryType::FLUSH_LOGS:
@@ -120,9 +120,9 @@ ASTPtr SystemQuery::convertToOld() const
         case QueryType::MERGES:
             query->type = stop ? ASTSystemQuery::Type::STOP_MERGES : ASTSystemQuery::Type::START_MERGES;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
         case QueryType::RELOAD_DICTIONARIES:
@@ -131,9 +131,9 @@ ASTPtr SystemQuery::convertToOld() const
         case QueryType::RELOAD_DICTIONARY:
             query->type = ASTSystemQuery::Type::RELOAD_DICTIONARY;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->target_dictionary = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->target_dictionary = table->shortName();
             }
             break;
         case QueryType::REPLICATED_SENDS:
@@ -142,17 +142,17 @@ ASTPtr SystemQuery::convertToOld() const
         case QueryType::SYNC_REPLICA:
             query->type = ASTSystemQuery::Type::SYNC_REPLICA;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
         case QueryType::TTL_MERGES:
             query->type = stop ? ASTSystemQuery::Type::STOP_TTL_MERGES : ASTSystemQuery::Type::START_TTL_MERGES;
             {
-                auto table_id = getTableIdentifier(get(TABLE)->convertToOld());
-                query->database = table_id.database_name;
-                query->table = table_id.table_name;
+                auto table = std::static_pointer_cast<ASTTableIdentifier>(get(TABLE)->convertToOld());
+                query->database = table->getDatabaseName();
+                query->table = table->shortName();
             }
             break;
     }
