@@ -175,9 +175,17 @@ private:
     };
 
     class ConverterBaseImpl;
+
+    template <bool always_empty_string>
     class ConverterFromString;
-    template<int field_type_id, typename FromType> class ConverterFromNumber;
+
+    template <int field_type_id, bool always_zero>
+    class ConverterFromNumber;
+
+    template <bool always_false>
     class ConverterFromBool;
+
+    template <bool always_zero>
     class ConverterFromEnum;
 
     struct ColumnMatcherTraits
@@ -185,25 +193,36 @@ private:
         struct FieldData
         {
             std::unique_ptr<IConverter> converter;
+            std::unique_ptr<IConverter> default_value_getter;
         };
         struct MessageData
         {
             std::unordered_map<UInt32, const ProtobufColumnMatcher::Field<ColumnMatcherTraits>*> field_number_to_field_map;
+            size_t fields_usage_buffer_size = 0;
         };
     };
     using Message = ProtobufColumnMatcher::Message<ColumnMatcherTraits>;
     using Field = ProtobufColumnMatcher::Field<ColumnMatcherTraits>;
 
-    void setTraitsDataAfterMatchingColumns(Message * message);
+    void setTraitsDataAfterMatchingColumns(Message * message, Message * parent = nullptr);
+
+    void onStartMessage();
+    void onEndMessage();
 
     template <int field_type_id>
     std::unique_ptr<IConverter> createConverter(const google::protobuf::FieldDescriptor * field);
+
+    template <int field_type_id>
+    std::unique_ptr<IConverter> createDefaultValueGetter(const google::protobuf::FieldDescriptor * field);
 
     SimpleReader simple_reader;
     std::unique_ptr<Message> root_message;
     Message* current_message = nullptr;
     size_t current_field_index = 0;
     IConverter* current_converter = nullptr;
+    UInt8 * current_message_fields_usage = nullptr;
+    std::vector<UInt8> fields_usage_buffer;
+    bool getting_default_values = false;
 };
 
 }
