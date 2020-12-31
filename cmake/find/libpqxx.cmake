@@ -20,7 +20,6 @@ endif()
 
 if (NOT USE_INTERNAL_SSL_LIBRARY)
     set (USE_LIBPQXX 0)
-    message (STATUS "Using libpqxx=${USE_LIBPQXX}. (Internal ssl library is missing)")
 else ()
 set (USE_LIBPQXX 1)
 set (LIBPQXX_LIBRARY libpqxx)
