@@ -224,8 +224,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
-                auto all_columns = {&table.columns, &table.alias_columns, &table.materialized_columns};
-                for (const auto cols: all_columns)
+                for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
                 {
                     for (const auto & column : *cols)
                     {
