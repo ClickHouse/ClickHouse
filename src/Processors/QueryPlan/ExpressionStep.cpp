@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -75,10 +74,15 @@ void ExpressionStep::transformPipeline(QueryPipeline & pipeline)
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))
     {
+        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                pipeline.getHeader().getColumnsWithTypeAndName(),
+                output_stream->header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ConvertingTransform>(header, output_stream->header,
-                                                         ConvertingTransform::MatchColumnsMode::Name);
+            return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
     }
 }
@@ -105,7 +109,6 @@ JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)
         getJoinTraits())
     , join(std::move(join_))
 {
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void JoinStep::transformPipeline(QueryPipeline & pipeline)

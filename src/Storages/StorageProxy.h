@@ -122,9 +122,10 @@ public:
             const ASTPtr & partition,
             bool final,
             bool deduplicate,
+            const Names & deduplicate_by_columns,
             const Context & context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
     }
 
     void mutate(const MutationCommands & commands, const Context & context) override { getNested()->mutate(commands, context); }
@@ -148,8 +149,8 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows() const override { return getNested()->totalRows(); }
-    std::optional<UInt64> totalBytes() const override { return getNested()->totalBytes(); }
+    std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
+    std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

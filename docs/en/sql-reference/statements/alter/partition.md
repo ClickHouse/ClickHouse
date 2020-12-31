@@ -21,10 +21,10 @@ The following operations with [partitions](../../../engines/table-engines/merget
 
 <!-- -->
 
-## DETACH PARTITION {#alter_detach-partition}
+## DETACH PARTITION\|PART {#alter_detach-partition}
 
 ``` sql
-ALTER TABLE table_name DETACH PARTITION partition_expr
+ALTER TABLE table_name DETACH PARTITION|PART partition_expr
 ```
 
 Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
@@ -32,7 +32,8 @@ Moves all data for the specified partition to the `detached` directory. The serv
 Example:
 
 ``` sql
-ALTER TABLE visits DETACH PARTITION 201901
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
 ```
 
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
@@ -41,10 +42,10 @@ After the query is executed, you can do whatever you want with the data in the `
 
 This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
-## DROP PARTITION {#alter_drop-partition}
+## DROP PARTITION\|PART {#alter_drop-partition}
 
 ``` sql
-ALTER TABLE table_name DROP PARTITION partition_expr
+ALTER TABLE table_name DROP PARTITION|PART partition_expr
 ```
 
 Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
@@ -52,6 +53,13 @@ Deletes the specified partition from the table. This query tags the partition as
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 The query is replicated – it deletes data on all replicas.
+
+Example:
+
+``` sql
+ALTER TABLE mt DROP PARTITION '2020-11-21';
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
 
 ## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
@@ -233,6 +241,46 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
+## UPDATE IN PARTITION {#update-in-partition}
+
+Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements)
+
+## DELETE IN PARTITION {#delete-in-partition}
+
+Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+``` sql
+ALTER TABLE [db.]table DELETE [IN PARTITION partition_id] WHERE filter_expr
+```
+
+### Example
+
+``` sql
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+```
+
+### See Also
+
+-   [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations)
+
 ## How to Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
@@ -249,5 +297,7 @@ All the rules above are also true for the [OPTIMIZE](../../../sql-reference/stat
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
+
+`IN PARTITION` specifies the partition to which the [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) or [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

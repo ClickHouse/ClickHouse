@@ -12,7 +12,7 @@ You must install latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
-* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev`
+* [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python3-pip libpq-dev zlib1g-dev libcrypto++-dev libssl-dev libkrb5-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install:
 
@@ -38,7 +38,8 @@ sudo -H pip install \
     pytest-timeout \
     redis \
     tzlocal \
-    urllib3
+    urllib3 \
+    requests-kerberos
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
@@ -135,3 +136,13 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
+
+### Troubleshooting
+
+If tests failing for misterious reasons, this may help:
+
+```
+sudo service docker stop
+sudo bash -c 'rm -rf /var/lib/docker/*'
+sudo service docker start
+```

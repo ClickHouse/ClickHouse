@@ -152,7 +152,7 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 !!! note "Note"
@@ -163,7 +163,7 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 Provides possibility to start background merges for tables in the MergeTree family:
 
 ``` sql
-SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
@@ -204,7 +204,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication/#table_engines-replication) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
 
 ### STOP FETCHES {#query_language-system-stop-fetches}
 

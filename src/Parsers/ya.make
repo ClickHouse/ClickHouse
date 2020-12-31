@@ -67,6 +67,7 @@ SRCS(
     ExpressionListParsers.cpp
     IAST.cpp
     IParserBase.cpp
+    InsertQuerySettingsPushDownVisitor.cpp
     Lexer.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp

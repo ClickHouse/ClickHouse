@@ -8,7 +8,7 @@ using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
 
-#if __cplusplus <= 201703L
+#ifndef __cpp_char8_t
 using char8_t = unsigned char;
 #endif
 
