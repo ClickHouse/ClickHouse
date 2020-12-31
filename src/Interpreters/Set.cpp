@@ -107,7 +107,7 @@ void Set::setHeader(const Block & header)
 {
     std::unique_lock lock(rwlock);
 
-    if (!empty())
+    if (!data.empty())
         return;
 
     keys_size = header.columns();
@@ -160,7 +160,7 @@ bool Set::insertFromBlock(const Block & block)
 {
     std::unique_lock lock(rwlock);
 
-    if (empty())
+    if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
 
     ColumnRawPtrs key_columns;
@@ -213,7 +213,7 @@ bool Set::insertFromBlock(const Block & block)
         }
     }
 
-    return limits.check(getTotalRowCount(), getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -283,6 +283,25 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
     return res;
+}
+
+
+bool Set::empty() const
+{
+    std::shared_lock lock(rwlock);
+    return data.empty();
+}
+
+size_t Set::getTotalRowCount() const
+{
+    std::shared_lock lock(rwlock);
+    return data.getTotalRowCount();
+}
+
+size_t Set::getTotalByteCount() const
+{
+    std::shared_lock lock(rwlock);
+    return data.getTotalByteCount();
 }
 
 
