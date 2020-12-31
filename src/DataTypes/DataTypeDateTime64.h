@@ -111,7 +111,5 @@ private:
     DateTime64::NativeType scale_multiplier = 1;
 };
 
-template <> struct NativeType<DataTypeDateTime64> { using Type = NativeType<DataTypeDateTime64::FieldType>::Type; };
-
 }
 
