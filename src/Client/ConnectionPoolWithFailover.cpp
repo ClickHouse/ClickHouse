@@ -4,6 +4,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Common/BitHelpers.h>
+#include <Common/quoteString.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>

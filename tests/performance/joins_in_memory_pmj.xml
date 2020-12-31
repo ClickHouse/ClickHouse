@@ -1,6 +1,9 @@
-<test max_ignored_relative_change="0.8">
+<test max_ignored_relative_change="0.9">
     <create_query>CREATE TABLE ints (i64 Int64, i32 Int32, i16 Int16, i8 Int8) ENGINE = Memory</create_query>
-    <create_query>SET join_algorithm = 'partial_merge'</create_query>
+
+    <settings>
+        <join_algorithm>partial_merge</join_algorithm>
+    </settings>
 
     <fill_query>INSERT INTO ints SELECT number AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>
     <fill_query>INSERT INTO ints SELECT 10000 + number % 1000 AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>

@@ -26,9 +26,9 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const String & sign_column,
     bool only_positive_sign_,
     size_t max_block_size,
+    Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes,
-    Poco::Logger * log_)
+    bool use_average_block_sizes)
     : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , sign_column_number(header.getPositionByName(sign_column))
@@ -123,7 +123,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
+        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->getRow()];
 
         RowRef current_row;
         setRowRef(current_row, current);

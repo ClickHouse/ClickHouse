@@ -4,7 +4,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Interpreters/Context.h>
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
@@ -69,13 +68,13 @@ public:
 protected:
     StorageKafka(
         const StorageID & table_id_,
-        Context & context_,
+        const Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_);
 
 private:
     // Configuration and state
-    Context & global_context;
+    const Context & global_context;
     std::unique_ptr<KafkaSettings> kafka_settings;
     const Names topics;
     const String brokers;

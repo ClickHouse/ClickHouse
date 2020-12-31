@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
@@ -169,7 +170,7 @@ namespace
 
 StorageKafka::StorageKafka(
     const StorageID & table_id_,
-    Context & context_,
+    const Context & context_,
     const ColumnsDescription & columns_,
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)

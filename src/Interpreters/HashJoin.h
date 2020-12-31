@@ -22,6 +22,7 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -392,6 +393,10 @@ private:
     ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+
+    /// Call with already locked rwlock.
+    size_t getTotalRowCountLocked() const;
+    size_t getTotalByteCountLocked() const;
 };
 
 }

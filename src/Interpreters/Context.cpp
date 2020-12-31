@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/TestKeeperStorage.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -304,6 +305,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
+    mutable std::mutex test_keeper_storage_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -336,9 +339,9 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -442,6 +445,10 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+        /// Stop zookeeper connection
+        zookeeper.reset();
+        /// Stop test_keeper storage
+        test_keeper_storage.reset();
     }
 
     bool hasTraceCollector() const
@@ -484,7 +491,7 @@ Context Context::createGlobal(ContextShared * shared)
 
 void Context::initGlobal()
 {
-    DatabaseCatalog::init(this);
+    DatabaseCatalog::init(*this);
     TemporaryLiveViewCleaner::init(*this);
 }
 
@@ -842,7 +849,17 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 
 void Context::setProfile(const String & profile_name)
 {
-    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
+    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    try
+    {
+        checkSettingsConstraints(profile_settings_changes);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(", while trying to set settings profile {}", profile_name);
+        throw;
+    }
+    applySettingsChanges(profile_settings_changes);
 }
 
 
@@ -925,6 +942,17 @@ bool Context::hasScalar(const String & name) const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
+}
+
+
+void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+    query_access_info.databases.emplace(quoted_database_name);
+    query_access_info.tables.emplace(full_quoted_table_name);
+    for (const auto & column_name : column_names)
+        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 
@@ -1127,8 +1155,14 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-        && client_info.opentelemetry_trace_id == 0)
+    if (client_info.client_trace_context.trace_id != 0)
+    {
+        // Use the OpenTelemetry trace context we received from the client, and
+        // create a new span for the query.
+        query_trace_context = client_info.client_trace_context;
+        query_trace_context.span_id = thread_local_rng();
+    }
+    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         // If this is an initial query without any parent OpenTelemetry trace, we
         // might start the trace ourselves, with some configurable probability.
@@ -1138,19 +1172,11 @@ void Context::setCurrentQueryId(const String & query_id)
         if (should_start_trace(thread_local_rng))
         {
             // Use the randomly generated default query id as the new trace id.
-            client_info.opentelemetry_trace_id = random.uuid;
-            client_info.opentelemetry_parent_span_id = 0;
-            client_info.opentelemetry_span_id = thread_local_rng();
+            query_trace_context.trace_id = random.uuid;
+            query_trace_context.span_id = thread_local_rng();
             // Mark this trace as sampled in the flags.
-            client_info.opentelemetry_trace_flags = 1;
+            query_trace_context.trace_flags = 1;
         }
-    }
-    else
-    {
-        // The incoming request has an OpenTelemtry trace context. Its span id
-        // becomes our parent span id.
-        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
-        client_info.opentelemetry_span_id = thread_local_rng();
     }
 
     String query_id_to_set = query_id;
@@ -1401,7 +1427,7 @@ void Context::dropCaches() const
         shared->mark_cache->reset();
 }
 
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
@@ -1443,7 +1469,7 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-BackgroundSchedulePool & Context::getSchedulePool()
+BackgroundSchedulePool & Context::getSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
@@ -1454,7 +1480,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getDistributedSchedulePool()
+BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
@@ -1505,6 +1531,15 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+std::shared_ptr<zkutil::TestKeeperStorage> & Context::getTestKeeperStorage() const
+{
+    std::lock_guard lock(shared->test_keeper_storage_mutex);
+    if (!shared->test_keeper_storage)
+        shared->test_keeper_storage = std::make_shared<zkutil::TestKeeperStorage>();
+
+    return shared->test_keeper_storage;
 }
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
@@ -1574,6 +1609,10 @@ bool Context::hasZooKeeper() const
     return getConfigRef().has("zookeeper");
 }
 
+bool Context::hasAuxiliaryZooKeeper(const String & name) const
+{
+    return getConfigRef().has("auxiliary_zookeepers." + name);
+}
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
@@ -2013,7 +2052,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
                     "2. File '{}' intended to force DROP {}\n"
                     "How to fix this:\n"
-                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n",
+                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
                     "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),

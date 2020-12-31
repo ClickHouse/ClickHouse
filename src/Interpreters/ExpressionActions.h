@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <variant>
@@ -44,10 +43,10 @@ public:
     struct Argument
     {
         /// Position in ExecutionContext::columns
-        size_t pos;
+        size_t pos = 0;
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
-        bool needed_later;
+        bool needed_later = false;
     };
 
     using Arguments = std::vector<Argument>;
@@ -63,6 +62,11 @@ public:
 
     using Actions = std::vector<Action>;
 
+    /// This map helps to find input position bu it's name.
+    /// Key is a view to input::result_name.
+    /// Result is a list because it is allowed for inputs to have same names.
+    using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
+
 private:
 
     ActionsDAGPtr actions_dag;
@@ -70,6 +74,7 @@ private:
     size_t num_columns = 0;
 
     NamesAndTypesList required_columns;
+    NameToInputMap input_positions;
     ColumnNumbers result_positions;
     Block sample_block;
 
