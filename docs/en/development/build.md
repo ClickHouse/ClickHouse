@@ -42,7 +42,7 @@ $ export CXX=clang++-11
 
 ### Install GCC 10 {#install-gcc-10}
 
-We recommend building ClickHouse with clang-11, GCC-10 also supported, but it produces less optimal code.
+We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
 
 If you want to use GCC-10 there are several ways to install it.
 
