@@ -577,6 +577,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </merge_tree>
 ```
 
+## metric_log {#metric_log}
+
+Эта настройка включена по умолчанию. Если это не так, вы можете включить ее сами.
+
+**Включение**
+
+Чтобы вручную включить сбор истории метрик в таблице [`system.metric_log`](../../operations/system-tables/metric_log.md), создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Выключение**
+
+Чтобы отключить настройку `metric_log` , создайте файл `/etc/clickhouse-server/config.d/disable_metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
+</yandex>
+```
+
 ## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
 
 Тонкая настройка таблиц в [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).

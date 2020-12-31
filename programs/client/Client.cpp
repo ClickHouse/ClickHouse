@@ -948,7 +948,7 @@ private:
         {   /// disable logs if expects errors
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
-                processTextAsSingleQuery("SET send_logs_level = 'none'");
+                processTextAsSingleQuery("SET send_logs_level = 'fatal'");
 
             // Echo all queries if asked; makes for a more readable reference
             // file.
