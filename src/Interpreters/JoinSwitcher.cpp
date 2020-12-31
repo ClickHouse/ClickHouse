@@ -17,13 +17,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & left_sample_block_, const Block & right_sample_block_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
+    , left_sample_block(left_sample_block_.cloneEmpty())
     , right_sample_block(right_sample_block_.cloneEmpty())
 {
-    join = std::make_shared<HashJoin>(table_join, right_sample_block);
+    join = std::make_shared<HashJoin>(table_join, left_sample_block, right_sample_block);
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
@@ -54,7 +55,7 @@ void JoinSwitcher::switchJoin()
     BlocksList right_blocks = std::move(joined_data->blocks);
 
     /// Destroy old join & create new one. Early destroy for memory saving.
-    join = std::make_shared<MergeJoin>(table_join, right_sample_block);
+    join = std::make_shared<MergeJoin>(table_join, left_sample_block, right_sample_block);
 
     /// names to positions optimization
     std::vector<size_t> positions;

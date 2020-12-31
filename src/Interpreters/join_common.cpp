@@ -1,11 +1,14 @@
-#include <Interpreters/join_common.h>
-#include <Interpreters/TableJoin.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <DataStreams/materializeBlock.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/join_common.h>
+#include <Interpreters/castColumn.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -70,19 +73,26 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
 }
 
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
+void removeColumnNullability(ColumnPtr & column)
+{
+    if (column)
+    {
+        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column);
+        if (nullable_column == nullptr)
+            return;
+        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
+        column = std::move(mutable_column);
+    }
+}
+
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
     if (!column.type->isNullable())
         return;
 
     column.type = static_cast<const DataTypeNullable &>(*column.type).getNestedType();
-    if (column.column)
-    {
-        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
-        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
-        column.column = std::move(mutable_column);
-    }
+    removeColumnNullability(column.column);
 }
 
 /// Change both column nullability and low cardinality
@@ -94,7 +104,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
+    bool change_lowcard = lowcard_src != lowcard_dst;
 
     if (nullable_src && !nullable_dst)
     {
@@ -150,6 +160,20 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
+Columns materializeColumns(const Columns & columns)
+{
+    Columns materialized;
+    materialized.reserve(columns.size());
+
+    for (const auto & src_column : columns)
+    {
+        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
+    }
+
+    return materialized;
+}
+
+
 Columns materializeColumns(const Block & block, const Names & names)
 {
     Columns materialized;
@@ -162,6 +186,45 @@ Columns materializeColumns(const Block & block, const Names & names)
     }
 
     return materialized;
+}
+
+bool canCastJoinColumns(const Block & left_block, const TableJoin & table_join)
+{
+    bool is_left_or_inner = isLeft(table_join.kind()) || isInner(table_join.kind());
+    bool key_names_match = table_join.keyNamesLeft().size() == table_join.keyNamesRight().size();
+    return left_block && key_names_match && (!table_join.hasUsing() || is_left_or_inner);
+}
+
+Columns castJoinColumns(const Block & block, const NamesAndTypes & names_and_types)
+{
+    Columns casted;
+    casted.reserve(names_and_types.size());
+    for (const auto & nt : names_and_types)
+        casted.emplace_back(castColumnAccurateOrNull(block.getByName(nt.name), nt.type));
+    return casted;
+}
+
+void addCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping)
+{
+    for (const auto & [col_name, target] : name_mapping)
+    {
+        ColumnWithTypeAndName col = block.getByName(col_name);
+        if (!col.column->lowCardinality() && col.type->lowCardinality())
+        {
+            /// type can be wrong and we need to fix it for castColumnAccurateOrNull
+            col.type = removeLowCardinality(col.type);
+        }
+        ColumnPtr key_col = castColumnAccurateOrNull(col, target.type);
+        block.insert({std::move(key_col), makeNullable(target.type), target.name});
+    }
+}
+
+void restoreCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping)
+{
+    std::set<size_t> cols_to_remove;
+    for (const auto & nm : name_mapping)
+        cols_to_remove.insert(block.getPositionByName(nm.second.name));
+    block.erase(cols_to_remove);
 }
 
 ColumnRawPtrs getRawPointers(const Columns & columns)
@@ -224,21 +287,60 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
     return key_columns;
 }
 
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
+{
+    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    return left_type_strict->equals(*right_type_strict);
+}
+
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right)
 {
     size_t keys_size = key_names_left.size();
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        DataTypePtr left_type = removeNullable(recursiveRemoveLowCardinality(block_left.getByName(key_names_left[i]).type));
-        DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
+        DataTypePtr left_type = block_left.getByName(key_names_left[i]).type;
+        DataTypePtr right_type = block_right.getByName(key_names_right[i]).type;
 
-        if (!left_type->equals(*right_type))
+        if (!typesEqualUpToNullability(left_type, right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
                 + key_names_left[i] + " " + left_type->getName() + " at left, "
                 + key_names_right[i] + " " + right_type->getName() + " at right",
                 ErrorCodes::TYPE_MISMATCH);
     }
+}
+
+NamesAndTypes getJoinColumnsNeedCast(const Block & block_left, const Names & key_names_left,
+                                     const Block & block_right, const Names & key_names_right)
+{
+    if (key_names_left.size() != key_names_right.size())
+    {
+        throw DB::Exception("Number of keys don't match", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    NamesAndTypes need_conversion;
+    for (size_t i = 0; i < key_names_left.size(); ++i)
+    {
+        const auto & left_col = block_left.getByName(key_names_left[i]);
+        const auto & right_col = block_right.getByName(key_names_right[i]);
+        if (typesEqualUpToNullability(left_col.type, right_col.type))
+            continue;
+
+        need_conversion.emplace_back(left_col.name, right_col.type);
+        try
+        {
+            castColumnAccurateOrNull(left_col, right_col.type);
+        }
+        catch (DB::Exception &)
+        {
+            throw Exception("Type mismatch of columns to JOIN by: "
+                            + key_names_left[i] + " " + left_col.type->getName() + " at left, "
+                            + key_names_right[i] + " " + right_col.type->getName() + " at right",
+                            ErrorCodes::TYPE_MISMATCH);
+        }
+    }
+    return need_conversion;
 }
 
 void createMissedColumns(Block & block)
@@ -357,17 +459,23 @@ void NotJoined::setRightIndex(size_t right_pos, size_t result_position)
 
 void NotJoined::extractColumnChanges(size_t right_pos, size_t result_pos)
 {
-    const auto & src = saved_block_sample.getByPosition(right_pos).column;
-    const auto & dst = result_sample_block.getByPosition(result_pos).column;
+    const auto & src = saved_block_sample.getByPosition(right_pos);
+    const auto & dst = result_sample_block.getByPosition(result_pos);
 
-    if (!src->isNullable() && dst->isNullable())
+    #ifndef NDEBUG
+        if (!JoinCommon::typesEqualUpToNullability(src.type, dst.type))
+            throw Exception("Wrong columns assign: " + src.type->getName() +
+                            " " + dst.type->getName(), ErrorCodes::LOGICAL_ERROR);
+    #endif
+
+    if (!src.column->isNullable() && dst.column->isNullable())
         right_nullability_adds.push_back(right_pos);
 
-    if (src->isNullable() && !dst->isNullable())
+    if (src.column->isNullable() && !dst.column->isNullable())
         right_nullability_removes.push_back(right_pos);
 
-    ColumnPtr src_not_null = JoinCommon::emptyNotNullableClone(src);
-    ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst);
+    ColumnPtr src_not_null = JoinCommon::emptyNotNullableClone(src.column);
+    ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst.column);
 
     if (src_not_null->lowCardinality() != dst_not_null->lowCardinality())
         right_lowcard_changes.push_back({right_pos, dst_not_null});

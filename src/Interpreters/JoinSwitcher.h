@@ -17,7 +17,7 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & left_sample_block_, const Block & right_sample_block_);
 
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
@@ -70,6 +70,7 @@ private:
     bool switched;
     mutable std::mutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
+    const Block left_sample_block;
     const Block right_sample_block;
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.

@@ -416,9 +416,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & left_sample_block_, const Block & right_sample_block_)
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
+    , left_sample_block(left_sample_block_)
     , right_sample_block(right_sample_block_)
     , nullable_right_side(table_join->forceNullableRight())
     , nullable_left_side(table_join->forceNullableLeft())
@@ -433,6 +434,27 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
 {
+    const auto & key_names_left = table_join->keyNamesLeft();
+    const auto & key_names_right = table_join->keyNamesRight();
+
+    bool can_cast_key_columns = JoinCommon::canCastJoinColumns(left_sample_block, *table_join);
+    if (can_cast_key_columns)
+    {
+        auto cols_to_convert = JoinCommon::getJoinColumnsNeedCast(
+            left_sample_block, table_join->keyNamesLeft(), right_sample_block, key_names_right);
+
+        /// Casted columns will be stored in separate columns with unique generated names
+        String uuid_string = UUIDHelpers::generateV4().toUnderType().toHexString();
+        for (const auto & e : cols_to_convert)
+        {
+            std::string new_name = "--" + uuid_string + "-" + e.name;
+            left_key_names_mapping[e.name] = NameAndTypePair(new_name, e.type);
+
+            if (unlikely(left_sample_block.has(new_name)))
+                throw DB::Exception("Randomly generated column name is not unique", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+
     switch (table_join->strictness())
     {
         case ASTTableJoin::Strictness::All:
@@ -474,8 +496,15 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(right_columns_to_add);
 
-    makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
-    makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+    Names key_names_left_mapped;
+    for (const auto & name : key_names_left)
+    {
+        const auto it = left_key_names_mapping.find(name);
+        key_names_left_mapped.push_back(it == left_key_names_mapping.end() ? name : it->second.name);
+    }
+
+    makeSortAndMerge(key_names_left_mapped, left_sort_description, left_merge_description);
+    makeSortAndMerge(key_names_right, right_sort_description, right_merge_description);
 
     /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
     if (table_join->enablePartialMergeJoinOptimizations())
@@ -604,9 +633,15 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     if (block)
     {
-        JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        if (left_key_names_mapping.empty())
+        {
+            JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        }
+
         materializeBlockInplace(block);
         JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesLeft(), false);
+
+        JoinCommon::addCastedJoinColumns(block, left_key_names_mapping);
 
         sortBlock(block, left_sort_description);
 
@@ -642,6 +677,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
 
     JoinCommon::restoreLowCardinalityInplace(block);
+    JoinCommon::restoreCastedJoinColumns(block, left_key_names_mapping);
 }
 
 template <bool in_memory, bool is_all>

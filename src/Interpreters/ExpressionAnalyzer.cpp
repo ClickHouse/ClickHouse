@@ -650,17 +650,19 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     return array_join;
 }
 
-bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions());
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(step.actions());
+    actions->execute(block);
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, const Block & sample_block)
 {
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, sample_block);
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
@@ -706,7 +708,11 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
     return false;
 }
 
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, const Context & context)
+static std::shared_ptr<IJoin> makeJoin(
+    std::shared_ptr<TableJoin> analyzed_join,
+    const Block & left_sample_block,
+    const Block & right_sample_block,
+    const Context & context)
 {
     bool allow_merge_join = analyzed_join->allowMergeJoin();
 
@@ -717,21 +723,21 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     {
         Names original_names;
         NamesAndTypesList result_columns;
-        if (analyzed_join->allowDictJoin(key_name, sample_block, original_names, result_columns))
+        if (analyzed_join->allowDictJoin(key_name, right_sample_block, original_names, result_columns))
         {
             analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
-            return std::make_shared<HashJoin>(analyzed_join, sample_block);
+            return std::make_shared<HashJoin>(analyzed_join, left_sample_block, right_sample_block);
         }
     }
 
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, left_sample_block, right_sample_block);
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+        return std::make_shared<MergeJoin>(analyzed_join, left_sample_block, right_sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, left_sample_block, right_sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element, const Block & sample_block)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -768,7 +774,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, sample_block, subquery_for_join.sample_block, context);
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
@@ -1337,10 +1343,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (query_analyzer.hasTableJoin())
         {
-            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
+            Block left_block_sample = source_header;
+
+            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage, left_block_sample);
 
             before_join = chain.getLastActions();
-            join = query_analyzer.appendJoin(chain);
+            join = query_analyzer.appendJoin(chain, left_block_sample);
             chain.addStep();
         }
 

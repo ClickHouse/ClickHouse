@@ -313,7 +313,7 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element, const Block & sample_block);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -333,8 +333,8 @@ private:
 
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
-    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, const Block & sample_block);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

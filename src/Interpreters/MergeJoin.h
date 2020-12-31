@@ -21,7 +21,7 @@ class RowBitmaps;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & left_sample_block, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
@@ -72,8 +72,13 @@ private:
     SortDescription right_sort_description;
     SortDescription left_merge_description;
     SortDescription right_merge_description;
+    Block left_sample_block;
     Block right_sample_block;
     Block right_table_keys;
+
+    using KeyNamesMapping = std::unordered_map<std::string, NameAndTypePair>;
+    KeyNamesMapping left_key_names_mapping;
+
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
     Blocks min_max_right_blocks;

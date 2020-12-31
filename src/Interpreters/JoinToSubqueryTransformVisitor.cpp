@@ -395,7 +395,7 @@ class UniqueShortNames
 {
 public:
     /// We know that long names are unique (do not clashes with others).
-    /// So we could make unique names base on this knolage by adding some unused prefix.
+    /// So we could make unique names base on this knowledge by adding some unused prefix.
     static constexpr const char * pattern = "--";
 
     String longToShort(const String & long_name)

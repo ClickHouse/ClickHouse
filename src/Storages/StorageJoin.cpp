@@ -62,7 +62,7 @@ StorageJoin::StorageJoin(
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, Block(), metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
@@ -75,7 +75,7 @@ void StorageJoin::truncate(
     disk->createDirectories(path + "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, Block(), metadata_snapshot->getSampleBlock().sortColumns(), overwrite);
 }
 
 
@@ -95,7 +95,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
     /// Some HACK to remove wrong names qualifiers: table.column -> column.
     analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, metadata_snapshot->getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, Block(), metadata_snapshot->getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
     return join_clone;
 }

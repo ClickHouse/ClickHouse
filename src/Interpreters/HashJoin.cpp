@@ -18,6 +18,7 @@
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
 #include <Interpreters/DictionaryReader.h>
+#include <Interpreters/castColumn.h>
 
 #include <Storages/StorageDictionary.h>
 
@@ -55,6 +56,8 @@ struct NotProcessedCrossJoin : public ExtraBlock
 
 }
 
+/// Returns new column with values from source column where filter is set and default values in other rows
+/// (vice versa if inverse_filter is true)
 static ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
@@ -123,7 +126,8 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
+HashJoin::HashJoin(
+    std::shared_ptr<TableJoin> table_join_, const Block & left_sample_block_, const Block & right_sample_block_, bool any_take_last_row_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -133,10 +137,20 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
+    , left_sample_block(left_sample_block_)
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
+
+    const auto & key_names_left = table_join->keyNamesLeft();
+    bool can_cast_key_columns = JoinCommon::canCastJoinColumns(left_sample_block, *table_join);
+    if (can_cast_key_columns)
+    {
+        cast_keys_info = JoinCommon::getJoinColumnsNeedCast(
+            left_sample_block, key_names_left,
+            right_sample_block, key_names_right);
+    }
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
@@ -964,7 +978,18 @@ void HashJoin::joinBlockImpl(
     constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
+    Columns materialized_keys;
+    if (!cast_keys_info.empty())
+    {
+        /// Also need to convert left columns
+        Columns casted_keys = JoinCommon::castJoinColumns(block, cast_keys_info);
+        materialized_keys = JoinCommon::materializeColumns(casted_keys);
+    }
+    else
+    {
+        materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
+    }
+
     ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.
@@ -991,7 +1016,11 @@ void HashJoin::joinBlockImpl(
       * For ASOF, the last column is used as the ASOF column
       */
 
-    AddedColumns added_columns(block_with_columns_to_add, block, savedBlockSample(), *this, left_key_columns, key_sizes, is_asof_join);
+    AddedColumns added_columns(
+        block_with_columns_to_add,
+        block,
+        savedBlockSample(),
+        *this, left_key_columns, key_sizes, is_asof_join);
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = need_filter || has_required_right_keys;
 
@@ -1022,7 +1051,15 @@ void HashJoin::joinBlockImpl(
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
-            block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
+
+            ColumnWithTypeAndName col_non_null = col;
+            if (!right_key.type->isNullable() && col.type->isNullable())
+                JoinCommon::removeColumnNullability(col_non_null);
+
+            DataTypePtr right_type = recursiveRemoveLowCardinality(right_key.type);
+
+            ColumnPtr right_key_col = castColumnAccurate(col_non_null, right_type);
+            block.insert(correctNullability({right_key_col, right_type, right_key.name}, is_nullable));
         }
     }
     else if (has_required_right_keys)
@@ -1046,8 +1083,16 @@ void HashJoin::joinBlockImpl(
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
-            ColumnPtr thin_column = filterWithBlanks(col.column, filter);
-            block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
+            DataTypePtr right_type = makeNullable(recursiveRemoveLowCardinality(right_key.type));
+            ColumnPtr right_key_col = castColumnAccurateOrNull(col, right_type);
+            if (!right_key.type->isNullable() && col.type->isNullable())
+            {
+                JoinCommon::removeColumnNullability(right_key_col);
+                right_type = removeNullable(right_type);
+            }
+
+            ColumnPtr thin_column = filterWithBlanks(right_key_col, filter);
+            block.insert(correctNullability({thin_column, right_type, right_key.name}, is_nullable, null_map_filter));
 
             if constexpr (need_replication)
                 right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
@@ -1220,7 +1265,12 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     std::shared_lock lock(data->rwlock);
 
     const Names & key_names_left = table_join->keyNamesLeft();
-    JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
+
+    if (cast_keys_info.empty())
+    {
+        /// Otherwise types checked in ctor
+        JoinCommon::checkTypesOfKeys(block, key_names_left, right_sample_block, key_names_right);
+    }
 
     if (overDictionary())
     {

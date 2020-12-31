@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 
 namespace DB
@@ -16,9 +17,11 @@ namespace JoinCommon
 
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability = false);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
+void removeColumnNullability(ColumnPtr & column);
 void removeColumnNullability(ColumnWithTypeAndName & column);
 void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column);
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
+Columns materializeColumns(const Columns & columns);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
@@ -28,8 +31,22 @@ void restoreLowCardinalityInplace(Block & block);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
+
 /// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
+
+
+NamesAndTypes getJoinColumnsNeedCast(const Block & block_left, const Names & key_names_left,
+                                     const Block & block_right, const Names & key_names_right);
+
+/// Check that it possible to perform type conversion for join key columns.
+/// Left key columns will be casted to right column types.
+bool canCastJoinColumns(const Block & left_block, const TableJoin & table_join);
+Columns castJoinColumns(const Block & block, const NamesAndTypes & names_and_types);
+void addCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);
+
+void restoreCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);
 
 void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);

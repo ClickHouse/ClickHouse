@@ -148,7 +148,10 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(std::shared_ptr<TableJoin> table_join_,
+             const Block & left_sample_block,
+             const Block & right_sample_block,
+             bool any_take_last_row_ = false);
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -354,6 +357,8 @@ private:
     std::shared_ptr<RightTableData> data;
     Sizes key_sizes;
 
+    /// Block with columns from the left-side table.
+    Block left_sample_block;
     /// Block with columns from the right-side table.
     Block right_sample_block;
     /// Block with columns from the right-side table except key columns.
@@ -362,6 +367,9 @@ private:
     Block right_table_keys;
     /// Block with key columns right-side table keys that are needed in result (would be attached after joined columns).
     Block required_right_keys;
+
+    NamesAndTypes cast_keys_info;
+
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
