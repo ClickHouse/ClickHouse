@@ -37,28 +37,28 @@ public:
     }
 
 protected:
-    void consume(Chunk chunk) override
+    void consume(Port::Data data) override
     {
         if (!finished_processing)
-            queue.emplace(std::move(chunk));
+            queue.emplace(std::move(data));
     }
 
-    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void consumeTotals(Port::Data data) override { totals = std::move(data); }
+    void consumeExtremes(Port::Data data) override { extremes = std::move(data); }
 
     void finalize() override
     {
         finished_processing = true;
 
         /// In case we are waiting for result.
-        queue.emplace(Chunk());
+        queue.emplace(Port::Data{});
     }
 
 private:
 
-    ConcurrentBoundedQueue<Chunk> queue;
-    Chunk totals;
-    Chunk extremes;
+    ConcurrentBoundedQueue<Port::Data> queue;
+    Port::Data totals;
+    Port::Data extremes;
 
     /// Is not used.
     static WriteBuffer out;

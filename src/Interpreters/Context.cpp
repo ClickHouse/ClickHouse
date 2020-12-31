@@ -849,7 +849,17 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 
 void Context::setProfile(const String & profile_name)
 {
-    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
+    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    try
+    {
+        checkSettingsConstraints(profile_settings_changes);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(", while trying to set settings profile {}", profile_name);
+        throw;
+    }
+    applySettingsChanges(profile_settings_changes);
 }
 
 

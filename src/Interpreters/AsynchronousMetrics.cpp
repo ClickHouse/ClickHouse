@@ -212,18 +212,18 @@ void AsynchronousMetrics::update()
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_peak = data.resident;
+            Int64 new_amount = data.resident;
 
             LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
                 "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
                 ReadableSize(amount),
                 ReadableSize(peak),
-                ReadableSize(new_peak),
-                ReadableSize(new_peak - peak)
+                ReadableSize(new_amount),
+                ReadableSize(new_amount - amount)
             );
 
-            total_memory_tracker.set(new_peak);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_peak);
+            total_memory_tracker.set(new_amount);
+            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
 #endif
@@ -246,6 +246,10 @@ void AsynchronousMetrics::update()
 
         size_t number_of_databases = databases.size();
         size_t total_number_of_tables = 0;
+
+        size_t total_number_of_bytes = 0;
+        size_t total_number_of_rows = 0;
+        size_t total_number_of_parts = 0;
 
         for (const auto & db : databases)
         {
@@ -295,6 +299,17 @@ void AsynchronousMetrics::update()
                 if (table_merge_tree)
                 {
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
+                    const auto & settings = global_context.getSettingsRef();
+                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_merge_tree->getPartsCount();
+                }
+                if (table_replicated_merge_tree)
+                {
+                    const auto & settings = global_context.getSettingsRef();
+                    total_number_of_bytes += table_replicated_merge_tree->totalBytes(settings).value();
+                    total_number_of_rows += table_replicated_merge_tree->totalRows(settings).value();
+                    total_number_of_parts += table_replicated_merge_tree->getPartsCount();
                 }
             }
         }
@@ -314,6 +329,10 @@ void AsynchronousMetrics::update()
 
         new_values["NumberOfDatabases"] = number_of_databases;
         new_values["NumberOfTables"] = total_number_of_tables;
+
+        new_values["TotalBytesOfMergeTreeTables"] = total_number_of_bytes;
+        new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
+        new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
 
         auto get_metric_name = [](const String & name) -> const char *
         {
@@ -336,16 +355,22 @@ void AsynchronousMetrics::update()
                 return it->second;
         };
 
-        for (const auto & server : servers_to_start_before_tables)
+        if (servers_to_start_before_tables)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers_to_start_before_tables)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
 
-        for (const auto & server : servers)
+        if (servers)
         {
-            if (const auto * name = get_metric_name(server.getPortName()))
-                new_values[name] = server.currentThreads();
+            for (const auto & server : *servers)
+            {
+                if (const auto * name = get_metric_name(server.getPortName()))
+                    new_values[name] = server.currentThreads();
+            }
         }
     }
 

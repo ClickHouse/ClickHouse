@@ -400,7 +400,8 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See also**
+**See Also**
+
 -   [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
@@ -440,7 +441,8 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See also**
+**See Also**
+
 -   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
@@ -590,8 +592,55 @@ Result:
 └───────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->
-
 ## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
+
+**Syntax**
+
+``` sql
+countMatches(haystack, pattern)
+```
+
+**Parameters**
+
+-   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The number of matches.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countMatches('foobar.com', 'o+');
+```
+
+Result:
+
+``` text
+┌─countMatches('foobar.com', 'o+')─┐
+│                                2 │
+└──────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT countMatches('aaaa', 'aa');
+```
+
+Result:
+
+``` text
+┌─countMatches('aaaa', 'aa')────┐
+│                             2 │
+└───────────────────────────────┘
+```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->

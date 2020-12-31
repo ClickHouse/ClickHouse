@@ -307,6 +307,9 @@ if (USE_KRB5)
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+if (USE_NURAFT)
+    dbms_target_link_libraries(PRIVATE ${NURAFT_LIBRARY})
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -363,7 +366,7 @@ endif ()
 
 if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
-    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
         if (USE_STATIC_LIBRARIES)
             dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
@@ -435,6 +438,8 @@ if (USE_ROCKSDB)
     dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
 endif()
+
+dbms_target_link_libraries(PRIVATE _boost_context)
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
