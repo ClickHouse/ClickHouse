@@ -102,11 +102,11 @@ else
     echo "No failed tests"
 fi
 
-mkdir -p $COVERAGE_DIR
-mv /*.profraw $COVERAGE_DIR
+mkdir -p "$COVERAGE_DIR"
+mv /*.profraw "$COVERAGE_DIR"
 
-mkdir -p $SOURCE_DIR/obj-x86_64-linux-gnu
-cd $SOURCE_DIR/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
-llvm-profdata-11 merge -sparse ${COVERAGE_DIR}/* -o clickhouse.profdata
-llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov
-genhtml output.lcov --ignore-errors source --output-directory ${OUTPUT_DIR}
+mkdir -p "$SOURCE_DIR"/obj-x86_64-linux-gnu
+cd "$SOURCE_DIR"/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
+llvm-profdata-11 merge -sparse "${COVERAGE_DIR}"/* -o clickhouse.profdata
+llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex "$IGNORE" > output.lcov
+genhtml output.lcov --ignore-errors source --output-directory "${OUTPUT_DIR}"

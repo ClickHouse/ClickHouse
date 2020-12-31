@@ -168,6 +168,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
+    else if (query->as<ASTShowCreateViewQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
     else if (query->as<ASTShowCreateDatabaseQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);

@@ -31,6 +31,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     std::shared_ptr<ASTQueryWithTableAndOutput> query;
 
     bool parse_only_database_name = false;
+    bool parse_show_create_view = false;
     bool exists_view = false;
 
     bool temporary = false;
@@ -71,6 +72,11 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
         else if (s_dictionary.checkWithoutMoving(pos, expected))
             query = std::make_shared<ASTShowCreateDictionaryQuery>();
+        else if (s_view.ignore(pos, expected))
+        {
+            query = std::make_shared<ASTShowCreateViewQuery>();
+            parse_show_create_view = true;
+        }
         else
             query = std::make_shared<ASTShowCreateTableQuery>();
     }
@@ -86,7 +92,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
     else
     {
-        if (!exists_view)
+        if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
                 query->temporary = true;

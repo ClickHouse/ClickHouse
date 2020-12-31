@@ -21,10 +21,12 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
-    extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARY_IS_EMPTY;
 }
 
 namespace
@@ -89,9 +91,9 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
             const auto * addr_str_end = addr_str.data() + addr_str.size();
             auto [p, ec] = std::from_chars(addr_str.data() + pos + 1, addr_str_end, prefix);
             if (p != addr_str_end)
-                throw DB::Exception("extra characters at the end", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception("Extra characters at the end of IP address", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
             if (ec != std::errc())
-                throw DB::Exception("mask is not a valid number", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception("Mask for IP address is not a valid number", ErrorCodes::CANNOT_PARSE_NUMBER);
 
             addr = addr & Poco::Net::IPAddress(prefix, addr.family());
             return {addr, prefix};
@@ -102,9 +104,21 @@ static std::pair<Poco::Net::IPAddress, UInt8> parseIPFromString(const std::strin
     }
     catch (Poco::Exception & ex)
     {
-        throw DB::Exception("can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
-            ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception("Can't parse address \"" + std::string(addr_str) + "\": " + ex.what(),
+            ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
     }
+}
+
+static size_t formatIPWithPrefix(const unsigned char * src, UInt8 prefix_len, bool isv4, char * dst)
+{
+    char * ptr = dst;
+    if (isv4)
+        formatIPv4(src, ptr);
+    else
+        formatIPv6(src, ptr);
+    *(ptr - 1) = '/';
+    ptr = itoa(prefix_len, ptr);
+    return ptr - dst;
 }
 
 static void validateKeyTypes(const DataTypes & key_types)
@@ -231,14 +245,21 @@ IPAddressDictionary::IPAddressDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_)
+    bool require_nonempty_,
+    bool access_to_key_from_attributes_)
     : IDictionaryBase(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
+    , access_to_key_from_attributes(access_to_key_from_attributes_)
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
+    if (access_to_key_from_attributes)
+    {
+        dict_struct.attributes.emplace_back(dict_struct.key->front());
+    }
+
     createAttributes();
 
     loadData();
@@ -453,8 +474,6 @@ void IPAddressDictionary::loadData()
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    const auto attributes_size = attributes.size();
-
     std::vector<IPRecord> ip_records;
 
     bool has_ipv6 = false;
@@ -465,14 +484,19 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size), [&](const size_t attribute_idx)
+
+        size_t attributes_size = dict_struct.attributes.size();
+        if (access_to_key_from_attributes)
         {
-            return block.safeGetByPosition(attribute_idx + 1).column;
-        });
+            /// last attribute contains key and will be filled in code below
+            attributes_size--;
+        }
+        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+            [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
 
         for (const auto row : ext::range(0, rows))
         {
-            for (const auto attribute_idx : ext::range(0, attributes_size))
+            for (const auto attribute_idx : ext::range(0, attribute_column_ptrs.size()))
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
                 auto & attribute = attributes[attribute_idx];
@@ -489,6 +513,33 @@ void IPAddressDictionary::loadData()
     }
 
     stream->readSuffix();
+
+    if (access_to_key_from_attributes)
+    {
+        /// We format key attribute values here instead of filling with data from key_column
+        /// because string representation can be normalized if bits beyond mask are set.
+        /// Also all IPv4 will be displayed as mapped IPv6 if there are any IPv6.
+        /// It's consistent with representation in table created with `ENGINE = Dictionary` from this dictionary.
+        char str_buffer[48];
+        if (has_ipv6)
+        {
+            uint8_t ip_buffer[IPV6_BINARY_LENGTH];
+            for (const auto & record : ip_records)
+            {
+                size_t str_len = formatIPWithPrefix(record.asIPv6Binary(ip_buffer), record.prefixIPv6(), false, str_buffer);
+                setAttributeValue(attributes.back(), String(str_buffer, str_len));
+            }
+        }
+        else
+        {
+            for (const auto & record : ip_records)
+            {
+                UInt32 addr = IPv4AsUInt32(record.addr.addr());
+                size_t str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&addr), record.prefix, true, str_buffer);
+                setAttributeValue(attributes.back(), String(str_buffer, str_len));
+            }
+        }
+    }
 
     row_idx.reserve(ip_records.size());
     mask_column.reserve(ip_records.size());
@@ -679,7 +730,7 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<NearestFieldType<T>>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
@@ -735,7 +786,8 @@ IPAddressDictionary::Attribute IPAddressDictionary::createAttributeWithType(cons
 
         case AttributeUnderlyingType::utString:
         {
-            attr.null_values = null_value.get<String>();
+
+            attr.null_values = null_value.isNull() ? String() : null_value.get<String>();
             attr.maps.emplace<ContainerType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
@@ -979,14 +1031,12 @@ static auto keyViewGetter()
         for (size_t row : ext::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            char * ptr = buffer;
+            size_t str_len;
             if constexpr (IsIPv4)
-                formatIPv4(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), ptr);
+                str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
-                formatIPv6(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data), ptr);
-            *(ptr - 1) = '/';
-            ptr = itoa(mask, ptr);
-            column->insertData(buffer, ptr - buffer);
+                str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(key_ip_column.getDataAt(row).data), mask, false, buffer);
+            column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
@@ -1120,8 +1170,12 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+
+        const auto & layout_prefix = config_prefix + ".layout.ip_trie";
+        const bool access_to_key_from_attributes = config.getBool(layout_prefix + ".access_to_key_from_attributes", false);
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime,
+                                                     require_nonempty, access_to_key_from_attributes);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }
