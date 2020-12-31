@@ -35,6 +35,4 @@ public:
     bool canBePromoted() const override { return false; }
 };
 
-template <> struct NativeType<DataTypeUUID> { using Type = DataTypeUUID::FieldType; };
-
 }

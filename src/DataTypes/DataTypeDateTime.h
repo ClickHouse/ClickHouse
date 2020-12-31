@@ -77,7 +77,5 @@ public:
     bool equals(const IDataType & rhs) const override;
 };
 
-template <> struct NativeType<DataTypeDateTime> { using Type = DataTypeDateTime::FieldType; };
-
 }
 
