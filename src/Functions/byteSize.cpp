@@ -112,8 +112,9 @@ private:
             ColumnString::Offset prev_offset = 0;
             for (size_t i = 0; i < vec_size; ++i)
             {
-                vec_res[i] += offsets[i] - prev_offset + sizeof(offsets[0]);
-                prev_offset = offsets[i];
+                ColumnString::Offset current_offset = offsets[i]; // to ensure offsets[i] not aliased with vec_res[i].
+                vec_res[i] += current_offset - prev_offset + sizeof(offsets[0]);
+                prev_offset = current_offset;
             }
             return true;
         }
@@ -159,7 +160,6 @@ private:
                 vec_res[i] += byte_size;
             return true;
         }
-
         return false;
     }
 
@@ -186,7 +186,7 @@ private:
             {
                 size_t array_size = offsets[i] - prev_offset;
                 vec_res[i] += array_size * byte_size + sizeof(offsets[0]);
-                prev_offset = offsets[i];
+                prev_offset += array_size;
             }
             return true;
         }
@@ -265,7 +265,7 @@ private:
             for (size_t j = 0; j < array_size; ++j)
                 byte_size += byteSizeForNestedItem(type_nested, col_nested, current_offset + j);
             vec_res[i] += byte_size + sizeof(offsets[0]);
-            current_offset = offsets[i];
+            current_offset += array_size;
         }
         return true;
     }
