@@ -60,6 +60,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 
 #if USE_LIBPQXX
 void registerStoragePostgreSQL(StorageFactory & factory);
+void registerStorageMaterializePostgreSQL(StorageFactory & factory);
 #endif
 
 void registerStorages()
@@ -117,6 +118,7 @@ void registerStorages()
 
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
+    registerStorageMaterializePostgreSQL(factory);
     #endif
 }
 
