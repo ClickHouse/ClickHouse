@@ -25,7 +25,6 @@
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/types.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -34,6 +33,7 @@
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
 namespace fs = std::filesystem;
@@ -342,11 +342,11 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
-                read_buf = wrapReadBufferWithCompressionMethod(
-                    std::move(nested_buffer), method);
-                reader = FormatFactory::instance().getInput(storage->format_name,
-                    *read_buf, metadata_snapshot->getSampleBlock(), context,
-                    max_block_size, storage->format_settings);
+                read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+                auto format = FormatFactory::instance().getInput(
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
+
+                reader = std::make_shared<InputStreamFromInputFormat>(format);
 
                 if (columns_description.hasDefaults())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
@@ -500,7 +500,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutput(storage.format_name,
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
