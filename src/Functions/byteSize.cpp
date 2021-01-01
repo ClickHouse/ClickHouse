@@ -91,7 +91,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto result_col = ColumnUInt64::create(input_rows_count, 0);
+        auto result_col = ColumnUInt64::create(input_rows_count);
         auto & vec_res = result_col->getData();
         size_t size = arguments.size();
         for (size_t i = 0; i < size; ++i)
