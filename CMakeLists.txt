@@ -195,6 +195,7 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+    # Can be lld or ld-lld.
     if (LINKER_NAME MATCHES "lld$")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
