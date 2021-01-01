@@ -8,6 +8,7 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <Columns/ColumnDecimal.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <IO/ReadHelpers.h>
@@ -110,6 +111,9 @@ namespace
                 data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
                 break;
             }
+            case ValueType::vtFixedString:
+                assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+                break;
         }
     }
 

@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -445,6 +446,8 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
             for (auto & arg : node->arguments->children)
             {
                 assertNoAggregates(arg, "inside another aggregate function");
+                // We also can't have window functions inside aggregate functions,
+                // because the window functions are calculated later.
                 assertNoWindows(arg, "inside an aggregate function");
             }
         }
@@ -454,7 +457,9 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
-    /// There can not be window functions inside the WHERE and PREWHERE.
+    /// There can not be window functions inside the WHERE, PREWHERE and HAVING
+    if (select_query.having())
+        assertNoWindows(select_query.having(), "in HAVING");
     if (select_query.where())
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
@@ -463,15 +468,32 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
 
-    /// There can not be other window functions within the aggregate functions.
+    /// Window functions cannot be inside aggregates or other window functions.
+    /// Aggregate functions can be inside window functions because they are
+    /// calculated earlier.
     for (const ASTFunction * node : data.window_functions)
     {
         if (node->arguments)
         {
             for (auto & arg : node->arguments->children)
             {
-                assertNoAggregates(arg, "inside a window function");
                 assertNoWindows(arg, "inside another window function");
+            }
+        }
+
+        if (node->window_partition_by)
+        {
+            for (auto & arg : node->window_partition_by->children)
+            {
+                assertNoWindows(arg, "inside PARTITION BY of a window");
+            }
+        }
+
+        if (node->window_order_by)
+        {
+            for (auto & arg : node->window_order_by->children)
+            {
+                assertNoWindows(arg, "inside ORDER BY of a window");
             }
         }
     }

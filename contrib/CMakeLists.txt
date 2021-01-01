@@ -31,7 +31,6 @@ set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
-add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
 add_subdirectory (FastMemcpy)
@@ -305,6 +304,10 @@ endif()
 
 if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
+endif()
+
+if (USE_NURAFT)
+  add_subdirectory(nuraft-cmake)
 endif()
 
 add_subdirectory(fast_float)
