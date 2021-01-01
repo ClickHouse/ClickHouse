@@ -473,6 +473,21 @@ public:
         insert_assume_reserved(from_begin, from_end);
     }
 
+    /// In contrast to 'insert' this method is Ok even for inserting from itself.
+    /// Because we obtain iterators after reserving memory.
+    template <typename Container, typename ... TAllocatorParams>
+    void insertByOffsets(Container && rhs, size_t from_begin, size_t from_end, TAllocatorParams &&... allocator_params)
+    {
+        assert(from_end >= from_begin);
+        assert(from_end <= rhs.size());
+
+        size_t required_capacity = this->size() + (from_end - from_begin);
+        if (required_capacity > this->capacity())
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+
+        insert_assume_reserved(rhs.begin() + from_begin, rhs.begin() + from_end);
+    }
+
     /// Works under assumption, that it's possible to read up to 15 excessive bytes after `from_end` and this PODArray is padded.
     template <typename It1, typename It2, typename ... TAllocatorParams>
     void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)

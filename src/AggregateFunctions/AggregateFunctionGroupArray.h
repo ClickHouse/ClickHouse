@@ -188,13 +188,13 @@ public:
             if (!limit_num_elems)
             {
                 if (rhs_elems.value.size())
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+                    cur_elems.value.insertByOffsets(rhs_elems, 0, rhs_elems.size(), arena);
             }
             else
             {
                 UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
                 if (elems_to_insert)
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+                    cur_elems.value.insertByOffsets(rhs_elems, 0, elems_to_insert, arena);
             }
         }
 
