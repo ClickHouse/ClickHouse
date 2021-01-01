@@ -323,7 +323,7 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
     SubstreamsCache * cache) const
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedPtr(), limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
 }
 
 void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
