@@ -12,6 +12,8 @@ namespace DB
 class ASTSubquery : public ASTWithAlias
 {
 public:
+    std::string cte_name;
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Subquery"; }
 
@@ -27,6 +29,8 @@ public:
 
         return ptr;
     }
+
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
