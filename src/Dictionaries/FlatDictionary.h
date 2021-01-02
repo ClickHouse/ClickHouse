@@ -86,9 +86,13 @@ private:
     template <typename Value>
     using ContainerType = PaddedPODArray<Value>;
 
+    using NullableSet = std::set<size_t>;
+
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        bool is_nullable;
+        std::unique_ptr<NullableSet> nullable_set;
 
         std::variant<
             UInt8,
@@ -141,7 +145,7 @@ private:
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(

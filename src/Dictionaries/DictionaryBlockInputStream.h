@@ -227,14 +227,10 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
                 column = dictionary->getColumn(
                     attribute.name, attribute.type, {ids_column}, {std::make_shared<DataTypeUInt64>()}, nullptr /* default_untyped*/);
             }
-            else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
+            else
             {
                 column = dictionary->getColumn(
                     attribute.name, attribute.type, keys, data_types, nullptr /* default_untyped*/);
-            }
-            else
-            {
-                column = nullptr;
             }
 
             block_columns.emplace_back(column, attribute.type, attribute.name);

@@ -1,6 +1,7 @@
 #include "FlatDictionary.h"
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -116,7 +117,17 @@ ColumnPtr FlatDictionary::getColumn(
     PaddedPODArray<Key> backup_storage;
     const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
+    auto size = ids.size();
+
     const auto & attribute = getAttribute(attribute_name);
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
+    {
+        col_null_map_to = ColumnUInt8::create(size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
@@ -125,8 +136,6 @@ ColumnPtr FlatDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-
-        auto size = ids.size();
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
@@ -226,6 +235,21 @@ ColumnPtr FlatDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
+    /// TODO: Fix
+    if (attribute.is_nullable)
+    {
+        for (size_t row = 0; row < ids.size(); ++row)
+        {
+            auto id = ids[row];
+            if (attribute.nullable_set->find(id) != attribute.nullable_set->end())
+            {
+                (*vec_null_map_to)[row] = true;
+            }
+        }
+
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
+
     return result;
 }
 
@@ -259,7 +283,7 @@ void FlatDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -432,18 +456,20 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 }
 
 
-FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    auto nullable_set = attribute.is_nullable ? std::make_unique<NullableSet>() : nullptr;
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, std::move(nullable_set), {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+
         createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -501,55 +527,33 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const 
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
-    switch (attribute.type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-            break;
-        case AttributeUnderlyingType::utInt8:
-            setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
-            break;
-        case AttributeUnderlyingType::utString:
-            setAttributeValueImpl<String>(attribute, id, value.get<String>());
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
-            break;
-    }
+        if (attribute.is_nullable)
+        {
+            if (value.isNull())
+            {
+                attribute.nullable_set->insert(id);
+                loaded_ids[id] = true;
+                return;
+            }
+            else
+            {
+                auto find_iter = attribute.nullable_set->find(id);
+                if (find_iter != attribute.nullable_set->end())
+                {
+                    attribute.nullable_set->erase(find_iter);
+                }
+            }
+        }
+
+        setAttributeValueImpl<AttributeType>(attribute, id, value.get<NearestFieldType<AttributeType>>());
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 

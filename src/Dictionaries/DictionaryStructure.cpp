@@ -42,54 +42,44 @@ namespace
 }
 
 
-AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
+AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
+    auto type_index = type->getTypeId();
+
+    switch (type_index)
     {
-        {"UInt8", AttributeUnderlyingType::utUInt8},
-        {"UInt16", AttributeUnderlyingType::utUInt16},
-        {"UInt32", AttributeUnderlyingType::utUInt32},
-        {"UInt64", AttributeUnderlyingType::utUInt64},
-        {"UUID", AttributeUnderlyingType::utUInt128},
-        {"Int8", AttributeUnderlyingType::utInt8},
-        {"Int16", AttributeUnderlyingType::utInt16},
-        {"Int32", AttributeUnderlyingType::utInt32},
-        {"Int64", AttributeUnderlyingType::utInt64},
-        {"Float32", AttributeUnderlyingType::utFloat32},
-        {"Float64", AttributeUnderlyingType::utFloat64},
-        {"String", AttributeUnderlyingType::utString},
-        {"Date", AttributeUnderlyingType::utUInt16},
-    };
+        case TypeIndex::UInt8:          return AttributeUnderlyingType::utUInt8;
+        case TypeIndex::UInt16:         return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
 
-    const auto it = dictionary.find(type);
-    if (it != std::end(dictionary))
-        return it->second;
+        case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
+        case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
+        case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
+        case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
 
-    /// Can contain arbitrary scale and timezone parameters.
-    if (type.find("DateTime64") == 0)
-        return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
+        case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
 
-    /// Can contain arbitrary timezone as parameter.
-    if (type.find("DateTime") == 0)
-        return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
+        case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
+        case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
 
-    if (type.find("Decimal") == 0)
-    {
-        size_t start = strlen("Decimal");
-        if (type.find("32", start) == start)
-            return AttributeUnderlyingType::utDecimal32;
-        if (type.find("64", start) == start)
-            return AttributeUnderlyingType::utDecimal64;
-        if (type.find("128", start) == start)
-            return AttributeUnderlyingType::utDecimal128;
+        case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
+
+        case TypeIndex::String:         return AttributeUnderlyingType::utString;
+
+        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+        // TODO: This should be fixed by fully supporting arrays in dictionaries.
+        case TypeIndex::Array:          return AttributeUnderlyingType::utString;
+
+        default: break;
     }
 
-    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-    // TODO: This should be fixed by fully supporting arrays in dictionaries.
-    if (type.find("Array") == 0)
-        return AttributeUnderlyingType::utString;
-
-    throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
+    throw Exception{"Unknown type for dictionary" + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 }
 
 
@@ -334,13 +324,13 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         //     type = array_type->getNestedType();
         // }
 
-        // if (type->isNullable())
-        // {
-        //     is_nullable = true;
-        //     type = removeNullable(type);
-        // }
+        if (type->isNullable())
+        {
+            is_nullable = true;
+            type = removeNullable(type);
+        }
 
-        const auto underlying_type = getAttributeUnderlyingType(type_string);
+        const auto underlying_type = getAttributeUnderlyingType(type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -353,7 +343,9 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 if (null_value_string.empty())
+                {
                     null_value = type->getDefault();
+                }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
