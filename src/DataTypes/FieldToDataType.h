@@ -21,6 +21,8 @@ class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
     DataTypePtr operator() (const Null & x) const;
+    DataTypePtr operator() (const NegativeInfinity & x) const;
+    DataTypePtr operator() (const PositiveInfinity & x) const;
     DataTypePtr operator() (const UInt64 & x) const;
     DataTypePtr operator() (const UInt128 & x) const;
     DataTypePtr operator() (const UInt256 & x) const;

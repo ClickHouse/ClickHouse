@@ -455,6 +455,16 @@ inline void writeText(const Null &, WriteBuffer & buf)
     writeText(std::string("NULL"), buf);
 }
 
+inline void writeText(const NegativeInfinity &, WriteBuffer & buf)
+{
+    writeText(std::string("-Inf"), buf);
+}
+
+inline void writeText(const PositiveInfinity &, WriteBuffer & buf)
+{
+    writeText(std::string("+Inf"), buf);
+}
+
 String toString(const Field & x)
 {
     return Field::dispatch(
