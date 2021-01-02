@@ -478,6 +478,8 @@ public:
     template <typename Container, typename ... TAllocatorParams>
     void insertByOffsets(Container && rhs, size_t from_begin, size_t from_end, TAllocatorParams &&... allocator_params)
     {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(rhs.front())>>);
+
         assert(from_end >= from_begin);
         assert(from_end <= rhs.size());
 
@@ -485,7 +487,12 @@ public:
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
-        insert_assume_reserved(rhs.begin() + from_begin, rhs.begin() + from_end);
+        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        if (bytes_to_copy)
+        {
+            memcpy(this->c_end, reinterpret_cast<const void *>(rhs.begin() + from_begin, bytes_to_copy));
+            this->c_end += bytes_to_copy;
+        }
     }
 
     /// Works under assumption, that it's possible to read up to 15 excessive bytes after `from_end` and this PODArray is padded.
