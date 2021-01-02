@@ -14,6 +14,8 @@ namespace DB
 /// Data types for representing elementary values from a database in RAM.
 
 struct Null {};
+struct NegativeInfinity {};
+struct PositiveInfinity {};
 
 /// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
 #if !defined(__clang__)

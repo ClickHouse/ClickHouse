@@ -217,6 +217,8 @@ bool Set::insertFromBlock(const Block & block)
                 set_elements[i] = filtered_column;
             else
                 set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (transform_null_in && null_map_holder)
+                set_elements[i]->insert(Null{});
         }
     }
 
@@ -281,7 +283,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
-    /// We will check existence in Set only for keys, where all components are not NULL.
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder;
     if (!transform_null_in)
@@ -408,7 +410,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     std::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::forward_as_tuple(l.key_index, l.tuple_index) < std::forward_as_tuple(r.key_index, r.tuple_index);
+            return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
@@ -447,8 +449,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 {
     size_t tuple_size = indexes_mapping.size();
 
-    ColumnsWithInfinity left_point;
-    ColumnsWithInfinity right_point;
+    FieldValues left_point;
+    FieldValues right_point;
     left_point.reserve(tuple_size);
     right_point.reserve(tuple_size);
 
@@ -458,8 +460,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         right_point.emplace_back(ordered_set[i]->cloneEmpty());
     }
 
-    bool invert_left_infinities = false;
-    bool invert_right_infinities = false;
+    bool left_included = true;
+    bool right_included = true;
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
@@ -471,48 +473,29 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         if (!new_range)
             return {true, true};
 
-        /** A range that ends in (x, y, ..., +inf) exclusive is the same as a range
-          * that ends in (x, y, ..., -inf) inclusive and vice versa for the left bound.
-          */
-        if (new_range->left_bounded)
-        {
-            if (!new_range->left_included)
-                invert_left_infinities = true;
-
-            left_point[i].update(new_range->left);
-        }
-        else
-        {
-            if (invert_left_infinities)
-                left_point[i].update(ValueWithInfinity::PLUS_INFINITY);
-            else
-                left_point[i].update(ValueWithInfinity::MINUS_INFINITY);
-        }
-
-        if (new_range->right_bounded)
-        {
-            if (!new_range->right_included)
-                invert_right_infinities = true;
-
-            right_point[i].update(new_range->right);
-        }
-        else
-        {
-            if (invert_right_infinities)
-                right_point[i].update(ValueWithInfinity::MINUS_INFINITY);
-            else
-                right_point[i].update(ValueWithInfinity::PLUS_INFINITY);
-        }
+        left_point[i].update(new_range->left);
+        left_included &= new_range->left_included;
+        right_point[i].update(new_range->right);
+        right_included &= new_range->right_included;
     }
 
-    auto compare = [](const IColumn & lhs, const ValueWithInfinity & rhs, size_t row)
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
+    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
     {
-        auto type = rhs.getType();
-        /// Return inverted infinity sign, because in 'lhs' all values are finite.
-        if (type != ValueWithInfinity::NORMAL)
-            return -static_cast<int>(type);
-
-        return lhs.compareAt(row, 0, rhs.getColumnIfFinite(), 1);
+        if (rhs.isNegativeInfinity())
+            return 1;
+        if (rhs.isPositiveInfinity())
+        {
+            Field f;
+            lhs.get(row, f);
+            if (f.isNull())
+                return 0; // +Inf == +Inf
+            else
+                return -1;
+        }
+        return lhs.compareAt(row, 0, *rhs.column, 1);
     };
 
     auto less = [this, &compare, tuple_size](size_t row, const auto & point)
@@ -535,29 +518,27 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 
     /** Because each hyperrectangle maps to a contiguous sequence of elements
-     * laid out in the lexicographically increasing order, the set intersects the range
-     * if and only if either bound coincides with an element or at least one element
-     * is between the lower bounds
-     */
+      * laid out in the lexicographically increasing order, the set intersects the range
+      * if and only if either bound coincides with an element or at least one element
+      * is between the lower bounds
+      */
     auto indices = collections::range(0, size());
     auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
     auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 
-    /// A special case of 1-element KeyRange. It's useful for partition pruning
+    /// A special case of 1-element KeyRange. It's useful for partition pruning.
+    /// We don't take NULL into account here, as it's special in IN operator.
     bool one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
         auto & left = left_point[i];
         auto & right = right_point[i];
-        if (left.getType() == right.getType())
+        if (left.isNormal() && right.isNormal())
         {
-            if (left.getType() == ValueWithInfinity::NORMAL)
+            if (0 != left.column->compareAt(0, 0, *right.column, 1))
             {
-                if (0 != left.getColumnIfFinite().compareAt(0, 0, right.getColumnIfFinite(), 1))
-                {
-                    one_element_range = false;
-                    break;
-                }
+                one_element_range = false;
+                break;
             }
         }
         else
@@ -577,13 +558,46 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             return {false, true};
     }
 
-    return
-    {
-        left_lower != right_lower
-            || (left_lower != indices.end() && equals(*left_lower, left_point))
-            || (right_lower != indices.end() && equals(*right_lower, right_point)),
-        true
-    };
+    /// If there are more than one element in the range, it can always be false. Thus we only need to check if it may be true or not.
+
+    /// Given X >= x, Y >= y, find if there may be an element z in [X, Y]. Note
+    /// Case 1: [x ... y]
+    if (left_included && right_included)
+        return {left_lower != right_lower || (right_lower != indices.end() && equals(*right_lower, right_point)), true};
+    /// Case 2: [x ... y)
+    else if (left_included && !right_included)
+        // X,   Y
+        // x, y
+        return {left_lower != right_lower, true};
+    /// Case 3: (x ... y]
+    else if (!left_included && right_included)
+        return
+        {
+            //   X,  M, ...,  Y
+            // x,        y
+            left_lower + 1 < right_lower
+            //   X,  Y, ...
+            // x,    y
+            || (right_lower != indices.end() && equals(*right_lower, right_point))
+            //   X,   Y
+            // x,   y
+            || (left_lower < right_lower && !equals(*left_lower, left_point)),
+
+            true
+        };
+    /// Case 4: (x ... y)
+    else
+        return
+        {
+            //   X,  M, ...,  Y
+            // x,        y
+            left_lower + 1 < right_lower
+            //   X,   Y
+            // x,   y
+            || (left_lower < right_lower && !equals(*left_lower, left_point)),
+
+            true
+        };
 }
 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
@@ -594,23 +608,18 @@ bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
     return false;
 }
 
-void ValueWithInfinity::update(const Field & x)
+void FieldValue::update(const Field & x)
 {
-    /// Keep at most one element in column.
-    if (!column->empty())
-        column->popBack(1);
-    column->insert(x);
-    type = NORMAL;
-}
-
-const IColumn & ValueWithInfinity::getColumnIfFinite() const
-{
-#ifndef NDEBUG
-    if (type != NORMAL)
-        throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
-#endif
-
-    return *column;
+    if (x.isNegativeInfinity() || x.isPositiveInfinity())
+        value = x;
+    else
+    {
+        /// Keep at most one element in column.
+        if (!column->empty())
+            column->popBack(1);
+        column->insert(x);
+        value = Field(); // Set back to normal value.
+    }
 }
 
 }

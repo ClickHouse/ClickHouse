@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -78,6 +79,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
         Field max_val;
         serialization->deserializeBinary(max_val, *file);
 
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = PositiveInfinity();
+        if (max_val.isNull())
+            max_val = PositiveInfinity();
+
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
@@ -132,14 +139,19 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
-        column.column->getExtremes(min_value, max_value);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value);
+        else
+            column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, min_value);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, max_value);
+            hyperrectangle[i].left
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
+            hyperrectangle[i].right
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
     }
 

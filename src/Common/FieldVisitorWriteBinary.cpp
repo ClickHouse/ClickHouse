@@ -7,6 +7,8 @@ namespace DB
 {
 
 void FieldVisitorWriteBinary::operator() (const Null &, WriteBuffer &) const { }
+void FieldVisitorWriteBinary::operator() (const NegativeInfinity &, WriteBuffer &) const { }
+void FieldVisitorWriteBinary::operator() (const PositiveInfinity &, WriteBuffer &) const { }
 void FieldVisitorWriteBinary::operator() (const UInt64 & x, WriteBuffer & buf) const { writeVarUInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Int64 & x, WriteBuffer & buf) const { writeVarInt(x, buf); }
 void FieldVisitorWriteBinary::operator() (const Float64 & x, WriteBuffer & buf) const { writeFloatBinary(x, buf); }
