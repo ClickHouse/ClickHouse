@@ -490,7 +490,7 @@ public:
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         if (bytes_to_copy)
         {
-            memcpy(this->c_end, reinterpret_cast<const void *>(rhs.begin() + from_begin, bytes_to_copy));
+            memcpy(this->c_end, reinterpret_cast<const void *>(rhs.begin() + from_begin), bytes_to_copy);
             this->c_end += bytes_to_copy;
         }
     }
