@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -205,8 +206,9 @@ private:
 
 enum class DictionaryGetFunctionType
 {
-    withoutDefault,
-    withDefault
+    get,
+    getOrDefault,
+    getOrNull
 };
 
 template <typename DataType, typename Name, DictionaryGetFunctionType dictionary_get_function_type>
@@ -242,10 +244,19 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
+        DataTypePtr result;
+        /// TODO: Decimal will not work properly during FunctionDictGetImpl call decimal_scale will not be iniitalized.
         if constexpr (IsDataTypeDecimal<DataType>)
-            return std::make_shared<DataType>(DataType::maxPrecision(), decimal_scale);
+            result = std::make_shared<DataType>(DataType::maxPrecision(), decimal_scale);
         else
-            return std::make_shared<DataType>();
+            result = std::make_shared<DataType>();
+
+        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrNull)
+        {
+            result = std::make_shared<DataTypeNullable>(result);
+        }
+
+        return result;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -305,7 +316,7 @@ private:
 
         ColumnPtr default_col = nullptr;
 
-        if (dictionary_get_function_type == DictionaryGetFunctionType::withDefault)
+        if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
         {
             if (current_arguments_index >= arguments.size())
                 throw Exception{"Wrong argument count for function test " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
@@ -348,7 +359,7 @@ private:
 };
 
 template<typename DataType, typename Name>
-using FunctionDictGet = FunctionDictGetImpl<DataType, Name, DictionaryGetFunctionType::withoutDefault>;
+using FunctionDictGet = FunctionDictGetImpl<DataType, Name, DictionaryGetFunctionType::get>;
 
 struct NameDictGetUInt8 { static constexpr auto name = "dictGetUInt8"; };
 struct NameDictGetUInt16 { static constexpr auto name = "dictGetUInt16"; };
@@ -387,7 +398,7 @@ using FunctionDictGetDecimal128 = FunctionDictGet<DataTypeDecimal<Decimal128>, N
 using FunctionDictGetString = FunctionDictGet<DataTypeString, NameDictGetString>;
 
 template<typename DataType, typename Name>
-using FunctionDictGetOrDefault = FunctionDictGetImpl<DataType, Name, DictionaryGetFunctionType::withDefault>;
+using FunctionDictGetOrDefault = FunctionDictGetImpl<DataType, Name, DictionaryGetFunctionType::getOrDefault>;
 
 struct NameDictGetUInt8OrDefault { static constexpr auto name = "dictGetUInt8OrDefault"; };
 struct NameDictGetUInt16OrDefault { static constexpr auto name = "dictGetUInt16OrDefault"; };
@@ -425,6 +436,44 @@ using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecim
 using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;
 
+template<typename DataType, typename Name>
+using FunctionDictGetOrNull = FunctionDictGetImpl<DataType, Name, DictionaryGetFunctionType::getOrNull>;
+
+struct NameDictGetUInt8OrNull { static constexpr auto name = "dictGetUInt8OrNull"; };
+struct NameDictGetUInt16OrNull { static constexpr auto name = "dictGetUInt16OrNull"; };
+struct NameDictGetUInt32OrNull { static constexpr auto name = "dictGetUInt32OrNull"; };
+struct NameDictGetUInt64OrNull { static constexpr auto name = "dictGetUInt64OrNull"; };
+struct NameDictGetInt8OrNull { static constexpr auto name = "dictGetInt8OrNull"; };
+struct NameDictGetInt16OrNull { static constexpr auto name = "dictGetInt16OrNull"; };
+struct NameDictGetInt32OrNull { static constexpr auto name = "dictGetInt32OrNull"; };
+struct NameDictGetInt64OrNull { static constexpr auto name = "dictGetInt64OrNull"; };
+struct NameDictGetFloat32OrNull { static constexpr auto name = "dictGetFloat32OrNull"; };
+struct NameDictGetFloat64OrNull { static constexpr auto name = "dictGetFloat64OrNull"; };
+struct NameDictGetDateOrNull { static constexpr auto name = "dictGetDateOrNull"; };
+struct NameDictGetDateTimeOrNull { static constexpr auto name = "dictGetDateTimeOrNull"; };
+struct NameDictGetUUIDOrNull { static constexpr auto name = "dictGetUUIDOrNull"; };
+struct NameDictGetDecimal32OrNull { static constexpr auto name = "dictGetDecimal32OrNull"; };
+struct NameDictGetDecimal64OrNull { static constexpr auto name = "dictGetDecimal64OrNull"; };
+struct NameDictGetDecimal128OrNull { static constexpr auto name = "dictGetDecimal128OrNull"; };
+struct NameDictGetStringOrNull { static constexpr auto name = "dictGetStringOrNull"; };
+
+using FunctionDictGetUInt8OrNull = FunctionDictGetOrNull<DataTypeUInt8, NameDictGetUInt8OrNull>;
+using FunctionDictGetUInt16OrNull = FunctionDictGetOrNull<DataTypeUInt16, NameDictGetUInt16OrNull>;
+using FunctionDictGetUInt32OrNull = FunctionDictGetOrNull<DataTypeUInt32, NameDictGetUInt32OrNull>;
+using FunctionDictGetUInt64OrNull = FunctionDictGetOrNull<DataTypeUInt64, NameDictGetUInt64OrNull>;
+using FunctionDictGetInt8OrNull = FunctionDictGetOrNull<DataTypeInt8, NameDictGetInt8OrNull>;
+using FunctionDictGetInt16OrNull = FunctionDictGetOrNull<DataTypeInt16, NameDictGetInt16OrNull>;
+using FunctionDictGetInt32OrNull = FunctionDictGetOrNull<DataTypeInt32, NameDictGetInt32OrNull>;
+using FunctionDictGetInt64OrNull = FunctionDictGetOrNull<DataTypeInt64, NameDictGetInt64OrNull>;
+using FunctionDictGetFloat32OrNull = FunctionDictGetOrNull<DataTypeFloat32, NameDictGetFloat32OrNull>;
+using FunctionDictGetFloat64OrNull = FunctionDictGetOrNull<DataTypeFloat64, NameDictGetFloat64OrNull>;
+using FunctionDictGetDateOrNull = FunctionDictGetOrNull<DataTypeDate, NameDictGetDateOrNull>;
+using FunctionDictGetDateTimeOrNull = FunctionDictGetOrNull<DataTypeDateTime, NameDictGetDateTimeOrNull>;
+using FunctionDictGetUUIDOrNull = FunctionDictGetOrNull<DataTypeUUID, NameDictGetUUIDOrNull>;
+using FunctionDictGetDecimal32OrNull = FunctionDictGetOrNull<DataTypeDecimal<Decimal32>, NameDictGetDecimal32OrNull>;
+using FunctionDictGetDecimal64OrNull = FunctionDictGetOrNull<DataTypeDecimal<Decimal64>, NameDictGetDecimal64OrNull>;
+using FunctionDictGetDecimal128OrNull = FunctionDictGetOrNull<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrNull>;
+using FunctionDictGetStringOrNull = FunctionDictGetOrNull<DataTypeString, NameDictGetStringOrNull>;
 
 /// TODO: Use new API
 /// This variant of function derives the result type automatically.
@@ -432,7 +481,8 @@ template <DictionaryGetFunctionType dictionary_get_function_type>
 class FunctionDictGetNoType final : public IFunction
 {
 public:
-    static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::withDefault ? "dictGetOrDefault" : "dictGet";
+    static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::get ? "dictGet"
+        : (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault ? "dictGetOrDefault" : "dictGetOrNull");
 
     static FunctionPtr create(const Context & context)
     {
@@ -490,9 +540,9 @@ private:
                 continue;
             }
 
-            WhichDataType dt = attribute.type;
+            WhichDataType dt = removeNullable(attribute.type);
 
-            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::withoutDefault)
+            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::get)
             {
                 switch (dt.idx)
                 {
@@ -552,7 +602,7 @@ private:
                         throw Exception("Unknown dictGet type", ErrorCodes::UNKNOWN_TYPE);
                 }
             }
-            else
+            else if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
             {
                 switch (dt.idx)
                 {
@@ -609,6 +659,65 @@ private:
                         break;
                     default:
                         throw Exception("Unknown dictGetOrDefault type", ErrorCodes::UNKNOWN_TYPE);
+                }
+            }
+            else if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getOrNull)
+            {
+                switch (dt.idx)
+                {
+                    case TypeIndex::String:
+                        impl = FunctionDictGetStringOrNull::create(context);
+                        break;
+                    case TypeIndex::UInt8:
+                        impl = FunctionDictGetUInt8OrNull::create(context);
+                        break;
+                    case TypeIndex::UInt16:
+                        impl = FunctionDictGetUInt16OrNull::create(context);
+                        break;
+                    case TypeIndex::UInt32:
+                        impl = FunctionDictGetUInt32OrNull::create(context);
+                        break;
+                    case TypeIndex::UInt64:
+                        impl = FunctionDictGetUInt64OrNull::create(context);
+                        break;
+                    case TypeIndex::Int8:
+                        impl = FunctionDictGetInt8OrNull::create(context);
+                        break;
+                    case TypeIndex::Int16:
+                        impl = FunctionDictGetInt16OrNull::create(context);
+                        break;
+                    case TypeIndex::Int32:
+                        impl = FunctionDictGetInt32OrNull::create(context);
+                        break;
+                    case TypeIndex::Int64:
+                        impl = FunctionDictGetInt64OrNull::create(context);
+                        break;
+                    case TypeIndex::Float32:
+                        impl = FunctionDictGetFloat32OrNull::create(context);
+                        break;
+                    case TypeIndex::Float64:
+                        impl = FunctionDictGetFloat64OrNull::create(context);
+                        break;
+                    case TypeIndex::Date:
+                        impl = FunctionDictGetDateOrNull::create(context);
+                        break;
+                    case TypeIndex::DateTime:
+                        impl = FunctionDictGetDateTimeOrNull::create(context);
+                        break;
+                    case TypeIndex::UUID:
+                        impl = FunctionDictGetUUIDOrNull::create(context);
+                        break;
+                    case TypeIndex::Decimal32:
+                        impl = FunctionDictGetDecimal32OrNull::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal64:
+                        impl = FunctionDictGetDecimal64OrNull::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal128:
+                        impl = FunctionDictGetDecimal128OrNull::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    default:
+                        throw Exception("Unknown dictGetOrNull type", ErrorCodes::UNKNOWN_TYPE);
                 }
             }
 
