@@ -55,7 +55,7 @@ function configure
         # server *config* directives overrides
         --path db0
         --user_files_path db0/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path right/top_level_domains
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
@@ -103,7 +103,7 @@ function restart
         # server *config* directives overrides
         --path left/db
         --user_files_path left/db/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path left/top_level_domains
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
@@ -118,7 +118,7 @@ function restart
         # server *config* directives overrides
         --path right/db
         --user_files_path right/db/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path right/top_level_domains
         --tcp_port $RIGHT_SERVER_PORT
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
