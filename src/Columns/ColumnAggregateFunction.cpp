@@ -393,6 +393,12 @@ size_t ColumnAggregateFunction::byteSize() const
             + (my_arena ? my_arena->size() : 0);
 }
 
+size_t ColumnAggregateFunction::byteSizeAt(size_t) const
+{
+    /// Lower estimate as aggregate function can allocate more data in Arena.
+    return sizeof(data[0]) + func->sizeOfData();
+}
+
 /// Like in byteSize(), the size is underestimated.
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
