@@ -735,6 +735,39 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    if (node.is_window_function)
+    {
+        // Also add columns from PARTITION BY and ORDER BY of window functions.
+        if (node.window_partition_by)
+        {
+            visit(node.window_partition_by, data);
+        }
+        if (node.window_order_by)
+        {
+            visit(node.window_order_by, data);
+        }
+
+        // Also manually add columns for arguments of the window function itself.
+        // ActionVisitor is written in such a way that this method must itself
+        // descend into all needed function children. Window functions can't have
+        // any special functions as argument, so the code below that handles
+        // special arguments is not needed. This is analogous to the
+        // appendWindowFunctionsArguments() in SelectQueryExpressionAnalyzer and
+        // partially duplicates its code. Probably we can remove most of the
+        // logic from that function, but I don't yet have it all figured out...
+        for (const auto & arg : node.arguments->children)
+        {
+            visit(arg, data);
+        }
+
+        // Don't need to do anything more for window functions here -- the
+        // resulting column is added in ExpressionAnalyzer, similar to the
+        // aggregate functions.
+        return;
+    }
+
+    // An aggregate function can also be calculated as a window function, but we
+    // checked for it above, so no need to do anything more.
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 

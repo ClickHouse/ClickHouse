@@ -191,6 +191,16 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
 
+    /// Record entities accessed by current query, and store this information in system.query_log.
+    struct QueryAccessInfo
+    {
+        std::set<std::string> databases;
+        std::set<std::string> tables;
+        std::set<std::string> columns;
+    };
+
+    QueryAccessInfo query_access_info;
+
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
@@ -356,6 +366,9 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
+    const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+    void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
@@ -412,9 +425,13 @@ public:
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
-    BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
-    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
+    /// Don't use streams. Better look at getOutputFormat...
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
+
+    OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 

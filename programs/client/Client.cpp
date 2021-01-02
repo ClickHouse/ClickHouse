@@ -948,7 +948,12 @@ private:
         {   /// disable logs if expects errors
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
-                processTextAsSingleQuery("SET send_logs_level = 'none'");
+                processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            if (test_hint.echoQueries())
+                echo_queries = true;
         }
 
         /// Several queries separated by ';'.
@@ -1929,7 +1934,12 @@ private:
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
 
-            block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
+            /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
+            if (!need_render_progress)
+                block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+            else
+                block_out_stream = context.getOutputStream(current_format, *out_buf, block);
+
             block_out_stream->writePrefix();
         }
     }
@@ -1986,15 +1996,18 @@ private:
             written_first_block = true;
         }
 
-        bool clear_progess = std_out.offset() > 0;
-        if (clear_progess)
+        bool clear_progress = false;
+        if (need_render_progress)
+            clear_progress = std_out.offset() > 0;
+
+        if (clear_progress)
             clearProgress();
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (clear_progess)
+        if (clear_progress)
             writeProgress();
     }
 
@@ -2335,7 +2348,7 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("queries-file,qf", po::value<std::string>(), "file path with queries to execute")
+            ("queries-file", po::value<std::string>(), "file path with queries to execute")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")

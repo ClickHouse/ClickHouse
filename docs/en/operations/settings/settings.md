@@ -324,7 +324,7 @@ Consider the table:
 CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 ```
 
-When the `input_format_tsv_enum_as_number` setting is enabled:  
+When the `input_format_tsv_enum_as_number` setting is enabled:
 
 ```sql
 SET input_format_tsv_enum_as_number = 1;
@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimal time for the query to run to get to the following tables:
+If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -1248,7 +1248,7 @@ Consider the table:
 CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 ```
 
-When the `input_format_csv_enum_as_number` setting is enabled:  
+When the `input_format_csv_enum_as_number` setting is enabled:
 
 ```sql
 SET input_format_csv_enum_as_number = 1;
@@ -1312,7 +1312,7 @@ See also:
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
@@ -1841,7 +1841,7 @@ Default value: 0.
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
 
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true). 
+By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in asynchronous mode. When `insert_distributed_sync=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
@@ -1855,6 +1855,18 @@ Default value: `0`.
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md#distributed)
 -   [Managing Distributed Tables](../../sql-reference/statements/system.md#query-language-system-distributed)
 
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
+
+By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
+
+Possible values:
+
+-   0 — Insertion is rejected if there are multiple shards and no distributed key is given.
+-   1 — Insertion is done randomly among all available shards when no distributed key is given.
+
+Default value: `0`.
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
@@ -2109,8 +2121,8 @@ Enables [ORDER BY](../../sql-reference/statements/select/order-by.md#optimize_re
 
 Possible values:
 
--   0 — `ORDER BY` optimization is disabled. 
--   1 — `ORDER BY` optimization is enabled. 
+-   0 — `ORDER BY` optimization is disabled.
+-   1 — `ORDER BY` optimization is enabled.
 
 Default value: `1`.
 
@@ -2124,8 +2136,8 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql
 
 Possible values:
 
--   0 - Mutations execute asynchronously. 
--   1 - The query waits for all mutations to complete on the current server. 
+-   0 - Mutations execute asynchronously.
+-   1 - The query waits for all mutations to complete on the current server.
 -   2 - The query waits for all mutations to complete on all replicas (if they exist).
 
 Default value: `0`.
@@ -2137,11 +2149,11 @@ Default value: `0`.
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
-Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. 
+Enables or disables complete dropping of data parts where all rows are expired in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
-When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only deletes expired rows according to their TTL. 
+When `ttl_only_drop_parts` is disabled (by default), the ClickHouse server only deletes expired rows according to their TTL.
 
-When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired. 
+When `ttl_only_drop_parts` is enabled, the ClickHouse server drops a whole part when all rows in it are expired.
 
 Dropping whole parts instead of partial cleaning TTL-d rows allows having shorter `merge_with_ttl_timeout` times and lower impact on system performance.
 
@@ -2152,14 +2164,14 @@ Possible values:
 
 Default value: `0`.
 
-**See Also** 
+**See Also**
 
 -   [CREATE TABLE query clauses and settings](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) (`merge_with_ttl_timeout` setting)
 -   [Table TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl)
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-Defines how many seconds a locking request waits before failing. 
+Defines how many seconds a locking request waits before failing.
 
 Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
@@ -2179,11 +2191,11 @@ When the setting is enabled and the argument of `CAST` function is `Nullable`, t
 Possible values:
 
 -  0 — The `CAST` result has exactly the destination type specified.
--  1 — If the argument type is `Nullable`, the `CAST` result is transformed to `Nullable(DestinationDataType)`. 
+-  1 — If the argument type is `Nullable`, the `CAST` result is transformed to `Nullable(DestinationDataType)`.
 
 Default value: `0`.
 
-**Examples** 
+**Examples**
 
 The following query results in the destination data type exactly:
 
@@ -2215,17 +2227,17 @@ Result:
 └───┴───────────────────────────────────────────────────┘
 ```
 
-**See Also** 
+**See Also**
 
 -   [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 
 ## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
-Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut. 
+Limits the width of value displayed in [Pretty](../../interfaces/formats.md#pretty) formats. If the value width exceeds the limit, the value is cut.
 
 Possible values:
 
--   Positive integer. 
+-   Positive integer.
 -   0 — The value is cut completely.
 
 Default value: `10000` symbols.
@@ -2352,7 +2364,7 @@ Default value: `0`.
 
 ## persistent {#persistent}
 
-Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines. 
+Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
@@ -2426,7 +2438,7 @@ Result:
 [
 {"number":"0"},
 {"number":"1"},
-{"number":"2"}                                                                                                                                                                                  
+{"number":"2"}
 ]
 ```
 
@@ -2447,7 +2459,6 @@ Result:
 {"number":"2"}
 ```
 
-=======
 ## allow_nullable_key {#allow-nullable-key}
 
 Allows using of the [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable)-typed values in a sorting and a primary key for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables.
@@ -2458,5 +2469,49 @@ Possible values:
 - 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
+
+## union_default_mode {#union-default-mode}
+
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `''`.
+
+See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+## data_type_default_nullable {#data_type_default_nullable}
+
+Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+Possible values:
+
+- 1 — The data types in column definitions are set to `Nullable` by default.
+- 0 — The data types in column definitions are set to not `Nullable` by default.
+
+Default value: `0`.
+
+## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
+
+Enables special logic to perform merges on replicas.
+
+Possible values:
+
+-   Positive integer (in seconds).
+-   0 — Special merges logic is not used. Merges happen in the usual way on all the replicas.
+
+Default value: `0`.
+
+**Usage**
+
+Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform the merge, then the merge is performed on other replicas as usual.
+
+High values for that threshold may lead to replication delays.
+
+It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
