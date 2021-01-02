@@ -84,6 +84,11 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
             return AttributeUnderlyingType::utDecimal128;
     }
 
+    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+    // TODO: This should be fixed by fully supporting arrays in dictionaries.
+    if (type.find("Array") == 0)
+        return AttributeUnderlyingType::utString;
+
     throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
 }
 
@@ -322,21 +327,20 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         bool is_array = false;
         bool is_nullable = false;
 
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(type.get());
-        if (array_type)
-        {
-            is_array = true;
-            type = array_type->getNestedType();
-        }
+        // const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(type.get());
+        // if (array_type)
+        // {
+        //     is_array = true;
+        //     type = array_type->getNestedType();
+        // }
 
-        if (type->isNullable())
-        {
-            is_nullable = true;
-            type = removeNullable(type);
-        }
+        // if (type->isNullable())
+        // {
+        //     is_nullable = true;
+        //     type = removeNullable(type);
+        // }
 
-        /// TODO: Fix for decimal
-        const auto underlying_type = getAttributeUnderlyingType(type->getName());
+        const auto underlying_type = getAttributeUnderlyingType(type_string);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())

@@ -97,15 +97,15 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto out = column_string.get();
+            auto * out = column_string.get();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsString(attribute, key_columns, out, [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -141,7 +141,7 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsNumberImpl<AttributeType, AttributeType>(
                         attribute,
@@ -150,7 +150,7 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 

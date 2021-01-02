@@ -176,7 +176,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::fillBlock
                 attribute.name,
                 attribute.type,
                 {ids_column, date_column},
-                {std::make_shared<DataTypeUInt64>(), structure.range_max->type},
+                {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeInt64>()},
                 nullptr);
             columns.emplace_back(column, attribute.type, attribute.name);
         }

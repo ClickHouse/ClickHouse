@@ -60,11 +60,11 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto out = column_string.get();
+            auto * out = column_string.get();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
@@ -72,7 +72,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -116,7 +116,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
@@ -125,7 +125,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 

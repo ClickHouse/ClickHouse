@@ -1403,15 +1403,15 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto out = column_string.get();
+            auto * out = column_string.get();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -1447,7 +1447,7 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsNumberImpl<AttributeType, AttributeType>(
                         index,
@@ -1457,7 +1457,7 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 
@@ -1638,14 +1638,12 @@ ColumnUInt8::Ptr SSDComplexKeyCacheDictionary::has(const Columns & key_columns, 
 {
     dict_struct.validateKeyTypes(key_types);
 
-    PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto rows_num = key_columns.front()->size();
 
-    auto result = ColumnUInt8::create(ext::size(ids));
+    auto result = ColumnUInt8::create(rows_num);
     auto& out = result->getData();
 
-    const auto rows = ext::size(ids);
-    for (const auto row : ext::range(0, rows))
+    for (const auto row : ext::range(0, rows_num))
         out[row] = false;
 
     const auto now = std::chrono::system_clock::now();
