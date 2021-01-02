@@ -205,11 +205,10 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
             block_columns.push_back(column);
 
     const DictionaryStructure & structure = dictionary->getStructure();
-    ColumnPtr ids_column;
+    ColumnPtr ids_column = getColumnFromIds(ids_to_fill);
 
     if (structure.id && names.find(structure.id->name) != names.end())
     {
-        ids_column = getColumnFromIds(ids_to_fill);
         block_columns.emplace_back(ids_column, std::make_shared<DataTypeUInt64>(), structure.id->name);
     }
 

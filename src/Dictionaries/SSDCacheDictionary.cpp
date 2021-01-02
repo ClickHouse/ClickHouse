@@ -1358,11 +1358,11 @@ ColumnPtr SSDCacheDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsStringImpl(index, ids, column_string.get(), [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -1398,7 +1398,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsNumberImpl<AttributeType, AttributeType>(
                         index,
@@ -1407,7 +1407,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 

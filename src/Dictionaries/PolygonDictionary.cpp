@@ -118,11 +118,11 @@ ColumnPtr IPolygonDictionary::getColumn(
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto out = column_string.get();
+            auto * out = column_string.get();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsImpl<String, StringRef>(
                         index,
@@ -130,7 +130,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -174,7 +174,7 @@ ColumnPtr IPolygonDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsImpl<AttributeType, AttributeType>(
                         index,
@@ -183,7 +183,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 
@@ -379,10 +379,8 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-ColumnUInt8::Ptr IPolygonDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr IPolygonDictionary::has(const Columns & key_columns, const DataTypes &) const
 {
-    dict_struct.validateKeyTypes(key_types);
-
     auto size = key_columns.front()->size();
     auto result = ColumnUInt8::create(size);
     auto& out = result->getData();

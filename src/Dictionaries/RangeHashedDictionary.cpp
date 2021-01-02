@@ -5,6 +5,7 @@
 #include <ext/range.h>
 #include "DictionaryFactory.h"
 #include "RangeDictionaryBlockInputStream.h"
+#include <Interpreters/castColumn.h>
 
 namespace
 {
@@ -90,7 +91,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
     const std::string & attribute_name,
     const DataTypePtr &,
     const Columns & key_columns,
-    const DataTypes &,
+    const DataTypes & key_types,
     const ColumnPtr default_untyped) const
 {
     /// TODO: Validate input types
@@ -103,6 +104,15 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
     auto size = key_columns.front()->size();
 
+    /// Cast second column to storage type
+    Columns modified_key_columns = key_columns;
+
+    auto range_storage_column = key_columns[1];
+    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types[1], ""};
+
+    auto range_column_storage_type = std::make_shared<DataTypeInt64>();
+    modified_key_columns[1] = castColumnAccurate(column_to_cast, range_column_storage_type);
+
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
@@ -111,25 +121,25 @@ ColumnPtr RangeHashedDictionary::getColumn(
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto out = column_string.get();
+            auto * out = column_string.get();
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
                 {
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
-                        key_columns,
+                        modified_key_columns,
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
-                        key_columns,
+                        modified_key_columns,
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t) { return def; });
                 }
@@ -140,7 +150,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
                 getItemsImpl<StringRef, StringRef>(
                     attribute,
-                    key_columns,
+                    modified_key_columns,
                     [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                     [&](const size_t) { return null_value; });
             }
@@ -167,22 +177,22 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
             if (default_untyped != nullptr)
             {
-                if (const auto default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
                 {
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
-                        key_columns,
+                        modified_key_columns,
                         [&](const size_t row, const auto value) { return out[row] = value; },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
-                        key_columns,
+                        modified_key_columns,
                         [&](const size_t row, const auto value) { return out[row] = value; },
                         [&](const size_t) { return def; }
                     );
@@ -194,7 +204,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
                 getItemsImpl<AttributeType, AttributeType>(
                     attribute,
-                    key_columns,
+                    modified_key_columns,
                     [&](const size_t row, const auto value) { return out[row] = value; },
                     [&](const size_t) { return null_value; }
                 );
