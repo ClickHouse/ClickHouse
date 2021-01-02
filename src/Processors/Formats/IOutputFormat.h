@@ -28,7 +28,7 @@ public:
 protected:
     WriteBuffer & out;
 
-    Chunk current_chunk;
+    Port::Data current_chunk;
     PortKind current_block_kind = PortKind::Main;
     bool has_input = false;
     bool finished = false;
@@ -39,9 +39,16 @@ protected:
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
-    virtual void consume(Chunk) = 0;
+    friend class ParallelFormattingOutputFormat;
+
+    virtual void consume(Chunk);
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
+
+    virtual void consume(Port::Data data) { consume(data.getChunkOrTrow()); }
+    virtual void consumeTotals(Port::Data data) { consumeTotals(data.getChunkOrTrow()); }
+    virtual void consumeExtremes(Port::Data data) { consumeExtremes(data.getChunkOrTrow()); }
+
     virtual void finalize() {}
 
 public:
@@ -77,8 +84,19 @@ public:
     virtual void doWritePrefix() {}
     virtual void doWriteSuffix() { finalize(); }
 
-    void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
-    void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
+    void setTotals(const Block & totals)
+    {
+        Port::Data data;
+        data.chunk = Chunk(totals.getColumns(), totals.rows());
+        consumeTotals(std::move(data));
+    }
+
+    void setExtremes(const Block & extremes)
+    {
+        Port::Data data;
+        data.chunk = Chunk(extremes.getColumns(), extremes.rows());
+        consumeExtremes(std::move(data));
+    }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
