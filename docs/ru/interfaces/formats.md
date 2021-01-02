@@ -9,7 +9,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 
 Поддерживаемые форматы и возможность использовать их в запросах `INSERT` и `SELECT` перечислены в таблице ниже.
 
-=======
 | Формат                                                                                  | INSERT | SELECT |
 |-----------------------------------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
@@ -57,6 +56,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
@@ -1214,22 +1214,10 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 
 Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
 
-## Схема формата {#formatschema}
-
-Имя файла со схемой записывается в настройке `format_schema`. При использовании форматов `Cap'n Proto` и `Protobuf` требуется указать схему.
-Схема представляет собой имя файла и имя типа в этом файле, разделенные двоеточием, например `schemafile.proto:MessageType`.
-Если файл имеет стандартное расширение для данного формата (например `.proto` для `Protobuf`),
-то можно его не указывать и записывать схему так `schemafile:MessageType`.
-
-Если для ввода/вывода данных используется [клиент](../interfaces/cli.md) в [интерактивном режиме](../interfaces/cli.md#cli_usage), то при записи схемы можно использовать абсолютный путь или записывать путь
-относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
-
-Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
-указанном в параметре [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
 
 ## LineAsString {#lineasstring}
 
- В этом формате последовательность строковых объектов, разделенных символом новой строки, интерпретируется как одно значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
+ В этом формате каждая строка импортируемых данных интерпретируется как одно строковое значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
 
 **Пример**
 
@@ -1250,9 +1238,92 @@ SELECT * FROM line_as_string;
 └───────────────────────────────────────────────────┘
 ```
 
+## Regexp {#data-format-regexp}
+
+Каждая строка импортируемых данных разбирается в соответствии с регулярным выражением. 
+
+При работе с форматом `Regexp` можно использовать следующие параметры:
+
+- `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
+- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило сериализации. Поддерживаются следующие правила:
+    - CSV (как в [CSV](#csv))
+    - JSON (как в [JSONEachRow](#jsoneachrow))
+    - Escaped (как в [TSV](#tabseparated))
+    - Quoted (как в [Values](#data-format-values))
+    - Raw (данные импортируются как есть, без сериализации)
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`. 
+
+**Использование** 
+
+Регулярное выражение (шаблон) из параметра `format_regexp` применяется к каждой строке импортируемых данных. Количество частей в шаблоне (подшаблонов) должно соответствовать количеству колонок в импортируемых данных. 
+
+Строки импортируемых данных должны разделяться символом новой строки `'\n'` или символами `"\r\n"` (перенос строки в формате DOS). 
+
+Данные, выделенные по подшаблонам, интерпретируются в соответствии с типом, указанным в параметре `format_regexp_escaping_rule`. 
+
+Если строка импортируемых данных не соответствует регулярному выражению и параметр `format_regexp_skip_unmatched` равен 1, строка просто игнорируется. Если же параметр `format_regexp_skip_unmatched` равен 0, генерируется исключение.
+
+**Пример**
+
+Рассмотрим файл data.tsv:
+
+```text
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+и таблицу:
+
+```sql
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+Команда импорта:
+
+```bash
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+```
+
+Запрос:
+
+```sql
+SELECT * FROM imp_regex_table;
+```
+
+Результат:
+
+```text
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
+
+## Схема формата {#formatschema}
+
+Имя файла со схемой записывается в настройке `format_schema`. При использовании форматов `Cap'n Proto` и `Protobuf` требуется указать схему.
+Схема представляет собой имя файла и имя типа в этом файле, разделенные двоеточием, например `schemafile.proto:MessageType`.
+Если файл имеет стандартное расширение для данного формата (например `.proto` для `Protobuf`),
+то можно его не указывать и записывать схему так `schemafile:MessageType`.
+
+Если для ввода/вывода данных используется [клиент](../interfaces/cli.md) в [интерактивном режиме](../interfaces/cli.md#cli_usage), то при записи схемы можно использовать абсолютный путь или записывать путь
+относительно текущей директории на клиенте. Если клиент используется в [batch режиме](../interfaces/cli.md#cli_usage), то в записи схемы допускается только относительный путь, из соображений безопасности.
+
+Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http.md), то файл со схемой должен располагаться на сервере в каталоге,
+указанном в параметре [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path) конфигурации сервера.
+
+## Игнорирование ошибок {#skippingerrors}
+
+Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут игнорировать строки, которые не соответствуют правилам и  разбор которых может вызвать ошибку. При этом обработка импортируемых данных продолжается со следующей строки. См. настройки [input_format_allow_errors_num](../operations/settings/settings.md#input-format-allow-errors-num) и
+[input_format_allow_errors_ratio](../operations/settings/settings.md#input-format-allow-errors-ratio).
+Ограничения:
+- В формате `JSONEachRow` в случае ошибки игнорируются все данные до конца текущей строки (или до конца файла). Поэтому строки должны быть разделены символом `\n`, чтобы ошибки обрабатывались корректно.
+- Форматы `Template` и `CustomSeparated` используют разделитель после последней колонки и разделитель между строками. Поэтому игнорирование ошибок работает только если хотя бы одна из строк не пустая.
+
 ## RawBLOB {#rawblob}
 
-В этом формате все входные данные считываются в одно значение. Парсить можно только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
+В этом формате все входные данные считываются в одно значение. Парсить можно только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему.
 Результат выводится в бинарном виде без разделителей и экранирования. При выводе более одного значения формат неоднозначен и будет невозможно прочитать данные снова.
 
 Ниже приведено сравнение форматов `RawBLOB` и [TabSeparatedRaw](#tabseparatedraw).
@@ -1272,7 +1343,7 @@ SELECT * FROM line_as_string;
 -   строки представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем байты строки.
 
 При передаче на вход `RawBLOB` пустых данных, ClickHouse бросает исключение:
- 
+
 ``` text
 Code: 108. DB::Exception: No data to insert
 ```

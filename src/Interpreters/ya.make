@@ -60,6 +60,8 @@ SRCS(
     FillingRow.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
+    IInterpreter.cpp
+    IInterpreterUnionOrSelectQuery.cpp
     IdentifierSemantic.cpp
     InJoinSubqueriesPreprocessor.cpp
     InternalTextLogsQueue.cpp
@@ -157,6 +159,7 @@ SRCS(
     join_common.cpp
     loadMetadata.cpp
     replaceAliasColumnsInQuery.cpp
+    processColumnTransformers.cpp
     sortBlock.cpp
 
 )

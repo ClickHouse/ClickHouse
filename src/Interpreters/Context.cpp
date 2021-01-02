@@ -16,6 +16,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -445,6 +446,8 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+        /// Stop zookeeper connection
+        zookeeper.reset();
         /// Stop test_keeper storage
         test_keeper_storage.reset();
     }
@@ -847,7 +850,17 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 
 void Context::setProfile(const String & profile_name)
 {
-    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
+    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    try
+    {
+        checkSettingsConstraints(profile_settings_changes);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(", while trying to set settings profile {}", profile_name);
+        throw;
+    }
+    applySettingsChanges(profile_settings_changes);
 }
 
 
@@ -930,6 +943,17 @@ bool Context::hasScalar(const String & name) const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
+}
+
+
+void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+    query_access_info.databases.emplace(quoted_database_name);
+    query_access_info.tables.emplace(full_quoted_table_name);
+    for (const auto & column_name : column_names)
+        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
 
@@ -2072,15 +2096,25 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
+    return std::make_shared<InputStreamFromInputFormat>(FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size));
 }
 
-BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutput(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, *this);
 }
 
-OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
+BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputStream(name, buf, sample, *this);
+}
+
+OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+{
+    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, *this);
+}
+
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
 }

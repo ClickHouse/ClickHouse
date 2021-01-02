@@ -6,3 +6,5 @@ insert into data_01593 select * from numbers_mt(10);
 insert into data_01593 select * from numbers_mt(10) settings max_partitions_per_insert_block=1; -- { serverError 252 }
 -- settings for INSERT is prefered
 insert into data_01593 select * from numbers_mt(10) settings max_partitions_per_insert_block=1 settings max_partitions_per_insert_block=100;
+
+drop table data_01593;

@@ -19,11 +19,14 @@ MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
     , part_in_memory(part_) {}
 
 void MergeTreeDataPartWriterInMemory::write(
-    const Block & block, const IColumn::Permutation * permutation,
-    const Block & primary_key_block, const Block & /* skip_indexes_block */)
+    const Block & block, const IColumn::Permutation * permutation)
 {
     if (part_in_memory->block)
         throw Exception("DataPartWriterInMemory supports only one write", ErrorCodes::LOGICAL_ERROR);
+
+    Block primary_key_block;
+    if (settings.rewrite_primary_key)
+        primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
 
     Block result_block;
     if (permutation)
@@ -50,6 +53,9 @@ void MergeTreeDataPartWriterInMemory::write(
     if (with_final_mark)
         index_granularity.appendMark(0);
     part_in_memory->block = std::move(result_block);
+
+    if (settings.rewrite_primary_key)
+        calculateAndSerializePrimaryIndex(primary_key_block);
 }
 
 void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
@@ -70,7 +76,7 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
     }
 }
 
-void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool)
+void MergeTreeDataPartWriterInMemory::finish(IMergeTreeDataPart::Checksums & checksums, bool /* sync */)
 {
     /// If part is empty we still need to initialize block by empty columns.
     if (!part_in_memory->block)
