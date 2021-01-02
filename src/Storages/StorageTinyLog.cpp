@@ -95,7 +95,7 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_, size_t file_size)
-            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, file_size))),
+            : plain(file_size ? disk->readFile(data_path, std::min(max_read_buffer_size_, file_size)) : std::make_unique<ReadBuffer>(nullptr, 0)),
             limited(std::make_unique<LimitReadBuffer>(*plain, file_size, false)),
             compressed(*limited)
         {
@@ -131,10 +131,6 @@ Chunk TinyLogSource::generate()
         streams.clear();
         return {};
     }
-
-    /// if there are no files in the folder, it means that the table is empty
-    if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return {};
 
     for (const auto & name_type : columns)
     {
