@@ -185,7 +185,7 @@ using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
-// Distinguishable type to allow function resultion/deduction based on value type,
+// Distinguishable type to allow function resolution/deduction based on value type,
 // but also relatively easy to convert to/from Decimal64.
 class DateTime64 : public Decimal64
 {

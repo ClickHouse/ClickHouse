@@ -324,6 +324,9 @@
                 auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
                         Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
                         Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
+                         to be successfully authenticated for all consecutive requests without contacting the LDAP server.
+                        Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
                 enable_tls - flag to trigger use of secure connection to the LDAP server.
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
@@ -343,6 +346,7 @@
                     <port>636</port>
                     <auth_dn_prefix>uid=</auth_dn_prefix>
                     <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
+                    <verification_cooldown>300</verification_cooldown>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
