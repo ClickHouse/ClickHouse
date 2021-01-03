@@ -873,6 +873,7 @@ if __name__ == '__main__':
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
 
+    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
@@ -886,7 +887,6 @@ if __name__ == '__main__':
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
-    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
 
     args = parser.parse_args()
 
@@ -967,7 +967,10 @@ if __name__ == '__main__':
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
 
     if args.antlr:
-        os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
