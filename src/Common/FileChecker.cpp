@@ -82,8 +82,6 @@ CheckResults FileChecker::check() const
 
 void FileChecker::repair()
 {
-    initialize();
-
     for (const auto & name_size : map)
     {
         const String & name = name_size.first;
