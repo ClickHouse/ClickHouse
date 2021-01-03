@@ -19,7 +19,7 @@ Aliases:
 -   `Float32` — `FLOAT`.
 -   `Float64` — `DOUBLE`.
 
-Like in other DBMS, creating numbers with numeric parameters is supported, but they are ignored entirely.
+Like in other DBMS, creating numbers with numeric parameters is supported, but `ClickHouse` ignores them entirely.
 
 ## Using Floating-point Numbers {#using-floating-point-numbers}
 
