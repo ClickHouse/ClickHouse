@@ -55,7 +55,7 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
-    : query_ptr(query_ptr_)
+    : query_ptr(query_ptr_->clone())
     , context(context_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
