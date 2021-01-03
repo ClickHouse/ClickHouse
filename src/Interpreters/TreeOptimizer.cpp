@@ -3,6 +3,7 @@
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/ConstraintMatcherVisitor.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -506,6 +507,20 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
+void optimizeWithConstraints(ASTPtr & query, const NameSet & /* source_columns_set */,
+                            const std::vector<TableWithColumnNamesAndTypes> & /* tables_with_columns */,
+                            const StorageMetadataPtr & metadata_snapshot)
+{
+    ConstraintMatcherVisitor::Data constraint_data;
+
+    for (const auto & constraint : metadata_snapshot->getConstraints().constraints)
+    {
+        constraint_data.constraints[constraint->getTreeHash().second].push_back(constraint);
+    }
+
+    ConstraintMatcherVisitor(constraint_data).visit(query);
+}
+
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
@@ -596,6 +611,12 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     /// Push the predicate expression down to the subqueries.
     rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
+
+    if (settings.optimize_using_constraints)
+    {
+        optimizeWithConstraints(select_query->refWhere(), source_columns_set, tables_with_columns, metadata_snapshot);
+        optimizeWithConstraints(select_query->refPrewhere(), source_columns_set, tables_with_columns, metadata_snapshot);
+    }
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, source_columns_set, context);
