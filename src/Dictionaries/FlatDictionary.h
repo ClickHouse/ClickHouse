@@ -4,6 +4,7 @@
 #include <variant>
 #include <vector>
 #include <optional>
+#include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -86,7 +87,7 @@ private:
     template <typename Value>
     using ContainerType = PaddedPODArray<Value>;
 
-    using NullableSet = std::set<size_t>;
+    using NullableSet = HashSet<Key, DefaultHash<Key>>;
 
     struct Attribute final
     {

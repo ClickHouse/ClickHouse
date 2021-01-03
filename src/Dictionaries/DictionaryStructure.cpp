@@ -70,6 +70,8 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
         case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
         case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
 
+        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
+
         case TypeIndex::String:         return AttributeUnderlyingType::utString;
 
         // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.

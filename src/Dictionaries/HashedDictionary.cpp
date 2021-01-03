@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 
 namespace
 {
@@ -139,7 +140,17 @@ ColumnPtr HashedDictionary::getColumn(
     PaddedPODArray<Key> backup_storage;
     const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
+    auto size = ids.size();
+
     const auto & attribute = getAttribute(attribute_name);
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
+    {
+        col_null_map_to = ColumnUInt8::create(size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
 
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
@@ -148,8 +159,6 @@ ColumnPtr HashedDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-
-        auto size = ids.size();
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
@@ -249,6 +258,20 @@ ColumnPtr HashedDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
+    if (attribute.is_nullable)
+    {
+        for (size_t row = 0; row < ids.size(); ++row)
+        {
+            auto id = ids[row];
+            if (attribute.nullable_set->find(id) != nullptr)
+            {
+                (*vec_null_map_to)[row] = true;
+            }
+        }
+
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
+
     return result;
 }
 
@@ -286,7 +309,7 @@ void HashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -549,9 +572,10 @@ void HashedDictionary::createAttributeImpl<String>(Attribute & attribute, const 
         attribute.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
 }
 
-HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}, {}};
+    auto nullable_set = attribute.is_nullable ? std::make_unique<NullableSet>() : nullptr;
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, std::move(nullable_set), {}, {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -560,7 +584,7 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
         createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -605,58 +629,51 @@ bool HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id
     }
 }
 
+template <>
+bool HashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String value)
+{
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    if (!sparse)
+    {
+        auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
+        return map.insert({id, StringRef{string_in_arena, value.size()}}).second;
+    }
+    else
+    {
+        auto & map = *std::get<SparseCollectionPtrType<StringRef>>(attribute.sparse_maps);
+        return map.insert({id, StringRef{string_in_arena, value.size()}}).second;
+    }
+}
+
 bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
-    switch (attribute.type)
+    bool result = false;
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt16:
-            return setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt32:
-            return setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt64:
-            return setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt128:
-            return setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-        case AttributeUnderlyingType::utInt8:
-            return setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt16:
-            return setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt32:
-            return setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt64:
-            return setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utFloat32:
-            return setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-        case AttributeUnderlyingType::utFloat64:
-            return setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            return setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-        case AttributeUnderlyingType::utDecimal64:
-            return setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-        case AttributeUnderlyingType::utDecimal128:
-            return setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
-
-        case AttributeUnderlyingType::utString:
+        if (attribute.is_nullable)
         {
-            const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            if (!sparse)
+            if (value.isNull())
             {
-                auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
-                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+                attribute.nullable_set->insert(id);
+                result = true;
+                return;
             }
             else
             {
-                auto & map = *std::get<SparseCollectionPtrType<StringRef>>(attribute.sparse_maps);
-                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+                attribute.nullable_set->erase(id);
             }
         }
-    }
 
-    throw Exception{"Invalid attribute type", ErrorCodes::BAD_ARGUMENTS};
+        result = setAttributeValueImpl<AttributeType>(attribute, id, value.get<NearestFieldType<AttributeType>>());
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::string & attribute_name) const
@@ -717,7 +734,16 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        /// TODO: Check if order is satisfied
         result = getIds<AttributeType>(attribute);
+
+        if (attribute.is_nullable)
+        {
+            for (const auto& value: *attribute.nullable_set)
+            {
+                result.push_back(value.getKey());
+            }
+        }
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);

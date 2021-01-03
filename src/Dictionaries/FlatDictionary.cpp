@@ -235,13 +235,12 @@ ColumnPtr FlatDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    /// TODO: Fix
     if (attribute.is_nullable)
     {
         for (size_t row = 0; row < ids.size(); ++row)
         {
             auto id = ids[row];
-            if (attribute.nullable_set->find(id) != attribute.nullable_set->end())
+            if (attribute.nullable_set->find(id) != nullptr)
             {
                 (*vec_null_map_to)[row] = true;
             }
@@ -542,11 +541,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
             }
             else
             {
-                auto find_iter = attribute.nullable_set->find(id);
-                if (find_iter != attribute.nullable_set->end())
-                {
-                    attribute.nullable_set->erase(find_iter);
-                }
+                attribute.nullable_set->erase(id);
             }
         }
 
