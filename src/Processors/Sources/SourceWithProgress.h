@@ -72,8 +72,9 @@ private:
     size_t total_rows_approx = 0;
 
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
-    /// According to total_stopwatch in microseconds.
+    /// According to total_stopwatch in nanoseconds.
     UInt64 last_profile_events_update_time = 0;
+    UInt64 last_total_elapsed_time = 0;
 
     /// This flag checks if progress() was manually called at generate() call.
     /// If not, it will be called for chunk after generate() was finished.

@@ -209,8 +209,9 @@ protected:
     std::atomic<bool> is_killed{false};
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
-    /// According to total_stopwatch in microseconds
+    /// According to total_stopwatch in nanoseconds.
     UInt64 last_profile_events_update_time = 0;
+    UInt64 last_total_elapsed_time = 0;
 
     /// Additional information that can be generated during the work process.
 

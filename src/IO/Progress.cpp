@@ -15,6 +15,7 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
     size_t new_total_rows_to_read = 0;
     size_t new_written_rows = 0;
     size_t new_written_bytes = 0;
+    size_t new_elapsed_time = 0;
 
     readVarUInt(new_read_rows, in);
     readVarUInt(new_read_bytes, in);
@@ -24,12 +25,17 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
         readVarUInt(new_written_rows, in);
         readVarUInt(new_written_bytes, in);
     }
+    if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_ELAPSED_TIME)
+    {
+        readVarUInt(new_elapsed_time, in);
+    }
 
     this->read_rows = new_read_rows;
     this->read_bytes = new_read_bytes;
     this->total_rows_to_read = new_total_rows_to_read;
     this->written_rows = new_written_rows;
     this->written_bytes = new_written_bytes;
+    this->elapsed_time = new_elapsed_time;
 }
 
 
@@ -42,6 +48,10 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     {
         writeVarUInt(this->written_rows, out);
         writeVarUInt(this->written_bytes, out);
+    }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_ELAPSED_TIME)
+    {
+        writeVarUInt(this->elapsed_time, out);
     }
 }
 
@@ -60,6 +70,8 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(this->written_bytes, out);
     writeCString("\",\"total_rows_to_read\":\"", out);
     writeText(this->total_rows_to_read, out);
+    writeCString("\",\"elapsed_time\":\"", out);
+    writeText(this->elapsed_time, out);
     writeCString("\"}", out);
 }
 
@@ -73,6 +85,7 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     total_rows_to_read.store(values.total_rows_to_read, std::memory_order_relaxed);
     written_rows.store(values.written_rows, std::memory_order_relaxed);
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
+    elapsed_time.store(values.elapsed_time, std::memory_order_relaxed);
 }
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const

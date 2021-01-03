@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <common/types.h>
 
@@ -20,6 +21,7 @@ struct ProgressValues
     size_t total_rows_to_read;
     size_t written_rows;
     size_t written_bytes;
+    size_t elapsed_time;        /// in nanoseconds
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -60,22 +62,46 @@ struct Progress
       */
     std::atomic<size_t> total_rows_to_read {0};
 
-
     std::atomic<size_t> written_rows {0};
     std::atomic<size_t> written_bytes {0};
 
-    Progress() {}
-    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
-        : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
-    Progress(ReadProgress read_progress)
-        : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes), total_rows_to_read(read_progress.total_rows_to_read) {}
-    Progress(WriteProgress write_progress)
-        : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
+    mutable std::atomic<size_t> elapsed_time {0};     /// in nanoseconds
+
+    Progress(size_t elapsed_time_ = 0)
+        : elapsed_time(elapsed_time_)
+    {}
+
+    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0, size_t elapsed_time_ = 0)
+        : read_rows(read_rows_)
+        , read_bytes(read_bytes_)
+        , total_rows_to_read(total_rows_to_read_)
+        , elapsed_time(elapsed_time_)
+    {}
+
+    Progress(ReadProgress read_progress, size_t elapsed_time_ = 0)
+        : read_rows(read_progress.read_rows)
+        , read_bytes(read_progress.read_bytes)
+        , total_rows_to_read(read_progress.total_rows_to_read)
+        , elapsed_time(elapsed_time_)
+    {}
+
+    Progress(WriteProgress write_progress, size_t elapsed_time_ = 0)
+        : written_rows(write_progress.written_rows)
+        , written_bytes(write_progress.written_bytes)
+        , elapsed_time(elapsed_time_)
+    {}
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
+
     /// Progress in JSON format (single line, without whitespaces) is used in HTTP headers.
     void writeJSON(WriteBuffer & out) const;
+
+    void setElapsedTimeIfNull(size_t elapsed_time_) const
+    {
+        size_t elapsed_time_expected = 0;
+        elapsed_time.compare_exchange_strong(elapsed_time_expected, elapsed_time_);
+    }
 
     /// Each value separately is changed atomically (but not whole object).
     bool incrementPiecewiseAtomically(const Progress & rhs)
@@ -85,6 +111,7 @@ struct Progress
         total_rows_to_read += rhs.total_rows_to_read;
         written_rows += rhs.written_rows;
         written_bytes += rhs.written_bytes;
+        elapsed_time += rhs.elapsed_time;
 
         return rhs.read_rows || rhs.written_rows ? true : false;
     }
@@ -96,6 +123,7 @@ struct Progress
         total_rows_to_read = 0;
         written_rows = 0;
         written_bytes = 0;
+        elapsed_time = 0;
     }
 
     ProgressValues getValues() const
@@ -107,6 +135,7 @@ struct Progress
         res.total_rows_to_read = total_rows_to_read.load(std::memory_order_relaxed);
         res.written_rows = written_rows.load(std::memory_order_relaxed);
         res.written_bytes = written_bytes.load(std::memory_order_relaxed);
+        res.elapsed_time = elapsed_time.load(std::memory_order_relaxed);
 
         return res;
     }
@@ -120,6 +149,7 @@ struct Progress
         res.total_rows_to_read = total_rows_to_read.fetch_and(0);
         res.written_rows = written_rows.fetch_and(0);
         res.written_bytes = written_bytes.fetch_and(0);
+        res.elapsed_time = elapsed_time.fetch_and(0);
 
         return res;
     }
@@ -131,6 +161,7 @@ struct Progress
         total_rows_to_read = other.total_rows_to_read.load(std::memory_order_relaxed);
         written_rows = other.written_rows.load(std::memory_order_relaxed);
         written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+        elapsed_time = other.elapsed_time.load(std::memory_order_relaxed);
 
         return *this;
     }
