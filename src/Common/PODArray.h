@@ -300,7 +300,7 @@ public:
         const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
 
         /// Also it's safe if the range is empty.
-        assert(!((ptr_begin >= c_start && ptr_begin <= c_end) || (ptr_end >= c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
+        assert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
 #endif
     }
 
