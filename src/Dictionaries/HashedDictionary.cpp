@@ -185,6 +185,8 @@ ColumnPtr HashedDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t) { return def; });
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -239,6 +241,8 @@ ColumnPtr HashedDictionary::getColumn(
                         [&](const size_t) { return def; }
                     );
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -692,7 +696,12 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
+    {
         out[i] = attr.find(ids[i]) != nullptr;
+
+        if (attribute.is_nullable && !out[i])
+            out[i] = attribute.nullable_set->find(ids[i]) != nullptr;
+    }
 }
 
 template <>

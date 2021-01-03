@@ -4,6 +4,7 @@
 #include "DictionaryFactory.h"
 #include <Core/Defines.h>
 #include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
@@ -38,7 +39,7 @@ void DirectDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
-        [&](const size_t row, const UInt64 value) { out[row] = value; },
+        [&](const size_t row, const UInt64 value, bool) { out[row] = value; },
         [&](const size_t) { return null_value; });
 }
 
@@ -142,6 +143,16 @@ ColumnPtr DirectDictionary::getColumn(
 
     const auto & attribute = getAttribute(attribute_name);
 
+    auto size = ids.size();
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
+    {
+        col_null_map_to = ColumnUInt8::create(size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
     /// TODO: Check that attribute type is same as result type
     /// TODO: Check if const will work as expected
 
@@ -149,8 +160,6 @@ ColumnPtr DirectDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-
-        auto size = ids.size();
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
@@ -164,8 +173,13 @@ ColumnPtr DirectDictionary::getColumn(
                     getItemsImpl<String, String>(
                         attribute,
                         ids,
-                        [&](const size_t, const String value)
+                        [&](const size_t row, const String value, bool is_null)
                         {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
@@ -182,13 +196,21 @@ ColumnPtr DirectDictionary::getColumn(
                     getItemsImpl<String, String>(
                         attribute,
                         ids,
-                        [&](const size_t, const String value)
+                        [&](const size_t row, const String value, bool is_null)
                         {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
                         [&](const size_t) { return def; });
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
+ 
             }
             else
             {
@@ -197,8 +219,13 @@ ColumnPtr DirectDictionary::getColumn(
                 getItemsImpl<String, String>(
                     attribute,
                     ids,
-                    [&](const size_t, const String value)
+                    [&](const size_t row, const String value, bool is_null)
                     {
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        }
+
                         const auto ref = StringRef{value};
                         out->insertData(ref.data, ref.size);
                     },
@@ -232,7 +259,15 @@ ColumnPtr DirectDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
+                            out[row] = value; 
+                        },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
@@ -243,10 +278,20 @@ ColumnPtr DirectDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
+                            out[row] = value; 
+                        },
                         [&](const size_t) { return def; }
                     );
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -255,7 +300,15 @@ ColumnPtr DirectDictionary::getColumn(
                 getItemsImpl<AttributeType, AttributeType>(
                     attribute,
                     ids,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t row, const auto value, bool is_null)
+                    {
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        }
+ 
+                        out[row] = value; 
+                    },
                     [&](const size_t) { return null_value; }
                 );
             }
@@ -265,6 +318,11 @@ ColumnPtr DirectDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.is_nullable)
+    {
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -321,7 +379,7 @@ void DirectDictionary::createAttributes()
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
         attribute_name_by_index.emplace(attributes.size(), attribute.name);
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value, attribute.name));
+        attributes.push_back(createAttribute(attribute, attribute.null_value, attribute.name));
 
         if (attribute.hierarchical)
         {
@@ -350,9 +408,9 @@ void DirectDictionary::createAttributeImpl<String>(Attribute & attribute, const 
 }
 
 
-DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & attr_name)
+DirectDictionary::Attribute DirectDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value, const std::string & attr_name)
 {
-    Attribute attr{type, {}, {}, attr_name};
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, attr_name};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -361,7 +419,7 @@ DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const Attr
         createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -374,8 +432,14 @@ void DirectDictionary::getItemsImpl(
     const auto rows = ext::size(ids);
 
     HashMap<Key, OutputType> value_by_key;
+    HashMap<Key, bool> value_is_null;
+
     for (const auto row : ext::range(0, rows))
-        value_by_key[ids[row]] = get_default(row);
+    {
+        auto key = ids[row];
+        value_by_key[key] = get_default(row);
+        value_is_null[key] = false;
+    }
 
     std::vector<Key> to_load;
     to_load.reserve(value_by_key.size());
@@ -385,35 +449,30 @@ void DirectDictionary::getItemsImpl(
     auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
+    const auto it = attribute_index_by_name.find(attribute.name);
+    if (it == std::end(attribute_index_by_name))
+        throw Exception{full_name + ": no such attribute '" + attribute.name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    auto attribute_index = it->second;
+
     while (const auto block = stream->read())
     {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-        for (const size_t attribute_idx : ext::range(0, attributes.size()))
+        const IColumn & attribute_column = *block.safeGetByPosition(attribute_index + 1).column;
+
+        for (const auto row_idx : ext::range(0, id_column.size()))
         {
-            if (attribute.name != attribute_name_by_index.at(attribute_idx))
+            const auto key = id_column[row_idx].get<UInt64>();
+
+            if (value_by_key.find(key) != value_by_key.end())
             {
-                continue;
-            }
+                auto value = attribute_column[row_idx];
 
-            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-
-            for (const auto row_idx : ext::range(0, id_column.size()))
-            {
-                const auto key = id_column[row_idx].get<UInt64>();
-
-                if (value_by_key.find(key) != value_by_key.end())
-                {
-                    if (attribute.type == AttributeUnderlyingType::utFloat32)
-                    {
-                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].get<Float64>());
-                    }
-                    else
-                    {
-                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>());
-                    }
-
-                }
+                if (value.isNull())
+                    value_is_null[key] = true;
+                else
+                    value_by_key[key] = static_cast<OutputType>(value.get<NearestFieldType<AttributeType>>());
             }
         }
     }
@@ -421,7 +480,11 @@ void DirectDictionary::getItemsImpl(
     stream->readSuffix();
 
     for (const auto row : ext::range(0, rows))
-        set_value(row, value_by_key[ids[row]]);
+    {
+        auto key = ids[row];
+        std::cerr << "DirectDictionary set_value " << row << std::endl;
+        set_value(row, value_by_key[key], value_is_null[key]);
+    }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }

@@ -140,6 +140,8 @@ ColumnPtr IPolygonDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t) { return def; });
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -194,6 +196,8 @@ ColumnPtr IPolygonDictionary::getColumn(
                         [&](const size_t) { return def; }
                     );
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
