@@ -205,6 +205,7 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                LOG_WARNING(storage.log, "Rollback partial writes");
                 streams.clear();
                 storage.file_checker.repair();
             }
@@ -326,12 +327,12 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (auto & pair : streams)
         column_files.push_back(storage.files[pair.first].data_file_path);
 
+    streams.clear();
+    done = true;
+
     for (const auto & file : column_files)
         storage.file_checker.update(file);
     storage.file_checker.save();
-
-    streams.clear();
-    done = true;
 }
 
 
