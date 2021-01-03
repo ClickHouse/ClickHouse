@@ -33,17 +33,12 @@ public:
     Map getFileSizes() const;
 
 private:
-    void initialize();
-    void updateImpl(const String & file_path);
-    void load(Map & local_map, const String & path) const;
+    void load();
 
     DiskPtr disk;
     String files_info_path;
-    String tmp_files_info_path;
 
-    /// The data from the file is read lazily.
     Map map;
-    bool initialized = false;
 
     Poco::Logger * log = &Poco::Logger::get("FileChecker");
 };
