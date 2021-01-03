@@ -756,7 +756,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
-    bool is_view = false;
+    bool is_ordinary_view = false;
     bool is_materialized_view = false;
     bool is_populate = false;
     bool replace_view = false;
@@ -780,7 +780,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         is_materialized_view = true;
     }
     else
-        is_view = true;
+        is_ordinary_view = true;
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -837,7 +837,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
-    query->is_view = is_view;
+    query->is_ordinary_view = is_ordinary_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
     query->replace_view = replace_view;
