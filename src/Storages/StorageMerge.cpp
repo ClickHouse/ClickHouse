@@ -542,7 +542,6 @@ void StorageMerge::convertingSourceStream(
                                     + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
-
     }
 }
 
