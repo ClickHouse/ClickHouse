@@ -962,7 +962,7 @@ void BaseDaemon::setupWatchdog()
         if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFSIGNALED(status))
@@ -980,7 +980,7 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(status);
+                    _exit(128 + sig);
             }
         }
         else
