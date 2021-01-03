@@ -14,6 +14,13 @@ Types are equivalent to types of C:
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
+Aliases:
+
+-   `Float32` — `FLOAT`.
+-   `Float64` — `DOUBLE`.
+
+Like in other DBMS, creating numbers with numeric parameters is supported, but they are ignored entirely.
+
 ## Using Floating-point Numbers {#using-floating-point-numbers}
 
 -   Computations with floating-point numbers might produce a rounding error.
@@ -80,6 +87,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
+See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
 
 [Original article](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->
