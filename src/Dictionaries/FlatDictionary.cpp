@@ -162,6 +162,8 @@ ColumnPtr FlatDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t) { return def; });
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -201,7 +203,7 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value) { out[row] = value; },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
@@ -212,10 +214,12 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value) { out[row] = value; },
                         [&](const size_t) { return def; }
                     );
                 }
+                else
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
             }
             else
             {
@@ -224,7 +228,7 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsImpl<AttributeType, AttributeType>(
                     attribute,
                     ids,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t row, const auto value) { out[row] = value; },
                     [&](const size_t) { return null_value; }
                 );
             }

@@ -70,6 +70,7 @@ namespace
                 assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtUInt64:
+                std::cerr << "Insert uint64 " << value.getUInt() << std::endl;
                 assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtInt8:
@@ -91,6 +92,7 @@ namespace
                 assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
                 break;
             case ValueType::vtString:
+                std::cerr << "Insert string " << std::string(value.data(), value.size()) << std::endl;
                 assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
                 break;
             case ValueType::vtDate:
@@ -146,20 +148,32 @@ Block MySQLBlockInputStream::readImpl()
             const auto value = row[position_mapping[index]];
             const auto & sample = description.sample_block.getByPosition(index);
 
+            bool is_type_nullable = description.types[index].second;
+
             if (!value.isNull())
             {
-                if (description.types[index].second)
+                if (is_type_nullable)
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
                     insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value);
-                    column_nullable.getNullMapData().emplace_back(0);
+                    column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
+                {
                     insertValue(*sample.type, *columns[index], description.types[index].first, value);
+                }
             }
             else
+            {
                 insertDefaultValue(*columns[index], *sample.column);
+
+                if (is_type_nullable)
+                {
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
+                    column_nullable.getNullMapData().back() = true;
+                }
+            }
         }
 
         ++num_rows;

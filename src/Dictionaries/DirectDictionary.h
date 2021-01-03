@@ -82,6 +82,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        bool is_nullable;
         std::variant<
             UInt8,
             UInt16,
@@ -111,7 +112,7 @@ private:
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & name);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value, const std::string & name);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
