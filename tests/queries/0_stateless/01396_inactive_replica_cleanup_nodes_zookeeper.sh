@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # Check that if we have one inactive replica and a huge number of INSERTs to active replicas,
 # the number of nodes in ZooKeeper does not grow unbounded.
