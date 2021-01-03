@@ -215,8 +215,9 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     {
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
+        const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
         /// Discover nested Maps and find columns for summation
-        if (typeid_cast<const DataTypeArray *>(column.type.get()))
+        if (typeid_cast<const DataTypeArray *>(column.type.get()) && !simple)
         {
             const auto map_name = Nested::extractTableName(column.name);
             /// if nested table name ends with `Map` it is a possible candidate for special handling
@@ -231,7 +232,6 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         else
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
-            const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
 
             /// There are special const columns for example after prewhere sections.
             if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))

@@ -416,8 +416,8 @@ private:
         DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
         Operation<NativeResultType, NativeResultType>>;
 
-    template <OpCase op_case, OpCase target>
-    static auto unwrap(const auto& elem, size_t i)
+    template <OpCase op_case, OpCase target, class E>
+    static auto unwrap(const E& elem, size_t i)
     {
         if constexpr (op_case == target)
             return undec(elem);
@@ -744,8 +744,8 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    template <class T, class ResultDataType>
-    static auto helperGetOrConvert(const auto & col_const, const auto & col)
+    template <class T, class ResultDataType, class CC, class C>
+    static auto helperGetOrConvert(const CC & col_const, const C & col)
     {
         using ResultType = typename ResultDataType::FieldType;
         using NativeResultType = typename NativeType<ResultType>::Type;
@@ -756,8 +756,9 @@ class FunctionBinaryArithmetic : public IFunction
             return col_const->template getValue<T>();
     }
 
-    template <OpCase op_case, bool left_decimal, bool right_decimal, class OpImpl, class OpImplCheck>
-    void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b) const
+    template <OpCase op_case, bool left_decimal, bool right_decimal, class OpImpl, class OpImplCheck,
+              class L, class R, class VR, class SA, class SB>
+    void helperInvokeEither(const L& left, const R& right, VR& vec_res, SA scale_a, SB scale_b) const
     {
         if (check_decimal_overflow)
             OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b);
@@ -765,11 +766,12 @@ class FunctionBinaryArithmetic : public IFunction
             OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b);
     }
 
-    template <class LeftDataType, class RightDataType, class ResultDataType>
+    template <class LeftDataType, class RightDataType, class ResultDataType,
+              class L, class R, class CL, class CR>
     ColumnPtr executeNumericWithDecimal(
-        const auto & left, const auto & right,
+        const L & left, const R & right,
         const ColumnConst * const col_left_const, const ColumnConst * const col_right_const,
-        const auto * const col_left, const auto * const col_right,
+        const CL * const col_left, const CR * const col_right,
         size_t col_left_size) const
     {
         using T0 = typename LeftDataType::FieldType;

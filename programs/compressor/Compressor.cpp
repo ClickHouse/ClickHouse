@@ -169,11 +169,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
             if (offset_in_compressed_file || offset_in_decompressed_block)
             {
-                if (!options.count("input"))
-                {
-                    throw DB::Exception("--offset-in-compressed-file/--offset-in-decompressed-block requires --input", DB::ErrorCodes::BAD_ARGUMENTS);
-                }
-                CompressedReadBufferFromFile compressed_file(options["input"].as<std::string>(), 0, 0, 0);
+                CompressedReadBufferFromFile compressed_file(std::move(rb));
                 compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
                 copyData(compressed_file, *wb);
             }
