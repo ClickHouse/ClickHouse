@@ -31,7 +31,7 @@ find . -name '*.so.*' -print -exec mv '{}' /output \;
 if [ "performance" == "$COMBINED_OUTPUT" ]
 then
     cp -r ../tests/performance /output
-    cp -r ../tests/config/top_level_domains  /
+    cp -r ../tests/config/top_level_domains  /output
     cp -r ../docker/test/performance-comparison/config /output ||:
     rm /output/unit_tests_dbms ||:
     rm /output/clickhouse-odbc-bridge ||:
