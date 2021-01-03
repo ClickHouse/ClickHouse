@@ -7,11 +7,11 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
-#include <Common/typeid_cast.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
-/// recursive traversal and check for optimizeGroupByFunctionKeys
+
 struct ConstraintMatcher
 {
     struct Data
@@ -21,7 +21,7 @@ struct ConstraintMatcher
 
     using Visitor = InDepthNodeVisitor<ConstraintMatcher, true>;
 
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr &) { return (node->as<ASTFunction>()) && (node->as<ASTExpressionList>()); }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &) { return node->as<ASTFunction>() || node->as<ASTExpressionList>(); }
 
     static bool alwaysTrue(const ASTPtr & node, Data & data) {
         const auto it = data.constraints.find(node->getTreeHash().second);
@@ -38,7 +38,7 @@ struct ConstraintMatcher
     static void visit(ASTPtr & ast, Data & data)
     {
         if (alwaysTrue(ast, data)) {
-            ast = std::make_shared<ASTLiteral>(1);
+            ast = std::make_shared<ASTLiteral>(static_cast<UInt8>(1));
         }
     }
 };

@@ -507,7 +507,7 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-void optimizeWithConstraints(ASTPtr & query, const NameSet & /* source_columns_set */,
+void optimizeWithConstraints(ASTSelectQuery * select_query, const NameSet & /* source_columns_set */,
                             const std::vector<TableWithColumnNamesAndTypes> & /* tables_with_columns */,
                             const StorageMetadataPtr & metadata_snapshot)
 {
@@ -515,10 +515,12 @@ void optimizeWithConstraints(ASTPtr & query, const NameSet & /* source_columns_s
 
     for (const auto & constraint : metadata_snapshot->getConstraints().constraints)
     {
-        constraint_data.constraints[constraint->getTreeHash().second].push_back(constraint);
+        const auto expr = constraint->as<ASTConstraintDeclaration>()->expr->clone();
+        constraint_data.constraints[expr->getTreeHash().second].push_back(expr);
     }
 
-    ConstraintMatcherVisitor(constraint_data).visit(query);
+    if (select_query->where())
+        ConstraintMatcherVisitor(constraint_data).visit(select_query->refWhere());
 }
 
 /// Remove duplicated columns from USING(...).
@@ -613,10 +615,7 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
     if (settings.optimize_using_constraints)
-    {
-        optimizeWithConstraints(select_query->refWhere(), source_columns_set, tables_with_columns, metadata_snapshot);
-        optimizeWithConstraints(select_query->refPrewhere(), source_columns_set, tables_with_columns, metadata_snapshot);
-    }
+        optimizeWithConstraints(select_query, source_columns_set, tables_with_columns, metadata_snapshot);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, source_columns_set, context);

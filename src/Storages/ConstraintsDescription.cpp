@@ -41,18 +41,35 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context & context,
+ASTs ConstraintsDescription::filterConstraints(ConstraintType type) const
+{
+    auto constraint_type = (type == ConstraintType::CHECK ? ASTConstraintDeclaration::Type::CHECK : ASTConstraintDeclaration::Type::ASSUME);
+    ASTs res;
+    res.reserve(constraints.size());
+    for (const auto & constraint : constraints)
+    {
+        if (constraint->as<ASTConstraintDeclaration>()->type == constraint_type) {
+            res.push_back(constraint);
+        }
+    }
+    return res;
+}
+
+ConstraintsExpressions ConstraintsDescription::getExpressionsToCheck(const DB::Context & context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
-        // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
-        ASTPtr expr = constraint_ptr->expr->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
+        if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
+        {
+            // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
+            ASTPtr expr = constraint_ptr->expr->clone();
+            auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
+            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
+        }
     }
     return res;
 }

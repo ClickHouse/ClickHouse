@@ -34,7 +34,7 @@ private:
     StorageID table_id;
     BlockOutputStreamPtr output;
     Block header;
-    const ConstraintsDescription constraints;
+    const ASTs constraints_to_check;
     const ConstraintsExpressions expressions;
     size_t rows_written = 0;
 };

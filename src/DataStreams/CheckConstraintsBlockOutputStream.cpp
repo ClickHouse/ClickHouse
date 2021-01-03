@@ -28,8 +28,8 @@ CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
     : table_id(table_id_),
     output(output_),
     header(header_),
-    constraints(constraints_),
-    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK)),
+    expressions(constraints_.getExpressionsToCheck(context_, header.getNamesAndTypesList()))
 {
 }
 
@@ -38,13 +38,14 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
     if (block.rows() > 0)
     {
+
         Block block_to_calculate = block;
         for (size_t i = 0; i < expressions.size(); ++i)
         {
             auto constraint_expr = expressions[i];
             constraint_expr->execute(block_to_calculate);
 
-            auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
+            auto * constraint_ptr = constraints_to_check[i]->as<ASTConstraintDeclaration>();
 
             ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
 
