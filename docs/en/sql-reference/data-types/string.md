@@ -8,6 +8,8 @@ toc_title: String
 Strings of an arbitrary length. The length is not limited. The value can contain an arbitrary set of bytes, including null bytes.
 The String type replaces the types VARCHAR, BLOB, CLOB, and others from other DBMSs.
 
+Like in other DBMS, creating strings with numeric parameters is supported, but `ClickHouse` ignores them entirely.
+
 ## Encodings {#encodings}
 
 ClickHouse doesn’t have the concept of encodings. Strings can contain an arbitrary set of bytes, which are stored and output as-is.
