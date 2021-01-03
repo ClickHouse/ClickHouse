@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <common/types.h>
 
@@ -69,13 +68,6 @@ struct Progress
 
     Progress(size_t elapsed_time_ = 0)
         : elapsed_time(elapsed_time_)
-    {}
-
-    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0, size_t elapsed_time_ = 0)
-        : read_rows(read_rows_)
-        , read_bytes(read_bytes_)
-        , total_rows_to_read(total_rows_to_read_)
-        , elapsed_time(elapsed_time_)
     {}
 
     Progress(ReadProgress read_progress, size_t elapsed_time_ = 0)

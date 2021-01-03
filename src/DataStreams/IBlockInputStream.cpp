@@ -36,7 +36,7 @@ Block IBlockInputStream::read()
 {
     if (total_rows_approx)
     {
-        Progress total_rows_progress = {0, 0, total_rows_approx};
+        Progress total_rows_progress(ReadProgress(0, 0, total_rows_approx));
 
         if (progress_callback)
             progress_callback(total_rows_progress);
@@ -88,7 +88,7 @@ Block IBlockInputStream::read()
         cancel(false);
     }
 
-    progress({ res.rows(), res.bytes() });
+    progress(ReadProgress(res.rows(), res.bytes()));
 
 #ifndef NDEBUG
     if (res)
@@ -234,17 +234,18 @@ void IBlockInputStream::checkQuota(Block & block)
 
 void IBlockInputStream::progressImpl(const Progress & value)
 {
-    UInt64 total_elapsed_time = 0;
+    /// Will compute this and update last_total_elapsed_time only if needed.
+    UInt64 current_block_elapsed_time = 0;
 
     if (progress_callback || process_list_elem)
     {
-        total_elapsed_time = info.total_stopwatch.elapsedNanoseconds();
+        const auto total_elapsed_time = info.total_stopwatch.elapsedNanoseconds();
+        current_block_elapsed_time = total_elapsed_time - last_total_elapsed_time;
         last_total_elapsed_time = total_elapsed_time;
     }
 
     if (progress_callback)
     {
-        const auto current_block_elapsed_time = total_elapsed_time - last_total_elapsed_time;
         value.setElapsedTimeIfNull(current_block_elapsed_time);
         progress_callback(value);
     }
@@ -270,14 +271,14 @@ void IBlockInputStream::progressImpl(const Progress & value)
         }
 
         constexpr UInt64 profile_events_update_period = 10 * 1'000'000; // 10 milliseconds worth nanoseconds
-        if (last_profile_events_update_time + profile_events_update_period < total_elapsed_time)
+        if (last_profile_events_update_time + profile_events_update_period < last_total_elapsed_time)
         {
             CurrentThread::updatePerformanceCounters();
-            last_profile_events_update_time = total_elapsed_time;
+            last_profile_events_update_time = last_total_elapsed_time;
         }
 
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, progress.total_rows_to_read,
-                                     total_elapsed_time / 1000 /* nanoseconds to microseconds */);
+                                     last_total_elapsed_time / 1000 /* nanoseconds to microseconds */);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});

@@ -54,7 +54,7 @@ protected:
             }
         }
 
-        progress({column->size(), column->byteSize()});
+        progress(ReadProgress(column->size(), column->byteSize()));
 
         return { Columns {std::move(column_ptr)}, column_size };
     }

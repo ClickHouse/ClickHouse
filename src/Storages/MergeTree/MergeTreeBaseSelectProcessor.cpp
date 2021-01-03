@@ -160,7 +160,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
-    progress({ read_result.numReadRows(), read_result.numBytesRead() });
+    progress(ReadProgress(read_result.numReadRows(), read_result.numBytesRead()));
 
     if (task->size_predictor)
     {

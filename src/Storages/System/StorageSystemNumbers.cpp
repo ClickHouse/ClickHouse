@@ -36,7 +36,7 @@ protected:
 
         next += step;
 
-        progress({column->size(), column->byteSize()});
+        progress(ReadProgress(column->size(), column->byteSize()));
 
         return { Columns {std::move(column)}, block_size };
     }
@@ -94,7 +94,7 @@ protected:
         while (pos < end)
             *pos++ = curr++;
 
-        progress({column->size(), column->byteSize()});
+        progress(ReadProgress(column->size(), column->byteSize()));
 
         return { Columns {std::move(column)}, block_size };
     }
