@@ -3,6 +3,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -10,7 +11,7 @@
 #include <atomic>
 #include <memory>
 #include <variant>
-
+#include <optional>
 
 namespace DB
 {
@@ -81,7 +82,7 @@ private:
     struct Value final
     {
         Range range;
-        T value;
+        std::optional<T> value;
     };
 
     template <typename T>
@@ -91,10 +92,14 @@ private:
     template <typename T>
     using Ptr = std::unique_ptr<Collection<T>>;
 
+    using NullableSet = HashSet<Key, DefaultHash<Key>>;
+
     struct Attribute final
     {
     public:
         AttributeUnderlyingType type;
+        bool is_nullable;
+
         std::variant<
             UInt8,
             UInt16,
@@ -144,7 +149,7 @@ private:
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
@@ -154,7 +159,7 @@ private:
         DefaultGetter && get_default) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
     void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
