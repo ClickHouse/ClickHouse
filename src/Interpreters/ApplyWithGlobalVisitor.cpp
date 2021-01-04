@@ -68,6 +68,12 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
             }
         }
     }
+    else
+    {
+        // Other non-SELECT queries that contains SELECT children, such as EXPLAIN or INSERT
+        for (auto & child : ast->children)
+            visit(child);
+    }
 }
 
 }
