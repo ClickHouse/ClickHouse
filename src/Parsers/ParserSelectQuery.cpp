@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
     extern const int ROW_AND_ROWS_TOGETHER;
     extern const int FIRST_AND_NEXT_TOGETHER;
-    extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -109,7 +109,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_all = true;
 
         if (has_all && select_query->distinct)
-            throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::SYNTAX_ERROR);
 
         if (s_top.ignore(pos, expected))
         {
