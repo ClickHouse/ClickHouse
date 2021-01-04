@@ -1378,7 +1378,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         ASTs replacements;
         ParserExpression element_p;
-        ParserIdentifier ident_p;
+        ParserCompoundIdentifier ident_p;
         auto parse_id = [&]
         {
             ASTPtr expr;

@@ -17,19 +17,19 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
+void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes, std::vector<String> databases)
 {
     if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
     {
-        apply->transform(nodes);
+        apply->transform(nodes, databases);
     }
     else if (const auto * except = transformer->as<ASTColumnsExceptTransformer>())
     {
-        except->transform(nodes);
+        except->transform(nodes, databases);
     }
     else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
     {
-        replace->transform(nodes);
+        replace->transform(nodes, databases);
     }
 }
 
@@ -48,7 +48,7 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
         settings.ostr << ", '" << column_name_prefix << "')";
 }
 
-void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
+void ASTColumnsApplyTransformer::transform(ASTs & nodes, std::vector<String> /*databases*/) const
 {
     for (auto & column : nodes)
     {
@@ -91,29 +91,33 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         settings.ostr << ")";
 }
 
-void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
+void ASTColumnsExceptTransformer::transform(ASTs & nodes, std::vector<String> databases) const
 {
     std::set<String> expected_columns;
     for (const auto & child : children)
     {
         const auto & ident = child->as<const ASTIdentifier &>();
-        String full_name = ident.name();
-        if (ident.compound())
-        {
-            if (count(full_name.begin(), full_name.end(),'.') == 2)
-                full_name = full_name.substr(full_name.find('.') + 1);
-        }
-        expected_columns.insert(full_name);
+        expected_columns.insert(ident.name());
     }
+
+    bool have_database_name = databases.size() > 0 ? true : false;
+    std::vector<String>::iterator db = databases.begin();
 
     for (auto it = nodes.begin(); it != nodes.end();)
     {
         if (const auto * id = it->get()->as<ASTIdentifier>())
         {
-            auto expected_column = expected_columns.find(id->name());
+            String full_name = id->name();
+            // match table.column pattern
+            auto expected_column = expected_columns.find(full_name);
 
+            // match column pattern
             if (expected_column == expected_columns.end())
                 expected_column = expected_columns.find(id->shortName());
+
+            // match db.table.column pattern
+            if (expected_column == expected_columns.end() && have_database_name)
+                expected_column = expected_columns.find(*db + "." + full_name);
 
             if (expected_column != expected_columns.end())
             {
@@ -121,10 +125,18 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
                 it = nodes.erase(it);
             }
             else
+            {
                 ++it;
+                if (have_database_name)
+                    ++db;
+            }
         }
         else
+        {
             ++it;
+            if (have_database_name)
+                ++db;
+        }
     }
 
     if (is_strict && !expected_columns.empty())
@@ -180,7 +192,7 @@ void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr &
     }
 }
 
-void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
+void ASTColumnsReplaceTransformer::transform(ASTs & nodes, std::vector<String> databases) const
 {
     std::map<String, ASTPtr> replace_map;
     for (const auto & replace_child : children)
@@ -193,16 +205,27 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
         replace_map.emplace(replacement.name, replacement.expr);
     }
 
+    std::vector<String>::iterator db = databases.begin();
+    bool have_database_name = databases.size() > 0 ? true : false;
     for (auto & column : nodes)
     {
         if (const auto * id = column->as<ASTIdentifier>())
         {
-            auto replace_it = replace_map.find(id->shortName());
+            auto replace_it = replace_map.find(id->name());
+
+            if (replace_it == replace_map.end())
+                replace_it = replace_map.find(id->shortName());
+
+            if (replace_it == replace_map.end() && have_database_name)
+                replace_it = replace_map.find(*db + "." + id->name());
+
             if (replace_it != replace_map.end())
             {
                 column = replace_it->second;
                 column->setAlias(replace_it->first);
                 replace_map.erase(replace_it);
+                if (have_database_name)
+                    ++db;
             }
         }
         else if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(column.get()))

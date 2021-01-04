@@ -7,8 +7,8 @@ namespace DB
 class IASTColumnsTransformer : public IAST
 {
 public:
-    virtual void transform(ASTs & nodes) const = 0;
-    static void transform(const ASTPtr & transformer, ASTs & nodes);
+    virtual void transform(ASTs & nodes, std::vector<String> databases) const = 0;
+    static void transform(const ASTPtr & transformer, ASTs & nodes, std::vector<String> databases);
 };
 
 class ASTColumnsApplyTransformer : public IASTColumnsTransformer
@@ -22,7 +22,7 @@ public:
             res->parameters = parameters->clone();
         return res;
     }
-    void transform(ASTs & nodes) const override;
+    void transform(ASTs & nodes, std::vector<String> /*databases*/) const override;
     String func_name;
     String column_name_prefix;
     ASTPtr parameters;
@@ -42,7 +42,7 @@ public:
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
+    void transform(ASTs & nodes, std::vector<String> databases) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -79,7 +79,7 @@ public:
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
+    void transform(ASTs & nodes, std::vector<String> databases) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
