@@ -8,6 +8,7 @@
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
+#include <Parsers/CommonParsers.h>
 
 namespace DB
 {
@@ -86,6 +87,9 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto parse_element = [&]
     {
+        ParserKeyword all("ALL");
+        all.ignore(pos, expected);
+
         ASTPtr element;
         if (!elem_parser->parse(pos, element, expected))
             return false;
