@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
     extern const int ROW_AND_ROWS_TOGETHER;
     extern const int FIRST_AND_NEXT_TOGETHER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -30,6 +31,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = select_query;
 
     ParserKeyword s_select("SELECT");
+    ParserKeyword s_all("ALL");
     ParserKeyword s_distinct("DISTINCT");
     ParserKeyword s_from("FROM");
     ParserKeyword s_prewhere("PREWHERE");
@@ -93,11 +95,21 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
     {
+        bool has_all = false;
         if (!s_select.ignore(pos, expected))
             return false;
 
+        if (s_all.ignore(pos, expected))
+            has_all = true;
+
         if (s_distinct.ignore(pos, expected))
             select_query->distinct = true;
+
+        if (!has_all && s_all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && select_query->distinct)
+            throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::LOGICAL_ERROR);
 
         if (s_top.ignore(pos, expected))
         {
