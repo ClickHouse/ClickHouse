@@ -63,7 +63,7 @@ add_subdirectory (Server)
 
 
 set(dbms_headers)
-set(dbms_sources Interpreters/ConstraintMatcherVisitor.cpp Interpreters/ConstraintMatcherVisitor.h)
+set(dbms_sources Interpreters/ConstraintMatcherVisitor.cpp Interpreters/ConstraintMatcherVisitor.h Interpreters/WhereConstraintsOptimizer.cpp Interpreters/WhereConstraintsOptimizer.h Interpreters/TreeCNFConverter.cpp Interpreters/TreeCNFConverter.h)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)

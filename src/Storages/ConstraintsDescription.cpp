@@ -41,14 +41,24 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     return res;
 }
 
-ASTs ConstraintsDescription::filterConstraints(ConstraintType type) const
+ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
 {
-    auto constraint_type = (type == ConstraintType::CHECK ? ASTConstraintDeclaration::Type::CHECK : ASTConstraintDeclaration::Type::ASSUME);
+    const auto ast_to_decr_constraint_type = [](ASTConstraintDeclaration::Type constraint_type) -> UInt32
+    {
+        switch (constraint_type)
+        {
+            case ASTConstraintDeclaration::Type::CHECK:
+                return static_cast<UInt32>(ConstraintType::CHECK);
+            case ASTConstraintDeclaration::Type::ASSUME:
+                return static_cast<UInt32>(ConstraintType::ASSUME);
+        }
+    };
+
     ASTs res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
-        if (constraint->as<ASTConstraintDeclaration>()->type == constraint_type) {
+        if ((ast_to_decr_constraint_type(constraint->as<ASTConstraintDeclaration>()->type) & static_cast<UInt32>(selection)) != 0) {
             res.push_back(constraint);
         }
     }

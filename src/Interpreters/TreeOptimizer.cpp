@@ -3,7 +3,8 @@
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
-#include <Interpreters/ConstraintMatcherVisitor.h>
+#include <Interpreters/WhereConstraintsOptimizer.h>
+#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -507,20 +508,22 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-void optimizeWithConstraints(ASTSelectQuery * select_query, const NameSet & /* source_columns_set */,
-                            const std::vector<TableWithColumnNamesAndTypes> & /* tables_with_columns */,
+/// Use constraints to get rid of useless parts of query
+void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & aliases, const NameSet & source_columns_set,
+                            const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
                             const StorageMetadataPtr & metadata_snapshot)
 {
-    ConstraintMatcherVisitor::Data constraint_data;
+    WhereConstraintsOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot).perform();
+}
 
-    for (const auto & constraint : metadata_snapshot->getConstraints().constraints)
-    {
-        const auto expr = constraint->as<ASTConstraintDeclaration>()->expr->clone();
-        constraint_data.constraints[expr->getTreeHash().second].push_back(expr);
-    }
-
+/// transform where to CNF for more convenient optimization
+void convertQueryToCNF(ASTSelectQuery * select_query)
+{
     if (select_query->where())
-        ConstraintMatcherVisitor(constraint_data).visit(select_query->refWhere());
+    {
+        auto cnf_form = TreeCNFConverter::toCNF(select_query->where());
+        select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
+    }
 }
 
 /// Remove duplicated columns from USING(...).
@@ -611,11 +614,14 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
+    if (settings.convert_query_to_cnf)
+        convertQueryToCNF(select_query);
+
+    if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
+        optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot);
+
     /// Push the predicate expression down to the subqueries.
     rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
-
-    if (settings.optimize_using_constraints)
-        optimizeWithConstraints(select_query, source_columns_set, tables_with_columns, metadata_snapshot);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, source_columns_set, context);

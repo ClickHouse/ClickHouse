@@ -23,7 +23,7 @@ struct ConstraintMatcher
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &) { return node->as<ASTFunction>() || node->as<ASTExpressionList>(); }
 
-    static bool alwaysTrue(const ASTPtr & node, Data & data) {
+    static std::optional<bool> getASTValue(const ASTPtr & node, Data & data) {
         const auto it = data.constraints.find(node->getTreeHash().second);
         if (it != std::end(data.constraints)) {
             for (const auto & ast : it->second) {
@@ -32,14 +32,13 @@ struct ConstraintMatcher
                 }
             }
         }
-        return false;
+        return std::nullopt;
     }
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (alwaysTrue(ast, data)) {
-            ast = std::make_shared<ASTLiteral>(static_cast<UInt8>(1));
-        }
+        if (const auto always_value = getASTValue(ast, data); always_value)
+            ast = std::make_shared<ASTLiteral>(static_cast<UInt8>(*always_value));
     }
 };
 

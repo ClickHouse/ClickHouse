@@ -10,11 +10,6 @@ using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 
 struct ConstraintsDescription
 {
-    enum class ConstraintType {
-        CHECK,
-        ASSUME,
-    };
-
     std::vector<ASTPtr> constraints;
 
     ConstraintsDescription() = default;
@@ -24,7 +19,14 @@ struct ConstraintsDescription
 
     static ConstraintsDescription parse(const String & str);
 
-    ASTs filterConstraints(ConstraintType type) const;
+    enum class ConstraintType {
+        CHECK = 1,
+        ASSUME = 2,
+        ALWAYS_TRUE = CHECK | ASSUME,
+        ALL = CHECK | ASSUME,
+    };
+
+    ASTs filterConstraints(ConstraintType selection) const;
 
     ConstraintsExpressions getExpressionsToCheck(const Context & context, const NamesAndTypesList & source_columns_) const;
 
