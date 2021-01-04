@@ -99,6 +99,7 @@ time_t time(time_t * tloc)
 {
     timespec tp;
     int res = __clock_gettime(CLOCK_REALTIME, &tp);
+    (void)res;
     assert(0 == res);
     time_t t = tp.tv_sec + offset;
     if (tloc)
