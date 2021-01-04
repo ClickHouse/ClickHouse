@@ -2257,15 +2257,6 @@ private:
         };
     }
 
-    template <typename InternalImpl, typename Additions>
-    static WrapperType createDecimalWrapperImpl(Additions additions)
-    {
-        return [additions](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
-        {
-            return InternalImpl::execute(arguments, result_type, input_rows_count, additions);
-        };
-    }
-
     template <typename ToDataType>
     std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
     createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
@@ -2285,51 +2276,73 @@ private:
                     ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
-        WrapperType ret;
+        auto wrapper_cast_type = cast_type;
 
-        auto make_decimal_wrapper = [&](const auto & types) -> bool {
-            using Types = std::decay_t<decltype(types)>;
-            using LeftDataType = typename Types::LeftType;
-            using RightDataType = typename Types::RightType;
-
-            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+        return [wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
+        {
+            ColumnPtr result_column;
+            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
             {
-                if (cast_type == CastType::accurate)
+                using Types = std::decay_t<decltype(types)>;
+                using LeftDataType = typename Types::LeftType;
+                using RightDataType = typename Types::RightType;
+
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
                 {
-                    AccurateConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    ret = createDecimalWrapperImpl<ConvertImpl<LeftDataType, RightDataType, NameCast>>(additions);
-                    return true;
+                    if (wrapper_cast_type == CastType::accurate)
+                    {
+                        AccurateConvertStrategyAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, additions);
+
+                        return true;
+                    }
+                    else if (wrapper_cast_type == CastType::accurateOrNull)
+                    {
+                        AccurateOrNullConvertStrategyAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                            arguments, result_type, input_rows_count, additions);
+
+                        return true;
+                    }
                 }
-                else if (cast_type == CastType::accurateOrNull)
+                else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
                 {
-                    AccurateOrNullConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    ret = createDecimalWrapperImpl<ConvertImpl<LeftDataType, RightDataType, NameCast>>(additions);
-                    return true;
+                    if (requested_result_is_nullable)
+                    {
+                        /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
+                        /// In case when converting to Nullable type, we apply different parsing rule,
+                        /// that will not throw an exception but return NULL in case of malformed input.
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast, ConvertReturnNullOnErrorTag>::execute(
+                            arguments, result_type, input_rows_count, scale);
+
+                        return true;
+                    }
                 }
+
+                result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, scale);
+
+                return true;
+            });
+
+            /// Additionally check if callOnIndexAndDataType wasn't called at all.
+            if (!res)
+            {
+                if (wrapper_cast_type == CastType::accurateOrNull)
+                {
+                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
+                    return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
+                }
+                else
+                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
+                        ErrorCodes::CANNOT_CONVERT_TYPE};
             }
 
-            if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
-            {
-                /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
-                /// In case when converting to Nullable type, we apply different parsing rule,
-                /// that will not throw an exception but return NULL in case of malformed input.
-                ret = createDecimalWrapperImpl<ConvertImpl<LeftDataType, RightDataType, NameCast, ConvertReturnNullOnErrorTag>>(scale);
-            }
-            else
-                ret = createDecimalWrapperImpl<ConvertImpl<LeftDataType, RightDataType, NameCast>>(scale);
-
-            return true;
+            return result_column;
         };
-
-        if (callOnIndexAndDataType<ToDataType>(type_index, make_decimal_wrapper))
-            return ret;
-        else if (cast_type == CastType::accurateOrNull)
-            return FunctionCast::createToNullableColumnWrapper();
-        else
-            throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
