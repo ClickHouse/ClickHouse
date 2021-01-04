@@ -9,6 +9,5 @@ toc_title: Применение
 
 Вопросы:
 
--   Can I use ClickHouse as a time-series database?
--   Can I use ClickHouse as a key-value storage?
-
+-   [Can I use ClickHouse as a time-series database?](time-series.md)
+-   [Можно ли использовать ClickHouse как хранилище вида "ключ-значение"?](key-value.md)

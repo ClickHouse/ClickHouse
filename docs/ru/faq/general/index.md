@@ -9,13 +9,13 @@ toc_title: Общие вопросы
 
 Вопросы:
 
--   Что такое ClickHouse?
--   Почему ClickHouse такой быстрый?
--   Кто пользуется ClickHouse?
+-   [Что такое ClickHouse?](../../index.md#what-is-clickhouse)
+-   [Почему ClickHouse такой быстрый?](why-clickhouse-is-so-fast.md)
+-   [Кто пользуется ClickHouse?](who-is-using-clickhouse.md)
 -   [Что обозначает название “ClickHouse”?](dbms-naming.md)
--   Что значит “Не тормозит”?
--   Что такое OLAP?
--   Что такое колоночная база данных?
+-   [Как фраза “Не тормозит” осталась всех футболках?](ne-tormozit.md)
+-   [Что такое OLAP?](olap.md)
+-   [Что такое колоночная база данных?](columnar-database.md)
 -   [Почему бы не использовать системы типа MapReduce?](mapreduce.md)
 
 !!! info "Если вы не нашли то, что искали:"

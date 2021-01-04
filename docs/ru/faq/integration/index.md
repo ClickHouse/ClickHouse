@@ -10,7 +10,7 @@ toc_title: Интеграция
 Вопросы:
 
 -   [Как экспортировать данные из ClickHouse в файл?](file-export.md)
--   Как импортировать JSON в ClickHouse?
+-   [Как импортировать JSON в ClickHouse?](json-import.md)
 -   [Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC?](oracle-odbc.md)
 
 !!! info "Если вы не нашли то, что искали"
