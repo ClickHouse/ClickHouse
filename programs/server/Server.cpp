@@ -65,6 +65,7 @@
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FakeTime.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -388,6 +389,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
+
+    if (FakeTime::instance().isEffective())
+        LOG_WARNING(log, "Fake time is enabled. This is only intended for testing purposes.");
 
     if (ThreadFuzzer::instance().isEffective())
         LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");

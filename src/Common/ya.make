@@ -42,6 +42,7 @@ SRCS(
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
+    FakeTime.cpp
     FieldVisitors.cpp
     FileChecker.cpp
     IPv6ToBinary.cpp

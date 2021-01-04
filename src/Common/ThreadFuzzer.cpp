@@ -240,7 +240,7 @@ void ThreadFuzzer::setup() const
 
 
 /// We expect that for every function like pthread_mutex_lock there is the same function with two underscores prefix.
-/// NOTE We cannot use dlsym(... RTLD_NEXT), because it will call pthread_mutex_lock and it will lead to infinite recursion.
+/// NOTE We cannot use dlsym(RTLD_NEXT, ...), because it will call pthread_mutex_lock and it will lead to infinite recursion.
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define MAKE_WRAPPER(RET, NAME, ...) \

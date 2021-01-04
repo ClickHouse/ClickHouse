@@ -18,6 +18,7 @@
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/FakeTime.h>
 
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
@@ -340,6 +341,8 @@ int main(int argc_, char ** argv_)
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
     updatePHDRCache();
+
+    DB::FakeTime::instance();
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 
