@@ -133,11 +133,9 @@ def init_jinja2_env(args):
             os.path.join(args.docs_dir, '_includes')
         ]),
         extensions=[
-            'jinja2.ext.i18n',
-            'jinja2_highlight.HighlightExtension'
+            'jinja2.ext.i18n'
         ]
     )
-    env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
     translations_dir = os.path.join(args.website_dir, 'locale')
     env.install_gettext_translations(
         mdx_clickhouse.get_translations(translations_dir, 'en'),
