@@ -35,36 +35,37 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FinishSortingStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/MergingSortedStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -210,6 +211,18 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Returns true if we should ignore quotas and limits for a specified table in the system database.
+static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+{
+    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(table_id.table_name))
+            return true;
+    }
+    return false;
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -254,14 +267,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
+    bool got_storage_from_query = false;
     if (!has_input && !storage)
+    {
         storage = joined_tables.getLeftTableStorage();
+        got_storage_from_query = true;
+    }
 
     if (storage)
     {
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
-        if (metadata_snapshot == nullptr)
+        if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
@@ -279,9 +296,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage && joined_tables.isLeftTableSubquery())
         {
             /// Rewritten with subquery. Free storage locks here.
-            storage = {};
+            storage = nullptr;
             table_lock.reset();
             table_id = StorageID::createEmpty();
+            metadata_snapshot = nullptr;
         }
     }
 
@@ -444,16 +462,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const StorageID & left_table_id = joined_tables.leftTableID();
-
-    if (left_table_id)
-        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
-
-    /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system")
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        /// The current user should have the SELECT privilege.
+        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
+        context->checkAccess(AccessType::SELECT, table_id, required_columns);
+
+        /// Remove limits for some tables in the `system` database.
+        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
             options.ignore_limits = true;
@@ -537,7 +553,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableState)
     {
         if (!analysis_result.need_aggregate)
-            return analysis_result.before_order_and_select->getResultColumns();
+        {
+            // What's the difference with selected_columns?
+            return analysis_result.before_order_by->getResultColumns();
+        }
 
         Block header = analysis_result.before_aggregation->getResultColumns();
 
@@ -563,7 +582,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
-        return analysis_result.before_order_and_select->getResultColumns();
+        // What's the difference with selected_columns?
+        return analysis_result.before_order_by->getResultColumns();
     }
 
     return analysis_result.final_projection->getResultColumns();
@@ -957,7 +977,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
             else
             {
-                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeExpression(query_plan, expressions.before_window, "Before window functions");
+                executeWindow(query_plan);
+                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
 
@@ -1003,7 +1025,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 else if (expressions.hasHaving())
                     executeHaving(query_plan, expressions.before_having);
 
-                executeExpression(query_plan, expressions.before_order_and_select, "Before ORDER BY and SELECT");
+                executeExpression(query_plan, expressions.before_window,
+                    "Before window functions");
+                executeWindow(query_plan);
+                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
 
             }
@@ -1026,10 +1051,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_withfill = false;
+            if (query.orderBy())
+            {
+                SortDescription order_descr = getSortDescription(query, *context);
+                for (auto & desc : order_descr)
+                    if (desc.with_fill)
+                    {
+                        has_withfill = true;
+                        break;
+                    }
+            }
+
             bool has_prelimit = false;
             if (!to_aggregation_stage &&
                 query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
+                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
+                !has_withfill)
             {
                 executePreLimit(query_plan, false);
                 has_prelimit = true;
@@ -1528,6 +1566,13 @@ void InterpreterSelectQuery::executeFetchColumns(
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, *context, processing_stage, max_block_size, max_streams);
 
+        if (context->hasQueryContext() && !options.is_internal)
+        {
+            auto local_storage_id = storage->getStorageID();
+            context->getQueryContext().addQueryAccessInfo(
+                backQuoteIfNeed(local_storage_id.getDatabaseName()), local_storage_id.getFullTableName(), required_columns);
+        }
+
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
@@ -1735,10 +1780,67 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
 void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description)
 {
+    if (!expression)
+    {
+        return;
+    }
+
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
 
     expression_step->setStepDescription(description);
     query_plan.addStep(std::move(expression_step));
+}
+
+
+void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
+{
+    for (const auto & [_, w] : query_analyzer->windowDescriptions())
+    {
+        const Settings & settings = context->getSettingsRef();
+
+        auto partial_sorting = std::make_unique<PartialSortingStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            0 /* LIMIT */,
+            SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort,
+                settings.sort_overflow_mode));
+        partial_sorting->setStepDescription("Sort each block for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(partial_sorting));
+
+        auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            settings.max_block_size,
+            0 /* LIMIT */,
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            context->getTemporaryVolume(),
+            settings.min_free_disk_space_for_temporary_data);
+        merge_sorting_step->setStepDescription("Merge sorted blocks for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(merge_sorting_step));
+
+        // First MergeSorted, now MergingSorted.
+        auto merging_sorted = std::make_unique<MergingSortedStep>(
+            query_plan.getCurrentDataStream(),
+            w.full_sort_description,
+            settings.max_block_size,
+            0 /* LIMIT */);
+        merging_sorted->setStepDescription("Merge sorted streams for window '"
+            + w.window_name + "'");
+        query_plan.addStep(std::move(merging_sorted));
+
+        auto window_step = std::make_unique<WindowStep>(
+            query_plan.getCurrentDataStream(),
+            w,
+            w.window_functions);
+        window_step->setStepDescription("Window step for window '"
+            + w.window_name + "'");
+
+        query_plan.addStep(std::move(window_step));
+    }
 }
 
 
@@ -1788,9 +1890,13 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     /// Merge the sorted blocks.
     auto merge_sorting_step = std::make_unique<MergeSortingStep>(
             query_plan.getCurrentDataStream(),
-            output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort, settings.remerge_sort_lowered_memory_bytes_ratio,
-            settings.max_bytes_before_external_sort, context->getTemporaryVolume(),
+            output_order_descr,
+            settings.max_block_size,
+            limit,
+            settings.max_bytes_before_remerge_sort,
+            settings.remerge_sort_lowered_memory_bytes_ratio,
+            settings.max_bytes_before_external_sort,
+            context->getTemporaryVolume(),
             settings.min_free_disk_space_for_temporary_data);
 
     merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");

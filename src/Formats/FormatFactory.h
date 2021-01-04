@@ -54,7 +54,7 @@ public:
       * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
       * Used in ParallelParsingBlockInputStream.
       */
-    using FileSegmentationEngine = std::function<bool(
+    using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<> & memory,
         size_t min_chunk_bytes)>;
@@ -79,11 +79,13 @@ private:
         WriteCallback callback,
         const FormatSettings & settings)>;
 
-    using InputProcessorCreator = std::function<InputFormatPtr(
-            ReadBuffer & buf,
-            const Block & header,
-            const RowInputFormatParams & params,
-            const FormatSettings & settings)>;
+    using InputProcessorCreatorFunc = InputFormatPtr(
+        ReadBuffer & buf,
+        const Block & header,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings);
+
+    using InputProcessorCreator = std::function<InputProcessorCreatorFunc>;
 
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -98,6 +100,7 @@ private:
         InputProcessorCreator input_processor_creator;
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
+        bool supports_parallel_formatting{false};
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -105,7 +108,7 @@ private:
 public:
     static FormatFactory & instance();
 
-    BlockInputStreamPtr getInput(
+    InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
@@ -113,7 +116,14 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
+    /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf,
+        const Block & sample, const Context & context, WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
+    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -123,6 +133,12 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
+    OutputFormatPtr getOutputFormatParallelIfPossible(
+        const String & name, WriteBuffer & buf, const Block & sample,
+        const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
@@ -137,6 +153,8 @@ public:
 
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
+
+    void markOutputFormatSupportsParallelFormatting(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {

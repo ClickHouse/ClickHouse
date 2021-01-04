@@ -67,7 +67,7 @@ public:
       * If the data type require single stream (it's true for most of data types), the stream will have empty path.
       * Otherwise, the path can have components like "array elements", "array sizes", etc.
       *
-      * For multidimensional arrays, path can have arbiraty length.
+      * For multidimensional arrays, path can have arbitrary length.
       * As an example, for 2-dimensional arrays of numbers we have at least three streams:
       * - array sizes;                      (sizes of top level arrays)
       * - array elements / array sizes;     (sizes of second level (nested) arrays)
@@ -451,6 +451,7 @@ public:
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
+    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
