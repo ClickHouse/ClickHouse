@@ -2,6 +2,7 @@
 #include <ext/map.h>
 #include <ext/range.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -52,6 +53,14 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
 
     auto size = key_columns.front()->size();
 
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
+    {
+        col_null_map_to = ColumnUInt8::create(size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
@@ -69,7 +78,15 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
                         key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row, const StringRef value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+
+                            out->insertData(value.data, value.size);
+                        },
                         [&](const size_t row) { return default_col->getDataAt(row); });
                 }
                 else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
@@ -79,7 +96,15 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
                         key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                        [&](const size_t row, const StringRef value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+
+                            out->insertData(value.data, value.size);
+                        },
                         [&](const size_t) { return def; });
                 }
                 else
@@ -92,7 +117,15 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                 getItemsImpl<StringRef, StringRef>(
                     attribute,
                     key_columns,
-                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                    [&](const size_t row, const StringRef value, bool is_null)
+                    {
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        }
+
+                        out->insertData(value.data, value.size);
+                    },
                     [&](const size_t) { return null_value; });
             }
 
@@ -123,7 +156,15 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+
+                            out[row] = value;
+                        },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
@@ -134,7 +175,15 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        { 
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+                            
+                            out[row] = value;
+                        },
                         [&](const size_t) { return def; }
                     );
                 }
@@ -148,9 +197,16 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                 getItemsImpl<AttributeType, AttributeType>(
                     attribute,
                     key_columns,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
-                    [&](const size_t) { return null_value; }
-                );
+                    [&](const size_t row, const auto value, bool is_null)
+                    {
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        }
+
+                        out[row] = value;
+                    },
+                    [&](const size_t) { return null_value; });
             }
 
             result = std::move(column);
@@ -158,6 +214,11 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.is_nullable)
+    {
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -200,7 +261,7 @@ void ComplexKeyHashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
             throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
@@ -402,9 +463,10 @@ void ComplexKeyHashedDictionary::createAttributeImpl<String>(Attribute & attribu
 }
 
 ComplexKeyHashedDictionary::Attribute
-ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+ComplexKeyHashedDictionary::createAttribute(const DictionaryAttribute & attribute, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    auto nullable_set = attribute.is_nullable ? std::make_unique<NullableSet>() : nullptr;
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, std::move(nullable_set), {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -413,7 +475,7 @@ ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingTyp
         createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -436,7 +498,18 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        set_value(i, it ? static_cast<OutputType>(it->getMapped()) : get_default(i));
+
+        if (it)
+        {
+            set_value(i, static_cast<OutputType>(it->getMapped()), false); 
+        }
+        else
+        {
+            if (attribute.is_nullable && attribute.nullable_set->find(key) != nullptr)
+                set_value(i, get_default(i), true);
+            else
+                set_value(i, get_default(i), false);
+        }
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);
@@ -454,51 +527,42 @@ bool ComplexKeyHashedDictionary::setAttributeValueImpl(Attribute & attribute, co
     return pair.second;
 }
 
+template <>
+bool ComplexKeyHashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const StringRef key, const String value)
+{
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    return setAttributeValueImpl<StringRef>(attribute, key, string_in_arena);
+}
+
 bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const StringRef key, const Field & value)
 {
-    switch (attribute.type)
+    bool result = false;
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return setAttributeValueImpl<UInt8>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt16:
-            return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt32:
-            return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt64:
-            return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt128:
-            return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
-        case AttributeUnderlyingType::utInt8:
-            return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::utInt16:
-            return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::utInt32:
-            return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::utInt64:
-            return setAttributeValueImpl<Int64>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::utFloat32:
-            return setAttributeValueImpl<Float32>(attribute, key, value.get<Float64>());
-        case AttributeUnderlyingType::utFloat64:
-            return setAttributeValueImpl<Float64>(attribute, key, value.get<Float64>());
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            return setAttributeValueImpl<Decimal32>(attribute, key, value.get<Decimal32>());
-        case AttributeUnderlyingType::utDecimal64:
-            return setAttributeValueImpl<Decimal64>(attribute, key, value.get<Decimal64>());
-        case AttributeUnderlyingType::utDecimal128:
-            return setAttributeValueImpl<Decimal128>(attribute, key, value.get<Decimal128>());
-
-        case AttributeUnderlyingType::utString:
+        if (attribute.is_nullable)
         {
-            auto & map = std::get<ContainerType<StringRef>>(attribute.maps);
-            const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            const auto pair = map.insert({key, StringRef{string_in_arena, string.size()}});
-            return pair.second;
+            if (value.isNull())
+            {
+                attribute.nullable_set->insert(key);
+                result = true;
+                return;
+            }
+            else
+            {
+                attribute.nullable_set->erase(key);
+            }
         }
-    }
 
-    return {};
+        result = setAttributeValueImpl<AttributeType>(attribute, key, value.get<NearestFieldType<AttributeType>>());
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 const ComplexKeyHashedDictionary::Attribute & ComplexKeyHashedDictionary::getAttribute(const std::string & attribute_name) const
@@ -549,6 +613,9 @@ void ComplexKeyHashedDictionary::has(const Attribute & attribute, const Columns 
         const auto it = attr.find(key);
         out[i] = static_cast<bool>(it);
 
+        if (attribute.is_nullable && !out[i])
+            out[i] = attribute.nullable_set->find(key) != nullptr;
+
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);
     }
@@ -590,6 +657,12 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
     keys.reserve(attr.size());
     for (const auto & key : attr)
         keys.push_back(key.getKey());
+
+    if (attribute.is_nullable)
+    {
+        for (const auto & key: *attribute.nullable_set)
+            keys.push_back(key.getKey());
+    }
 
     return keys;
 }

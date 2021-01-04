@@ -637,16 +637,7 @@ template <>
 bool HashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String value)
 {
     const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    if (!sparse)
-    {
-        auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
-        return map.insert({id, StringRef{string_in_arena, value.size()}}).second;
-    }
-    else
-    {
-        auto & map = *std::get<SparseCollectionPtrType<StringRef>>(attribute.sparse_maps);
-        return map.insert({id, StringRef{string_in_arena, value.size()}}).second;
-    }
+    return setAttributeValueImpl<StringRef>(attribute, id, string_in_arena);
 }
 
 bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
@@ -749,9 +740,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
         if (attribute.is_nullable)
         {
             for (const auto& value: *attribute.nullable_set)
-            {
                 result.push_back(value.getKey());
-            }
         }
     };
 
