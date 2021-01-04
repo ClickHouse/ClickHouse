@@ -261,10 +261,12 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
+    ParserKeyword all("ALL");
     ParserExpressionList contents(false);
     ParserSelectWithUnionQuery select;
     ParserKeyword over("OVER");
 
+    bool has_all = false;
     bool has_distinct_modifier = false;
 
     ASTPtr identifier;
@@ -279,10 +281,19 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    if (all.ignore(pos, expected))
+        has_all = true;
 
     if (distinct.ignore(pos, expected))
         has_distinct_modifier = true;
-    else
+
+    if (!has_all && all.ignore(pos, expected))
+        has_all = true;
+
+    if (has_all && has_distinct_modifier)
+        throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::SYNTAX_ERROR);
+
+    if (!has_distinct_modifier)
     {
         auto old_pos = pos;
         auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
@@ -356,8 +367,17 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
 
+        if (all.ignore(pos, expected))
+            has_all = true;
+
         if (distinct.ignore(pos, expected))
             has_distinct_modifier = true;
+
+        if (!has_all && all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && has_distinct_modifier)
+            throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::SYNTAX_ERROR);
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
