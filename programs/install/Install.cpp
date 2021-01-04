@@ -21,7 +21,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
 #include <common/getResource.h>
-#include <common/sleep.cpp>
+#include <common/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
