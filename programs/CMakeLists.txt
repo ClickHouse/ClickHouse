@@ -216,7 +216,13 @@ if (CLICKHOUSE_SPLIT_BINARY)
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
     add_executable (clickhouse main.cpp)
-    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils harmful)
+
+    # A library that prevent usage of several functions from libc.
+    if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
+        set (HARMFUL_LIB harmful)
+    endif ()
+
+    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)
