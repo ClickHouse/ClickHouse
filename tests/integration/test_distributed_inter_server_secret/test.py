@@ -83,7 +83,7 @@ def get_query_user_info(node, query_pattern):
 def get_query_setting_on_shard(node, query_pattern, setting):
     node.query("SYSTEM FLUSH LOGS")
     return node.query("""
-    SELECT (arrayFilter(x -> ((x.1) = '{}'), arrayZip(Settings.Names, Settings.Values))[1]).2
+    SELECT Settings.Values['%s']
     FROM system.query_log
     WHERE
         query LIKE '%{}%' AND
@@ -91,7 +91,7 @@ def get_query_setting_on_shard(node, query_pattern, setting):
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
     LIMIT 1
-    """.format(setting, query_pattern)).strip()
+    """.format(setting, setting, query_pattern)).strip()
 
 def test_insecure():
     n1.query('SELECT * FROM dist_insecure')
