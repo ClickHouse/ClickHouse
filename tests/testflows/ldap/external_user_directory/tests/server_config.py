@@ -99,7 +99,6 @@ def invalid_port(self):
     }]
     login(servers, "openldap1", *users)
 
-
 @TestScenario
 @Requirements(
     RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid("1.0"),
@@ -232,9 +231,39 @@ def auth_dn_value(self):
 
     login(servers, "openldap1", user)
 
+@TestOutline(Scenario)
+@Examples("invalid_value", [
+    ("-1", Name("negative int")),
+    ("foo", Name("string")),
+    ("", Name("empty string")),
+    ("36893488147419103232", Name("overflow with extremely large int value")),
+    ("-36893488147419103232", Name("overflow with extremely large negative int value")),
+    ("@#", Name("special characters"))
+])
+@Requirements(
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_VerificationCooldown_Invalid("1.0")
+)
+def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
+    """Check that server returns an error when LDAP server
+    verification cooldown parameter is invalid.
+    """
+
+    error_message = ("<Error> Access(user directories): Could not parse LDAP server"
+        " \\`openldap1\\`: Poco::Exception. Code: 1000, e.code() = 0,"
+        f" e.displayText() = Syntax error: Not a valid unsigned integer{': ' + invalid_value if invalid_value else invalid_value}")
+
+    with Given("LDAP server configuration that uses a negative integer for the verification_cooldown parameter"):
+        servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "no",
+            "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": f"{invalid_value}"
+        }}
+
+    with When("I try to use this configuration then it should not work"):
+        invalid_server_config(servers, message=error_message, tail=17, timeout=timeout)
+
 @TestScenario
 @Requirements(
-    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax("1.0")
+    RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Syntax("2.0")
 )
 def syntax(self):
     """Check that server configuration with valid syntax can be loaded.
@@ -245,6 +274,7 @@ def syntax(self):
             <port>636</port>
             <auth_dn_prefix>cn=</auth_dn_prefix>
             <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
+            <verification_cooldown>0</verification_cooldown>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
             <tls_require_cert>demand</tls_require_cert>
@@ -263,6 +293,7 @@ def syntax(self):
             "port": "389",
             "auth_dn_prefix": "cn=",
             "auth_dn_suffix": ",ou=users,dc=company,dc=com",
+            "verification_cooldown": "0",
             "enable_tls": "yes",
             "tls_minimum_protocol_version": "tls1.2" ,
             "tls_require_cert": "demand",
