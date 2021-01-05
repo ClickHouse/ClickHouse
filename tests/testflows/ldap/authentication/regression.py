@@ -23,7 +23,9 @@ xfails = {
     "connection protocols/starttls with custom port":
      [(Fail, "it seems that starttls is not enabled by default on custom plain-text ports in LDAP server")],
     "connection protocols/tls cipher suite":
-     [(Fail, "can't get it to work")]
+     [(Fail, "can't get it to work")],
+    "external user directory/user authentications/valid verification cooldown value ldap unavailable":
+     [(Fail, "flaky, ask Vitaly Zakaznikov, Telegram @vzakaznikov")]
 }
 
 @TestFeature
