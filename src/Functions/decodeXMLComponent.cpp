@@ -229,10 +229,10 @@ namespace
 
         static inline char decodeNumberPart(const char * src)
         {
-            auto ans = strtol(src, nullptr, 10);
-            if (ans >= min_XML_number && ans <= max_XML_number)
+            auto numberic_ans = strtol(src, nullptr, 10);
+            if (numberic_ans >= min_XML_number && ans <= max_XML_number)
             {
-                return '\0' + ans;
+                return '\0' + numberic_ans;
             }
             return '\0';
         }
