@@ -854,12 +854,11 @@ private:
             // Read until separator.
             while (!in.eof())
             {
-                char * next_separator = find_first_symbols<';'>(in.position(),
-                    in.buffer().end());
+                char * next_separator = find_first_symbols<';'>(in.position(), in.buffer().end());
 
                 if (next_separator < in.buffer().end())
                 {
-                    next_separator++;
+                    ++next_separator;
                     if (next_separator < in.buffer().end()
                         && *next_separator == '\n')
                     {
@@ -908,15 +907,6 @@ private:
             // Don't forget to reset the default database which might have changed.
             connection->setDefaultDatabase("");
             connection->forceConnected(connection_parameters.timeouts);
-
-            if (text.size() > 4 * 1024)
-            {
-                // Some pathological situation where the text is larger than 4kB
-                // and we still cannot parse a single query in it. Abort.
-                std::cerr << "Read too much text and still can't parse a query."
-                     " Aborting." << std::endl;
-                exit(1);
-            }
         }
     }
 
