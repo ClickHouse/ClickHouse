@@ -7,7 +7,15 @@ set max_memory_usage='200Mi';
 system stop merges data_01641;
 insert into data_01641 select number, toString(number) from numbers(toUInt64(120e6));
 
--- FIXME: this limit does not work
-set max_memory_usage='10Mi';
+-- peak:
+-- - is 21MiB if background merges already scheduled
+-- - is ~60MiB otherwise
+set max_memory_usage='80Mi';
 system start merges data_01641;
 optimize table data_01641 final;
+
+-- definitely should fail
+set max_memory_usage='1Mi';
+optimize table data_01641 final; -- { serverError 241 }
+
+drop table data_01641;
