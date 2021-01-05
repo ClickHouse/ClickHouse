@@ -2,6 +2,7 @@
 
 #if defined(__linux__) && defined(__x86_64__)
 
+#include <atomic>
 #include <cassert>
 #include <unistd.h>
 #include <dlfcn.h>
@@ -75,12 +76,19 @@ struct timeval
     long tv_usec;
 };
 
+static std::atomic<void *> real_clock_gettime = nullptr;
+
 int clock_gettime(int32_t clk_id, struct timespec * tp)
 {
-    static void * sym = dlsym(RTLD_DEFAULT, "__clock_gettime");
-    assert(sym);
+    void * real_clock_gettime_loaded = real_clock_gettime.load(std::memory_order_relaxed);
+    if (!real_clock_gettime_loaded)
+    {
+        real_clock_gettime_loaded = dlsym(RTLD_DEFAULT, "__clock_gettime");
+        assert(real_clock_gettime_loaded);
+        real_clock_gettime.store(real_clock_gettime_loaded, std::memory_order_relaxed);
+    }
 
-    int res = reinterpret_cast<int (*)(int32_t, struct timespec *)>(sym)(clk_id, tp);
+    int res = reinterpret_cast<int (*)(int32_t, struct timespec *)>(real_clock_gettime_loaded)(clk_id, tp);
 
     if (0 == res)
     {
