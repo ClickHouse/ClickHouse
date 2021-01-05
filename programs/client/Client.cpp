@@ -905,7 +905,7 @@ private:
             // private, probably for a good reason that the protocol doesn't allow
             // pings at any possible moment.
             // Don't forget to reset the default database which might have changed.
-            connection->setDefaultDatabase("");
+            connection->setDefaultDatabase(connection_parameters.default_database);
             connection->forceConnected(connection_parameters.timeouts);
         }
     }
