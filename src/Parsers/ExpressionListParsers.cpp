@@ -18,6 +18,8 @@ const char * ParserMultiplicativeExpression::operators[] =
     "*",     "multiply",
     "/",     "divide",
     "%",     "modulo",
+    "MOD",   "modulo",
+    "DIV",   "intDiv",
     nullptr
 };
 
