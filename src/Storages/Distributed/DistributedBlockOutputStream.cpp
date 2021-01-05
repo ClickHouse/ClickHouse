@@ -299,6 +299,10 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
         const Settings & settings = context.getSettingsRef();
 
+        /// Do not initiate INSERT for empty block.
+        if (shard_block.rows() == 0)
+            return;
+
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
             if (!job.stream)
@@ -368,7 +372,8 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
-    size_t start = 0, end = shards_info.size();
+    size_t start = 0;
+    size_t end = shards_info.size();
     if (random_shard_insert)
     {
         start = storage.getRandomShardIndex(shards_info);
