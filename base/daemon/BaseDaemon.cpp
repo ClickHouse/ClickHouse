@@ -85,7 +85,7 @@ const char * msan_strsignal(int sig)
     // Apparently strsignal is not instrumented by MemorySanitizer, so we
     // have to unpoison it to avoid msan reports inside fmt library when we
     // print it.
-    const char * signal_name = strsignal(sig);
+    const char * signal_name = sys_siglist[sig];
     __msan_unpoison_string(signal_name);
     return signal_name;
 }
