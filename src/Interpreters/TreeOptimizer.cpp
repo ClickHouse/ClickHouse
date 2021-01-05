@@ -514,6 +514,10 @@ void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & aliases, c
                             const StorageMetadataPtr & metadata_snapshot)
 {
     WhereConstraintsOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot).perform();
+    if (select_query->where())
+        Poco::Logger::get("KEK").information(select_query->where()->dumpTree());
+    else
+        Poco::Logger::get("KEK").information("NO WHERE");
 }
 
 /// transform where to CNF for more convenient optimization
@@ -524,6 +528,8 @@ void convertQueryToCNF(ASTSelectQuery * select_query)
         auto cnf_form = TreeCNFConverter::toCNF(select_query->where());
         select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
     }
+    if (select_query->where())
+        Poco::Logger::get("KEK").information(select_query->where()->dumpTree());
 }
 
 /// Remove duplicated columns from USING(...).
