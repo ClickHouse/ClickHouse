@@ -121,7 +121,7 @@ Chunk TinyLogSource::generate()
 {
     Block res;
 
-    if (is_finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
+    if (is_finished || file_sizes.empty() || (!streams.empty() && streams.begin()->second->compressed.eof()))
     {
         /** Close the files (before destroying the object).
           * When many sources are created, but simultaneously reading only a few of them,
@@ -196,6 +196,14 @@ public:
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        /// If there were no files, add info to rollback in case of error.
+        if (storage.file_checker.empty())
+        {
+            for (const auto & file : storage.files)
+                storage.file_checker.setEmpty(file.second.data_file_path);
+            storage.file_checker.save();
+        }
     }
 
     ~TinyLogBlockOutputStream() override
@@ -393,10 +401,6 @@ StorageTinyLog::StorageTinyLog(
 
     for (const auto & col : storage_metadata.getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
-
-    if (!attach)
-        for (const auto & file : files)
-            file_checker.setEmpty(file.second.data_file_path);
 }
 
 

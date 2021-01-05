@@ -18,6 +18,7 @@ public:
     void update(const String & full_file_path);
     void setEmpty(const String & full_file_path);
     void save() const;
+    bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
     CheckResults check() const;

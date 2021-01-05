@@ -98,6 +98,9 @@ public:
 protected:
     Chunk generate() override
     {
+        if (storage.file_checker.empty())
+            return {};
+
         Block res;
         start();
 
@@ -170,6 +173,13 @@ public:
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        if (storage.file_checker.empty())
+        {
+            storage.file_checker.setEmpty(storage.table_path + "data.bin");
+            storage.file_checker.setEmpty(storage.table_path + "index.mrk");
+            storage.file_checker.save();
+        }
     }
 
     ~StripeLogBlockOutputStream() override
@@ -264,9 +274,6 @@ StorageStripeLog::StorageStripeLog(
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
-
-        file_checker.setEmpty(table_path + "data.bin");
-        file_checker.setEmpty(table_path + "index.mrk");
     }
     else
     {
