@@ -53,3 +53,5 @@ SELECT 'max_threads=100', count() FROM adaptive_table SETTINGS
     merge_tree_min_bytes_for_concurrent_read=1,
     max_threads=100
 FORMAT CSV;
+
+DROP TABLE adaptive_table;
