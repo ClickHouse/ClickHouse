@@ -110,6 +110,7 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -135,6 +136,9 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_a_tty = false;         /// stdin is a terminal.
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
+
+    /// If not empty, queries will be read from these files
+    std::vector<std::string> queries_files;
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String full_query; /// Current query as it was given to the client.
@@ -478,10 +482,10 @@ private:
         /// - stdin is not a terminal. In this case queries are read from it.
         /// - -qf (--queries-file) command line option is present.
         ///   The value of the option is used as file with query (or of multiple queries) to execute.
-        if (!stdin_is_a_tty || config().has("query") || config().has("queries-file"))
+        if (!stdin_is_a_tty || config().has("query") || !queries_files.empty())
             is_interactive = false;
 
-        if (config().has("query") && config().has("queries-file"))
+        if (config().has("query") && !queries_files.empty())
         {
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
         }
@@ -696,14 +700,8 @@ private:
             auto query_id = config().getString("query_id", "");
             if (!query_id.empty())
                 context.setCurrentQueryId(query_id);
-            if (query_fuzzer_runs)
-            {
-                nonInteractiveWithFuzzing();
-            }
-            else
-            {
-                nonInteractive();
-            }
+
+            nonInteractive();
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             if (last_exception_received_from_server)
@@ -794,15 +792,28 @@ private:
     {
         String text;
 
-        if (config().has("queries-file"))
+        if (!queries_files.empty())
         {
-            ReadBufferFromFile in(config().getString("queries-file"));
-            readStringUntilEOF(text, in);
-            processMultiQuery(text);
+            for (const auto & queries_file : queries_files)
+            {
+                ReadBufferFromFile in(queries_file);
+
+                if (query_fuzzer_runs)
+                {
+                    nonInteractiveWithFuzzing(in);
+                }
+                else
+                {
+                    readStringUntilEOF(text, in);
+                    processMultiQuery(text);
+                }
+            }
             return;
         }
         else if (config().has("query"))
+        {
             text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+        }
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -811,19 +822,14 @@ private:
             readStringUntilEOF(text, in);
         }
 
-        processQueryText(text);
+        if (query_fuzzer_runs)
+            processWithFuzzing(text);
+        else
+            processQueryText(text);
     }
 
-    void nonInteractiveWithFuzzing()
+    void nonInteractiveWithFuzzing(ReadBuffer & in)
     {
-        if (config().has("query"))
-        {
-            // Poco configuration should not process substitutions in form of
-            // ${...} inside query
-            processWithFuzzing(config().getRawString("query"));
-            return;
-        }
-
         // Try to stream the queries from stdin, without reading all of them
         // into memory. The interface of the parser does not support streaming,
         // in particular, it can't distinguish the end of partial input buffer
@@ -847,7 +853,6 @@ private:
         //
         // To handle (3), parse until we can, and read more data if the parser
         // complains. Hopefully this should be enough...
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
         std::string text;
         while (!in.eof())
         {
@@ -886,11 +891,11 @@ private:
             // Parse and execute what we've read.
             const auto * new_end = processWithFuzzing(text);
 
-            if (new_end > &text[0])
+            if (new_end > text.data())
             {
-                const auto rest_size = text.size() - (new_end - &text[0]);
+                const auto rest_size = text.size() - (new_end - text.data());
 
-                memcpy(&text[0], new_end, rest_size);
+                memcpy(text.data(), new_end, rest_size);
                 text.resize(rest_size);
             }
             else
@@ -1008,7 +1013,7 @@ private:
                 if (hint.clientError() != e.code())
                 {
                     if (hint.clientError())
-                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
+                        e.addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
                     throw;
                 }
 
@@ -1127,7 +1132,17 @@ private:
             }
 
             const auto * this_query_begin = begin;
-            ASTPtr orig_ast = parseQuery(begin, end, true);
+            ASTPtr orig_ast;
+
+            try
+            {
+                orig_ast = parseQuery(begin, end, true);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::SYNTAX_ERROR)
+                    throw;
+            }
 
             if (!orig_ast)
             {
@@ -2337,7 +2352,8 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("queries-file", po::value<std::string>(), "file path with queries to execute")
+            ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
+                "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")
@@ -2467,7 +2483,7 @@ public:
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
         if (options.count("queries-file"))
-            config().setString("queries-file", options["queries-file"].as<std::string>());
+            queries_files = options["queries-file"].as<std::vector<std::string>>();
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
