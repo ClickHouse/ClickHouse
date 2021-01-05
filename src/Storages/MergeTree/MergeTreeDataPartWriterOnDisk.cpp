@@ -180,14 +180,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
     for (const auto & granule : granules_to_write)
     {
