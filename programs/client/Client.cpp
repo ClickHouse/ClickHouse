@@ -1164,7 +1164,7 @@ private:
             // wraps columns into LowCardinality or Nullable. Also there are other
             // kinds of create queries such as CREATE DICTIONARY, we could fuzz
             // them as well.
-            int this_query_runs = query_fuzzer_runs;
+            size_t this_query_runs = query_fuzzer_runs;
             if (as_insert
                 || orig_ast->as<ASTCreateQuery>())
             {
@@ -1172,9 +1172,9 @@ private:
             }
 
             ASTPtr fuzz_base = orig_ast;
-            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
+            for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
             {
-                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
+                fmt::print(stderr, "Fuzzing step {} out of {} for query at pos {}\n",
                     fuzz_step, this_query_runs, this_query_begin - text.data());
 
                 ASTPtr ast_to_process;
@@ -1200,14 +1200,14 @@ private:
                     // Debug AST cloning errors.
                     if (base_before_fuzz != base_after_fuzz)
                     {
-                        fprintf(stderr, "base before fuzz: %s\n"
-                            "base after fuzz: %s\n", base_before_fuzz.c_str(),
-                            base_after_fuzz.c_str());
-                        fprintf(stderr, "dump before fuzz:\n%s\n",
-                            dump_before_fuzz.str().c_str());
-                        fprintf(stderr, "dump of cloned ast:\n%s\n",
-                            dump_of_cloned_ast.str().c_str());
-                        fprintf(stderr, "dump after fuzz:\n");
+                        fmt::print(stderr,
+                            "Base before fuzz: {}\n"
+                            "Base after fuzz: {}\n",
+                            base_before_fuzz, base_after_fuzz);
+                        fmt::print(stderr, "Dump before fuzz:\n{}\n", dump_before_fuzz.str());
+                        fmt::print(stderr, "Dump of cloned AST:\n{}\n", dump_of_cloned_ast.str());
+                        fmt::print(stderr, "Dump after fuzz:\n");
+
                         WriteBufferFromOStream cerr_buf(std::cerr, 4096);
                         fuzz_base->dumpTree(cerr_buf);
                         cerr_buf.next();
@@ -1220,7 +1220,7 @@ private:
                     auto fuzzed_text = ast_to_process->formatForErrorMessage();
                     if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
                     {
-                        fprintf(stderr, "got boring ast\n");
+                        fmt::print(stderr, "Got boring AST\n");
                         continue;
                     }
 
@@ -1266,13 +1266,13 @@ private:
                 else if (ast_to_process->formatForErrorMessage().size() > 500)
                 {
                     // ast too long, start from original ast
-                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
+                    fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
                     fuzz_base = orig_ast;
                 }
                 else
                 {
                     // fuzz starting from this successful query
-                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
+                    fmt::print(stderr, "Query succeeded, using this AST as a start\n");
                     fuzz_base = ast_to_process;
                 }
             }
