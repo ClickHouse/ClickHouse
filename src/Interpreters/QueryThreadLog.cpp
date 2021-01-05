@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -66,8 +67,7 @@ Block QueryThreadLogElement::createBlock()
 
         {std::make_shared<DataTypeUInt32>(),        "revision"},
 
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"}
+        {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents"},
     };
 }
 
@@ -104,13 +104,11 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
 
     if (profile_counters)
     {
-        auto * column_names = columns[i++].get();
-        auto * column_values = columns[i++].get();
-        dumpToArrayColumns(*profile_counters, column_names, column_values, true);
+        auto * column = columns[i++].get();
+        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
     }
     else
     {
-        columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
 }

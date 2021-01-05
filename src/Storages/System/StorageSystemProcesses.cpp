@@ -123,28 +123,24 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         }
 
         {
-            IColumn * column_profile_events_names = res_columns[i++].get();
-            IColumn * column_profile_events_values = res_columns[i++].get();
+            IColumn * column = res_columns[i++].get();
 
             if (process.profile_counters)
-                ProfileEvents::dumpToArrayColumns(*process.profile_counters, column_profile_events_names, column_profile_events_values, true);
+                ProfileEvents::dumpToMapColumn(*process.profile_counters, column, true);
             else
             {
-                column_profile_events_names->insertDefault();
-                column_profile_events_values->insertDefault();
+                column->insertDefault();
             }
         }
 
         {
-            IColumn * column_settings_names = res_columns[i++].get();
-            IColumn * column_settings_values = res_columns[i++].get();
+            IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToArrayColumns(column_settings_names, column_settings_values, true);
+                process.query_settings->dumpToMapColumn(column, true);
             else
             {
-                column_settings_names->insertDefault();
-                column_settings_values->insertDefault();
+                column->insertDefault();
             }
         }
     }

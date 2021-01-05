@@ -523,7 +523,7 @@ struct Settings : public BaseSettings<SettingsTraits>
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
     /// Dumps profile events to two columns of type Array(String)
-    void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
+    void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
     /// Adds program options to set the settings from a command line.
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)
