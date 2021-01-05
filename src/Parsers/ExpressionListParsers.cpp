@@ -8,7 +8,6 @@
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <Parsers/CommonParsers.h>
 
 namespace DB
 {

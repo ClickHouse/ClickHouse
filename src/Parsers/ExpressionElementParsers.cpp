@@ -291,7 +291,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         has_all = true;
 
     if (has_all && has_distinct_modifier)
-        throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::SYNTAX_ERROR);
+        return false;
 
     if (!has_distinct_modifier)
     {
@@ -377,7 +377,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_all = true;
 
         if (has_all && has_distinct_modifier)
-            throw Exception("Can not use DISTINCT alongside ALL", ErrorCodes::SYNTAX_ERROR);
+            return false;
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
