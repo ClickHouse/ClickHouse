@@ -65,7 +65,7 @@ function start_server
 {
     set -m # Spawn server in its own process groups
     local opts=(
-        --config-file="$FASTTEST_DATA/config.xml"
+        --config-file "$FASTTEST_DATA/config.xml"
         --
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
