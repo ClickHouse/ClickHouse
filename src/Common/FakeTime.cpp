@@ -119,6 +119,8 @@ time_t time(time_t * tloc)
 
 struct stat
 {
+    /// Make yourself confident:
+    /// gcc -xc++ -include 'sys/stat.h' -include 'cstddef' - <<< "int main() { return offsetof(struct stat, st_atime); }" && ./a.out; echo $?
     char pad[72];
 
     struct timespec st_atim;
