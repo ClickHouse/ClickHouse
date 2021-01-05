@@ -1,6 +1,6 @@
 #include <Common/FakeTime.h>
 
-#if defined(__linux__) && defined(__x86_64__)
+#if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES)
 
 #include <atomic>
 #include <cassert>
