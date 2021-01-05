@@ -96,6 +96,11 @@ public:
 
             if constexpr (overflow)
             {
+                if (value_type->onlyNull())
+                    throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Cannot calculate {} of type {}",
+                        getName(), value_type->getName()};
+
                 // Overflow, meaning that the returned type is the same as
                 // the input type. Nulls are skipped.
                 result_type = removeNullable(value_type);
@@ -190,11 +195,8 @@ public:
                 {
                     // Create a value array for this key
                     Array new_values;
-                    new_values.resize(values_types.size());
-                    for (size_t k = 0; k < new_values.size(); ++k)
-                    {
-                        new_values[k] = (k == col) ? value : values_types[k]->getDefault();
-                    }
+                    new_values.resize(size);
+                    new_values[col] = value;
 
                     if constexpr (IsDecimalNumber<T>)
                     {
