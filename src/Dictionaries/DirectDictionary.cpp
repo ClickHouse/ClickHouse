@@ -482,7 +482,6 @@ void DirectDictionary::getItemsImpl(
     for (const auto row : ext::range(0, rows))
     {
         auto key = ids[row];
-        std::cerr << "DirectDictionary set_value " << row << std::endl;
         set_value(row, value_by_key[key], value_is_null[key]);
     }
 
