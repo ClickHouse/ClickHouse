@@ -204,7 +204,7 @@
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
-                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 
+                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
@@ -432,7 +432,7 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
-    <remote_servers incl="clickhouse_remote_servers" >
+    <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries
@@ -566,17 +566,37 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
-    <zookeeper incl="zookeeper-servers" optional="true" />
+    <!--
+    <zookeeper>
+        <node>
+            <host>example1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
+    -->
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
-    <macros incl="macros" optional="true" />
+    <!--
+    <macros>
+        <shard>01</shard>
+        <replica>example01-01-1</replica>
+    </macros>
+    -->
 
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
@@ -810,8 +830,8 @@
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
-    <compression incl="clickhouse_compression">
     <!--
+    <compression>
         <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
         <case>
 
@@ -822,8 +842,8 @@
             <!- - What compression method to use. - ->
             <method>zstd</method>
         </case>
-    -->
     </compression>
+    -->
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
