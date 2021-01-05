@@ -30,7 +30,7 @@ void splitMultiLogic(ASTPtr & node)
     }
 }
 
-/// Push NOT to leafs
+/// Push NOT to leafs, remove NOT NOT ...
 void traversePushNot(ASTPtr & node, bool add_negation)
 {
     auto * func = node->as<ASTFunction>();
@@ -196,7 +196,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
             or_groups.push_back(makeASTFunction("or"));
             auto * func = or_groups.back()->as<ASTFunction>();
             for (const auto & ast : group)
-                func->arguments->children.push_back(ast);
+                func->arguments->children.push_back(ast->clone());
         }
     }
 
@@ -209,6 +209,90 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
         func->arguments->children.push_back(group);
 
     return res;
+}
+
+void pullNotOut(ASTPtr & node)
+{
+    static const std::map<std::string, std::string> inverse_relations = {
+        {"notEquals", "equals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+        {"notIn", "in"},
+        {"notLike", "like"},
+        {"notEmpty", "empty"},
+    };
+
+    auto * func = node->as<ASTFunction>();
+    if (!func)
+        return;
+    if (auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
+    {
+        /// inverse func
+        node = node->clone();
+        auto * new_func = node->as<ASTFunction>();
+        new_func->name = it->second;
+        /// add not
+        node = makeASTFunction("not", node);
+    }
+}
+
+void pushNotIn(ASTPtr & node)
+{
+    static const std::map<std::string, std::string> inverse_relations = {
+        {"equals", "notEquals"},
+        {"less", "greaterOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"in", "notIn"},
+        {"like", "notLike"},
+        {"empty", "notEmpty"},
+    };
+
+    auto * func = node->as<ASTFunction>();
+    if (!func)
+        return;
+    if (auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
+    {
+        /// inverse func
+        node = node->clone();
+        auto * new_func = node->as<ASTFunction>();
+        new_func->name = it->second;
+        /// add not
+        node = makeASTFunction("not", node);
+    }
+}
+
+CNFQuery & CNFQuery::pullNotOutFunctions()
+{
+    transformAtoms([](const ASTPtr & node) -> ASTPtr
+                 {
+                     auto * func = node->as<ASTFunction>();
+                     if (!func)
+                        return node;
+                     ASTPtr result = node->clone();
+                     if (func->name == "not")
+                         pullNotOut(func->arguments->children.front());
+                     else
+                         pullNotOut(result);
+                     traversePushNot(result, false);
+                     return result;
+                 });
+    return *this;
+}
+
+CNFQuery & CNFQuery::pushNotInFuntions()
+{
+    transformAtoms([](const ASTPtr & node) -> ASTPtr
+                   {
+                       auto * func = node->as<ASTFunction>();
+                       if (!func)
+                           return node;
+                       ASTPtr result = node->clone();
+                       if (func->name == "not")
+                           pushNotIn(func->arguments->children.front());
+                       traversePushNot(result, false);
+                       return result;
+                   });
+    return *this;
 }
 
 std::string CNFQuery::dump() const
