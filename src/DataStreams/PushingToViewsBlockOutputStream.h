@@ -2,8 +2,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
