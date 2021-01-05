@@ -15,24 +15,24 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
             return {};
     }
 
-    Port::Data data;
-    if (!queue.tryPop(data, milliseconds))
+    Chunk chunk;
+    if (!queue.tryPop(chunk, milliseconds))
         return {};
 
-    if (!data.exception)
-        info.update(data.chunk.getNumRows(), data.chunk.allocatedBytes());
+    if (chunk)
+        info.update(chunk.getNumRows(), chunk.allocatedBytes());
 
-    return data.getChunkOrTrow();
+    return chunk;
 }
 
 Chunk LazyOutputFormat::getTotals()
 {
-    return totals.getChunkOrTrow();
+    return std::move(totals);
 }
 
 Chunk LazyOutputFormat::getExtremes()
 {
-    return extremes.getChunkOrTrow();
+    return std::move(extremes);
 }
 
 void LazyOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
