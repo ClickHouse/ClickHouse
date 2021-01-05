@@ -3,6 +3,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <common/find_symbols.h>
 
+#include <cstdio>
 namespace DB
 {
 namespace ErrorCodes
@@ -53,6 +54,8 @@ namespace
         }
 
     private:
+        static const int min_XML_number = 32;
+        static const int max_XML_number = 126;
         static size_t execute(const char * src, size_t src_size, char * dst)
         {
             const char * src_prev_pos = src;
@@ -72,7 +75,7 @@ namespace
                 else if (*src_curr_pos == '&')
                 {
                     src_next_pos = find_first_symbols<';'>(src_curr_pos, src_end);
-                    if (src_next_pos == src_end || src_next_pos - src_curr_pos < 3)
+                    if (src_next_pos == src_end)
                     {
                         src_curr_pos = src_end;
                         break;
@@ -99,11 +102,12 @@ namespace
                         }
                         else
                         {
-                            src_curr_pos = src_next_pos + 1;
+                            ++src_curr_pos;
                             size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                             memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
                             dst_pos += bytes_to_copy;
                             src_prev_pos = src_curr_pos;
+                            continue;
                         }
                         src_curr_pos += 4;
                     }
@@ -118,13 +122,34 @@ namespace
                             ++dst_pos;
                             src_prev_pos = src_curr_pos + 5;
                         }
+                        else if (*(src_curr_pos + 1) == '#' && isdigit(*(src_curr_pos + 2)) && isdigit(*(src_curr_pos + 3)))
+                        {
+                            char numeric_character = decodeNumberPart(src_curr_pos + 2);
+                            if (numeric_character == '\0')
+                            {
+                                size_t bytes_to_copy = src_next_pos - src_prev_pos;
+                                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                                dst_pos += bytes_to_copy;
+                                src_prev_pos = src_curr_pos + 5;
+                            }
+                            else
+                            {
+                                size_t bytes_to_copy = src_curr_pos - src_prev_pos;
+                                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                                dst_pos += bytes_to_copy;
+                                *dst_pos = '\0' + numeric_character;
+                                ++dst_pos;
+                                src_prev_pos = src_curr_pos + 5;
+                            }
+                        }
                         else
                         {
-                            src_curr_pos = src_next_pos + 1;
+                            ++src_curr_pos;
                             size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                             memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
                             dst_pos += bytes_to_copy;
                             src_prev_pos = src_curr_pos;
+                            continue;
                         }
                         src_curr_pos += 5;
                     }
@@ -148,19 +173,42 @@ namespace
                             ++dst_pos;
                             src_prev_pos = src_curr_pos + 6;
                         }
+                        else if (
+                            *(src_curr_pos + 1) == '#' && isdigit(*(src_curr_pos + 2)) && isdigit(*(src_curr_pos + 3))
+                            && isdigit(*(src_curr_pos + 4)))
+                        {
+                            char numeric_character = decodeNumberPart(src_curr_pos + 2);
+                            if (numeric_character == '\0')
+                            {
+                                size_t bytes_to_copy = src_next_pos - src_prev_pos;
+                                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                                dst_pos += bytes_to_copy;
+                                src_prev_pos = src_curr_pos + 6;
+                            }
+                            else
+                            {
+                                size_t bytes_to_copy = src_curr_pos - src_prev_pos;
+                                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                                dst_pos += bytes_to_copy;
+                                *dst_pos = '\0' + numeric_character;
+                                ++dst_pos;
+                                src_prev_pos = src_curr_pos + 6;
+                            }
+                        }
                         else
                         {
-                            src_curr_pos = src_next_pos + 1;
+                            ++src_curr_pos;
                             size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                             memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
                             dst_pos += bytes_to_copy;
                             src_prev_pos = src_curr_pos;
+                            continue;
                         }
                         src_curr_pos += 6;
                     }
                     else
                     {
-                        src_curr_pos = src_next_pos + 1;
+                        ++src_curr_pos;
                         size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                         memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
                         dst_pos += bytes_to_copy;
@@ -177,6 +225,16 @@ namespace
             }
 
             return dst_pos - dst;
+        }
+
+        static inline char decodeNumberPart(const char * src)
+        {
+            auto ans = strtol(src, nullptr, 10);
+            if (ans >= min_XML_number && ans <= max_XML_number)
+            {
+                return '\0' + ans;
+            }
+            return '\0';
         }
     };
 
