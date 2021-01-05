@@ -862,9 +862,8 @@ private:
                     if (next_separator < in.buffer().end()
                         && *next_separator == '\n')
                     {
-                        // Found ';\n', append it to the query text and try to
-                        // parse.
-                        next_separator++;
+                        // Found ';\n', append it to the query text and try to parse.
+                        ++next_separator;
                         text.append(in.position(), next_separator - in.position());
                         in.position() = next_separator;
                         break;
