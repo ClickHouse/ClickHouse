@@ -4,7 +4,9 @@
 
 #include <cassert>
 #include <unistd.h>
+#include <dlfcn.h>
 #include <sys/syscall.h>
+#include <Common/MemorySanitizer.h>
 
 
 static int64_t offset = 0;
@@ -73,23 +75,29 @@ struct timeval
     long tv_usec;
 };
 
-int __clock_gettime(int32_t clk_id, struct timespec * tp);
-
 int clock_gettime(int32_t clk_id, struct timespec * tp)
 {
-    int res = __clock_gettime(clk_id, tp);
+    static void * sym = dlsym(RTLD_DEFAULT, "__clock_gettime");
+    assert(sym);
+
+    int res = reinterpret_cast<int (*)(int32_t, struct timespec *)>(sym)(clk_id, tp);
+
     if (0 == res)
+    {
+        __msan_unpoison(tp, sizeof(*tp));
         tp->tv_sec += offset;
+    }
+
     return res;
 }
 
 int gettimeofday(struct timeval * tv, void *)
 {
     timespec tp;
-    int res = __clock_gettime(CLOCK_REALTIME, &tp);
+    int res = clock_gettime(CLOCK_REALTIME, &tp);
     if (0 == res)
     {
-        tv->tv_sec = tp.tv_sec + offset;
+        tv->tv_sec = tp.tv_sec;
         tv->tv_usec = tp.tv_nsec / 1000;
     }
     return res;
@@ -98,14 +106,16 @@ int gettimeofday(struct timeval * tv, void *)
 time_t time(time_t * tloc)
 {
     timespec tp;
-    int res = __clock_gettime(CLOCK_REALTIME, &tp);
+    int res = clock_gettime(CLOCK_REALTIME, &tp);
     (void)res;
     assert(0 == res);
-    time_t t = tp.tv_sec + offset;
+    time_t t = tp.tv_sec;
     if (tloc)
         *tloc = t;
     return t;
 }
+
+/// Filesystem time should be also altered as we sometimes compare it with the wall clock time.
 
 struct stat
 {
