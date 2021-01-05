@@ -91,7 +91,8 @@ GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
 
-SELECT
+SELECT cityHash64(groupArray(cityHash64(*))) FROM (
+  SELECT
     a % 31 AS g,
     minMerge(min_aggreg) AS minagg,
     min(min_simple) AS mins,
@@ -129,8 +130,10 @@ SELECT
     maxMapMerge(aggreg_map_max) AS maxmapapagg,
     maxMap(simple_map_max) AS maxmaps,
     maxmapapagg = maxmaps AS SMAX
-FROM simple_agf_aggregating_mt
-GROUP BY g;
+  FROM simple_agf_aggregating_mt
+  GROUP BY g
+  ORDER BY g
+);
 
 SELECT '---mutation---';
 
@@ -169,6 +172,7 @@ GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
 
+SELECT cityHash64(groupArray(cityHash64(*))) FROM (
 SELECT
     a % 31 AS g,
     minMerge(min_aggreg) AS minagg,
@@ -207,7 +211,9 @@ SELECT
     maxMapMerge(aggreg_map_max) AS maxmapapagg,
     maxMap(simple_map_max) AS maxmaps,
     maxmapapagg = maxmaps AS SMAX
-FROM simple_agf_aggregating_mt
-GROUP BY g;
+  FROM simple_agf_aggregating_mt
+  GROUP BY g
+  ORDER BY g
+);
 
-
+DROP TABLE simple_agf_aggregating_mt;
