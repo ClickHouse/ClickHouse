@@ -518,7 +518,7 @@ void IPAddressDictionary::loadData()
     {
         /// We format key attribute values here instead of filling with data from key_column
         /// because string representation can be normalized if bits beyond mask are set.
-        /// Also all IPv4 will be displayed as mapped IPv6 if threre are any IPv6.
+        /// Also all IPv4 will be displayed as mapped IPv6 if there are any IPv6.
         /// It's consistent with representation in table created with `ENGINE = Dictionary` from this dictionary.
         char str_buffer[48];
         if (has_ipv6)
