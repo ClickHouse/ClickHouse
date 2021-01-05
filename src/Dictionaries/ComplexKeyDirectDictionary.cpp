@@ -3,6 +3,7 @@
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <Core/Defines.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -50,6 +51,14 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
 
     auto size = key_columns.front()->size();
 
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
+    {
+        col_null_map_to = ColumnUInt8::create(size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
@@ -67,8 +76,13 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                     getItemsImpl<String, String>(
                         attribute,
                         key_columns,
-                        [&](const size_t, const String value)
+                        [&](const size_t row, const String value, bool is_null)
                         {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
@@ -85,8 +99,13 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                     getItemsImpl<String, String>(
                         attribute,
                         key_columns,
-                        [&](const size_t, const String value)
+                        [&](const size_t row, const String value, bool is_null)
                         {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
@@ -102,8 +121,13 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                 getItemsImpl<String, String>(
                     attribute,
                     key_columns,
-                    [&](const size_t, const String value)
+                    [&](const size_t row, const String value, bool is_null)
                     {
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        } 
+
                         const auto ref = StringRef{value};
                         out->insertData(ref.data, ref.size);
                     },
@@ -137,7 +161,15 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+ 
+                            out[row] = value;
+                        },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
@@ -148,7 +180,15 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
                         key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
+                        [&](const size_t row, const auto value, bool is_null)
+                        {
+                            if (attribute.is_nullable)
+                            {
+                                (*vec_null_map_to)[row] = is_null;
+                            }
+
+                            out[row] = value;
+                        },
                         [&](const size_t) { return def; }
                     );
                 }
@@ -162,7 +202,15 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                 getItemsImpl<AttributeType, AttributeType>(
                     attribute,
                     key_columns,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
+                    [&](const size_t row, const auto value, bool is_null)
+                    { 
+                        if (attribute.is_nullable)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                        } 
+
+                        out[row] = value;
+                    },
                     [&](const size_t) { return null_value; }
                 );
             }
@@ -172,6 +220,11 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.is_nullable)
+    {
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -246,7 +299,7 @@ void ComplexKeyDirectDictionary::createAttributes()
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
         attribute_name_by_index.emplace(attributes.size(), attribute.name);
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value, attribute.name));
+        attributes.push_back(createAttribute(attribute, attribute.null_value, attribute.name));
 
         if (attribute.hierarchical)
             throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
@@ -270,9 +323,10 @@ void ComplexKeyDirectDictionary::createAttributeImpl<String>(Attribute & attribu
 }
 
 
-ComplexKeyDirectDictionary::Attribute ComplexKeyDirectDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & attr_name)
+ComplexKeyDirectDictionary::Attribute ComplexKeyDirectDictionary::createAttribute(
+    const DictionaryAttribute & attribute, const Field & null_value, const std::string & attr_name)
 {
-    Attribute attr{type, {}, {}, attr_name};
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, attr_name};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -281,7 +335,7 @@ ComplexKeyDirectDictionary::Attribute ComplexKeyDirectDictionary::createAttribut
         createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
@@ -339,6 +393,7 @@ void ComplexKeyDirectDictionary::getItemsImpl(
     const auto keys_size = dict_struct.key->size();
     StringRefs keys_array(keys_size);
     MapType<OutputType> value_by_key;
+    HashMapWithSavedHash<StringRef, bool, StringRefHash> value_is_null;
     Arena temporary_keys_pool;
     std::vector<size_t> to_load(rows);
     PODArray<StringRef> keys(rows);
@@ -349,6 +404,7 @@ void ComplexKeyDirectDictionary::getItemsImpl(
         keys[row] = key;
         value_by_key[key] = get_default(row);
         to_load[row] = row;
+        value_is_null[key] = false;
     }
 
     auto stream = source_ptr->loadKeys(key_columns, to_load);
@@ -382,17 +438,19 @@ void ComplexKeyDirectDictionary::getItemsImpl(
             for (const auto row_idx : ext::range(0, columns_size))
             {
                 const StringRef key = placeKeysInPool(row_idx, columns, keys_temp, *dict_struct.key, pool);
+
                 if (value_by_key.has(key))
                 {
-                    if (attribute.type == AttributeUnderlyingType::utFloat32)
+                    auto value = attribute_column[row_idx];
+
+                    if (value.isNull())
                     {
-                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].template get<Float64>());
+                        value_is_null[key] = true;
                     }
                     else
                     {
-                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].template get<AttributeType>());
+                        value_by_key[key] = static_cast<OutputType>(value.template get<NearestFieldType<AttributeType>>());
                     }
-
                 }
             }
         }
@@ -402,7 +460,8 @@ void ComplexKeyDirectDictionary::getItemsImpl(
 
     for (const auto row : ext::range(0, rows))
     {
-        set_value(row, value_by_key[keys[row]]);
+        auto key = keys[row];
+        set_value(row, value_by_key[key], value_is_null[key]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
