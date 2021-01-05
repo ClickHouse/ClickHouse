@@ -37,7 +37,8 @@ Block QueryLogElement::createBlock()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
-    return {
+    return
+    {
         {std::move(query_status_datatype), "type"},
         {std::make_shared<DataTypeDate>(), "event_date"},
         {std::make_shared<DataTypeDateTime>(), "event_time"},
