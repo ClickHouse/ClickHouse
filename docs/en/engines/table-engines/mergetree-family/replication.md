@@ -38,15 +38,15 @@ Example of setting the addresses of the ZooKeeper cluster:
 
 ``` xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
+    <node>
         <host>example3</host>
         <port>2181</port>
     </node>
@@ -61,21 +61,21 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 ``` xml
 <auxiliary_zookeepers>
     <zookeeper2>
-        <node index="1">
+        <node>
             <host>example_2_1</host>
             <port>2181</port>
         </node>
-        <node index="2">
+        <node>
             <host>example_2_2</host>
             <port>2181</port>
         </node>
-        <node index="3">
+        <node>
             <host>example_2_3</host>
             <port>2181</port>
         </node>
     </zookeeper2>
     <zookeeper3>
-        <node index="1">
+        <node>
             <host>example_3_1</host>
             <port>2181</port>
         </node>
