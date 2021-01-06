@@ -384,11 +384,11 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
     MutableColumnPtr last_col;
     try
     {
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
@@ -402,6 +402,11 @@ static void appendBlock(const Block & from, Block & to)
     catch (...)
     {
         /// Rollback changes.
+
+        /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
+        /// So ignore any memory limits, even global (since memory tracking has drift).
+        MemoryTracker::BlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+
         try
         {
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
@@ -580,7 +585,7 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
@@ -774,7 +779,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -829,7 +834,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushBack()
+void StorageBuffer::backgroundFlush()
 {
     try
     {

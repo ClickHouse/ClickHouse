@@ -125,6 +125,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
+    extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
 }
 
 namespace ActionLocks
@@ -3512,7 +3513,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::INTERSERVER_SCHEME_DOESNT_MATCH);
 
             return fetcher.fetchPart(
                 metadata_snapshot, part_name, source_replica_path,
@@ -6173,7 +6174,7 @@ bool StorageReplicatedMergeTree::dropPart(
         /// DROP_RANGE with detach will move this part together with source parts to `detached/` dir.
         entry.type = LogEntry::DROP_RANGE;
         entry.source_replica = replica_name;
-        entry.new_part_name = drop_part_info.getPartName();
+        entry.new_part_name = getPartNamePossiblyFake(format_version, drop_part_info);
         entry.detach = detach;
         entry.create_time = time(nullptr);
 

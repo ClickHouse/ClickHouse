@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -32,10 +33,17 @@ public:
     DataTypePtr getReturnType() const override
     {
         DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(nested_func);
+
         // Need to make a clone because it'll be customized.
         auto storage_type = DataTypeFactory::instance().get(nested_func->getReturnType()->getName());
+
+        // Need to make a new function with promoted argument types because SimpleAggregates requires arg_type = return_type.
+        AggregateFunctionProperties properties;
+        auto function
+            = AggregateFunctionFactory::instance().get(nested_func->getName(), {storage_type}, nested_func->getParameters(), properties);
+
         DataTypeCustomNamePtr custom_name
-            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(nested_func, DataTypes{nested_func->getReturnType()}, params);
+            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_func->getReturnType()}, params);
         storage_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
         return storage_type;
     }
@@ -71,7 +79,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
 
-    AggregateFunctionPtr getNestedFunction() const { return nested_func; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }
