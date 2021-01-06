@@ -2,7 +2,6 @@
 
 #include <IO/WriteHelpers.h>
 #include "Common/TraceCollector.h"
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
@@ -16,18 +15,20 @@
 namespace
 {
 
-MemoryTracker * getMemoryTracker()
+/// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
+/// limit reached or fault injected), in the following cases:
+///
+/// - when it is explicitly blocked with LockExceptionInThread
+///
+/// - to avoid std::terminate(), when stack unwinding is current in progress in
+///   this thread.
+///
+///   NOTE: that since C++11 destructor marked with noexcept by default, and
+///   this means that any throw from destructor (that is not marked with
+///   noexcept(false)) will cause std::terminate()
+bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
 {
-    if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
-        return thread_memory_tracker;
-
-    /// Once the main thread is initialized,
-    /// total_memory_tracker is initialized too.
-    /// And can be used, since MainThreadStatus is required for profiling.
-    if (DB::MainThreadStatus::get())
-        return &total_memory_tracker;
-
-    return nullptr;
+    return !MemoryTracker::LockExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
 }
 
 }
@@ -48,7 +49,40 @@ namespace ProfileEvents
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
-thread_local bool MemoryTracker::BlockerInThread::is_blocked = false;
+// BlockerInThread
+thread_local uint64_t MemoryTracker::BlockerInThread::counter = 0;
+thread_local VariableContext MemoryTracker::BlockerInThread::level = VariableContext::Global;
+MemoryTracker::BlockerInThread::BlockerInThread(VariableContext level_)
+    : previous_level(level)
+{
+    ++counter;
+    level = level_;
+}
+MemoryTracker::BlockerInThread::~BlockerInThread()
+{
+    --counter;
+    level = previous_level;
+}
+
+/// LockExceptionInThread
+thread_local uint64_t MemoryTracker::LockExceptionInThread::counter = 0;
+thread_local VariableContext MemoryTracker::LockExceptionInThread::level = VariableContext::Global;
+thread_local bool MemoryTracker::LockExceptionInThread::block_fault_injections = false;
+MemoryTracker::LockExceptionInThread::LockExceptionInThread(VariableContext level_, bool block_fault_injections_)
+    : previous_level(level)
+    , previous_block_fault_injections(block_fault_injections)
+{
+    ++counter;
+    level = level_;
+    block_fault_injections = block_fault_injections_;
+}
+MemoryTracker::LockExceptionInThread::~LockExceptionInThread()
+{
+    --counter;
+    level = previous_level;
+    block_fault_injections = previous_block_fault_injections;
+}
+
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
@@ -93,8 +127,13 @@ void MemoryTracker::alloc(Int64 size)
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
-    if (BlockerInThread::isBlocked())
+    if (BlockerInThread::isBlocked(level))
+    {
+        /// Since the BlockerInThread should respect the level, we should go to the next parent.
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            loaded_next->alloc(size);
         return;
+    }
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
       *  we allow exception about memory limit exceeded to be thrown only on next allocation.
@@ -127,7 +166,7 @@ void MemoryTracker::alloc(Int64 size)
     }
 
     std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability && fault(thread_local_rng)))
+    if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
@@ -156,7 +195,7 @@ void MemoryTracker::alloc(Int64 size)
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit))
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock;
@@ -194,7 +233,7 @@ void MemoryTracker::updatePeak(Int64 will_be)
 
 void MemoryTracker::free(Int64 size)
 {
-    if (BlockerInThread::isBlocked())
+    if (BlockerInThread::isBlocked(level))
         return;
 
     std::bernoulli_distribution sample(sample_probability);
@@ -274,61 +313,4 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
-}
-
-
-namespace CurrentMemoryTracker
-{
-    using DB::current_thread;
-
-    void alloc(Int64 size)
-    {
-        if (auto * memory_tracker = getMemoryTracker())
-        {
-            if (current_thread)
-            {
-                current_thread->untracked_memory += size;
-                if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
-                {
-                    /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
-                    /// more. It could be useful to enlarge Exception message in rethrow logic.
-                    Int64 tmp = current_thread->untracked_memory;
-                    current_thread->untracked_memory = 0;
-                    memory_tracker->alloc(tmp);
-                }
-            }
-            /// total_memory_tracker only, ignore untracked_memory
-            else
-            {
-                memory_tracker->alloc(size);
-            }
-        }
-    }
-
-    void realloc(Int64 old_size, Int64 new_size)
-    {
-        Int64 addition = new_size - old_size;
-        addition > 0 ? alloc(addition) : free(-addition);
-    }
-
-    void free(Int64 size)
-    {
-        if (auto * memory_tracker = getMemoryTracker())
-        {
-            if (current_thread)
-            {
-                current_thread->untracked_memory -= size;
-                if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
-                {
-                    memory_tracker->free(-current_thread->untracked_memory);
-                    current_thread->untracked_memory = 0;
-                }
-            }
-            /// total_memory_tracker only, ignore untracked_memory
-            else
-            {
-                memory_tracker->free(size);
-            }
-        }
-    }
 }

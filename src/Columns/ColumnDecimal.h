@@ -82,11 +82,12 @@ public:
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
-    bool isFixedAndContiguous() const override { return true; }
+    bool isFixedAndContiguous() const final { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
+    size_t byteSizeAt(size_t) const override { return sizeof(data[0]); }
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
     void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve(n); }

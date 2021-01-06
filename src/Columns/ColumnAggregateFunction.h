@@ -163,6 +163,8 @@ public:
 
     size_t byteSize() const override;
 
+    size_t byteSizeAt(size_t n) const override;
+
     size_t allocatedBytes() const override;
 
     void protect() override;

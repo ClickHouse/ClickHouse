@@ -136,21 +136,57 @@ public:
     private:
         BlockerInThread(const BlockerInThread &) = delete;
         BlockerInThread & operator=(const BlockerInThread &) = delete;
-        static thread_local bool is_blocked;
+
+        static thread_local uint64_t counter;
+        static thread_local VariableContext level;
+
+        VariableContext previous_level;
     public:
-        BlockerInThread() { is_blocked = true; }
-        ~BlockerInThread() { is_blocked = false; }
-        static bool isBlocked() { return is_blocked; }
+        /// level_ - block in level and above
+        BlockerInThread(VariableContext level_ = VariableContext::Global);
+        ~BlockerInThread();
+
+        static bool isBlocked(VariableContext current_level)
+        {
+            return counter > 0 && current_level >= level;
+        }
+    };
+
+    /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
+    /// - either configured memory limit reached
+    /// - or fault injected
+    ///
+    /// So this will simply ignore the configured memory limit (and avoid fault injection).
+    ///
+    /// NOTE: exception will be silently ignored, no message in log
+    /// (since logging from MemoryTracker::alloc() is tricky)
+    ///
+    /// NOTE: MEMORY_LIMIT_EXCEEDED Exception implicitly blocked if
+    /// stack unwinding is currently in progress in this thread (to avoid
+    /// std::terminate()), so you don't need to use it in this case explicitly.
+    struct LockExceptionInThread
+    {
+    private:
+        LockExceptionInThread(const LockExceptionInThread &) = delete;
+        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
+
+        static thread_local uint64_t counter;
+        static thread_local VariableContext level;
+        static thread_local bool block_fault_injections;
+
+        VariableContext previous_level;
+        bool previous_block_fault_injections;
+    public:
+        /// level_ - block in level and above
+        /// block_fault_injections_ - block in fault injection too
+        LockExceptionInThread(VariableContext level_ = VariableContext::Global, bool block_fault_injections_ = true);
+        ~LockExceptionInThread();
+
+        static bool isBlocked(VariableContext current_level, bool fault_injection)
+        {
+            return counter > 0 && current_level >= level && (!fault_injection || (fault_injection && block_fault_injections));
+        }
     };
 };
 
 extern MemoryTracker total_memory_tracker;
-
-
-/// Convenience methods, that use current thread's memory_tracker if it is available.
-namespace CurrentMemoryTracker
-{
-    void alloc(Int64 size);
-    void realloc(Int64 old_size, Int64 new_size);
-    void free(Int64 size);
-}

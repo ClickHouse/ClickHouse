@@ -195,7 +195,8 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
 {
 #if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -316,7 +317,8 @@ static void toStringEveryLineImpl(
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM

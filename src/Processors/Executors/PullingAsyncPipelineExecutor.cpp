@@ -64,18 +64,18 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    if (thread_group)
-        CurrentThread::attachTo(thread_group);
-
-    SCOPE_EXIT(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
-
     setThreadName("QueryPipelineEx");
 
     try
     {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
+
         data.executor->execute(num_threads);
     }
     catch (...)
@@ -220,9 +220,15 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
 
 BlockStreamProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
+    if (lazy_format)
+        return lazy_format->getProfileInfo();
+
     static BlockStreamProfileInfo profile_info;
-    return lazy_format ? lazy_format->getProfileInfo()
-                       : profile_info;
+    static std::once_flag flag;
+    /// Calculate rows before limit here to avoid race.
+    std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });
+
+    return profile_info;
 }
 
 }

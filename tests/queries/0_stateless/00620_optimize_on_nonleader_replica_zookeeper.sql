@@ -9,8 +9,8 @@ CREATE TABLE rename2 (p Int64, i Int64, v UInt64) ENGINE = ReplicatedReplacingMe
 INSERT INTO rename1 VALUES (0, 1, 0);
 INSERT INTO rename1 VALUES (0, 1, 1);
 
-OPTIMIZE TABLE rename1;
-OPTIMIZE TABLE rename2;
+OPTIMIZE TABLE rename1 FINAL;
+OPTIMIZE TABLE rename2 FINAL;
 SELECT * FROM rename1;
 
 RENAME TABLE rename2 TO rename3;

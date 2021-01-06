@@ -158,7 +158,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     if (entry->type == LogEntry::ALTER_METADATA)
     {
         LOG_TRACE(log, "Adding alter metadata version {} to the queue", entry->alter_version);
-        alter_sequence.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
+        alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
     }
 }
 
@@ -655,6 +655,11 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 {
                     LOG_DEBUG(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
+                    if (entry.isAlterMutation())
+                    {
+                        LOG_DEBUG(log, "Removed alter {} because mutation {} were killed.", entry.alter_version, entry.znode_name);
+                        alter_sequence.finishDataAlter(entry.alter_version, state_lock);
+                    }
                 }
                 else
                     LOG_DEBUG(log, "Removing obsolete mutation {} from local state.", entry.znode_name);
@@ -1135,11 +1140,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     const char * format_str = "Not executing log entry {} for part {}"
                         " because {} merges with TTL already executing, maximum {}.";
-                    LOG_DEBUG(log, format_str, entry.znode_name,
-                        entry.new_part_name, total_merges_with_ttl,
+                    LOG_DEBUG(log, format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
 
-                    out_postpone_reason = fmt::format(format_str, entry.new_part_name, total_merges_with_ttl,
+                    out_postpone_reason = fmt::format(format_str,
+                        entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                         data_settings->max_number_of_merges_with_ttl_in_pool);
                     return false;
                 }
