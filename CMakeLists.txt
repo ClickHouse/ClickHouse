@@ -257,19 +257,16 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
+# Clang only.
+option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
 
-if (WITH_COVERAGE AND COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-    # If we want to disable coverage for specific translation units
-    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-endif()
-
-if (WITH_COVERAGE AND COMPILER_GCC)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
-    set(COVERAGE_OPTION "-lgcov")
-    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
+if (WITH_COVERAGE)
+    if (COMPILER_CLANG)
+        set(COMPILER_FLAGS
+            "${COMPILER_FLAGS} -fsanitize-coverage-allowlist=${CMAKE_CURRENT_SOURCE_DIR}/base/common/coverage_allowlist.txt -fsanitize-coverage=trace-pc-guard")
+    else()
+        message(ERROR "As for now, the code coverage is supported in Clang only")
+    endif()
 endif()
 
 set(COMPILER_FLAGS "${COMPILER_FLAGS}")
