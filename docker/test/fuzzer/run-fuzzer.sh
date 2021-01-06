@@ -84,7 +84,7 @@ function fuzz
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames.
     # They are all alphanumeric.
     # shellcheck disable=SC2012
-    ls -1 ch/tests/queries/0_stateless/*.sql | sort -R | xargs -s 10000000 ./clickhouse-client --query-fuzzer-runs=1000 --queries-file \
+    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         > >(tail -n 10000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
