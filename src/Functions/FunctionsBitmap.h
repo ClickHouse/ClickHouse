@@ -781,8 +781,8 @@ private:
             container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
 
         // we can always cast the second column to ColumnUInt64
-        auto super_type = std::make_shared<DataTypeUInt64>();
-        column_ptrs[1] = castColumn(arguments[1], super_type).get();
+        auto uint64_column = castColumn(arguments[1], std::make_shared<DataTypeUInt64>());
+        column_ptrs[1] = uint64_column.get();
         is_column_const[1] = isColumnConst(*column_ptrs[1]);
 
         if (is_column_const[1])
