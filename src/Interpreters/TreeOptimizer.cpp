@@ -515,9 +515,9 @@ void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & aliases, c
 {
     WhereConstraintsOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot).perform();
     if (select_query->where())
-        Poco::Logger::get("KEK").information(select_query->where()->dumpTree());
+        Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
     else
-        Poco::Logger::get("KEK").information("NO WHERE");
+        Poco::Logger::get("CNF").information("NO WHERE");
 }
 
 /// transform where to CNF for more convenient optimization
@@ -525,11 +525,11 @@ void convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::toCNF(select_query->where());
+        auto cnf_form = TreeCNFConverter::toCNF(select_query->where()).pushNotInFuntions();
         select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
     }
     if (select_query->where())
-        Poco::Logger::get("KEK").information(select_query->where()->dumpTree());
+        Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
 }
 
 /// Remove duplicated columns from USING(...).

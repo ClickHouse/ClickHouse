@@ -5,13 +5,13 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
 std::vector<std::vector<ASTPtr>> getConstraintData(const StorageMetadataPtr & metadata_snapshot)
 {
     std::vector<std::vector<ASTPtr>> constraint_data;
-
     for (const auto & constraint :
          metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
@@ -134,12 +134,11 @@ bool checkIfAtomAlwaysFalse(const ASTPtr & atom, const std::vector<std::vector<A
 
 void WhereConstraintsOptimizer::perform()
 {
-    auto constraint_data = getConstraintData(metadata_snapshot);
-
-    if (select_query->where())
+    if (select_query->where() && metadata_snapshot)
     {
+        const auto constraint_data = getConstraintData(metadata_snapshot);
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
-
+        Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&constraint_data](const auto & group) { /// remove always true groups from CNF
                 return !checkIfGroupAlwaysTrue(group, constraint_data);
@@ -149,7 +148,7 @@ void WhereConstraintsOptimizer::perform()
             })
             .pushNotInFuntions();
 
-        //Poco::Logger::get("AFTER OPT").information(cnf.dump());
+        Poco::Logger::get("AFTER OPT").information(cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));
     }
 }
