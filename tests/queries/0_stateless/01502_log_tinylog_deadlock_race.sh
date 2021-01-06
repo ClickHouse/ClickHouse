@@ -5,6 +5,7 @@ set -e
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -84,3 +85,6 @@ function test_with_engine {
 #test_with_engine StripeLog
 #test_with_engine Log
 test_with_engine Memory
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t1"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t2"

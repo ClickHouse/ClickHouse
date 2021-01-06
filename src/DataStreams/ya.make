@@ -6,6 +6,7 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/MongoDB
+    contrib/restricted/boost/libs
 )
 
 NO_COMPILER_WARNINGS()
@@ -34,7 +35,6 @@ SRCS(
     MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
-    ParallelParsingBlockInputStream.cpp
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp

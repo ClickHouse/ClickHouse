@@ -180,6 +180,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
+    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

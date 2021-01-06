@@ -89,7 +89,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(Poco::Util::Option("http-port", "", "port to listen").argument("http-port", true).binding("http-port"));
     options.addOption(
-        Poco::Util::Option("listen-host", "", "hostname to listen, default localhost").argument("listen-host").binding("listen-host"));
+        Poco::Util::Option("listen-host", "", "hostname or address to listen, default 127.0.0.1").argument("listen-host").binding("listen-host"));
     options.addOption(
         Poco::Util::Option("http-timeout", "", "http timeout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
 
@@ -109,6 +109,14 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .argument("err-log-path")
                           .binding("logger.errorlog"));
 
+    options.addOption(Poco::Util::Option("stdout-path", "", "stdout log path, default console")
+                          .argument("stdout-path")
+                          .binding("logger.stdout"));
+
+    options.addOption(Poco::Util::Option("stderr-path", "", "stderr log path, default console")
+                          .argument("stderr-path")
+                          .binding("logger.stderr"));
+
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message")
                           .binding("help")
@@ -127,12 +135,33 @@ void ODBCBridge::initialize(Application & self)
 
     config().setString("logger", "ODBCBridge");
 
+    /// Redirect stdout, stderr to specified files.
+    /// Some libraries and sanitizers write to stderr in case of errors.
+    const auto stdout_path = config().getString("logger.stdout", "");
+    if (!stdout_path.empty())
+    {
+        if (!freopen(stdout_path.c_str(), "a+", stdout))
+            throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+
+        /// Disable buffering for stdout.
+        setbuf(stdout, nullptr);
+    }
+    const auto stderr_path = config().getString("logger.stderr", "");
+    if (!stderr_path.empty())
+    {
+        if (!freopen(stderr_path.c_str(), "a+", stderr))
+            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+
+        /// Disable buffering for stderr.
+        setbuf(stderr, nullptr);
+    }
+
     buildLoggers(config(), logger(), self.commandName());
 
     BaseDaemon::logRevision();
 
     log = &logger();
-    hostname = config().getString("listen-host", "localhost");
+    hostname = config().getString("listen-host", "127.0.0.1");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
         throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);

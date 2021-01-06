@@ -3,14 +3,15 @@
 # This is a monkey test used to trigger sanitizers.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="CREATE DATABASE dictdb_01076; "
+$CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS dictdb_01076; "
 
 $CLICKHOUSE_CLIENT --query="
 CREATE TABLE dictdb_01076.table_datarace
 (
-  key_column UInt8,
+  key_column UUID,
   value Float64
 )
 ENGINE = MergeTree()
@@ -18,7 +19,7 @@ ORDER BY key_column;
 "
 
 $CLICKHOUSE_CLIENT --query="
-INSERT INTO dictdb_01076.table_datarace VALUES (1, 1.1), (2, 2.2), (3, 3.3);
+INSERT INTO dictdb_01076.table_datarace VALUES ('cd5db34f-0c25-4375-b10e-bfb3708ddc72', 1.1), ('cd5db34f-0c25-4375-b10e-bfb3708ddc72', 2.2), ('cd5db34f-0c25-4375-b10e-bfb3708ddc72', 3.3);
 "
 
 $CLICKHOUSE_CLIENT --query="
@@ -28,16 +29,16 @@ CREATE DICTIONARY IF NOT EXISTS dictdb_01076.dict_datarace
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_datarace' DB 'dictdb_01076'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_datarace' DB 'dictdb_01076'))
 LIFETIME(1)
-LAYOUT(CACHE());
+LAYOUT(CACHE(SIZE_IN_CELLS 10));
 "
 
 function thread1()
 {
     for _ in {1..50}
     do
-        # This query will be ended with exception, because source dictionary has UInt8 as a key type.
+        # This query will be ended with exception, because source dictionary has UUID as a key type.
         $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(1));"
     done
 }
@@ -47,7 +48,7 @@ function thread2()
 {
     for _ in {1..50}
     do
-        # This query will be ended with exception, because source dictionary has UInt8 as a key type.
+        # This query will be ended with exception, because source dictionary has UUID as a key type.
         $CLICKHOUSE_CLIENT --query="SELECT dictGetFloat64('dictdb_01076.dict_datarace', 'value', toUInt64(2));"
     done
 }

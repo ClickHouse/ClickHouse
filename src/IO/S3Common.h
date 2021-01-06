@@ -36,14 +36,18 @@ public:
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        bool use_environment_credentials,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
+        bool use_environment_credentials,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
         const String & endpoint,
@@ -51,7 +55,9 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter);
+        bool use_environment_credentials,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects);
 
 private:
     ClientFactory();

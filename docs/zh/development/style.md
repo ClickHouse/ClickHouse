@@ -572,7 +572,7 @@ Fork不用于并行化。
 
 **14.** 返回值
 
-大部分情况下使用 `return`。不要使用 `[return std::move(res)]{.strike}`。
+大部分情况下使用 `return`。不要使用 `return std::move(res)`。
 
 如果函数在堆上分配对象并返回它，请使用 `shared_ptr` 或 `unique_ptr`。
 
@@ -666,7 +666,7 @@ Loader() {}
 **24.** 不要使用 `trailing return type` 为必要的功能。
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** 声明和初始化变量。
