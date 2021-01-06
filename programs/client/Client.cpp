@@ -59,6 +59,7 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
+#include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -1784,6 +1785,13 @@ private:
     {
         if (!block_out_stream)
         {
+            /// Ignore all results when fuzzing as they can be huge.
+            if (query_fuzzer_runs)
+            {
+                block_out_stream = std::make_shared<NullBlockOutputStream>(block);
+                return;
+            }
+
             WriteBuffer * out_buf = nullptr;
             String pager = config().getString("pager", "");
             if (!pager.empty())
