@@ -271,8 +271,8 @@ void LDAPClient::openConnection()
     {
         case LDAPServerParams::SASLMechanism::SIMPLE:
         {
-            const auto escaped_username = escapeForLDAP(params.user);
-            const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{username}", escaped_username} });
+            const auto escaped_user_name = escapeForLDAP(params.user);
+            const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escaped_user_name} });
 
             ::berval cred;
             cred.bv_val = const_cast<char *>(params.password.c_str());
@@ -314,10 +314,10 @@ LDAPSearchResults LDAPClient::search(const LDAPSearchParams & search_params)
         case LDAPSearchParams::Scope::CHILDREN:  scope = LDAP_SCOPE_CHILDREN; break;
     }
 
-    const auto escaped_username = escapeForLDAP(params.user);
-    const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{username}", escaped_username} });
-    const auto base_dn = replacePlaceholders(search_params.base_dn, { {"{username}", escaped_username}, {"{bind_dn}", bind_dn} });
-    const auto search_filter = replacePlaceholders(search_params.search_filter, { {"{username}", escaped_username}, {"{bind_dn}", bind_dn}, {"{base_dn}", base_dn} });
+    const auto escaped_user_name = escapeForLDAP(params.user);
+    const auto bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", escaped_user_name} });
+    const auto base_dn = replacePlaceholders(search_params.base_dn, { {"{user_name}", escaped_user_name}, {"{bind_dn}", bind_dn} });
+    const auto search_filter = replacePlaceholders(search_params.search_filter, { {"{user_name}", escaped_user_name}, {"{bind_dn}", bind_dn}, {"{base_dn}", base_dn} });
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
     ::timeval timeout = { params.search_timeout.count(), 0 };
     LDAPMessage* msgs = nullptr;

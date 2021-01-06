@@ -88,17 +88,4 @@ bool Authentication::isCorrectPassword(const String & user_, const String & pass
     throw Exception("Cannot check if the password is correct for authentication type " + toString(type), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-bool Authentication::isCorrectPasswordLDAP(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators, const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results) const
-{
-    if (type != LDAP_SERVER)
-        throw Exception("Cannot check if the password is correct using LDAP logic for authentication type " + toString(type), ErrorCodes::BAD_ARGUMENTS);
-
-    auto ldap_server_params = external_authenticators.getLDAPServerParams(server_name);
-    ldap_server_params.user = user_;
-    ldap_server_params.password = password_;
-
-    LDAPSimpleAuthClient ldap_client(ldap_server_params);
-    return ldap_client.authenticate(search_params, search_results);
-}
-
 }

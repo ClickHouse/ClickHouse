@@ -69,7 +69,8 @@ private:
     void assignRolesNoLock(User & user, const LDAPSearchResultsList & external_roles, const std::size_t external_roles_hash) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPSearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPSearchResultsList & external_roles) const;
-    bool isPasswordCorrectLDAPNoLock(const User & user, const String & password, const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const;
+    bool isPasswordCorrectLDAPNoLock(const String & user_name, const String & password,
+        const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const;
 
     mutable std::recursive_mutex mutex;
     AccessControlManager * access_control_manager = nullptr;
