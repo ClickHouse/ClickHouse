@@ -85,7 +85,7 @@ const char * msan_strsignal(int sig)
     // Apparently strsignal is not instrumented by MemorySanitizer, so we
     // have to unpoison it to avoid msan reports inside fmt library when we
     // print it.
-    const char * signal_name = strsignal(sig);
+    const char * signal_name = sys_siglist[sig];
     __msan_unpoison_string(signal_name);
     return signal_name;
 }
@@ -962,7 +962,7 @@ void BaseDaemon::setupWatchdog()
         if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
-            _exit(status);
+            _exit(WEXITSTATUS(status));
         }
 
         if (WIFSIGNALED(status))
@@ -980,7 +980,7 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(status);
+                    _exit(128 + sig);
             }
         }
         else
