@@ -60,6 +60,7 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1059,9 +1060,9 @@ private:
         // errors, it may be interesting to add fuzzing of create queries that
         // wraps columns into LowCardinality or Nullable. Also there are other
         // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-        // them as well.
+        // them as well. Also there is no point fuzzing DROP queries.
         size_t this_query_runs = query_fuzzer_runs;
-        if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>())
+        if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>() || orig_ast->as<ASTDropQuery>())
         {
             this_query_runs = 1;
         }
