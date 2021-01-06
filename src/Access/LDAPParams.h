@@ -23,10 +23,19 @@ struct LDAPSearchParams
     };
 
     String base_dn;
+    Scope scope = Scope::SUBTREE;
     String search_filter;
     String attribute = "cn";
-    Scope scope = Scope::SUBTREE;
     String prefix;
+
+    void combineHash(std::size_t & seed) const
+    {
+        boost::hash_combine(seed, base_dn);
+        boost::hash_combine(seed, static_cast<int>(scope));
+        boost::hash_combine(seed, search_filter);
+        boost::hash_combine(seed, attribute);
+        boost::hash_combine(seed, prefix);
+    }
 };
 
 using LDAPSearchParamsList = std::vector<LDAPSearchParams>;
@@ -98,18 +107,13 @@ struct LDAPServerParams
     std::chrono::seconds search_timeout{20};
     std::uint32_t search_limit = 100;
 
-    std::size_t getCoreHash() const
+    void combineCoreHash(std::size_t & seed) const
     {
-        std::size_t seed = 0;
-
         boost::hash_combine(seed, host);
         boost::hash_combine(seed, port);
-        boost::hash_combine(seed, auth_dn_prefix);
-        boost::hash_combine(seed, auth_dn_suffix);
+        boost::hash_combine(seed, bind_dn);
         boost::hash_combine(seed, user);
         boost::hash_combine(seed, password);
-
-        return seed;
     }
 };
 

@@ -322,7 +322,7 @@
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
                 bind_dn - template used to construct the DN to bind to.
-                        The resulting DN will be constructed by replacing all '{username}' substrings of the template with the actual
+                        The resulting DN will be constructed by replacing all '{user_name}' substrings of the template with the actual
                          user name during each authentication attempt.
                 verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
                          to be successfully authenticated for all consecutive requests without contacting the LDAP server.
@@ -344,7 +344,7 @@
                 <my_ldap_server>
                     <host>localhost</host>
                     <port>636</port>
-                    <bind_dn>uid={username},ou=users,dc=example,dc=com</bind_dn>
+                    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
                     <verification_cooldown>300</verification_cooldown>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
@@ -377,20 +377,23 @@
                         If no roles are specified here or assigned during role mapping (below), user will not be able to perform any
                          actions after authentication.
                 role_mapping - section with LDAP search parameters and mapping rules.
-                        The list of strings (values of attributes) returned by the search will be transformed and the resulting strings
-                         will be treated as local role names and assigned to the user.
+                        When a user authenticates, while still bound to LDAP, an LDAP search is performed using search_filter and the
+                         name of the logged in user. For each entry found during that search, the value of the specified attribute is
+                         extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the
+                         value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by
+                         CREATE ROLE command.
                         There can be multiple 'role_mapping' sections defined inside the same 'ldap' section. All of them will be
                          applied.
                     base_dn - template used to construct the base DN for the LDAP search.
-                            The resulting DN will be constructed by replacing all '{username}' and '{bind_dn}' substrings
+                            The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings
                              of the template with the actual user name and bind DN during each LDAP search.
-                    attribute - attribute name whose values will be returned by the LDAP search.
                     scope - scope of the LDAP search.
                             Accepted values are: 'base', 'one_level', 'children', 'subtree' (the default).
                     search_filter - template used to construct the search filter for the LDAP search.
-                            The resulting filter will be constructed by replacing all '{username}', '{bind_dn}', and '{base_dn}'
+                            The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', and '{base_dn}'
                              substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
                             Note, that the special characters must be escaped properly in XML.
+                    attribute - attribute name whose values will be returned by the LDAP search.
                     prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
                              the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated
                              as local role names. Empty, by default.
@@ -403,9 +406,9 @@
                     </roles>
                     <role_mapping>
                         <base_dn>ou=groups,dc=example,dc=com</base_dn>
-                        <attribute>cn</attribute>
                         <scope>subtree</scope>
                         <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                        <attribute>cn</attribute>
                         <prefix>clickhouse_</prefix>
                     </role_mapping>
                 </ldap>

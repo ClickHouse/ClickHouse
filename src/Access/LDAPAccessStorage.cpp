@@ -1,5 +1,6 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/AccessControlManager.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/LDAPClient.h>
@@ -364,9 +365,10 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPSearchResul
 }
 
 
-bool LDAPAccessStorage::isPasswordCorrectLDAPNoLock(const User & user, const String & password, const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const
+bool LDAPAccessStorage::isPasswordCorrectLDAPNoLock(const String & user_name, const String & password,
+    const ExternalAuthenticators & external_authenticators, LDAPSearchResultsList & search_results) const
 {
-    return user.authentication.isCorrectPasswordLDAP(password, user.getName(), external_authenticators, &role_search_params, &search_results);
+    return external_authenticators.checkLDAPCredentials(ldap_server, user_name, password, &role_search_params, &search_results);
 }
 
 
@@ -521,7 +523,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
     {
         auto user = memory_storage.read<User>(*id);
 
-        if (!isPasswordCorrectLDAPNoLock(*user, password, external_authenticators, external_roles))
+        if (!isPasswordCorrectLDAPNoLock(user->getName(), password, external_authenticators, external_roles))
             throwInvalidPassword();
 
         if (!isAddressAllowedImpl(*user, address))
@@ -540,7 +542,7 @@ UUID LDAPAccessStorage::loginImpl(const String & user_name, const String & passw
         user->authentication = Authentication(Authentication::Type::LDAP_SERVER);
         user->authentication.setServerName(ldap_server);
 
-        if (!isPasswordCorrectLDAPNoLock(*user, password, external_authenticators, external_roles))
+        if (!isPasswordCorrectLDAPNoLock(user->getName(), password, external_authenticators, external_roles))
             throwInvalidPassword();
 
         if (!isAddressAllowedImpl(*user, address))
