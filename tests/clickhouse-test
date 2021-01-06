@@ -571,6 +571,8 @@ def main(args):
             Note: if you are using unbundled mode, you also have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
+    if args.antlr:
+        build_flags.append('antlr')
 
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
@@ -871,6 +873,7 @@ if __name__ == '__main__':
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
 
+    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
@@ -962,6 +965,12 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
+    if args.antlr:
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

@@ -1,5 +1,19 @@
 ### ClickHouse release 20.12
 
+### ClickHouse release v20.12.4.5-stable, 2020-12-24
+
+#### Bug Fix
+
+* Fixed issue when `clickhouse-odbc-bridge` process is unreachable by server on machines with dual IPv4/IPv6 stack; - Fixed issue when ODBC dictionary updates are performed using malformed queries and/or cause crashes; Possibly closes [#14489](https://github.com/ClickHouse/ClickHouse/issues/14489). [#18278](https://github.com/ClickHouse/ClickHouse/pull/18278) ([Denis Glazachev](https://github.com/traceon)).
+* Fixed key comparison between Enum and Int types. This fixes [#17989](https://github.com/ClickHouse/ClickHouse/issues/17989). [#18214](https://github.com/ClickHouse/ClickHouse/pull/18214) ([Amos Bird](https://github.com/amosbird)).
+* Fixed unique key convert crash in `MaterializeMySQL` database engine. This fixes [#18186](https://github.com/ClickHouse/ClickHouse/issues/18186) and fixes [#16372](https://github.com/ClickHouse/ClickHouse/issues/16372)  [#18211](https://github.com/ClickHouse/ClickHouse/pull/18211) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `std::out_of_range: basic_string` in S3 URL parsing. [#18059](https://github.com/ClickHouse/ClickHouse/pull/18059) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Fixed the issue when some tables not synchronized to ClickHouse from MySQL caused by the fact that convertion MySQL prefix index wasn't supported for MaterializeMySQL. This fixes [#15187](https://github.com/ClickHouse/ClickHouse/issues/15187) and fixes [#17912](https://github.com/ClickHouse/ClickHouse/issues/17912)  [#17944](https://github.com/ClickHouse/ClickHouse/pull/17944) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
+* Fixed possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fixed empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).
+
+
 ### ClickHouse release v20.12.3.3-stable, 2020-12-13
 
 #### Backward Incompatible Change
@@ -122,6 +136,52 @@
 
 
 ## ClickHouse release 20.11
+
+### ClickHouse release v20.11.6.6-stable, 2020-12-24
+
+#### Bug Fix
+
+* Fixed issue when `clickhouse-odbc-bridge` process is unreachable by server on machines with dual `IPv4/IPv6 stack` and fixed issue when ODBC dictionary updates are performed using malformed queries and/or cause crashes. This possibly closes [#14489](https://github.com/ClickHouse/ClickHouse/issues/14489). [#18278](https://github.com/ClickHouse/ClickHouse/pull/18278) ([Denis Glazachev](https://github.com/traceon)).
+* Fixed key comparison between Enum and Int types. This fixes [#17989](https://github.com/ClickHouse/ClickHouse/issues/17989). [#18214](https://github.com/ClickHouse/ClickHouse/pull/18214) ([Amos Bird](https://github.com/amosbird)).
+* Fixed unique key convert crash in `MaterializeMySQL` database engine. This fixes [#18186](https://github.com/ClickHouse/ClickHouse/issues/18186) and fixes [#16372](https://github.com/ClickHouse/ClickHouse/issues/16372)  [#18211](https://github.com/ClickHouse/ClickHouse/pull/18211) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `std::out_of_range: basic_string` in S3 URL parsing. [#18059](https://github.com/ClickHouse/ClickHouse/pull/18059) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Fixed the issue when some tables not synchronized to ClickHouse from MySQL caused by the fact that convertion MySQL prefix index wasn't supported for MaterializeMySQL. This fixes [#15187](https://github.com/ClickHouse/ClickHouse/issues/15187) and fixes [#17912](https://github.com/ClickHouse/ClickHouse/issues/17912)  [#17944](https://github.com/ClickHouse/ClickHouse/pull/17944) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
+* Fix possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).
+* Do not restore parts from WAL if `in_memory_parts_enable_wal` is disabled. [#17802](https://github.com/ClickHouse/ClickHouse/pull/17802) ([detailyang](https://github.com/detailyang)).
+* Fixed problem when ClickHouse fails to resume connection to MySQL servers. [#17681](https://github.com/ClickHouse/ClickHouse/pull/17681) ([Alexander Kazakov](https://github.com/Akazz)).
+* Fixed inconsistent behaviour of `optimize_trivial_count_query` with partition predicate. [#17644](https://github.com/ClickHouse/ClickHouse/pull/17644) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).
+* Fixed the behaviour when xxception `fmt::v7::format_error` can be logged in background for MergeTree tables. This fixes [#17613](https://github.com/ClickHouse/ClickHouse/issues/17613). [#17615](https://github.com/ClickHouse/ClickHouse/pull/17615) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the behaviour when clickhouse-client is used in interactive mode with multiline queries and single line comment was erronously extended till the end of query. This fixes [#13654](https://github.com/ClickHouse/ClickHouse/issues/13654). [#17565](https://github.com/ClickHouse/ClickHouse/pull/17565) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the issue when server can stop accepting connections in very rare cases. [#17542](https://github.com/ClickHouse/ClickHouse/pull/17542) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed alter query hang when the corresponding mutation was killed on the different replica. This fixes [#16953](https://github.com/ClickHouse/ClickHouse/issues/16953). [#17499](https://github.com/ClickHouse/ClickHouse/pull/17499) ([alesapin](https://github.com/alesapin)).
+* Fixed bug when mark cache size was underestimated by clickhouse. It may happen when there are a lot of tiny files with marks. [#17496](https://github.com/ClickHouse/ClickHouse/pull/17496) ([alesapin](https://github.com/alesapin)).
+* Fixed `ORDER BY` with enabled setting `optimize_redundant_functions_in_order_by`. [#17471](https://github.com/ClickHouse/ClickHouse/pull/17471) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed duplicates after `DISTINCT` which were possible because of incorrect optimization. This fixes [#17294](https://github.com/ClickHouse/ClickHouse/issues/17294). [#17296](https://github.com/ClickHouse/ClickHouse/pull/17296) ([li chengxiang](https://github.com/chengxianglibra)). [#17439](https://github.com/ClickHouse/ClickHouse/pull/17439) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed crash while reading from `JOIN` table with `LowCardinality` types. This fixes [#17228](https://github.com/ClickHouse/ClickHouse/issues/17228). [#17397](https://github.com/ClickHouse/ClickHouse/pull/17397) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed set index invalidation when there are const columns in the subquery. This fixes [#17246](https://github.com/ClickHouse/ClickHouse/issues/17246) . [#17249](https://github.com/ClickHouse/ClickHouse/pull/17249) ([Amos Bird](https://github.com/amosbird)).
+* Fixed possible wrong index analysis when the types of the index comparison are different. This fixes [#17122](https://github.com/ClickHouse/ClickHouse/issues/17122). [#17145](https://github.com/ClickHouse/ClickHouse/pull/17145) ([Amos Bird](https://github.com/amosbird)).
+* Fixed `ColumnConst` comparison which leads to crash. This fixes [#17088](https://github.com/ClickHouse/ClickHouse/issues/17088) . [#17135](https://github.com/ClickHouse/ClickHouse/pull/17135) ([Amos Bird](https://github.com/amosbird)).
+* Fixed bug when `ON CLUSTER` queries may hang forever for non-leader `ReplicatedMergeTreeTables`. [#17089](https://github.com/ClickHouse/ClickHouse/pull/17089) ([alesapin](https://github.com/alesapin)).
+* Fixed fuzzer-found bug in funciton `fuzzBits`. This fixes [#16980](https://github.com/ClickHouse/ClickHouse/issues/16980). [#17051](https://github.com/ClickHouse/ClickHouse/pull/17051) ([hexiaoting](https://github.com/hexiaoting)).
+* Avoid unnecessary network errors for remote queries which may be cancelled while execution, like queries with `LIMIT`. [#17006](https://github.com/ClickHouse/ClickHouse/pull/17006) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed wrong result in big integers (128, 256 bit) when casting from double. [#16986](https://github.com/ClickHouse/ClickHouse/pull/16986) ([Mike](https://github.com/myrrc)).
+* Reresolve the IP of the `format_avro_schema_registry_url` in case of errors. [#16985](https://github.com/ClickHouse/ClickHouse/pull/16985) ([filimonov](https://github.com/filimonov)).
+* Fixed possible server crash after `ALTER TABLE ... MODIFY COLUMN ... NewType` when `SELECT` have `WHERE` expression on altering column and alter doesn't finished yet. [#16968](https://github.com/ClickHouse/ClickHouse/pull/16968) ([Amos Bird](https://github.com/amosbird)).
+* Blame info was not calculated correctly in `clickhouse-git-import`. [#16959](https://github.com/ClickHouse/ClickHouse/pull/16959) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed order by optimization with monotonous functions. Fixes [#16107](https://github.com/ClickHouse/ClickHouse/issues/16107). [#16956](https://github.com/ClickHouse/ClickHouse/pull/16956) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed optimization of group by with enabled setting `optimize_aggregators_of_group_by_keys` and joins. This fixes [#12604](https://github.com/ClickHouse/ClickHouse/issues/12604). [#16951](https://github.com/ClickHouse/ClickHouse/pull/16951) ([Anton Popov](https://github.com/CurtizJ)).
+* Install script should always create subdirs in config folders. This is only relevant for Docker build with custom config. [#16936](https://github.com/ClickHouse/ClickHouse/pull/16936) ([filimonov](https://github.com/filimonov)).
+* Fixed possible error `Illegal type of argument` for queries with `ORDER BY`. This fixes [#16580](https://github.com/ClickHouse/ClickHouse/issues/16580). [#16928](https://github.com/ClickHouse/ClickHouse/pull/16928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Abort multipart upload if no data was written to WriteBufferFromS3. [#16840](https://github.com/ClickHouse/ClickHouse/pull/16840) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Fixed crash when using `any` without any arguments. This fixes [#16803](https://github.com/ClickHouse/ClickHouse/issues/16803). [#16826](https://github.com/ClickHouse/ClickHouse/pull/16826) ([Amos Bird](https://github.com/amosbird)).
+* Fixed the behaviour when ClickHouse used to always return 0 insted of a number of affected rows for `INSERT` queries via MySQL protocol. This fixes [#16605](https://github.com/ClickHouse/ClickHouse/issues/16605). [#16715](https://github.com/ClickHouse/ClickHouse/pull/16715) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed uncontrolled growth of TDigest. [#16680](https://github.com/ClickHouse/ClickHouse/pull/16680) ([hrissan](https://github.com/hrissan)).
+* Fixed remote query failure when using suffix `if` in Aggregate function. This fixes [#16574](https://github.com/ClickHouse/ClickHouse/issues/16574) fixes [#16231](https://github.com/ClickHouse/ClickHouse/issues/16231) [#16610](https://github.com/ClickHouse/ClickHouse/pull/16610) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed inconsistent behavior caused by `select_sequential_consistency` for optimized trivial count query and system.tables. [#16309](https://github.com/ClickHouse/ClickHouse/pull/16309) ([Hao Chen](https://github.com/haoch)).
+* Throw error when use ColumnTransformer replace non exist column. [#16183](https://github.com/ClickHouse/ClickHouse/pull/16183) ([hexiaoting](https://github.com/hexiaoting)).
+
 
 ### ClickHouse release v20.11.3.3-stable, 2020-11-13
 
@@ -251,6 +311,46 @@
 
 
 ## ClickHouse release 20.10
+
+### ClickHouse release v20.10.7.4-stable, 2020-12-24
+                                                                                                                                                                                                                                                              
+#### Bug Fix                                                                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                              
+* Fixed issue when `clickhouse-odbc-bridge` process is unreachable by server on machines with dual `IPv4/IPv6` stack and fixed issue when ODBC dictionary updates are performed using malformed queries and/or cause crashes. This possibly closes [#14489](https://github.com/ClickHouse/ClickHouse/issues/14489). [#18278](https://github.com/ClickHouse/ClickHouse/pull/18278) ([Denis Glazachev](https://github.com/traceon)).                                                                                                
+* Fix key comparison between Enum and Int types. This fixes [#17989](https://github.com/ClickHouse/ClickHouse/issues/17989). [#18214](https://github.com/ClickHouse/ClickHouse/pull/18214) ([Amos Bird](https://github.com/amosbird)).                        
+* Fixed unique key convert crash in `MaterializeMySQL` database engine. This fixes [#18186](https://github.com/ClickHouse/ClickHouse/issues/18186) and fixes [#16372](https://github.com/ClickHouse/ClickHouse/issues/16372)  [#18211](https://github.com/ClickHouse/ClickHouse/pull/18211) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed `std::out_of_range: basic_string` in S3 URL parsing. [#18059](https://github.com/ClickHouse/ClickHouse/pull/18059) ([Vladimir Chebotarev](https://github.com/excitoon)).
+* Fixed the issue when some tables not synchronized to ClickHouse from MySQL caused by the fact that convertion MySQL prefix index wasn't supported for MaterializeMySQL. This fixes [#15187](https://github.com/ClickHouse/ClickHouse/issues/15187) and fixes [#17912](https://github.com/ClickHouse/ClickHouse/issues/17912)  [#17944](https://github.com/ClickHouse/ClickHouse/pull/17944) ([Winter Zhang](https://github.com/zhang2014)).                                                                                                                                                                                
+* Fix possible segfault in `topK` aggregate function. This closes [#17404](https://github.com/ClickHouse/ClickHouse/issues/17404). [#17845](https://github.com/ClickHouse/ClickHouse/pull/17845) ([Maksim Kita](https://github.com/kitaisreal)).              
+* Do not restore parts from `WAL` if `in_memory_parts_enable_wal` is disabled. [#17802](https://github.com/ClickHouse/ClickHouse/pull/17802) ([detailyang](https://github.com/detailyang)).                                                                     
+* Fixed problem when ClickHouse fails to resume connection to MySQL servers. [#17681](https://github.com/ClickHouse/ClickHouse/pull/17681) ([Alexander Kazakov](https://github.com/Akazz)).                                                                   
+* Fixed empty `system.stack_trace` table when server is running in daemon mode. [#17630](https://github.com/ClickHouse/ClickHouse/pull/17630) ([Amos Bird](https://github.com/amosbird)).                                                                       
+* Fixed the behaviour when `clickhouse-client` is used in interactive mode with multiline queries and single line comment was erronously extended till the end of query. This fixes [#13654](https://github.com/ClickHouse/ClickHouse/issues/13654). [#17565](https://github.com/ClickHouse/ClickHouse/pull/17565) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed the issue when server can stop accepting connections in very rare cases. [#17542](https://github.com/ClickHouse/ClickHouse/pull/17542) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed `ALTER` query hang when the corresponding mutation was killed on the different replica. This fixes [#16953](https://github.com/ClickHouse/ClickHouse/issues/16953). [#17499](https://github.com/ClickHouse/ClickHouse/pull/17499) ([alesapin](https://github.com/alesapin)).
+* Fixed bug when mark cache size was underestimated by clickhouse. It may happen when there are a lot of tiny files with marks. [#17496](https://github.com/ClickHouse/ClickHouse/pull/17496) ([alesapin](https://github.com/alesapin)).
+* Fixed `ORDER BY` with enabled setting `optimize_redundant_functions_in_order_by`. [#17471](https://github.com/ClickHouse/ClickHouse/pull/17471) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed duplicates after `DISTINCT` which were possible because of incorrect optimization. Fixes [#17294](https://github.com/ClickHouse/ClickHouse/issues/17294). [#17296](https://github.com/ClickHouse/ClickHouse/pull/17296) ([li chengxiang](https://github.com/chengxianglibra)). [#17439](https://github.com/ClickHouse/ClickHouse/pull/17439) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed crash while reading from `JOIN` table with `LowCardinality` types. This fixes [#17228](https://github.com/ClickHouse/ClickHouse/issues/17228). [#17397](https://github.com/ClickHouse/ClickHouse/pull/17397) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fixed set index invalidation when there are const columns in the subquery. This fixes [#17246](https://github.com/ClickHouse/ClickHouse/issues/17246) . [#17249](https://github.com/ClickHouse/ClickHouse/pull/17249) ([Amos Bird](https://github.com/amosbird)).
+* Fixed `ColumnConst` comparison which leads to crash. This fixed [#17088](https://github.com/ClickHouse/ClickHouse/issues/17088) . [#17135](https://github.com/ClickHouse/ClickHouse/pull/17135) ([Amos Bird](https://github.com/amosbird)).
+* Fixed bug when `ON CLUSTER` queries may hang forever for non-leader `ReplicatedMergeTreeTables`. [#17089](https://github.com/ClickHouse/ClickHouse/pull/17089) ([alesapin](https://github.com/alesapin)).
+* Fixed fuzzer-found bug in function `fuzzBits`. This fixes [#16980](https://github.com/ClickHouse/ClickHouse/issues/16980). [#17051](https://github.com/ClickHouse/ClickHouse/pull/17051) ([hexiaoting](https://github.com/hexiaoting)).
+* Avoid unnecessary network errors for remote queries which may be cancelled while execution, like queries with `LIMIT`. [#17006](https://github.com/ClickHouse/ClickHouse/pull/17006) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed wrong result in big integers (128, 256 bit) when casting from double. [#16986](https://github.com/ClickHouse/ClickHouse/pull/16986) ([Mike](https://github.com/myrrc)).
+* Reresolve the IP of the `format_avro_schema_registry_url` in case of errors. [#16985](https://github.com/ClickHouse/ClickHouse/pull/16985) ([filimonov](https://github.com/filimonov)).
+* Fixed possible server crash after `ALTER TABLE ... MODIFY COLUMN ... NewType` when `SELECT` have `WHERE` expression on altering column and alter doesn't finished yet. [#16968](https://github.com/ClickHouse/ClickHouse/pull/16968) ([Amos Bird](https://github.com/amosbird)).
+* Blame info was not calculated correctly in `clickhouse-git-import`. [#16959](https://github.com/ClickHouse/ClickHouse/pull/16959) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed order by optimization with monotonous functions. This fixes [#16107](https://github.com/ClickHouse/ClickHouse/issues/16107). [#16956](https://github.com/ClickHouse/ClickHouse/pull/16956) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixrf optimization of group by with enabled setting `optimize_aggregators_of_group_by_keys` and joins. This fixes [#12604](https://github.com/ClickHouse/ClickHouse/issues/12604). [#16951](https://github.com/ClickHouse/ClickHouse/pull/16951) ([Anton Popov](https://github.com/CurtizJ)).
+* Install script should always create subdirs in config folders. This is only relevant for Docker build with custom config. [#16936](https://github.com/ClickHouse/ClickHouse/pull/16936) ([filimonov](https://github.com/filimonov)).
+* Fixrf possible error `Illegal type of argument` for queries with `ORDER BY`. This fixes [#16580](https://github.com/ClickHouse/ClickHouse/issues/16580). [#16928](https://github.com/ClickHouse/ClickHouse/pull/16928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Abort multipart upload if no data was written to `WriteBufferFromS3`. [#16840](https://github.com/ClickHouse/ClickHouse/pull/16840) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Fixed crash when using `any` without any arguments. This fixes [#16803](https://github.com/ClickHouse/ClickHouse/issues/16803). [#16826](https://github.com/ClickHouse/ClickHouse/pull/16826) ([Amos Bird](https://github.com/amosbird)).
+* Fixed the behaviour when ClickHouse used to always return 0 insted of a number of affected rows for `INSERT` queries via MySQL protocol. This fixes [#16605](https://github.com/ClickHouse/ClickHouse/issues/16605). [#16715](https://github.com/ClickHouse/ClickHouse/pull/16715) ([Winter Zhang](https://github.com/zhang2014)).
+* Fixed uncontrolled growth of `TDigest`. [#16680](https://github.com/ClickHouse/ClickHouse/pull/16680) ([hrissan](https://github.com/hrissan)).
+* Fixed remote query failure when using suffix `if` in Aggregate function. This fixes [#16574](https://github.com/ClickHouse/ClickHouse/issues/16574) fixes [#16231](https://github.com/ClickHouse/ClickHouse/issues/16231) [#16610](https://github.com/ClickHouse/ClickHouse/pull/16610) ([Winter Zhang](https://github.com/zhang2014)).
+
 
 ### ClickHouse release v20.10.4.1-stable, 2020-11-13
 
@@ -638,6 +738,31 @@
 
 
 ## ClickHouse release 20.8
+
+### ClickHouse release v20.8.10.13-lts, 2020-12-24
+
+#### Bug Fix
+
+* When server log rotation was configured using `logger.size` parameter with numeric value larger than 2^32, the logs were not rotated properly. [#17905](https://github.com/ClickHouse/ClickHouse/pull/17905) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Fixed incorrect initialization of `max_compress_block_size` in MergeTreeWriterSettings with `min_compress_block_size`. [#17833](https://github.com/ClickHouse/ClickHouse/pull/17833) ([flynn](https://github.com/ucasFL)).
+* Fixed problem when ClickHouse fails to resume connection to MySQL servers. [#17681](https://github.com/ClickHouse/ClickHouse/pull/17681) ([Alexander Kazakov](https://github.com/Akazz)).
+* Fixed `ALTER` query hang when the corresponding mutation was killed on the different replica. This fixes [#16953](https://github.com/ClickHouse/ClickHouse/issues/16953). [#17499](https://github.com/ClickHouse/ClickHouse/pull/17499) ([alesapin](https://github.com/alesapin)).
+* Fixed a bug when mark cache size was underestimated by ClickHouse. It may happen when there are a lot of tiny files with marks. [#17496](https://github.com/ClickHouse/ClickHouse/pull/17496) ([alesapin](https://github.com/alesapin)).
+* Fixed `ORDER BY` with enabled setting `optimize_redundant_functions_in_order_by`. [#17471](https://github.com/ClickHouse/ClickHouse/pull/17471) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed `ColumnConst` comparison which leads to crash. This fixed [#17088](https://github.com/ClickHouse/ClickHouse/issues/17088) . [#17135](https://github.com/ClickHouse/ClickHouse/pull/17135) ([Amos Bird](https://github.com/amosbird)).
+* Fixed bug when `ON CLUSTER` queries may hang forever for non-leader ReplicatedMergeTreeTables. [#17089](https://github.com/ClickHouse/ClickHouse/pull/17089) ([alesapin](https://github.com/alesapin)).
+* Avoid unnecessary network errors for remote queries which may be cancelled while execution, like queries with `LIMIT`. [#17006](https://github.com/ClickHouse/ClickHouse/pull/17006) ([Azat Khuzhin](https://github.com/azat)).
+* Reresolve the IP of the `format_avro_schema_registry_url` in case of errors. [#16985](https://github.com/ClickHouse/ClickHouse/pull/16985) ([filimonov](https://github.com/filimonov)).
+* Fixed possible server crash after `ALTER TABLE ... MODIFY COLUMN ... NewType` when `SELECT` have `WHERE` expression on altering column and alter doesn't finished yet. [#16968](https://github.com/ClickHouse/ClickHouse/pull/16968) ([Amos Bird](https://github.com/amosbird)).
+* Install script should always create subdirs in config folders. This is only relevant for Docker build with custom config. [#16936](https://github.com/ClickHouse/ClickHouse/pull/16936) ([filimonov](https://github.com/filimonov)).
+* Fixed possible error `Illegal type of argument` for queries with `ORDER BY`. Fixes [#16580](https://github.com/ClickHouse/ClickHouse/issues/16580). [#16928](https://github.com/ClickHouse/ClickHouse/pull/16928) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Abort multipart upload if no data was written to WriteBufferFromS3. [#16840](https://github.com/ClickHouse/ClickHouse/pull/16840) ([Pavel Kovalenko](https://github.com/Jokser)).
+* Fixed crash when using `any` without any arguments. This fixes [#16803](https://github.com/ClickHouse/ClickHouse/issues/16803). [#16826](https://github.com/ClickHouse/ClickHouse/pull/16826) ([Amos Bird](https://github.com/amosbird)).
+* Fixed `IN` operator over several columns and tuples with enabled `transform_null_in` setting. Fixes [#15310](https://github.com/ClickHouse/ClickHouse/issues/15310). [#16722](https://github.com/ClickHouse/ClickHouse/pull/16722) ([Anton Popov](https://github.com/CurtizJ)).
+* Fixed inconsistent behaviour of `optimize_read_in_order/optimize_aggregation_in_order` with max_threads > 0 and expression in ORDER BY. [#16637](https://github.com/ClickHouse/ClickHouse/pull/16637) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed the issue when query optimization was producing wrong result if query contains `ARRAY JOIN`. [#17887](https://github.com/ClickHouse/ClickHouse/pull/17887) ([sundyli](https://github.com/sundy-li)).
+* Query is finished faster in case of exception. Cancel execution on remote replicas if exception happens. [#15578](https://github.com/ClickHouse/ClickHouse/pull/15578) ([Azat Khuzhin](https://github.com/azat)).
+
 
 ### ClickHouse release v20.8.6.6-lts, 2020-11-13
 

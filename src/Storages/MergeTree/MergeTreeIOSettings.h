@@ -46,7 +46,8 @@ struct MergeTreeWriterSettings
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
 
-    /// true if we write temporary files during alter.
+    /// Used for AIO threshold comparison
+    /// FIXME currently doesn't work because WriteBufferAIO contain obscure bug(s)
     size_t estimated_size = 0;
 };
 

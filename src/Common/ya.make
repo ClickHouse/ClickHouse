@@ -33,6 +33,7 @@ SRCS(
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
     Config/configReadClient.cpp
+    CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
@@ -75,6 +76,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
