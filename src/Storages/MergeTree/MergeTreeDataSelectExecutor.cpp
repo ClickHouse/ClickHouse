@@ -707,8 +707,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (parts_with_ranges.empty())
         return std::make_unique<QueryPlan>();
 
-    auto max_partitions_to_read = data.getSettings()->max_partitions_to_read;
-    if (settings.force_max_partition_limit && max_partitions_to_read)
+    auto max_partitions_to_read
+        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data.getSettings()->max_partitions_to_read;
+    if (max_partitions_to_read)
     {
         std::set<String> partitions;
         for (auto & part_with_ranges : parts_with_ranges)
