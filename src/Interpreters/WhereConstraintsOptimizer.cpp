@@ -1,7 +1,7 @@
 #include <Interpreters/WhereConstraintsOptimizer.h>
 
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/ConstraintMatcherVisitor.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -16,7 +16,7 @@ std::vector<std::vector<ASTPtr>> getConstraintData(const StorageMetadataPtr & me
          metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-                             .pullNotOutFunctions();
+                             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
         for (const auto & group : cnf.getStatements())
             constraint_data.emplace_back(std::begin(group), std::end(group));
     }
@@ -38,6 +38,45 @@ WhereConstraintsOptimizer::WhereConstraintsOptimizer(
 {
 }
 
+namespace
+{
+    enum class MatchState
+    {
+        FULL_MATCH, /// a = b
+        NOT_MATCH, /// a = not b
+        NONE, /// other
+    };
+}
+
+MatchState match(ASTPtr a, ASTPtr b)
+{
+    bool match_means_ok = true;
+
+    {
+        auto * func_a = a->as<ASTFunction>();
+        if (func_a && func_a->name == "not")
+        {
+            a = func_a->arguments->children.front();
+            match_means_ok ^= true;
+        }
+    }
+    {
+        auto * func_b = b->as<ASTFunction>();
+        if (func_b && func_b->name == "not")
+        {
+            b = func_b->arguments->children.front();
+            match_means_ok ^= true;
+        }
+    }
+
+    if (a->getTreeHash() == b->getTreeHash() &&
+        a->getColumnName() == b->getColumnName())
+    {
+        return match_means_ok ? MatchState::FULL_MATCH : MatchState::NOT_MATCH;
+    }
+    return MatchState::NONE;
+}
+
 bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<std::vector<ASTPtr>> & constraints)
 {
     /// TODO: this is temporary; need to write more effective search
@@ -51,31 +90,11 @@ bool checkIfGroupAlwaysTrue(const CNFQuery::OrGroup & group, const std::vector<s
             bool found_match = false;
             for (const auto & group_ast : group)
             {
-                bool match_means_ok = true;
-                ASTPtr a = constraint_ast;
-                ASTPtr b = group_ast;
+                const auto match_result = match(constraint_ast, group_ast);
 
+                if (match_result == MatchState::FULL_MATCH)
                 {
-                    auto * func_a = a->as<ASTFunction>();
-                    if (func_a && func_a->name == "not")
-                    {
-                        a = func_a->arguments->children.front();
-                        match_means_ok ^= true;
-                    }
-                }
-                {
-                    auto * func_b = b->as<ASTFunction>();
-                    if (func_b && func_b->name == "not")
-                    {
-                        b = func_b->arguments->children.front();
-                        match_means_ok ^= true;
-                    }
-                }
-
-                if (a->getTreeHash() == b->getTreeHash() &&
-                    a->getColumnName() == b->getColumnName())
-                {
-                    found_match = match_means_ok;
+                    found_match = true;
                     break;
                 }
             }
@@ -99,41 +118,14 @@ bool checkIfAtomAlwaysFalse(const ASTPtr & atom, const std::vector<std::vector<A
     for (const auto & constraint : constraints)
     {
         if (constraint.size() > 1)
-            continue; /// TMP; Too hard to do something at current time (without more powerful instruments)
+            continue; /// TMP
 
         for (const auto & constraint_ast : constraint)
         {
-            bool match_means_ok = true;
-            ASTPtr a = constraint_ast;
-            ASTPtr b = atom;
+            const auto match_result = match(constraint_ast, atom);
 
-            {
-                auto * func_a = a->as<ASTFunction>();
-                if (func_a && func_a->name == "not")
-                {
-                    a = func_a->arguments->children.front();
-                    match_means_ok ^= true;
-                }
-            }
-            {
-                auto * func_b = b->as<ASTFunction>();
-                if (func_b && func_b->name == "not")
-                {
-                    b = func_b->arguments->children.front();
-                    match_means_ok ^= true;
-                }
-            }
-
-            Poco::Logger::get("MATCHER a").information(a->dumpTree());
-            Poco::Logger::get("MATCHER b").information(b->dumpTree());
-            Poco::Logger::get("MATCHER a>>").information(a->getColumnName());
-            Poco::Logger::get("MATCHER b>>" ).information(b->getColumnName());
-            if (a->getTreeHash() == b->getTreeHash() &&
-                a->getColumnName() == b->getColumnName())
-            {
-                Poco::Logger::get("MATCH").information(std::to_string(static_cast<int>(match_means_ok)));
-                return !match_means_ok;
-            }
+            if (match_result != MatchState::NONE)
+                return match_result == MatchState::NOT_MATCH;
         }
     }
 
@@ -149,14 +141,15 @@ void WhereConstraintsOptimizer::perform()
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
 
         cnf.pullNotOutFunctions()
-            .filterGroups([&constraint_data](const auto & group)
-                          { return !checkIfGroupAlwaysTrue(group, constraint_data); }) /// remove always true functions in CNF
-            .filterAtoms([&constraint_data](const auto & ast)
-                         { return !checkIfAtomAlwaysFalse(ast, constraint_data); }) /// TODO: remove always false atoms in CNF
+            .filterAlwaysTrueGroups([&constraint_data](const auto & group) { /// remove always true groups from CNF
+                return !checkIfGroupAlwaysTrue(group, constraint_data);
+            })
+            .filterAlwaysFalseAtoms([&constraint_data](const auto & ast) { /// remove always false atoms from CNF
+                return !checkIfAtomAlwaysFalse(ast, constraint_data);
+            })
             .pushNotInFuntions();
 
-        //ConstraintMatcherVisitor(constraint_data).visit(select_query->refWhere());
-        Poco::Logger::get("AFTER OPT").information(cnf.dump());
+        //Poco::Logger::get("AFTER OPT").information(cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));
     }
 }

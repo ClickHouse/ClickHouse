@@ -18,12 +18,12 @@ public:
     CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { }
 
     template <typename P>
-    CNFQuery & filterGroups(P predicate)  /// delete always true groups
+    CNFQuery & filterAlwaysTrueGroups(P predicate_is_unknown)  /// delete always true groups
     {
         AndGroup filtered;
         for (const auto & or_group : statements)
         {
-            if (predicate(or_group))
+            if (predicate_is_unknown(or_group))
                 filtered.insert(or_group);
         }
         std::swap(statements, filtered);
@@ -31,7 +31,7 @@ public:
     }
 
     template <typename P>
-    CNFQuery & filterAtoms(P predicate)  /// delete always false atoms
+    CNFQuery & filterAlwaysFalseAtoms(P predicate_is_unknown)  /// delete always false atoms
     {
         AndGroup filtered;
         for (const auto & or_group : statements)
@@ -39,7 +39,7 @@ public:
             OrGroup filtered_group;
             for (auto ast : or_group)
             {
-                if (predicate(ast))
+                if (predicate_is_unknown(ast))
                     filtered_group.insert(ast);
             }
             if (!filtered_group.empty())
