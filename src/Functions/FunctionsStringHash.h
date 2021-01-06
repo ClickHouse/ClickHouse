@@ -31,8 +31,8 @@ public:
     static constexpr auto name = Name::name;
     static constexpr size_t default_shingle_size = 3;
     static constexpr size_t default_num_hashes = 6;
-    static constexpr size_t max_shingle_size = 1000;
-    static constexpr size_t max_num_hashes = 1000;
+    static constexpr size_t max_shingle_size = 25;
+    static constexpr size_t max_num_hashes = 25;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringHash>(); }
 
