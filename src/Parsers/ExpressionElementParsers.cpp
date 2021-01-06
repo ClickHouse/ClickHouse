@@ -1447,6 +1447,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             is_strict = true;
 
         ASTs identifiers;
+        ASTPtr regex_node;
+        ParserStringLiteral regex;
         auto parse_id = [&identifiers, &pos, &expected]
         {
             ASTPtr identifier;
@@ -1461,7 +1463,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             // support one or more parameter
             ++pos;
-            if (!ParserList::parseUtil(pos, expected, parse_id, false))
+            if (!ParserList::parseUtil(pos, expected, parse_id, false) && !regex.parse(pos, regex_node, expected))
                 return false;
 
             if (pos->type != TokenType::ClosingRoundBracket)
@@ -1471,12 +1473,15 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         else
         {
             // only one parameter
-            if (!parse_id())
+            if (!parse_id() && !regex.parse(pos, regex_node, expected))
                 return false;
         }
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
-        res->children = std::move(identifiers);
+        if (regex_node)
+            res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        else
+            res->children = std::move(identifiers);
         res->is_strict = is_strict;
         node = std::move(res);
         return true;
