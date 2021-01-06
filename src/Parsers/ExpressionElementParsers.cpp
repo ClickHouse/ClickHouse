@@ -346,17 +346,21 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else if (Poco::toLower(getIdentifierName(identifier)) == "position")
     {
         /// POSITION(needle IN haystack) is equivalent to function position(haystack, needle)
-        const auto & list = expr_list_args->as<ASTExpressionList &>();
-        if (list.children.size() == 1)
+        if (const auto * list = expr_list_args->as<ASTExpressionList>())
         {
-            const auto & in_func = list.children[0]->as<ASTFunction &>();
-            if (in_func.name == "in")
+            if (list->children.size() == 1)
             {
-                // switch the two arguments
-                const auto & arg_list = in_func.arguments->as<ASTExpressionList &>();
-                expr_list_args->children = {arg_list.children[1], arg_list.children[0]};
+                if (const auto * in_func = list->children[0]->as<ASTFunction>())
+                {
+                    if (in_func->name == "in")
+                    {
+                        // switch the two arguments
+                        const auto & arg_list = in_func->arguments->as<ASTExpressionList &>();
+                        if (arg_list.children.size() == 2)
+                            expr_list_args->children = {arg_list.children[1], arg_list.children[0]};
+                    }
+                }
             }
-
         }
     }
 

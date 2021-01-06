@@ -13,14 +13,6 @@ select 1 = position('a', '', 1);
 select 2 = position('a', '', 2);
 select 0 = position('a', '', 3);
 
-select 1 = position('' in '');
-select 1 = position('' in 'abc');
-select 0 = position('abc' in '');
-select 1 = position('abc' in 'abc');
-select 2 = position('bc' in 'abc');
-select 3 = position('c' in 'abc');
-select 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
-
 select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position('aaaa', '', number)) from numbers(10);
 select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position(materialize('aaaa'), '', number)) from numbers(10);
 select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position('aaaa', materialize(''), number)) from numbers(10);
@@ -61,13 +53,6 @@ select 5 = position('abcabc', 'b', 5);
 select 0 = position('abcabc', 'b', 6);
 select 2 = position('abcabc', 'bca', 0);
 select 0 = position('abcabc', 'bca', 3);
-
-select 1 = position('' in '');
-select 1 = position('' in 'абв');
-select 0 = position('абв' in '');
-select 1 = position('абв' in 'абв');
-select 3 = position('бв' in 'абв');
-select 5 = position('в' in 'абв');
 
 select 1 = position(materialize(''), '');
 select 1 = position(materialize('абв'), '');
