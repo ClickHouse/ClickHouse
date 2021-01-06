@@ -1308,7 +1308,7 @@ Note that the `arraySum` is a [higher-order function](../../sql-reference/functi
 
 ## arrayAvg(\[func,\] arr1, …) {#array-avg}
 
-Returns the sum of the `func` values. If the function is omitted, it just returns the average of the array elements.
+Returns the average of the `func` values. If the function is omitted, it just returns the average of the array elements.
 
 Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
