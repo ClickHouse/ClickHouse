@@ -1,11 +1,10 @@
 #include <Common/FakeTime.h>
 
-#if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES)
+#if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES) && !defined(UNBUNDLED)
 
 #include <atomic>
 #include <cassert>
 #include <unistd.h>
-#include <dlfcn.h>
 #include <sys/syscall.h>
 #include <Common/MemorySanitizer.h>
 
@@ -76,14 +75,18 @@ struct timeval
     long tv_usec;
 };
 
+
+void * __vdsosym(const char * vername, const char * name);
+
 static std::atomic<void *> real_clock_gettime = nullptr;
+
 
 int clock_gettime(int32_t clk_id, struct timespec * tp)
 {
     void * real_clock_gettime_loaded = real_clock_gettime.load(std::memory_order_relaxed);
     if (!real_clock_gettime_loaded)
     {
-        real_clock_gettime_loaded = dlsym(RTLD_DEFAULT, "__clock_gettime");
+        real_clock_gettime_loaded = __vdsosym("LINUX_2.6", "__vdso_clock_gettime");
         assert(real_clock_gettime_loaded);
         real_clock_gettime.store(real_clock_gettime_loaded, std::memory_order_relaxed);
     }
