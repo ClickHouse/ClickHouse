@@ -1,6 +1,10 @@
 #include <Common/FakeTime.h>
 
-#if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES) && !defined(UNBUNDLED)
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config.h>
+#endif
+
+#if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES) && !defined(UNBUNDLED) && !defined(ARCADIA_BUILD)
 
 #include <atomic>
 #include <cassert>
