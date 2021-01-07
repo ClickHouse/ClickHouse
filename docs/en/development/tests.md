@@ -215,7 +215,7 @@ We run functional, integration, stress and unit tests under TSan on per-commit b
 We run functional, integration, stress and unit tests under MSan on per-commit basis.
 
 ### Undefined behaviour sanitizer
-We run functional, integration, stress and unit tests under USan on per-commit basis. The code of some third-party libraries is not sanitized for UB.
+We run functional, integration, stress and unit tests under UBSan on per-commit basis. The code of some third-party libraries is not sanitized for UB.
 
 ### Valgrind (Memcheck)
 We used to run functional tests under Valgrind overnight, but don't do it anymore. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
