@@ -37,6 +37,7 @@ SRCS(
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
+    DirectorySyncGuard.cpp
     Dwarf.cpp
     Elf.cpp
     ErrorCodes.cpp
