@@ -32,7 +32,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #endif
 
 namespace DB
