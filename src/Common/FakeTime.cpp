@@ -6,7 +6,6 @@
 
 #if defined(__linux__) && defined(__x86_64__) && !defined(SPLIT_SHARED_LIBRARIES) && !defined(UNBUNDLED) && !defined(ARCADIA_BUILD)
 
-#include <atomic>
 #include <cassert>
 #include <unistd.h>
 #include <sys/syscall.h>
