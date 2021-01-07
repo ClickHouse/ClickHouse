@@ -216,7 +216,8 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
+    auto settings = context_.getStorageS3Settings().getSettings(uri.uri.toString());
+
     Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
     if (access_key_id_.empty())
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
