@@ -81,7 +81,7 @@ private:
     {
         AttributeUnderlyingType type;
         bool is_nullable;
-        
+
         std::variant<
             UInt8,
             UInt16,

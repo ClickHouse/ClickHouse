@@ -70,7 +70,6 @@ namespace
                 assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtUInt64:
-                std::cerr << "Insert uint64 " << value.getUInt() << std::endl;
                 assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
                 break;
             case ValueType::vtInt8:
@@ -92,7 +91,6 @@ namespace
                 assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
                 break;
             case ValueType::vtString:
-                std::cerr << "Insert string " << std::string(value.data(), value.size()) << std::endl;
                 assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
                 break;
             case ValueType::vtDate:
