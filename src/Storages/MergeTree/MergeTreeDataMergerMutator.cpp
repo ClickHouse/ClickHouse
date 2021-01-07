@@ -29,7 +29,7 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
-#include <Common/FileSyncGuard.h>
+#include <Common/DirectorySyncGuard.h>
 #include <Parsers/queryToString.h>
 
 #include <cmath>
@@ -780,7 +780,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_column_names.clear();
     }
 
-    std::optional<FileSyncGuard> sync_guard;
+    std::optional<DirectorySyncGuard> sync_guard;
     if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, new_part_tmp_path);
 
@@ -1182,7 +1182,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     disk->createDirectories(new_part_tmp_path);
 
-    std::optional<FileSyncGuard> sync_guard;
+    std::optional<DirectorySyncGuard> sync_guard;
     if (data.getSettings()->fsync_part_directory)
         sync_guard.emplace(disk, new_part_tmp_path);
 
