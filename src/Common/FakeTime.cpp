@@ -76,22 +76,11 @@ struct Timeval
 };
 
 
-void * __vdsosym(const char * vername, const char * name); // NOLINT
-
-static std::atomic<void *> real_clock_gettime = nullptr;
-
+int __clock_gettime(int32_t clk_id, Timespec * tp); // NOLINT
 
 int clock_gettime(int32_t clk_id, Timespec * tp)
 {
-    void * real_clock_gettime_loaded = real_clock_gettime.load(std::memory_order_relaxed);
-    if (!real_clock_gettime_loaded)
-    {
-        real_clock_gettime_loaded = __vdsosym("LINUX_2.6", "__vdso_clock_gettime");
-        assert(real_clock_gettime_loaded);
-        real_clock_gettime.store(real_clock_gettime_loaded, std::memory_order_relaxed);
-    }
-
-    int res = reinterpret_cast<int (*)(int32_t, Timespec *)>(real_clock_gettime_loaded)(clk_id, tp);
+    int res = __clock_gettime(clk_id, tp);
 
     if (0 == res)
     {

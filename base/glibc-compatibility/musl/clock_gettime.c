@@ -53,7 +53,7 @@ static void *volatile vdso_func = (void *)cgt_init;
 
 #endif
 
-int clock_gettime(clockid_t clk, struct timespec *ts)
+int __clock_gettime(clockid_t clk, struct timespec *ts)
 {
 	int r;
 
@@ -102,4 +102,9 @@ int clock_gettime(clockid_t clk, struct timespec *ts)
 	}
 	return __syscall_ret(r);
 #endif
+}
+
+__attribute__((__weak__)) int clock_gettime(clockid_t clk, struct timespec *ts)
+{
+    return __clock_gettime(clk, ts);
 }

@@ -15,6 +15,12 @@ static size_t __find_auxv(unsigned long type, unsigned long * __auxv)
 
 unsigned long getauxval(unsigned long type)
 {
+    if (!__environ) /// Not initialized yet
+    {
+        errno = ENOENT;
+        return 0;
+    }
+
     size_t i;
     for (i = 0; __environ[i]; ++i)
         ;
