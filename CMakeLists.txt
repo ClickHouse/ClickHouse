@@ -214,6 +214,12 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
+# Create BuildID when using lld. For other linkers it is created by default.
+if (LINKER_NAME MATCHES "lld$")
+    # SHA1 is not cryptographically secure but it is the best what lld is offering.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
+endif ()
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
