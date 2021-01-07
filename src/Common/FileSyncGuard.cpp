@@ -20,6 +20,10 @@ FileSyncGuard::~FileSyncGuard()
 {
     try
     {
+#if defined(OS_DARWIN)
+        if (fcntl(fd, F_FULLFSYNC, 0))
+            throwFromErrno("Cannot fcntl(F_FULLFSYNC)");
+#endif
         disk->sync(fd);
         disk->close(fd);
     }
