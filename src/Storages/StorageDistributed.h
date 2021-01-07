@@ -4,6 +4,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -127,6 +128,8 @@ public:
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 
+    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
@@ -162,6 +165,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
         bool attach_,
         ClusterPtr owned_cluster_ = {});
 
@@ -175,6 +179,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
+        const DistributedSettings & distributed_settings_,
         bool attach,
         ClusterPtr owned_cluster_ = {});
 
@@ -187,6 +192,8 @@ protected:
     /// For Distributed engine such configuration doesn't make sense and only the first (main) volume will be used to store data.
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
+
+    DistributedSettings distributed_settings;
 
     struct ClusterNodeData
     {
