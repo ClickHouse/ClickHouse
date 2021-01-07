@@ -12,12 +12,12 @@ void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<Strin
     if (with)
     {
         std::set<String> current_names;
-        for (auto & child : with->children)
+        for (const auto & child : with->children)
         {
-            if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
+            if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(child.get()))
                 current_names.insert(ast_with_alias->alias);
         }
-        for (auto & with_alias : exprs)
+        for (const auto & with_alias : exprs)
         {
             if (!current_names.count(with_alias.first))
                 with->children.push_back(with_alias.second->clone());
