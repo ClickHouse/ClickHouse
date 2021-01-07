@@ -88,7 +88,7 @@ You can also place pair of files `.sh` and `.reference` along with the tool to r
 
 ## Miscellaneous Tests {#miscellaneous-tests}
 
-There are tests for external dictionaries located at `tests/external_dictionaries` and for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
+There are tests for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
 
 There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
 
@@ -185,9 +185,17 @@ For example, build with system packages is bad practice, because we cannot guara
 
 Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
 
+We also test that there are no translation units that are too long to compile or require too much RAM.
+
+We also test that there are no too large stack frames.
+
 ## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
+
+We also test some cases automatically with integrational tests:
+- if data written by old version of ClickHouse can be successfully read by the new version;
+- do distributed queries work in a cluster with different ClickHouse versions.
 
 ## Help from the Compiler {#help-from-the-compiler}
 
@@ -195,27 +203,24 @@ Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall 
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+For production builds, clang is used, but we also test make gcc builds. For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
 
 ### Address sanitizer
-We run functional and integration tests under ASan on per-commit basis.
+We run functional, integration, stress and unit tests under ASan on per-commit basis.
+
+### Thread sanitizer
+We run functional, integration, stress and unit tests under TSan on per-commit basis.
+
+### Memory sanitizer
+We run functional, integration, stress and unit tests under MSan on per-commit basis.
+
+### Undefined behaviour sanitizer
+We run functional, integration, stress and unit tests under USan on per-commit basis. The code of some third-party libraries is not sanitized for UB.
 
 ### Valgrind (Memcheck)
 We used to run functional tests under Valgrind overnight, but don't do it anymore. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
-
-### Undefined behaviour sanitizer
-We run functional and integration tests under USan on per-commit basis.
-
-### Thread sanitizer
-We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
-
-### Memory sanitizer
-Currently we still don’t use MSan.
-
-### Debug allocator
-Debug version of `jemalloc` is used for debug build.
 
 ## Fuzzing {#fuzzing}
 
@@ -235,19 +240,50 @@ You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (o
 
 We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases.
 
+## Stress test
+
+Stress tests are another case of fuzzing. It runs all functional tests in parallel in random order with a single server. Results of the tests are not checked.
+
+It is checked that:
+- server does not crash, no debug or sanitizer traps are triggered;
+- there are no deadlocks;
+- the database structure is consistent;
+- server can successfully stop after the test and start again without exceptions.
+
+There are five variants (Debug, ASan, TSan, MSan, UBSan).
+
+## Thread Fuzzer
+
+Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution. It helps to find even more special cases.
+
 ## Security Audit {#security-audit}
 
 People from Yandex Security Team do some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
-We run `PVS-Studio` on per-commit basis. We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+We run `clang-tidy` and `PVS-Studio` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
+
+We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
 
 If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
 
+We also use `shellcheck` for static analysis of shell scripts.
+
 ## Hardening {#hardening}
 
-`FORTIFY_SOURCE` is used by default. It is almost useless, but still makes sense in rare cases and we don’t disable it.
+In debug build we are using custom allocator that does ASLR of user-level allocations.
+
+We also manually protect memory regions that are expected to be readonly after allocation.
+
+In debug build we also involve a customization of libc that ensures that no "harmful" (obsolete, insecure, not thread-safe) functions are called.
+
+Debug assertions are used extensively.
+
+In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurally. It allows to use exceptions in release build but make it an assertion in debug build.
+
+Debug version of jemalloc is used for debug builds.
+Debug version of libc++ is used for debug builds.
 
 ## Code Style {#code-style}
 
@@ -261,6 +297,8 @@ Alternatively you can try `uncrustify` tool to reformat your code. Configuration
 
 `CLion` has its own code formatter that has to be tuned for our code style.
 
+We also use `codespell` to find typos in code. It is automated as well.
+
 ## Metrica B2B Tests {#metrica-b2b-tests}
 
 Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
@@ -270,6 +308,10 @@ These tests are automated by separate team. Due to high number of moving parts, 
 ## Test Coverage {#test-coverage}
 
 We also track test coverage but only for functional tests and only for clickhouse-server. It is performed on daily basis.
+
+## Tests for Tests
+
+There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
 ## Test Automation {#test-automation}
 
