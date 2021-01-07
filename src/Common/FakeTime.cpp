@@ -61,6 +61,7 @@ extern "C"
 {
 
 #define CLOCK_REALTIME 0
+#define CLOCK_REALTIME_COARSE 5
 #define AT_FDCWD (-100)
 #define AT_EMPTY_PATH 0x1000
 #define AT_SYMLINK_NOFOLLOW 0x100
@@ -89,7 +90,9 @@ int clock_gettime(int32_t clk_id, Timespec * tp)
     if (0 == res)
     {
         __msan_unpoison(tp, sizeof(*tp));
-        tp->sec += offset;
+
+        if (clk_id == CLOCK_REALTIME || clk_id == CLOCK_REALTIME_COARSE)
+            tp->sec += offset;
     }
 
     return res;

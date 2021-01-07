@@ -508,7 +508,6 @@ void TestKeeper::processingThread()
                 if (expired)
                     break;
 
-
                 ++zxid;
 
                 info.request->addRootPath(root_path);
