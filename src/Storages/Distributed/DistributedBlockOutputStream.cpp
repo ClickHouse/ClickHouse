@@ -563,6 +563,17 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
+    const auto & settings = context.getSettingsRef();
+
+    std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
+    std::optional<int> compression_level;
+
+    if (compression_method == "ZSTD")
+        compression_level = settings.network_zstd_compression_level;
+
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
+    CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
+
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
@@ -588,7 +599,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         /// Write batch to temporary location
         {
             WriteBufferFromFile out{first_file_tmp_path};
-            CompressedWriteBuffer compress{out};
+            CompressedWriteBuffer compress{out, compression_codec};
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
