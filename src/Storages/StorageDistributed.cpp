@@ -17,6 +17,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -373,6 +374,7 @@ StorageDistributed::StorageDistributed(
     , cluster_name(global_context.getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
+    , rng(randomSeed())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -538,12 +540,13 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
     {
-        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+        throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
-    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    if (!settings.insert_distributed_one_random_shard && !has_sharding_key
+        && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
     {
         throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
                         ErrorCodes::STORAGE_REQUIRES_PARAMETER);
@@ -555,8 +558,10 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
-        insert_sync, timeout);
+        context, *this, metadata_snapshot,
+        createInsertToRemoteTableQuery(
+            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        cluster, insert_sync, timeout);
 }
 
 
@@ -887,6 +892,32 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
+}
+
+
+size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shards)
+{
+
+    UInt32 total_weight = 0;
+    for (const auto & shard : shards)
+        total_weight += shard.weight;
+
+    assert(total_weight > 0);
+
+    size_t res;
+    {
+        std::lock_guard lock(rng_mutex);
+        res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
+    }
+
+    for (auto i = 0ul, s = shards.size(); i < s; ++i)
+    {
+        if (shards[i].weight > res)
+            return i;
+        res -= shards[i].weight;
+    }
+
+    __builtin_unreachable();
 }
 
 

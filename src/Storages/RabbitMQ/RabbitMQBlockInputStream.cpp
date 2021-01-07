@@ -61,15 +61,10 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
 bool RabbitMQBlockInputStream::needChannelUpdate()
 {
-    if (!buffer || !buffer->isChannelUpdateAllowed())
+    if (!buffer)
         return false;
 
-    if (buffer->isChannelError())
-        return true;
-
-    ChannelPtr channel = buffer->getChannel();
-
-    return !channel || !channel->usable();
+    return buffer->needChannelUpdate();
 }
 
 
@@ -80,8 +75,8 @@ void RabbitMQBlockInputStream::updateChannel()
 
     buffer->updateAckTracker();
 
-    storage.updateChannel(buffer->getChannel());
-    buffer->setupChannel();
+    if (storage.updateChannel(buffer->getChannel()))
+        buffer->setupChannel();
 }
 
 
@@ -137,7 +132,6 @@ Block RabbitMQBlockInputStream::readImpl()
                 }
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
                 case IProcessor::Status::ExpandPipeline:
                     throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
             }

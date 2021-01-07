@@ -5,7 +5,6 @@
 #if USE_MYSQL
 
 #include <Storages/StorageProxy.h>
-#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 
 namespace DB
 {
@@ -21,7 +20,7 @@ class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMater
 public:
     String getName() const override { return "MaterializeMySQL"; }
 
-    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const DatabaseMaterializeMySQL * database_);
+    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,
@@ -32,15 +31,18 @@ public:
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
-private:
     StoragePtr getNested() const override { return nested_storage; }
+
+    void drop() override { nested_storage->drop(); }
+
+private:
     [[noreturn]] void throwNotAllowed() const
     {
         throw Exception("This method is not allowed for MaterializeMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;
-    const DatabaseMaterializeMySQL * database;
+    const IDatabase * database;
 };
 
 }

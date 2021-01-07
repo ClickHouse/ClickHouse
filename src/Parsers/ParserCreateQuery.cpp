@@ -228,7 +228,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         {
             if (primary_key)
             {
-                throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                /// Multiple primary keys are not allowed.
+                return false;
             }
             primary_key = elem;
         }
@@ -355,10 +356,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_replace("REPLACE");
+    ParserKeyword s_or_replace("OR REPLACE");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserCompoundIdentifier table_name_p(true);
+    ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
@@ -378,32 +382,47 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table;
     ASTPtr as_table_function;
     ASTPtr select;
+    ASTPtr from_path;
 
     String cluster_str;
     bool attach = false;
+    bool replace = false;
+    bool or_replace = false;
     bool if_not_exists = false;
     bool is_temporary = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (s_create.ignore(pos, expected))
     {
-        if (s_attach.ignore(pos, expected))
-            attach = true;
-        else
-            return false;
+        if (s_or_replace.ignore(pos, expected))
+            replace = or_replace = true;
     }
+    else if (s_attach.ignore(pos, expected))
+        attach = true;
+    else if (s_replace.ignore(pos, expected))
+        replace = true;
+    else
+        return false;
 
-    if (s_temporary.ignore(pos, expected))
+
+    if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
     }
     if (!s_table.ignore(pos, expected))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (!replace && !or_replace && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
+
+    if (attach && s_from.ignore(pos, expected))
+    {
+        ParserLiteral from_path_p;
+        if (!from_path_p.parse(pos, from_path, expected))
+            return false;
+    }
 
     if (s_on.ignore(pos, expected))
     {
@@ -414,7 +433,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
-    if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+    bool short_attach = attach && !from_path;
+    if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
         auto query = std::make_shared<ASTCreateQuery>();
         node = query;
@@ -439,12 +459,22 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_rparen.ignore(pos, expected))
             return false;
 
-        if (!storage_p.parse(pos, storage, expected) && !is_temporary)
+        auto storage_parse_result = storage_p.parse(pos, storage, expected);
+
+        if (storage_parse_result && s_as.ignore(pos, expected))
+        {
+            if (!select_p.parse(pos, select, expected))
+                return false;
+        }
+
+        if (!storage_parse_result && !is_temporary)
         {
             if (!s_as.ignore(pos, expected))
                 return false;
             if (!table_function_p.parse(pos, as_table_function, expected))
+            {
                 return false;
+            }
         }
     }
     else
@@ -485,6 +515,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->as_table_function = as_table_function;
 
     query->attach = attach;
+    query->replace_table = replace;
+    query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
@@ -508,6 +540,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (from_path)
+        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
 
     return true;
 }
@@ -722,7 +757,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
-    bool is_view = false;
+    bool is_ordinary_view = false;
     bool is_materialized_view = false;
     bool is_populate = false;
     bool replace_view = false;
@@ -746,7 +781,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         is_materialized_view = true;
     }
     else
-        is_view = true;
+        is_ordinary_view = true;
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -803,7 +838,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
-    query->is_view = is_view;
+    query->is_ordinary_view = is_ordinary_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
     query->replace_view = replace_view;
