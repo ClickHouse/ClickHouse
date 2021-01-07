@@ -1,3 +1,5 @@
+-- FIXME: Non equi join are not allowed since #15162 (blocked by #8802), hence we expect 403 error.
+
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS dist_1;
 DROP TABLE IF EXISTS mem2;
@@ -90,19 +92,19 @@ SELECT _shard_num s, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY s
 SELECT any(c.host_name), _shard_num, count()
 FROM cluster(test_cluster_two_shards, system.one) a
 JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
-GROUP BY _shard_num;
+GROUP BY _shard_num; -- { serverError 403 }
 SELECT c.host_name, _shard_num
 FROM cluster(test_cluster_two_shards, system.one) a
-JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards';
+JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'; -- { serverError 403 }
 -- with alias
 SELECT c.host_name, _shard_num s
 FROM cluster(test_cluster_two_shards, system.one) a
-JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards';
+JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'; -- { serverError 403 }
 SELECT c.host_name, _shard_num s
 FROM cluster(test_cluster_two_shards, system.one) a
-JOIN system.clusters c ON s = c.shard_num AND c.cluster = 'test_cluster_two_shards';
+JOIN system.clusters c ON s = c.shard_num AND c.cluster = 'test_cluster_two_shards'; -- { serverError 403 }
 -- with group by from the right table
 SELECT c.host_name, any(_shard_num) s
 FROM cluster(test_cluster_two_shards, system.one) a
 JOIN system.clusters c ON _shard_num = c.shard_num AND c.cluster = 'test_cluster_two_shards'
-GROUP BY c.host_name;
+GROUP BY c.host_name; -- { serverError 403 }
