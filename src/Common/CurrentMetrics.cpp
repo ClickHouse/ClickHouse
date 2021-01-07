@@ -5,6 +5,9 @@
 #define APPLY_FOR_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
+    M(Parts, "Total number of data parts") \
+    M(PartsActive, "Number of active data parts") \
+    M(PartsInactive, "Number of inactive data parts") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
