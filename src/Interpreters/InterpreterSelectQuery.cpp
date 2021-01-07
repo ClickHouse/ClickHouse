@@ -885,6 +885,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
                 /// We need to reset input order info, so that executeOrder can't use  it
                 query_info.input_order_info.reset();
+
+                if (pushdown_limit_to_shards)
+                    executeExpression(query_plan, expressions.before_limit_pushdown, "Before ORDER BY (limit_pushdown)");
             }
             else
             {
@@ -1792,7 +1795,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     UInt64 limit = getLimitForSorting(query, *context);
 
     /** In this step, aggregation columns hasn't been finalized.
-      * In order to support pushdown_limit_to_shards, names of columns are replaced with sorting_column_names that temporarily has been finalized, 
+      * In order to support pushdown_limit_to_shards, names of columns are replaced with sorting_column_names that temporarily has been finalized.
       */
     if (pushdown_limit_to_shards)
     {

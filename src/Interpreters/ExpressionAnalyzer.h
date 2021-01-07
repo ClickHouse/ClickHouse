@@ -163,6 +163,8 @@ protected:
 
     void getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
 
+    void getRootActionsForPushdownLimitToShards(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts);
+
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
       *  or after all the actions that are normally performed before aggregation.
@@ -208,6 +210,7 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_having;
     ActionsDAGPtr before_window;
     ActionsDAGPtr before_order_by;
+    ActionsDAGPtr before_limit_pushdown;
     ActionsDAGPtr before_limit_by;
     ActionsDAGPtr final_projection;
 
@@ -347,6 +350,8 @@ private:
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
+
+    ActionsDAGPtr appendBeforeLimitPushdown(ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
