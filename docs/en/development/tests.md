@@ -203,10 +203,10 @@ For production builds, gcc is used (it still generates slightly more efficient c
 We run functional and integration tests under ASan on per-commit basis.
 
 ### Valgrind (Memcheck)
-We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
+We used to run functional tests under Valgrind overnight, but don't do it anymore. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
 ### Undefined behaviour sanitizer
-We run functional and integration tests under ASan on per-commit basis.
+We run functional and integration tests under USan on per-commit basis.
 
 ### Thread sanitizer
 We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
@@ -232,6 +232,8 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 
 We also use simple fuzz test to generate random SQL queries and to check that the server doesn’t die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases.
 
 ## Security Audit {#security-audit}
 
