@@ -608,6 +608,7 @@ void HashedDictionary::getItemsAttrImpl(
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
+
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void HashedDictionary::getItemsImpl(
     const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
@@ -637,7 +638,7 @@ template <>
 bool HashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String value)
 {
     const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    return setAttributeValueImpl<StringRef>(attribute, id, string_in_arena);
+    return setAttributeValueImpl<StringRef>(attribute, id, StringRef{string_in_arena, value.size()});
 }
 
 bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)

@@ -176,12 +176,12 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
                         attribute,
                         key_columns,
                         [&](const size_t row, const auto value, bool is_null)
-                        { 
+                        {
                             if (attribute.is_nullable)
                             {
                                 (*vec_null_map_to)[row] = is_null;
                             }
-                            
+
                             out[row] = value;
                         },
                         [&](const size_t) { return def; }
@@ -501,7 +501,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
 
         if (it)
         {
-            set_value(i, static_cast<OutputType>(it->getMapped()), false); 
+            set_value(i, static_cast<OutputType>(it->getMapped()), false);
         }
         else
         {
@@ -531,7 +531,7 @@ template <>
 bool ComplexKeyHashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const StringRef key, const String value)
 {
     const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    return setAttributeValueImpl<StringRef>(attribute, key, string_in_arena);
+    return setAttributeValueImpl<StringRef>(attribute, key, StringRef{string_in_arena, value.size()});
 }
 
 bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const StringRef key, const Field & value)

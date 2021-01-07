@@ -223,7 +223,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
                                 (*vec_null_map_to)[row] = is_null;
                             }
 
-                            out[row] = value; 
+                            out[row] = value;
                         },
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
@@ -242,7 +242,7 @@ ColumnPtr RangeHashedDictionary::getColumn(
                                 (*vec_null_map_to)[row] = is_null;
                             }
 
-                            out[row] = value; 
+                            out[row] = value;
                         },
                         [&](const size_t) { return def; }
                     );
@@ -478,7 +478,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
 {
     using ValueType = std::conditional_t<std::is_same_v<T, String>, StringRef, T>;
     auto & map = *std::get<Ptr<ValueType>>(attribute.maps);
-    
+
     Value<ValueType> value_to_insert;
 
     if (attribute.is_nullable && value.isNull())

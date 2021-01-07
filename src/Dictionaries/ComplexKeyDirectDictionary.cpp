@@ -82,7 +82,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                             {
                                 (*vec_null_map_to)[row] = is_null;
                             }
- 
+
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
@@ -105,7 +105,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                             {
                                 (*vec_null_map_to)[row] = is_null;
                             }
- 
+
                             const auto ref = StringRef{value};
                             out->insertData(ref.data, ref.size);
                         },
@@ -126,7 +126,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                         if (attribute.is_nullable)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                        } 
+                        }
 
                         const auto ref = StringRef{value};
                         out->insertData(ref.data, ref.size);
@@ -167,7 +167,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                             {
                                 (*vec_null_map_to)[row] = is_null;
                             }
- 
+
                             out[row] = value;
                         },
                         [&](const size_t row) { return default_col->getData()[row]; }
@@ -203,11 +203,11 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
                     attribute,
                     key_columns,
                     [&](const size_t row, const auto value, bool is_null)
-                    { 
+                    {
                         if (attribute.is_nullable)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                        } 
+                        }
 
                         out[row] = value;
                     },
