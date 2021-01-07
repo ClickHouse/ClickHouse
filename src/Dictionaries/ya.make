@@ -61,7 +61,6 @@ SRCS(
     PolygonDictionary.cpp
     PolygonDictionaryImplementations.cpp
     PolygonDictionaryUtils.cpp
-    PostgreSQLDictionarySource.cpp
     RangeHashedDictionary.cpp
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
