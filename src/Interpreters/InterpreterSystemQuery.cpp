@@ -227,9 +227,11 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::KILL:
             context.checkAccess(AccessType::SYSTEM_SHUTDOWN);
-            if (kill(0, SIGKILL))
-                throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
-            break;
+            /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+            /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+            LOG_INFO(log, "Exit immediately as the SYSTEM KILL command has been issued.");
+            _exit(128 + SIGKILL);
+            // break; /// unreachable
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
