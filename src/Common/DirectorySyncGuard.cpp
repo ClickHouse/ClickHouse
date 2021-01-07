@@ -1,4 +1,4 @@
-#include <Common/FileSyncGuard.h>
+#include <Common/DirectorySyncGuard.h>
 #include <Common/Exception.h>
 #include <Disks/IDisk.h>
 #include <fcntl.h> // O_RDWR
@@ -11,12 +11,12 @@
 namespace DB
 {
 
-FileSyncGuard::FileSyncGuard(const DiskPtr & disk_, const String & path)
+DirectorySyncGuard::DirectorySyncGuard(const DiskPtr & disk_, const String & path)
     : disk(disk_)
     , fd(disk_->open(path, O_DIRECTORY))
 {}
 
-FileSyncGuard::~FileSyncGuard()
+DirectorySyncGuard::~DirectorySyncGuard()
 {
     try
     {

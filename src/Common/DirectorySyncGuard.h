@@ -13,14 +13,14 @@ using DiskPtr = std::shared_ptr<IDisk>;
 /// It's used to keep descriptor open, while doing some operations with it, and do fsync at the end.
 /// Guaranties of sequence 'close-reopen-fsync' may depend on kernel version.
 /// Source: linux-fsdevel mailing-list https://marc.info/?l=linux-fsdevel&m=152535409207496
-class FileSyncGuard
+class DirectorySyncGuard
 {
 public:
     /// NOTE: If you have already opened descriptor, it's preferred to use
     /// this constructor instead of constructor with path.
-    FileSyncGuard(const DiskPtr & disk_, int fd_) : disk(disk_), fd(fd_) {}
-    FileSyncGuard(const DiskPtr & disk_, const std::string & path);
-    ~FileSyncGuard();
+    DirectorySyncGuard(const DiskPtr & disk_, int fd_) : disk(disk_), fd(fd_) {}
+    DirectorySyncGuard(const DiskPtr & disk_, const std::string & path);
+    ~DirectorySyncGuard();
 
 private:
     DiskPtr disk;
