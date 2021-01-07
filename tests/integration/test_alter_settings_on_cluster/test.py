@@ -48,6 +48,7 @@ def test_default_database_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        assert node.query("SHOW CREATE test_local_table FORMAT TSV").endswith(
-            "old_parts_lifetime = 100\n"
-        )
+        assert node.query(
+            database="test_default_database",
+            sql="SHOW CREATE test_local_table FORMAT TSV",
+        ).endswith("old_parts_lifetime = 100\n")
