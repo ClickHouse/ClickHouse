@@ -70,13 +70,13 @@ using time_t = int64_t;
 struct Timespec
 {
     time_t sec;
-    long nsec;
+    int64_t nsec;
 };
 
 struct Timeval
 {
     time_t sec;
-    long usec;
+    int64_t usec;
 };
 
 
@@ -180,6 +180,8 @@ int lstat64(const char * pathname, Stat * statbuf)
 {
     return lstat(pathname, statbuf);
 }
+
+/// This function is using absolute time
 
 }
 
