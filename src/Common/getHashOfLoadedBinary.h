@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <Common/SipHash.h>
 
@@ -11,5 +13,3 @@
   */
 SipHash getHashOfLoadedBinary();
 std::string getHashOfLoadedBinaryHex();
-
-
