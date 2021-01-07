@@ -283,6 +283,14 @@ In debug build, if exception with "logical error" code (implies a bug) is being 
 Debug version of jemalloc is used for debug builds.
 Debug version of libc++ is used for debug builds.
 
+## Runtime Integrity Checks
+
+Data stored on disk is checksummed. Data in MergeTree tables is checksummed in three ways (compressed data blocks, uncompressed data blocks, the total checksum across blocks). Data transferred over network between client and server or between servers is also checksummed. Replication ensures bit-identical data on replicas.
+
+It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client). Note that bit flips are common and likely to occur even for ECC RAM and in presense of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+
+ClickHouse provides diagnostics that will help ops engineers to find faulty hardware.
+
 ## Code Style {#code-style}
 
 Code style rules are described [here](style.md).
