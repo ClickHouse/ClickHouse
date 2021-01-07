@@ -167,17 +167,14 @@ Precise query execution timings are not recorded and not compared due to high va
 
 ## Build Tests {#build-tests}
 
-Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. Tests are located at `ci` directory. They run build from source inside Docker, Vagrant, and sometimes with `qemu-user-static` inside Docker. These tests are under development and test runs are not automated.
+Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
-Motivation:
-
-Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
-
--   build on FreeBSD
--   build on Debian with libraries from system packages
--   build with shared linking of libraries
--   build on AArch64 platform
--   build on PowerPc platform
+Examples:
+-   cross-compile for Darwin x86_64 (Mac OS X)
+-   cross-compile for FreeBSD x86_64
+-   cross-compile for Linux AArch64
+-   build on Ubuntu with libraries from system packages (discouraged)
+-   build with shared linking of libraries (discouraged)
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 
