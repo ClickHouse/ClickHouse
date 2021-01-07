@@ -317,7 +317,7 @@ There is automated check for flaky tests. It runs all new tests 100 times (for f
 
 We run tests with Yandex internal CI and job automation system named “Sandbox”.
 
-Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored eternally. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored for several months. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
 
 We don’t use Travis CI due to the limit on time and computational power.
 We don’t use Jenkins. It was used before and now we are happy we are not using Jenkins.
