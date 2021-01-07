@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 verify_sql="SELECT COUNT(1)
@@ -18,7 +19,7 @@ FROM system.parts
 ) as b USING (Parts,PartsActive,PartsInactive)"
 
 verify(){
-for i in $(seq 1 10)
+for _ in $(seq 1 10)
 do
 result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
 if [ "$result" = "1" ];then
