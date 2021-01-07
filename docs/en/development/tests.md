@@ -84,8 +84,6 @@ If you want to improve performance of ClickHouse in some scenario, and if improv
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
-You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
-
 ## Miscellaneous Tests {#miscellaneous-tests}
 
 There are tests for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
