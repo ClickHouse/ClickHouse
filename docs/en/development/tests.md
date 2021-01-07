@@ -269,7 +269,7 @@ These tests are automated by separate team. Due to high number of moving parts, 
 
 ## Test Coverage {#test-coverage}
 
-As of July 2018 we don’t track test coverage.
+We also track test coverage but only for functional tests and only for clickhouse-server. It is performed on daily basis.
 
 ## Test Automation {#test-automation}
 
