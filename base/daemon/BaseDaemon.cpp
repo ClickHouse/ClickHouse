@@ -80,12 +80,24 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
+// Apparently strsignal is not instrumented by MemorySanitizer, so we
+// have to unpoison it to avoid msan reports inside fmt library when we
+// print it.
 const char * msan_strsignal(int sig)
 {
-    // Apparently strsignal is not instrumented by MemorySanitizer, so we
-    // have to unpoison it to avoid msan reports inside fmt library when we
-    // print it.
+    // no glibc in osx/freebsd
+#if !defined(__GLIBC_PREREQ)
+#define __GLIBC_PREREQ(x, y) 0
+#endif
+
+    // glibc 2.32+ deprecates sys_siglist[]
+    // newer glibc is a problem only for unbundled build.
+#if __GLIBC_PREREQ(2, 32)
+    const char * signal_name = sigdescr_np(sig);
+#else
     const char * signal_name = sys_siglist[sig];
+#endif
+
     __msan_unpoison_string(signal_name);
     return signal_name;
 }

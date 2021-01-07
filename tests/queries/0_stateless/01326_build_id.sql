@@ -1,1 +1,1 @@
-SELECT length(buildId());
+SELECT length(buildId()) >= 16;
