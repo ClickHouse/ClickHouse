@@ -29,6 +29,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
+#include <Common/DirectorySyncGuard.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -588,6 +589,10 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     const auto & settings = context.getSettingsRef();
+    const auto & distributed_settings = storage.getDistributedSettingsRef();
+
+    bool fsync = distributed_settings.fsync_after_insert;
+    bool dir_fsync = distributed_settings.fsync_tmp_directory;
 
     std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
     std::optional<int> compression_level;
@@ -603,14 +608,15 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     std::string first_file_tmp_path{};
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
-    auto disk = reservation->getDisk()->getPath();
+    const auto disk = reservation->getDisk();
+    auto disk_path = disk->getPath();
     auto data_path = storage.getRelativeDataPath();
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
     {
-        const std::string path(disk + data_path + *it);
+        const std::string path(disk_path + data_path + *it);
         Poco::File(path).createDirectory();
 
         const std::string tmp_path(path + "/tmp/");
@@ -622,6 +628,13 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         /// Write batch to temporary location
         {
+            std::optional<DirectorySyncGuard> tmp_path_sync_guard;
+            if (dir_fsync)
+            {
+                const std::string relative_tmp_path(data_path + *it + "/tmp/");
+                tmp_path_sync_guard.emplace(disk, relative_tmp_path);
+            }
+
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
@@ -647,6 +660,10 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
+
+            out.finalize();
+            if (fsync)
+                out.sync();
         }
 
         // Create hardlink here to reuse increment number
@@ -658,10 +675,10 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(disk + data_path + *it);
+        const std::string path(disk_path + data_path + *it);
         Poco::File(path).createDirectory();
-        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
 
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
         createHardLink(first_file_tmp_path, block_file_path);
     }
 
@@ -673,7 +690,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
     for (const auto & dir_name : dir_names)
     {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk_path, dir_name);
         directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
     }
 }

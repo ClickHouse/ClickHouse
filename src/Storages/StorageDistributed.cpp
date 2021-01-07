@@ -363,6 +363,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
+    const DistributedSettings & distributed_settings_,
     bool attach_,
     ClusterPtr owned_cluster_)
     : IStorage(id_)
@@ -374,6 +375,7 @@ StorageDistributed::StorageDistributed(
     , cluster_name(global_context.getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
+    , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -417,9 +419,10 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
+    const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach, std::move(owned_cluster_))
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -954,6 +957,8 @@ void registerStorageDistributed(StorageFactory & factory)
           * - constant expression with string result, like currentDatabase();
           * -- string literal as specific case;
           * - empty string means 'use default database from cluster'.
+          *
+          * Distributed engine also supports SETTINGS clause.
           */
 
         ASTs & engine_args = args.engine_args;
@@ -995,6 +1000,13 @@ void registerStorageDistributed(StorageFactory & factory)
                     ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
         }
 
+        /// TODO: move some arguments from the arguments to the SETTINGS.
+        DistributedSettings distributed_settings;
+        if (args.storage_def->settings)
+        {
+            distributed_settings.loadFromQuery(*args.storage_def);
+        }
+
         return StorageDistributed::create(
             args.table_id, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
@@ -1002,9 +1014,11 @@ void registerStorageDistributed(StorageFactory & factory)
             sharding_key,
             storage_policy,
             args.relative_data_path,
+            distributed_settings,
             args.attach);
     },
     {
+        .supports_settings = true,
         .supports_parallel_insert = true,
         .source_access_type = AccessType::REMOTE,
     });

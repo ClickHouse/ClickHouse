@@ -25,10 +25,19 @@ The Distributed engine accepts parameters:
     -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
     -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
+Also it accept the following settings:
+
+- `fsync_after_insert` - Do fsync for every inserted. Will decreases performance of inserts (only for async INSERT, i.e. `insert_distributed_sync=false`),
+
+- `fsync_tmp_directory` - Do fsync for temporary directory (that is used for async INSERT only) after all part operations (writes, renames, etc.).
+
 Example:
 
 ``` sql
 Distributed(logs, default, hits[, sharding_key[, policy_name]])
+SETTINGS
+    fsync_after_insert=0,
+    fsync_tmp_directory=0;
 ```
 
 Data will be read from all servers in the `logs` cluster, from the default.hits table located on every server in the cluster.
