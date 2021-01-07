@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_FSYNC;
+}
+
 DirectorySyncGuard::DirectorySyncGuard(const DiskPtr & disk_, const String & path)
     : disk(disk_)
     , fd(disk_->open(path, O_DIRECTORY))
@@ -22,7 +27,7 @@ DirectorySyncGuard::~DirectorySyncGuard()
     {
 #if defined(OS_DARWIN)
         if (fcntl(fd, F_FULLFSYNC, 0))
-            throwFromErrno("Cannot fcntl(F_FULLFSYNC)");
+            throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
 #endif
         disk->sync(fd);
         disk->close(fd);
