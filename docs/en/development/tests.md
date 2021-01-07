@@ -318,6 +318,14 @@ We also track test coverage but only for functional tests and only for clickhous
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
+## Testflows
+
+[Testflows](https://testflows.com/) is an enterprise-grade testing framework. It is used by Altinity for some of the tests and we run these tests in our CI.
+
+## Yandex Checks (only for Yandex employees)
+
+These checks are importing ClickHouse code into Yandex internal monorepository, so ClickHouse codebase can be used as a library by other products at Yandex (YT and YDB). Note that clickhouse-server itself is not being build from internal repo and unmodified open-source build is used for Yandex applications.
+
 ## Test Automation {#test-automation}
 
 We run tests with Yandex internal CI and job automation system named “Sandbox”.
