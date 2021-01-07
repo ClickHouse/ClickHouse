@@ -493,8 +493,9 @@ void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
     pid_file.reset();
-    if (::raise(SIGKILL) != 0)
-        throw Poco::SystemException("cannot kill process");
+    /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+    /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+    _exit(128 + SIGKILL);
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
