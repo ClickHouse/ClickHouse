@@ -558,3 +558,139 @@ add_subdirectory (utils)
 include (cmake/print_include_directories.cmake)
 
 include (cmake/sanitize_target_link_libraries.cmake)
+
+# Various build speed optimizations.
+option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder. (No-op on CMake < 3.16.0)" ON)
+option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder. (No-op on CMake < 3.19.0)" ON)
+option(FASTBUILD_NO_LINK_OPT "Disable linker optimizations, such as string merging. Reduces link times." ON)
+option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows GDB symbol loading. Reduces IO." OFF)
+option(FASTBUILD_SPLIT_DWARF "Build with split DWARF files. Makes debugging symbols non-portable. Reduces IO." OFF)
+
+# Check Unity build compatibility.
+if ((FASTBUILD_CONTRIB_UNITY OR FASTBUILD_FUNCTIONS_UNITY) AND CMAKE_VERSION VERSION_LESS "3.16.0")
+    message("Disabling Unity builds. (Needs CMake >= 3.16.0)")
+    set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
+    set(FASTBUILD_FUNCTIONS_UNITY OFF CACHE BOOL INTERNAL FORCE)
+elseif (FASTBUILD_CONTRIB_UNITY AND UNBUNDLED)
+    message("Disabling FASTBUILD_CONTRIB_UNITY. (UNBUNDLED is set, so Unity builds serve no purpose)")
+    set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
+endif()
+
+# Check for a Unity build related bug affecting FASTBUILD_FUNCTIONS_UNITY.
+if (FASTBUILD_FUNCTIONS_UNITY AND CMAKE_VERSION VERSION_LESS "3.19.0")
+    message("Disabling FASTBUILD_FUNCTIONS_UNITY. (Needs CMake >= 3.19.0)")
+    set(FASTBUILD_FUNCTIONS_UNITY OFF CACHE BOOL INTERNAL FORCE)
+endif()
+
+# Check no-pubnames compatibility.
+if (FASTBUILD_NO_PUBNAMES AND NOT COMPILER_CLANG)
+    message("Disabling FASTBUILD_NO_PUBNAMES. (Requires Clang)")
+    set(FASTBUILD_NO_PUBNAMES OFF CACHE BOOL INTERNAL FORCE)
+endif()
+
+# Check split-dwarf compatibility.
+if (FASTBUILD_SPLIT_DWARF AND COMPILER_MATCHES_CCACHE AND CCACHE_VERSION VERSION_LESS "4.0.0")
+    # Until ccache 4.0.0, ccache has very poor support for split-dwarf.
+    message("Disabling FASTBUILD_SPLIT_DWARF. (Requires ccache >= 4.0.0)")
+    set(FASTBUILD_SPLIT_DWARF OFF CACHE BOOL INTERNAL FORCE)
+endif()
+
+# Handles FASTBUILD_SPLIT_DWARF, FASTBUILD_NO_PUBNAMES, FASTBUILD_NO_LINK_OPT, and FASTBUILD_CONTRIB_UNITY.
+# Depends on sanitize_target_link_libraries.cmake
+foreach(TARGET ${all_targets})
+    get_target_property(TARGET_TYPE ${TARGET} TYPE)
+
+    # Skip over INTERFACE targets (stuff like the header only Boost target)
+    # INTERFACE libraries are selective in properties they allow to set and get
+    # Of course, these properties do not apply to them, either, so we skip.
+    # Likewise, we skip over UTILITY targets, as those aren't compilable.
+    if ((${TARGET_TYPE} STREQUAL "INTERFACE_LIBRARY") OR
+        (${TARGET_TYPE} STREQUAL "UTILITY"))
+        continue()
+    endif()
+
+    # This handles FASTBUILD_SPLIT_DWARF.
+    if (FASTBUILD_SPLIT_DWARF)
+        # In theory, improves link times by decoupling DWARF information.
+        # In practice, results are mixed and vary by linker, disk speed, etc.
+        target_compile_options(${TARGET} PRIVATE -gsplit-dwarf)
+    endif()
+
+    # This handles FASTBUILD_NO_PUBNAMES.
+    if (FASTBUILD_NO_PUBNAMES)
+        # Improves link times by omitting some debug information. Pairs well with FASTBUILD_SPLIT_DWARF.
+        target_compile_options(${TARGET} PRIVATE -gno-pubnames)
+    endif()
+
+    # This handles FASTBUILD_NO_LINK_OPT.
+    if (FASTBUILD_SPLIT_DWARF)
+        # Improves link times by skipping e.g. string merging.
+        target_link_options(${TARGET} PRIVATE -Wl,-O0)
+    endif()
+
+    # This handles FASTBUILD_CONTRIB_UNITY.
+    if (FASTBUILD_CONTRIB_UNITY)
+        get_target_property(TARGET_DIRECTORY ${TARGET} SOURCE_DIR)
+
+        # Groups of targets that can be Unity-built at low batch sizes
+        if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND (
+                ${TARGET} MATCHES "LLVM" OR
+                ${TARGET} MATCHES "absl" OR
+                ${TARGET} MATCHES "poco" OR
+                ${TARGET} MATCHES "cassandra" OR
+                ${TARGET} MATCHES "grpc"))
+            set_target_properties(${TARGET} PROPERTIES
+                                  UNITY_BUILD ON
+                                  UNITY_BUILD_BATCH_SIZE 2
+                                  )
+        endif()
+    endif()
+endforeach()
+
+# This handles FASTBUILD_CONTRIB_UNITY.
+if (FASTBUILD_CONTRIB_UNITY)
+    # Miscellaneous packages that get caught by the automatic Unity building rule, despite not supporting Unity builds.
+    set_target_properties(_poco_foundation absl_synchronization grpc PROPERTIES UNITY_BUILD OFF)
+    set_target_properties(LLVMCodeGen LLVMSelectionDAG LLVMVectorize
+                          LLVMBitReader LLVMObject LLVMScalarOpts
+                          PROPERTIES UNITY_BUILD OFF
+                          )
+
+    # Packages that support and benefit a lot from unity builds.
+    set_target_properties(arrow_static PROPERTIES UNITY_BUILD ON)
+    set_target_properties(aws_s3 PROPERTIES UNITY_BUILD ON)
+    set_target_properties(cxxabi PROPERTIES UNITY_BUILD ON)
+    set_target_properties(gpr PROPERTIES UNITY_BUILD ON)
+    set_target_properties(rocksdb PROPERTIES UNITY_BUILD ON)
+
+    # Package that supports unity builds, but only at a low batch size because of ODR violations.
+    set_target_properties(antlr4-runtime PROPERTIES
+                          UNITY_BUILD ON
+                          UNITY_BUILD_BATCH_SIZE 2
+                          )
+endif()
+
+# This handles FASTBUILD_FUNCTIONS_UNITY.
+if (FASTBUILD_FUNCTIONS_UNITY)
+    # This is the list of targets to Unity-build.
+    set(FUNCTIONS_TARGETS
+        clickhouse_functions_gatherutils clickhouse_functions_array clickhouse_functions_array clickhouse_functions)
+
+    # Collect files that trigger C++ ODR violations, so as to exclude them.
+    file(GLOB ODR_VIOLATIONS RELATIVE ${CMAKE_SOURCE_DIR}
+         "src/Functions/toDayOf*.cpp" "src/Functions/normalize*.cpp" "src/Functions/format*.cpp"
+         )
+
+    # Turn on Unity builds at a moderate batch size.
+    set_target_properties(${FUNCTIONS_TARGETS}
+                          PROPERTIES
+                          UNITY_BUILD ON
+                          UNITY_BUILD_BATCH_SIZE 4
+                          )
+
+    # Exclude ODR violating files.
+    set_property(SOURCE ${ODR_VIOLATIONS}
+                 TARGET_DIRECTORY ${FUNCTIONS_TARGETS}
+                 PROPERTY SKIP_UNITY_BUILD_INCLUSION ON
+                 )
+endif()

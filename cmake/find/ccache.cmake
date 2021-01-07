@@ -29,7 +29,7 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
    execute_process(COMMAND ${CCACHE_FOUND} "-V" OUTPUT_VARIABLE CCACHE_VERSION)
    string(REGEX REPLACE "ccache version ([0-9\\.]+).*" "\\1" CCACHE_VERSION ${CCACHE_VERSION})
 
-   if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+   if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR TRUE)
       message(STATUS "Using ${CCACHE_FOUND} ${CCACHE_VERSION}")
 
       # 4+ ccache respect SOURCE_DATE_EPOCH (always includes it into the hash
@@ -37,7 +37,7 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
       # makes cache of ccache unusable
       #
       # FIXME: once sloppiness will be introduced for this this can be removed.
-      if (CCACHE_VERSION VERSION_GREATER "4.0")
+      if (CCACHE_VERSION VERSION_GREATER "4.0" OR TRUE)
          message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache")
          set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
          set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
