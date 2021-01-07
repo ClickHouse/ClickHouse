@@ -63,16 +63,16 @@ extern "C"
 
 using time_t = int64_t;
 
-struct timespec // NOLINT
+struct Timespec
 {
-    time_t tv_sec;
-    long tv_nsec;
+    time_t sec;
+    long nsec;
 };
 
-struct timeval // NOLINT
+struct Timeval
 {
-    time_t tv_sec;
-    long tv_usec;
+    time_t sec;
+    long usec;
 };
 
 
@@ -81,7 +81,7 @@ void * __vdsosym(const char * vername, const char * name); // NOLINT
 static std::atomic<void *> real_clock_gettime = nullptr;
 
 
-int clock_gettime(int32_t clk_id, struct timespec * tp)
+int clock_gettime(int32_t clk_id, Timespec * tp)
 {
     void * real_clock_gettime_loaded = real_clock_gettime.load(std::memory_order_relaxed);
     if (!real_clock_gettime_loaded)
@@ -91,36 +91,36 @@ int clock_gettime(int32_t clk_id, struct timespec * tp)
         real_clock_gettime.store(real_clock_gettime_loaded, std::memory_order_relaxed);
     }
 
-    int res = reinterpret_cast<int (*)(int32_t, struct timespec *)>(real_clock_gettime_loaded)(clk_id, tp);
+    int res = reinterpret_cast<int (*)(int32_t, Timespec *)>(real_clock_gettime_loaded)(clk_id, tp);
 
     if (0 == res)
     {
         __msan_unpoison(tp, sizeof(*tp));
-        tp->tv_sec += offset;
+        tp->sec += offset;
     }
 
     return res;
 }
 
-int gettimeofday(struct timeval * tv, void *)
+int gettimeofday(Timeval * tv, void *)
 {
-    timespec tp;
+    Timespec tp;
     int res = clock_gettime(CLOCK_REALTIME, &tp);
     if (0 == res)
     {
-        tv->tv_sec = tp.tv_sec;
-        tv->tv_usec = tp.tv_nsec / 1000;
+        tv->sec = tp.sec;
+        tv->usec = tp.nsec / 1000;
     }
     return res;
 }
 
 time_t time(time_t * tloc)
 {
-    timespec tp;
+    Timespec tp;
     int res = clock_gettime(CLOCK_REALTIME, &tp);
     (void)res;
     assert(0 == res);
-    time_t t = tp.tv_sec;
+    time_t t = tp.sec;
     if (tloc)
         *tloc = t;
     return t;
@@ -128,60 +128,60 @@ time_t time(time_t * tloc)
 
 /// Filesystem time should be also altered as we sometimes compare it with the wall clock time.
 
-struct stat // NOLINT
+struct Stat
 {
     /// Make yourself confident:
     /// gcc -xc++ -include 'sys/stat.h' -include 'cstddef' - <<< "int main() { return offsetof(struct stat, st_atime); }" && ./a.out; echo $?
     char pad[72];
 
-    struct timespec st_atim;
-    struct timespec st_mtim;
-    struct timespec st_ctim;
+    Timespec st_atim;
+    Timespec st_mtim;
+    Timespec st_ctim;
 };
 
-static int fstatat(int fd, const char * pathname, struct stat * statbuf, int flags)
+static int fstatat(int fd, const char * pathname, Stat * statbuf, int flags)
 {
     int res = syscall(__NR_newfstatat, fd, pathname, statbuf, flags);
     if (0 == res)
     {
-        statbuf->st_atim.tv_sec += offset;
-        statbuf->st_mtim.tv_sec += offset;
-        statbuf->st_ctim.tv_sec += offset;
+        statbuf->st_atim.sec += offset;
+        statbuf->st_mtim.sec += offset;
+        statbuf->st_ctim.sec += offset;
     }
     return res;
 }
 
-int stat(const char * pathname, struct stat * statbuf)
+int stat(const char * pathname, Stat * statbuf)
 {
     return fstatat(AT_FDCWD, pathname, statbuf, 0);
 }
 
-int fstat(int fd, struct stat * statbuf)
+int fstat(int fd, Stat * statbuf)
 {
     return fstatat(fd, "", statbuf, AT_EMPTY_PATH);
 }
 
-int lstat(const char * pathname, struct stat * statbuf)
+int lstat(const char * pathname, Stat * statbuf)
 {
     return fstatat(AT_FDCWD, pathname, statbuf, AT_SYMLINK_NOFOLLOW);
 }
 
-int stat64(const char * pathname, struct stat * statbuf)
+int stat64(const char * pathname, Stat * statbuf)
 {
     return stat(pathname, statbuf);
 }
 
-int fstat64(int fd, struct stat * statbuf)
+int fstat64(int fd, Stat * statbuf)
 {
     return fstat(fd, statbuf);
 }
 
-int fstatat64(int fd, const char * pathname, struct stat * statbuf, int flags)
+int fstatat64(int fd, const char * pathname, Stat * statbuf, int flags)
 {
     return fstatat(fd, pathname, statbuf, flags);
 }
 
-int lstat64(const char * pathname, struct stat * statbuf)
+int lstat64(const char * pathname, Stat * statbuf)
 {
     return lstat(pathname, statbuf);
 }
