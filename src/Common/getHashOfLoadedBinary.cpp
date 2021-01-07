@@ -1,6 +1,9 @@
+#include <Common/getHashOfLoadedBinary.h>
+
+#if defined(__linux__)
+
 #include <link.h>
 #include <array>
-#include <Common/getHashOfLoadedBinary.h>
 #include <Common/hex.h>
 
 
@@ -38,3 +41,18 @@ std::string getHashOfLoadedBinaryHex()
     hash.get128(checksum[0], checksum[1]);
     return getHexUIntUppercase(checksum);
 }
+
+#else
+
+SipHash getHashOfLoadedBinary()
+{
+    return {};
+}
+
+
+std::string getHashOfLoadedBinaryHex()
+{
+    return {};
+}
+
+#endif

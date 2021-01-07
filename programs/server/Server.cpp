@@ -452,7 +452,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
-        String stored_binary_hash = getStoredBinaryHash();
 
         if (stored_binary_hash.empty())
         {
