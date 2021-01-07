@@ -608,5 +608,36 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
     func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
+    
+//override method cloneResized
+MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const {
+    //create a new col to return
+    auto cloneCol = cloneEmpty();
+    auto res = typeid_cast<ColumnAggregateFunction *>(cloneCol.get());
+    if (size == 0)
+        return cloneCol;
+
+    size_t from_size = data.size();
+    auto & res_data = res->data;
+    //copy data to cloned column
+    if (size <= from_size)
+    {
+        res_data.resize(size);
+        res->insertRangeFrom(*this, 0, size);
+    }
+    else
+    {
+        res_data.resize(from_size);
+        if (from_size > 0)
+        {
+            res->insertRangeFrom(*this, 0, from_size);
+        }
+        res->ensureOwnership();
+        for(int i=0;i<size-from_size;++i){
+            res->insertDefault();
+        }
+    }
+    return cloneCol;
+}
 
 }
