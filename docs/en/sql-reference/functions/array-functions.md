@@ -1288,11 +1288,29 @@ Returns the index of the first element in the `arr1` array for which `func` retu
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
+## arrayMin(\[func,\] arr1, …) {#array-min}
+
+Returns the sum of the `func` values. If the function is omitted, it just returns the min of the array elements.
+
+Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+
+## arrayMax(\[func,\] arr1, …) {#array-max}
+
+Returns the sum of the `func` values. If the function is omitted, it just returns the min of the array elements.
+
+Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+
 ## arraySum(\[func,\] arr1, …) {#array-sum}
 
 Returns the sum of the `func` values. If the function is omitted, it just returns the sum of the array elements.
 
 Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+
+## arrayAvg(\[func,\] arr1, …) {#array-avg}
+
+Returns the average of the `func` values. If the function is omitted, it just returns the average of the array elements.
+
+Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 

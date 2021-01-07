@@ -27,7 +27,7 @@ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/cl
 ```
 6.  Download test data according to the [Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 ```bash
-wget https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+wget https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz
 tar xvf hits_100m_obfuscated_v1.tar.xz -C .
 mv hits_100m_obfuscated_v1/* .
 ```

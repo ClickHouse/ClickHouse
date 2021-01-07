@@ -243,7 +243,7 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 
 void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLString(serializeToString(function, column, row_num), ostr);
+    writeXMLStringForTextElement(serializeToString(function, column, row_num), ostr);
 }
 
 

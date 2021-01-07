@@ -29,7 +29,15 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#endif
 #include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include <Formats/FormatSettings.h>
 
@@ -581,9 +589,65 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
+inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
+{
+    const char * pos = begin;
+    while (true)
+    {
+        const char * next_pos = find_first_symbols<'<', '&', '>', '"', '\''>(pos, end);
+
+        if (next_pos == end)
+        {
+            buf.write(pos, end - pos);
+            break;
+        }
+        else if (*next_pos == '<')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&lt;", buf);
+        }
+        else if (*next_pos == '&')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&amp;", buf);
+        }
+        else if (*next_pos == '>')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&gt;", buf);
+        }
+        else if (*next_pos == '"')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&quot;", buf);
+        }
+        else if (*next_pos == '\'')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&apos;", buf);
+        }
+
+        pos = next_pos;
+    }
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
+}
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
-inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -613,14 +677,14 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-inline void writeXMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -666,7 +730,7 @@ static const char digits100[201] =
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
-    if (buf.position() + 10 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 10 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[date.year() / 100 * 2], 2);
         buf.position() += 2;
@@ -703,7 +767,7 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
-    if (buf.position() + 19 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 19 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[datetime.year() / 100 * 2], 2);
         buf.position() += 2;

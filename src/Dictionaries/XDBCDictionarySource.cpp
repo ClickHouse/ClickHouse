@@ -4,8 +4,10 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -46,8 +48,8 @@ namespace
             : name(name_)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
-            reader
-                = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
+            auto format = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
+            reader = std::make_shared<InputStreamFromInputFormat>(format);
         }
 
         Block getHeader() const override { return reader->getHeader(); }
