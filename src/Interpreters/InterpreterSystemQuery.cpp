@@ -246,6 +246,7 @@ BlockIO InterpreterSystemQuery::execute()
             copyData(res->err, out);
             if (!out.str().empty())
                 LOG_DEBUG(log, "The command returned output: {}", command, out.str());
+            res->wait();
             break;
         }
         case Type::DROP_DNS_CACHE:
