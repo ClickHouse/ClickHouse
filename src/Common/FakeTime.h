@@ -22,7 +22,7 @@ public:
         return res;
     }
 
-    bool isEffective() const;
+    static bool isEffective();
 
 private:
     FakeTime();

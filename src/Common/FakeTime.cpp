@@ -44,7 +44,7 @@ namespace DB
             offset = -offset;
     }
 
-    bool FakeTime::isEffective() const
+    bool FakeTime::isEffective()
     {
         return offset != 0;
     }
@@ -57,26 +57,26 @@ extern "C"
 {
 
 #define CLOCK_REALTIME 0
-#define AT_FDCWD -100
+#define AT_FDCWD (-100)
 #define AT_EMPTY_PATH 0x1000
 #define AT_SYMLINK_NOFOLLOW 0x100
 
 using time_t = int64_t;
 
-struct timespec
+struct timespec // NOLINT
 {
     time_t tv_sec;
     long tv_nsec;
 };
 
-struct timeval
+struct timeval // NOLINT
 {
     time_t tv_sec;
     long tv_usec;
 };
 
 
-void * __vdsosym(const char * vername, const char * name);
+void * __vdsosym(const char * vername, const char * name); // NOLINT
 
 static std::atomic<void *> real_clock_gettime = nullptr;
 
@@ -128,7 +128,7 @@ time_t time(time_t * tloc)
 
 /// Filesystem time should be also altered as we sometimes compare it with the wall clock time.
 
-struct stat
+struct stat // NOLINT
 {
     /// Make yourself confident:
     /// gcc -xc++ -include 'sys/stat.h' -include 'cstddef' - <<< "int main() { return offsetof(struct stat, st_atime); }" && ./a.out; echo $?
@@ -196,7 +196,7 @@ namespace DB
     {
     }
 
-    bool FakeTime::isEffective() const
+    bool FakeTime::isEffective()
     {
         return false;
     }
