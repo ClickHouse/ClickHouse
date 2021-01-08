@@ -608,7 +608,6 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
     func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
-    
 //override method cloneResized
 MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 {
@@ -641,5 +640,4 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
     }
     return cloneCol;
 }
-
 }
