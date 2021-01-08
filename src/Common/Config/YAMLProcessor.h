@@ -16,6 +16,8 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <yaml-cpp/yaml.h>
+#include <yaml-cpp/node/node.h>
 
 #include <common/logger_useful.h>
 
@@ -29,22 +31,20 @@ namespace zkutil
 namespace DB
 {
 
-using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
+using YMLDocumentPtr = Poco::AutoPtr<FILE>;
 
-class ConfigProcessor
+class YAMLProcessor
 {
 public:
     using Substitutions = std::vector<std::pair<std::string, std::string>>;
-
     /// Set log_to_console to true if the logging subsystem is not initialized yet.
-    explicit ConfigProcessor(
+    explicit YAMLProcessor(
         const std::string & path,
         bool throw_on_bad_incl = false,
         bool log_to_console = false,
         const Substitutions & substitutions = Substitutions());
 
-    ~ConfigProcessor();
+    ~YAMLProcessor();
 
     /// Perform config includes and substitutions and return the resulting XML-document.
     ///
@@ -61,7 +61,7 @@ public:
     ///    "<foo>contents of the /bar ZooKeeper node</foo>".
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
     /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
-    XMLDocumentPtr processConfig(
+    YMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const zkutil::EventPtr & zk_changed_event = nullptr);
@@ -77,7 +77,7 @@ public:
         ConfigurationPtr configuration;
         bool has_zk_includes;
         bool loaded_from_preprocessed;
-        XMLDocumentPtr preprocessed_xml;
+        YMLDocumentPtr preprocessed_yml;
         std::string config_path;
     };
 
@@ -120,9 +120,6 @@ private:
     Poco::AutoPtr<Poco::Channel> channel_ptr;
 
     Substitutions substitutions;
-
-    Poco::AutoPtr<Poco::XML::NamePool> name_pool;
-    Poco::XML::DOMParser dom_parser;
 
 private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;

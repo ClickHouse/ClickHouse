@@ -1,4 +1,4 @@
-#include "ConfigProcessor.h"
+#include "YAMLProcessor.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
@@ -25,8 +25,6 @@
 
 
 namespace fs = std::filesystem;
-
-using namespace Poco::XML;
 
 namespace DB
 {
@@ -58,13 +56,13 @@ static std::string numberFromHost(const std::string & s)
     return "";
 }
 
-bool ConfigProcessor::isPreprocessedFile(const std::string & path)
+bool YAMLProcessor::isPreprocessedFile(const std::string & path)
 {
     return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
 }
 
 
-ConfigProcessor::ConfigProcessor(
+YAMLProcessor::YAMLProcessor(
     const std::string & path_,
     bool throw_on_bad_incl_,
     bool log_to_console,
@@ -75,24 +73,22 @@ ConfigProcessor::ConfigProcessor(
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
     /// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
     ///  hash function internally, and its size was prime by default.
-    , name_pool(new Poco::XML::NamePool(65521))
-    , dom_parser(name_pool)
 {
-    if (log_to_console && !Poco::Logger::has("ConfigProcessor"))
+    if (log_to_console && !Poco::Logger::has("YAMLProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = &Poco::Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = &Poco::Logger::create("YAMLProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {
-        log = &Poco::Logger::get("ConfigProcessor");
+        log = &Poco::Logger::get("YAMLProcessor");
     }
 }
 
-ConfigProcessor::~ConfigProcessor()
+YAMLProcessor::~YAMLProcessor()
 {
     if (channel_ptr) /// This means we have created a new console logger in the constructor.
-        Poco::Logger::destroy("ConfigProcessor");
+        Poco::Logger::destroy("YAMLProcessor");
 }
 
 
@@ -106,17 +102,17 @@ using NamedNodeMapPtr = Poco::AutoPtr<Poco::XML::NamedNodeMap>;
 /// because accessing the i-th element of this list takes O(i) time.
 using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 
-static ElementIdentifier getElementIdentifier(Node * element)
+static ElementIdentifier getElementIdentifier(YAML::Node element)
 {
-    const NamedNodeMapPtr attrs = element->attributes();
+    /*const NamedNodeMapPtr attrs = element->attributes(); //get yaml node attr
     std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (size_t i = 0, size = attrs->length(); i < size; ++i)
     {
         const Node * node = attrs->item(i);
         std::string name = node->nodeName();
-        const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
+        const auto * subst_name_pos = std::find(YAMLProcessor::SUBSTITUTION_ATTRS.begin(), YAMLProcessor::SUBSTITUTION_ATTRS.end(), name);
         if (name == "replace" || name == "remove" ||
-            subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
+            subst_name_pos != YAMLProcessor::SUBSTITUTION_ATTRS.end())
             continue;
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
@@ -131,15 +127,14 @@ static ElementIdentifier getElementIdentifier(Node * element)
         res.push_back(attr.second);
     }
 
-    return res;
+    return res;*/
 }
 
-static Node * getRootNode(Document * document)
+static YAML::Node getRootNode(YAML::Node input)
 {
-    const NodeListPtr children = document->childNodes();
-    for (size_t i = 0, size = children->length(); i < size; ++i)
+    for (YAML::const_iterator i = input.begin(); i != input.end(); ++i)
     {
-        Node * child = children->item(i);
+        auto child = children->item(i);
         /// Besides the root element there can be comment nodes on the top level.
         /// Skip them.
         if (child->nodeType() == Node::ELEMENT_NODE)
@@ -151,85 +146,59 @@ static Node * getRootNode(Document * document)
 
 static bool allWhitespace(const std::string & s)
 {
-    return s.find_first_not_of(" \t\n\r") == std::string::npos;
+    //return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
-void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
-{
-    const NodeListPtr with_nodes = with_root->childNodes();
-    using ElementsByIdentifier = std::multimap<ElementIdentifier, Node *>;
-    ElementsByIdentifier config_element_by_id;
-    for (Node * node = config_root->firstChild(); node;)
-    {
-        Node * next_node = node->nextSibling();
-        /// Remove text from the original config node.
-        if (node->nodeType() == Node::TEXT_NODE && !allWhitespace(node->getNodeValue()))
-        {
-            config_root->removeChild(node);
-        }
-        else if (node->nodeType() == Node::ELEMENT_NODE)
-        {
-            config_element_by_id.insert(ElementsByIdentifier::value_type(getElementIdentifier(node), node));
-        }
-        node = next_node;
-    }
-
-    for (size_t i = 0, size = with_nodes->length(); i < size; ++i)
-    {
-        Node * with_node = with_nodes->item(i);
-
-        bool merged = false;
-        bool remove = false;
-        if (with_node->nodeType() == Node::ELEMENT_NODE)
-        {
-            Element & with_element = dynamic_cast<Element &>(*with_node);
-            remove = with_element.hasAttribute("remove");
-            bool replace = with_element.hasAttribute("replace");
-
-            if (remove && replace)
-                throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
-
-            ElementsByIdentifier::iterator it = config_element_by_id.find(getElementIdentifier(with_node));
-
-            if (it != config_element_by_id.end())
-            {
-                Node * config_node = it->second;
-                config_element_by_id.erase(it);
-
-                if (remove)
-                {
-                    config_root->removeChild(config_node);
-                }
-                else if (replace)
-                {
-                    with_element.removeAttribute("replace");
-                    NodePtr new_node = config->importNode(with_node, true);
-                    config_root->replaceChild(new_node, config_node);
-                }
-                else
-                {
-                    mergeRecursive(config, config_node, with_node);
-                }
-                merged = true;
-            }
-        }
-        if (!merged && !remove)
-        {
-            NodePtr new_node = config->importNode(with_node, true);
-            config_root->appendChild(new_node);
-        }
-    }
+inline const YAML::Node & cnode(const YAML::Node &n) {
+    return n;
 }
 
-void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
+YAML::Node YAMLProcessor::mergeRecursive(YAML::Node config_root, const YAML::Node with_root)
 {
-    Node * config_root = getRootNode(config.get());
-    Node * with_root = getRootNode(with.get());
+    if (!b.IsMap()) {
+        // If b is not a map, merge result is b, unless b is null
+        return b.IsNull() ? a : b;
+    }
+    if (!a.IsMap()) {
+        // If a is not a map, merge result is b
+        return b;
+    }
+    if (!b.size()) {
+        // If a is a map, and b is an empty map, return a
+        return a;
+    }
+    // Create a new map 'c' with the same mappings as a, merged with b
+    auto c = YAML::Node(YAML::NodeType::Map);
+    for (auto n : a) {
+        if (n.first.IsScalar()) {
+            const std::string & key = n.first.Scalar();
+            auto t = YAML::Node(cnode(b)[key]);
+        if (t) {
+            c[n.first] = mergeRecursive(n.second, t);
+            continue;
+        }
+    }
+    c[n.first] = n.second;
+    }
+    // Add the mappings from 'b' not already in 'c'
+    for (auto n : b) {
+        if (!n.first.IsScalar() || !cnode(c)[n.first.Scalar()]) {
+        c[n.first] = n.second;
+        }
+    }
+    return c;
+}
+
+void YAMLProcessor::merge(YMLDocumentPtr config, YMLDocumentPtr with)
+{
+    YAML::Node config_root = YAML::LoadFile(config);
+    YAML::Node with_root = YAML::LoadFile(with);
 
     if (config_root->nodeName() != with_root->nodeName())
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+        // find the name of the node
+        //throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
 
-    mergeRecursive(config, config_root, with_root);
+    auto merged = mergeRecursive(config_root, with_root);
 }
 
 static std::string layerFromHost()
@@ -245,15 +214,15 @@ static std::string layerFromHost()
     return layer;
 }
 
-void ConfigProcessor::doIncludesRecursive(
-        XMLDocumentPtr config,
-        XMLDocumentPtr include_from,
-        Node * node,
+void YAMLProcessor::doIncludesRecursive(
+        YMLDocumentPtr config,
+        YMLDocumentPtr include_from,
+        YAML::Node node,
         zkutil::ZooKeeperNodeCache * zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
         std::unordered_set<std::string> & contributing_zk_paths)
 {
-    if (node->nodeType() == Node::TEXT_NODE)
+    if (node.Type() == YAML::Node::Scalar) //text from poco
     {
         for (auto & substitution : substitutions)
         {
@@ -287,7 +256,7 @@ void ConfigProcessor::doIncludesRecursive(
         return;
     }
 
-    std::map<std::string, const Node *> attr_nodes;
+    std::map<std::string, const YAML::Node> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
     size_t substs_count = 0;
     for (const auto & attr_name : SUBSTITUTION_ATTRS)
@@ -366,7 +335,7 @@ void ConfigProcessor::doIncludesRecursive(
 
         if (zk_node_cache)
         {
-            XMLDocumentPtr zk_document;
+            YMLDocumentPtr zk_document;
             auto get_zk_node = [&](const std::string & name) -> const Node *
             {
                 zkutil::ZooKeeperNodeCache::ZNode znode = zk_node_cache->get(name, zk_changed_event);
@@ -384,7 +353,7 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_env"]) /// we have env subst
     {
-        XMLDocumentPtr env_document;
+        YMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *
         {
             const char * env_val = std::getenv(name.c_str());
@@ -410,7 +379,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 }
 
-ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
+YAMLProcessor::Files YAMLProcessor::getConfigMergeFiles(const std::string & config_path)
 {
     Files files;
 
@@ -438,7 +407,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string base_name = path.getBaseName();
 
             // Skip non-config and temporary files
-            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
+            if (file.isFile() && (extension == "yml" || extension == "yaml") && !startsWith(base_name, "."))
                 files.push_back(file.path());
         }
     }
@@ -448,27 +417,27 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
-XMLDocumentPtr ConfigProcessor::processConfig(
+YMLDocumentPtr YAMLProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    XMLDocumentPtr config; 
+    YMLDocumentPtr config; 
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
+
     if (fs::exists(path))
     {   
-        config = dom_parser.parse(path);
+        config = fopen(path, "r");
     }
     else
     {
-        /// When we can use config embedded in binary.
-        if (path == "config.xml")
+        if (path == "config.yml" || path == "config.yaml")
         {
-            auto resource = getResource("embedded.xml");
+            auto resource = getResource("embedded.yaml");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist and there is no embedded config", path);
             LOG_DEBUG(log, "There is no file '{}', will use embedded config.", path);
-            config = dom_parser.parseMemory(resource.data(), resource.size());
+            config = fopen("embedded.yaml", "r");
         }
         else
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Configuration file {} doesn't exist", path);
@@ -483,7 +452,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
-            XMLDocumentPtr with = dom_parser.parse(merge_file);
+            
+            YMLDocumentPtr with = fopen(merge_file, "r");
             merge(config, with);
             contributing_files.push_back(merge_file);
         }
@@ -501,8 +471,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     std::unordered_set<std::string> contributing_zk_paths;
     try
     {
-        Node * node = config->getNodeByPath("yandex/include_from");
-        XMLDocumentPtr include_from;
+        YAML::Node node = config->getNodeByPath("yandex/include_from");
+        YMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)
         {
@@ -527,6 +497,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
     catch (Exception & e)
+    std::unordered_set<std::string> contributing_zk_paths;
     {
         e.addMessage("while preprocessing config '" + path + "'");
         throw;
@@ -563,30 +534,30 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes)
+YAMLProcessor::LoadedConfig YAMLProcessor::loadConfig(bool allow_zk_includes)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
+    YMLDocumentPtr config_yml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
-    //ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+    //ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_yml));
 
     return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
+YAMLProcessor::LoadedConfig YAMLProcessor::loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed)
 {
-    XMLDocumentPtr config_xml;
+    YMLDocumentPtr config_yml;
     bool has_zk_includes;
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
+        config_yml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -600,15 +571,15 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
         LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
-        config_xml = dom_parser.parse(preprocessed_path);
+        //config_xml = dom_parser.parse(preprocessed_path);
     }
 
-    ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+    //ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
+void YAMLProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
@@ -657,7 +628,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     }
 }
 
-void ConfigProcessor::setConfigPath(const std::string & config_path)
+void YAMLProcessor::setConfigPath(const std::string & config_path)
 {
     main_config_path = config_path;
 }
