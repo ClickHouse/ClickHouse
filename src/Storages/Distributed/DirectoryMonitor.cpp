@@ -325,6 +325,35 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
+    /// Check that the file is valid
+    /// FIXME: suboptimal
+    try
+    {
+        Block sample_block;
+        Settings insert_settings;
+        String insert_query;
+        ClientInfo client_info;
+
+        /// Determine metadata of the current file and check if it is not broken.
+        ReadBufferFromFile in{file_path};
+        readHeader(in, insert_settings, insert_query, client_info, log);
+
+        CompressedReadBuffer decompressing_in(in);
+        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+        block_in.readPrefix();
+
+        while (Block block = block_in.read())
+        {
+            /// Just do the per-block checksum checks in the CompressedReadBuffer.
+        }
+        block_in.readSuffix();
+    }
+    catch (const Exception & e)
+    {
+        maybeMarkAsBroken(file_path, e);
+        throw;
+    }
+
     try
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
