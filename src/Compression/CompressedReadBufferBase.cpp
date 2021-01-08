@@ -69,7 +69,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     /// If size is too huge, then this may be caused by corruption.
     /// And anyway this is pretty heavy, so avoid burning too much CPU here.
-    if (size < 1<<20)
+    if (size < (1ULL << 20))
     {
         /// Check if the difference caused by single bit flip in data.
         for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
