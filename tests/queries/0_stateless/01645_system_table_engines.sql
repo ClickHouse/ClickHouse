@@ -1,1 +1,1 @@
-SELECT * FROM system.table_engines WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree') FORMAT PrettyCompactNoEscapes;
+SELECT * FROM system.table_engines WHERE name in ('MergeTree', 'ReplicatedCollapsingMergeTree') FORMAT PrettyCompactNoEscapes;
