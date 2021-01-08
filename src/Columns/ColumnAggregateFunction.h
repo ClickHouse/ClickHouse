@@ -209,8 +209,6 @@ public:
 
     bool structureEquals(const IColumn &) const override;
 
-    MutableColumnPtr cloneResized(size_t size) const;
+    MutableColumnPtr cloneResized(size_t size) const override;
 };
-
-
 }
