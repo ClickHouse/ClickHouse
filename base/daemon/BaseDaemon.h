@@ -60,7 +60,7 @@ public:
     static void terminate();
 
     /// Forceful shutdown
-    void kill();
+    [[noreturn]] void kill();
 
     /// Cancellation request has been received.
     bool isCancelled() const
