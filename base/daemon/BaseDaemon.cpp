@@ -83,28 +83,6 @@ static void call_default_signal_handler(int sig)
     raise(sig);
 }
 
-// Apparently strsignal is not instrumented by MemorySanitizer, so we
-// have to unpoison it to avoid msan reports inside fmt library when we
-// print it.
-const char * msan_strsignal(int sig)
-{
-    // no glibc in osx/freebsd
-#if !defined(__GLIBC_PREREQ)
-#define __GLIBC_PREREQ(x, y) 0
-#endif
-
-    // glibc 2.32+ deprecates sys_siglist[]
-    // newer glibc is a problem only for unbundled build.
-#if __GLIBC_PREREQ(2, 32)
-    const char * signal_name = sigdescr_np(sig);
-#else
-    const char * signal_name = sys_siglist[sig];
-#endif
-
-    __msan_unpoison_string(signal_name);
-    return signal_name;
-}
-
 static constexpr size_t max_query_id_size = 127;
 
 static const size_t signal_pipe_buf_size =
@@ -309,13 +287,13 @@ private:
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, msan_strsignal(sig), sig);
+                thread_num, strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, msan_strsignal(sig), sig);
+                thread_num, query_id, strsignal(sig), sig);
         }
 
         String error_message;
@@ -894,13 +872,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
