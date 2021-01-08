@@ -50,7 +50,7 @@ toc_title: "\u7CFB\u7EDF\u8868"
 </yandex>
 ```
 
-默认情况下，表增长是无限的。 要控制表的大小，可以使用 [TTL](../../sql-reference/statements/alter.md#manipulations-with-table-ttl) 删除过期日志记录的设置。 你也可以使用分区功能 `MergeTree`-发动机表。
+默认情况下，表增长是无限的。 要控制表的大小，可以使用 TTL 删除过期日志记录的设置。 你也可以使用分区功能 `MergeTree`-发动机表。
 
 ## 系统指标的来源 {#system-tables-sources-of-system-metrics}
 
