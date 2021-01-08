@@ -27,7 +27,7 @@ System log tables can be customized by creating a config file with the same name
 -   `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
 -   `table`: table to insert data.
 -   `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
--   `ttl`: specify table [TTL](../../sql-reference/statements/alter.md) expression.
+-   `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
 -   `flush_interval_milliseconds`: interval of flushing data to disk.
 -   `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option is contradict with `partition_by` and `ttl`. If set together, the server would raise an exception and exit.
 
