@@ -612,6 +612,17 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     auto disk_path = disk->getPath();
     auto data_path = storage.getRelativeDataPath();
 
+    auto make_directory_sync_guard = [&](const std::string & current_path)
+    {
+        std::unique_ptr<DirectorySyncGuard> guard;
+        if (dir_fsync)
+        {
+            const std::string relative_path(data_path + current_path);
+            guard = std::make_unique<DirectorySyncGuard>(disk, relative_path);
+        }
+        return guard;
+    };
+
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
@@ -628,12 +639,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         /// Write batch to temporary location
         {
-            std::optional<DirectorySyncGuard> tmp_path_sync_guard;
-            if (dir_fsync)
-            {
-                const std::string relative_tmp_path(data_path + *it + "/tmp/");
-                tmp_path_sync_guard.emplace(disk, relative_tmp_path);
-            }
+            auto tmp_dir_sync_guard = make_directory_sync_guard(*it + "/tmp/");
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
@@ -669,6 +675,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         // Create hardlink here to reuse increment number
         const std::string block_file_path(path + '/' + file_name);
         createHardLink(first_file_tmp_path, block_file_path);
+        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
     ++it;
 
@@ -680,6 +687,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
         createHardLink(first_file_tmp_path, block_file_path);
+        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
