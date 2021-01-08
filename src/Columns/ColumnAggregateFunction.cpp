@@ -610,7 +610,8 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
 }
     
 //override method cloneResized
-MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const {
+MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
+{
     //create a new col to return
     auto cloneCol = cloneEmpty();
     auto res = typeid_cast<ColumnAggregateFunction *>(cloneCol.get());
@@ -633,7 +634,8 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const {
             res->insertRangeFrom(*this, 0, from_size);
         }
         res->ensureOwnership();
-        for(size_t i=0;i<size-from_size;++i){
+        for (size_t i = 0; i < size - from_size; ++i)
+        {
             res->insertDefault();
         }
     }
