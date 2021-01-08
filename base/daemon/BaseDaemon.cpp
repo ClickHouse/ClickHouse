@@ -56,6 +56,9 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/getExecutablePath.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Elf.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -339,6 +342,32 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+#if defined(__linux__)
+        /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+        if (daemon.stored_binary_hash.empty())
+        {
+            LOG_FATAL(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+        }
+        else
+        {
+            LOG_FATAL(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                " to the reference checksum stored in the binary ({1})."
+                " It may indicate one of the following:"
+                " - the file was changed just after startup;"
+                " - the file is damaged on disk due to faulty hardware;"
+                " - the loaded executable is damaged in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - logical error in code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
+        }
+#endif
 
         /// Write crash to system.crash_log table if available.
         if (collectCrashLog)
@@ -800,6 +829,13 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #else
     build_id_info = "no build id";
 #endif
+
+#if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+
+    if (!executable_path.empty())
+        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
+#endif
 }
 
 void BaseDaemon::logRevision() const
@@ -1010,4 +1046,10 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, original_process_name.c_str(), original_process_name.size());
 #endif
     }
+}
+
+
+String BaseDaemon::getStoredBinaryHash() const
+{
+    return stored_binary_hash;
 }
