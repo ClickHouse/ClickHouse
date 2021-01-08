@@ -29,7 +29,7 @@ toc_title: "\u7CFB\u7EDF\u8868"
 -   `database`: 系统日志表所在的数据库。这个选项目前已经废弃。所有的系统日表都位于`system`库中。
 -   `table`: 系统日志表名。
 -   `partition_by`: 指定[PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md)表达式。
--   `ttl`: 指定系统日志表[TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl)选项。
+-   `ttl`: 指定系统日志表TTL选项。
 -   `flush_interval_milliseconds`: 指定系统日志表数据落盘时间。
 -   `engine`: 指定完整的表引擎定义。(以`ENGINE = `开始)。 这个选项与`partition_by`以及`ttl`冲突。如果两者一起设置，服务启动时会抛出异常并且退出。
 
