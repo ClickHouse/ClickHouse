@@ -40,7 +40,6 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetStringOrDefault>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::get>>();
     factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrDefault>>();
-    factory.registerFunction<FunctionDictGetNoType<DictionaryGetFunctionType::getOrNull>>();
 }
 
 }
