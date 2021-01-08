@@ -27,9 +27,17 @@ The Distributed engine accepts parameters:
 
 Also it accept the following settings:
 
-- `fsync_after_insert` - Do fsync for every inserted. Will decreases performance of inserts (only for async INSERT, i.e. `insert_distributed_sync=false`),
+- `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-- `fsync_tmp_directory` - Do fsync for temporary directory (that is used for async INSERT only) after all part operations (writes, renames, etc.).
+- `fsync_tmp_directory` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+
+!!! note "Note"
+
+    **Durability settings** (`fsync_...`):
+
+    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
+    - May significantly decrease the inserts' performance
+    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
 
 Example:
 
