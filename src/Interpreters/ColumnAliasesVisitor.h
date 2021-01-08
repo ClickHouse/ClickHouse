@@ -35,11 +35,11 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 ///  eg: select max(value) from  test_table where day2 = today(), filters will be: ((toDate(timestamp) + 1) + 1) = today() .
 
 /// 2. Alias on alias for `required_columns` extracted in `InterpreterSelectQuery.cpp`, it could help get all dependent physical columns for query.
-///  eg: select day2 from test_table.  `required_columns` can got require columns from the tempory rewrited AST `((toDate(timestamp) + 1) + 1)`.
+///  eg: select day2 from test_table.  `required_columns` can got require columns from the temporary rewritten AST `((toDate(timestamp) + 1) + 1)`.
 
 /// 3. Help with `optimize_aggregation_in_order` and `optimize_read_in_order` in `ReadInOrderOptimizer.cpp`:
 ///    For queries with alias columns in `orderBy` and `groupBy`, these ASTs will not change.
-///    But we generate tempory asts and generate tempory Actions to get the `InputOrderInfo`
+///    But we generate temporary asts and generate temporary Actions to get the `InputOrderInfo`
 ///  eg: select day1 from test_table order by day1;
 
 
