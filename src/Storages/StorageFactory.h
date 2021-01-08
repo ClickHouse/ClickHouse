@@ -47,13 +47,17 @@ public:
         bool has_force_restore_data_flag;
     };
 
+    /// Analog of the IStorage::supports*() helpers
+    /// (But the former cannot be replaced with StorageFeatures due to nesting)
     struct StorageFeatures
     {
         bool supports_settings = false;
         bool supports_skipping_indices = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
+        /// See also IStorage::supportsReplication()
         bool supports_replication = false;
+        /// See also IStorage::supportsDeduplication()
         bool supports_deduplication = false;
         AccessType source_access_type = AccessType::NONE;
     };
