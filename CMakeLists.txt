@@ -220,6 +220,12 @@ if (LINKER_NAME MATCHES "lld$")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
+# Add a section with the hash of the compiled machine code for integrity checks.
+# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
+if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD)
+    set (USE_BINARY_HASH 1)
+endif ()
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 

@@ -25,7 +25,7 @@ thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
 #if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
-    alignas(4096) static thread_local char alt_stack[4096];
+    alignas(4096) static thread_local char alt_stack[std::max<size_t>(MINSIGSTKSZ, 4096)];
     static thread_local bool has_alt_stack = false;
 #endif
 
