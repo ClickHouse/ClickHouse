@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}" -d 'DROP TABLE IF EXISTS insert_number_query' > /dev/null 2>&1
