@@ -214,6 +214,19 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
+# Create BuildID when using lld. For other linkers it is created by default.
+if (LINKER_NAME MATCHES "lld$")
+    # SHA1 is not cryptographically secure but it is the best what lld is offering.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
+endif ()
+
+# Add a section with the hash of the compiled machine code for integrity checks.
+# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
+# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
+    set (USE_BINARY_HASH 1)
+endif ()
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
