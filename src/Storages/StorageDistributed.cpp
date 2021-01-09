@@ -540,7 +540,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
     {
-        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+        throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
@@ -558,8 +558,10 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
-        insert_sync, timeout);
+        context, *this, metadata_snapshot,
+        createInsertToRemoteTableQuery(
+            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        cluster, insert_sync, timeout);
 }
 
 
@@ -1003,6 +1005,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.attach);
     },
     {
+        .supports_parallel_insert = true,
         .source_access_type = AccessType::REMOTE,
     });
 }
