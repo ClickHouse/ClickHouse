@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct ComparePairFirst final
+struct ComparePair final
 {
     template <typename T1, typename T2>
     bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
@@ -34,7 +34,7 @@ struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
     using TimestampEvents = PODArray<TimestampEvent, 64>;
-    using Comparator = ComparePairFirst;
+    using Comparator = ComparePair;
 
     bool sorted = true;
     TimestampEvents events_list;
