@@ -33,7 +33,7 @@ template <typename T>
 struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
-    using TimestampEvents = PODArray<TimestampEvent, 64>;
+    using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
     using Comparator = ComparePair;
 
     bool sorted = true;
