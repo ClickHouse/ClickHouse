@@ -14,8 +14,8 @@
 namespace DB
 {
 
-class PGConnection;
-using PGConnectionPtr = std::shared_ptr<PGConnection>;
+class PostgreSQLConnection;
+using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
@@ -25,7 +25,7 @@ public:
     StoragePostgreSQL(
         const StorageID & table_id_,
         const std::string & remote_table_name_,
-        PGConnectionPtr connection_,
+        PostgreSQLConnectionPtr connection_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);
@@ -48,47 +48,18 @@ private:
 
     String remote_table_name;
     Context global_context;
-    PGConnectionPtr connection;
-};
-
-
-class PostgreSQLBlockOutputStream : public IBlockOutputStream
-{
-public:
-    explicit PostgreSQLBlockOutputStream(
-        const StorageMetadataPtr & metadata_snapshot_,
-        ConnectionPtr connection_,
-        const std::string & remote_table_name_)
-        : metadata_snapshot(metadata_snapshot_)
-        , connection(connection_)
-        , remote_table_name(remote_table_name_)
-    {
-    }
-
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-
-    void writePrefix() override;
-    void write(const Block & block) override;
-    void writeSuffix() override;
-
-private:
-    StorageMetadataPtr metadata_snapshot;
-    ConnectionPtr connection;
-    std::string remote_table_name;
-
-    std::unique_ptr<pqxx::work> work;
-    std::unique_ptr<pqxx::stream_to> stream_inserter;
+    PostgreSQLConnectionPtr connection;
 };
 
 
 /// Tiny connection class to make it more convenient to use.
 /// Connection is not made until actually used.
-class PGConnection
+class PostgreSQLConnection
 {
 public:
-    PGConnection(std::string & connection_str_) : connection_str(connection_str_) {}
-    PGConnection(const PGConnection &) = delete;
-    PGConnection operator =(const PGConnection &) = delete;
+    PostgreSQLConnection(const std::string & connection_str_) : connection_str(connection_str_) {}
+    PostgreSQLConnection(const PostgreSQLConnection &) = delete;
+    PostgreSQLConnection operator =(const PostgreSQLConnection &) = delete;
 
     ConnectionPtr conn()
     {

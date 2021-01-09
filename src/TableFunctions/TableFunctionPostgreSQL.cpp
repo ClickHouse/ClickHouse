@@ -68,7 +68,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
             parsed_host_port.first, std::to_string(parsed_host_port.second),
             args[3]->as<ASTLiteral &>().value.safeGet<String>(),
             args[4]->as<ASTLiteral &>().value.safeGet<String>());
-    connection = std::make_shared<PGConnection>(connection_str);
+    connection = std::make_shared<PostgreSQLConnection>(connection_str);
 }
 
 

@@ -29,7 +29,7 @@ private:
 
     String connection_str;
     String remote_table_name;
-    PGConnectionPtr connection;
+    PostgreSQLConnectionPtr connection;
 };
 
 }

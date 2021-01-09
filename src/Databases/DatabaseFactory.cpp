@@ -207,7 +207,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 postgres_database_name, parsed_host_port.first, std::to_string(parsed_host_port.second),
                 username, password);
         /// no connection is made here
-        auto connection = std::make_shared<PGConnection>(connection_str);
+        auto connection = std::make_shared<PostgreSQLConnection>(connection_str);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);

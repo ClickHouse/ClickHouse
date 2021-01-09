@@ -35,7 +35,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        PGConnectionPtr connection_,
+        PostgreSQLConnectionPtr connection_,
         const bool cache_tables_)
     : IDatabase(dbname_)
     , global_context(context.getGlobalContext())
@@ -142,7 +142,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), table_name, std::make_shared<PGConnection>(connection->conn_str()),
+                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(connection->conn_str()),
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
         /// There is no easy (embedded) way in postgres to check table modification time, so if `cache_tables` == 1 (default: 0)

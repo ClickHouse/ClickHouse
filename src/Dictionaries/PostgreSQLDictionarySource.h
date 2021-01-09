@@ -25,7 +25,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix,
-        PGConnectionPtr connection_,
+        PostgreSQLConnectionPtr connection_,
         const Block & sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
@@ -50,7 +50,7 @@ private:
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    PGConnectionPtr connection;
+    PostgreSQLConnectionPtr connection;
     Poco::Logger * log;
 
     const std::string db;
