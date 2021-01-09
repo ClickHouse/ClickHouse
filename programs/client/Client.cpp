@@ -801,7 +801,8 @@ private:
                 connection->setDefaultDatabase(connection_parameters.default_database);
                 ReadBufferFromFile in(queries_file);
                 readStringUntilEOF(text, in);
-                processMultiQuery(text);
+                if (!processMultiQuery(text))
+                    break;
             }
             return;
         }
@@ -984,7 +985,8 @@ private:
 
             if (query_fuzzer_runs)
             {
-                processWithFuzzing(full_query);
+                if (!processWithFuzzing(full_query))
+                    return false;
             }
             else
             {
@@ -1034,7 +1036,8 @@ private:
     }
 
 
-    void processWithFuzzing(const String & text)
+    /// Returns false when server is not available.
+    bool processWithFuzzing(const String & text)
     {
         ASTPtr orig_ast;
 
@@ -1052,7 +1055,7 @@ private:
         if (!orig_ast)
         {
             // Can't continue after a parsing error
-            return;
+            return true;
         }
 
         // Don't repeat inserts, the tables grow too big. Also don't repeat
@@ -1147,7 +1150,7 @@ private:
                 // Probably the server is dead because we found an assertion
                 // failure. Fail fast.
                 fmt::print(stderr, "Lost connection to the server\n");
-                return;
+                return false;
             }
 
             // The server is still alive so we're going to continue fuzzing.
@@ -1173,6 +1176,8 @@ private:
                 fuzz_base = ast_to_process;
             }
         }
+
+        return true;
     }
 
     void processTextAsSingleQuery(const String & text_)
