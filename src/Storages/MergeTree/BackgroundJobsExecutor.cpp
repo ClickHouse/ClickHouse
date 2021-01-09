@@ -36,34 +36,31 @@ double IBackgroundJobExecutor::getSleepRandomAdd()
     return std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 }
 
-void IBackgroundJobExecutor::scheduleTask(bool job_done, bool with_backoff)
+void IBackgroundJobExecutor::runTaskWithoutDelay()
 {
-    if (job_done)
-    {
-        no_work_done_count = 0;
-        /// We have background jobs, schedule task as soon as possible
-        scheduling_task->schedule();
+    no_work_done_count = 0;
+    /// We have background jobs, schedule task as soon as possible
+    scheduling_task->schedule();
+}
 
+void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
+{
+    size_t next_time_to_execute;
+    if (with_backoff)
+    {
+        auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
+
+        next_time_to_execute = 1000 * (std::min(
+                sleep_settings.task_sleep_seconds_when_no_work_max,
+                sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
+            + getSleepRandomAdd());
     }
     else
     {
-        size_t next_time_to_execute;
-        if (with_backoff)
-        {
-            auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
-
-            next_time_to_execute = 1000 * (std::min(
-                    sleep_settings.task_sleep_seconds_when_no_work_max,
-                    sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
-                + getSleepRandomAdd());
-        }
-        else
-        {
-            next_time_to_execute = 1000 * sleep_settings.thread_sleep_seconds_if_nothing_to_do;
-        }
-
-        scheduling_task->scheduleAfter(next_time_to_execute, false);
+        next_time_to_execute = 1000 * sleep_settings.thread_sleep_seconds_if_nothing_to_do;
     }
+
+    scheduling_task->scheduleAfter(next_time_to_execute, false);
 }
 
 namespace
@@ -105,42 +102,42 @@ try
                         /// Job done, decrement metric and reset no_work counter
                         CurrentMetrics::values[pool_config.tasks_metric]--;
                         /// Job done, new empty space in pool, schedule background task
-                        scheduleTask(true);
+                        runTaskWithoutDelay();
                     }
                     catch (...)
                     {
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                         CurrentMetrics::values[pool_config.tasks_metric]--;
-                        scheduleTask(false);
+                        scheduleTask(/* with_backoff = */ true);
                     }
                 });
                 /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
-                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselfs here.
-                scheduleTask(true);
+                /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
+                runTaskWithoutDelay();
             }
             catch (...)
             {
                 /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 CurrentMetrics::values[pool_config.tasks_metric]--;
-                scheduleTask(false);
+                scheduleTask(/* with_backoff = */ true);
             }
         }
         else /// Pool is full and we have some work to do
         {
-            scheduleTask(false, /* with_backoff = */ false);
+            scheduleTask(/* with_backoff = */ false);
         }
     }
     else /// Nothing to do, no jobs
     {
-        scheduleTask(false);
+        scheduleTask(/* with_backoff = */ true);
     }
 
 }
 catch (...) /// Exception while we looking for a task, reschedule
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
-    scheduleTask(false);
+    scheduleTask(/* with_backoff = */ true);
 }
 
 void IBackgroundJobExecutor::start()

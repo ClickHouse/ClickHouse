@@ -59,7 +59,7 @@ La línea de comandos se basa en ‘replxx’ (similar a ‘readline’). En otr
 
 De forma predeterminada, el formato utilizado es PrettyCompact. Puede cambiar el formato en la cláusula FORMAT de la consulta o especificando `\G` al final de la consulta, utilizando el `--format` o `--vertical` en la línea de comandos, o utilizando el archivo de configuración del cliente.
 
-Para salir del cliente, presione Ctrl+D (o Ctrl+C) o introduzca una de las siguientes opciones en lugar de una consulta: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+Para salir del cliente, presione Ctrl+D o introduzca una de las siguientes opciones en lugar de una consulta: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
 Al procesar una consulta, el cliente muestra:
 

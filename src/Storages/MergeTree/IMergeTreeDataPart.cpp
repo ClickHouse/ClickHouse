@@ -11,7 +11,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/FileSyncGuard.h>
+#include <Common/DirectorySyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -410,6 +410,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
+    loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -482,6 +483,7 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
+
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
@@ -547,6 +549,13 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
+            String path_to_data_file = getFullRelativePath() + getFileNameForColumn(part_column) + ".bin";
+            if (!volume->getDisk()->exists(path_to_data_file))
+            {
+                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but data file {} doesn't exists", name, backQuoteIfNeed(part_column.name), path_to_data_file);
+                continue;
+            }
+
             result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
             break;
         }
@@ -657,6 +666,29 @@ void IMergeTreeDataPart::loadRowsCount()
                         "Column {} has rows count {} according to size in memory "
                         "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
                 }
+
+                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
+                /// All this rows have to be written in column
+                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
+                /// We have more rows in column than in index granularity without last possibly incomplete mark
+                if (rows_in_column < index_granularity_without_last_mark)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Column {} has rows count {} according to size in memory "
+                        "and size of single value, but index granularity in part {} without last mark has {} rows, which is more than in column",
+                        backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
+                }
+
+                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
+                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
+                {
+                     throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Column {} has rows count {} in last mark according to size in memory "
+                        "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
+                        backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
+                }
             }
         }
 #endif
@@ -726,6 +758,19 @@ void IMergeTreeDataPart::loadTTLInfos()
     }
 }
 
+void IMergeTreeDataPart::loadUUID()
+{
+    String path = getFullRelativePath() + UUID_FILE_NAME;
+
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+        readText(uuid, *in);
+        if (uuid == UUIDHelpers::Nil)
+            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
@@ -790,12 +835,8 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String from = getFullRelativePath();
     String to = storage.relative_data_path + new_relative_path + "/";
 
-    std::optional<FileSyncGuard> sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
-
     if (!volume->getDisk()->exists(from))
-        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
 
     if (volume->getDisk()->exists(to))
     {
@@ -817,6 +858,10 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
+
+    std::optional<DirectorySyncGuard> sync_guard;
+    if (storage.getSettings()->fsync_part_directory)
+        sync_guard.emplace(volume->getDisk(), to);
 }
 
 

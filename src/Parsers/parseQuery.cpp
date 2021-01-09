@@ -1,4 +1,6 @@
 #include <Parsers/parseQuery.h>
+
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/Lexer.h>
@@ -334,8 +336,7 @@ ASTPtr parseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    const char * pos = begin;
-    return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
+    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth);
 }
 
 

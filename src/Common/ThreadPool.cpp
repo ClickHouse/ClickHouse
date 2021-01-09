@@ -56,6 +56,13 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 }
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_threads;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
     std::lock_guard lock(mutex);

@@ -1,10 +1,10 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -25,7 +25,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/AddingConstColumnTransform.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 
 namespace DB
@@ -71,12 +71,28 @@ StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & source_database_,
-    const String & table_name_regexp_,
+    const Strings & source_tables_,
     const Context & context_)
     : IStorage(table_id_)
     , source_database(source_database_)
-    , table_name_regexp(table_name_regexp_)
-    , global_context(context_)
+    , source_tables(std::in_place, source_tables_.begin(), source_tables_.end())
+    , global_context(context_.getGlobalContext())
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    setInMemoryMetadata(storage_metadata);
+}
+
+StorageMerge::StorageMerge(
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const String & source_database_,
+    const String & source_table_regexp_,
+    const Context & context_)
+    : IStorage(table_id_)
+    , source_database(source_database_)
+    , source_table_regexp(source_table_regexp_)
+    , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -134,6 +150,18 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
+    ASTPtr modified_query = query_info.query->clone();
+    auto & modified_select = modified_query->as<ASTSelectQuery &>();
+    /// In case of JOIN the first stage (which includes JOIN)
+    /// should be done on the initiator always.
+    ///
+    /// Since in case of JOIN query on shards will receive query w/o JOIN (and their columns).
+    /// (see modifySelect()/removeJoin())
+    ///
+    /// And for this we need to return FetchColumns.
+    if (removeJoin(modified_select))
+        return QueryProcessingStage::FetchColumns;
+
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
@@ -417,9 +445,26 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
-    checkStackSize();
+    try
+    {
+        checkStackSize();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while getting table iterator of Merge table. Maybe caused by two Merge tables that will endlessly try to read each other's data");
+        throw;
+    }
+
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
-    auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
+
+    auto table_name_match = [this](const String & table_name_) -> bool
+    {
+        if (source_tables)
+            return source_tables->count(table_name_);
+        else
+            return source_table_regexp->match(table_name_);
+    };
+
     return database->getTablesIterator(context, table_name_match);
 }
 
@@ -456,9 +501,16 @@ void StorageMerge::convertingSourceStream(
     QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
+
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+            pipe.getHeader().getColumnsWithTypeAndName(),
+            header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<ConvertingTransform>(stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+        return std::make_shared<ExpressionTransform>(stream_header, convert_actions);
     });
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
@@ -489,7 +541,6 @@ void StorageMerge::convertingSourceStream(
                                     + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
-
     }
 }
 

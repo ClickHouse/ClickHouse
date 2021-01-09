@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
@@ -38,7 +39,8 @@ namespace DB
   * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
-  * - select the leader replica (/leader_election) - this is the replica that assigns the merge;
+  * - select the leader replica (/leader_election) - these are the replicas that assigning merges, mutations and partition manipulations
+  *   (after ClickHouse version 20.5 we allow multiple leaders to act concurrently);
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
@@ -106,9 +108,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
@@ -118,6 +120,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & query_context) override;
 
     void alter(const AlterCommands & commands, const Context & query_context, TableLockHolder & table_lock_holder) override;
@@ -210,7 +213,6 @@ public:
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
 private:
-
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
@@ -222,11 +224,13 @@ private:
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
+    friend class ReplicatedMergeTreeMergeStrategyPicker;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
     friend class MergeTreeData;
 
+    using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
@@ -235,13 +239,15 @@ private:
 
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+    void setZooKeeper();
 
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     bool has_metadata_in_zookeeper = true;
 
+    static constexpr auto default_zookeeper_name = "default";
+    String zookeeper_name;
     String zookeeper_path;
     String replica_name;
     String replica_path;
@@ -261,6 +267,8 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
+
+    MergeStrategyPicker merge_strategy_picker;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -322,7 +330,7 @@ private:
     const size_t replicated_fetches_pool_size;
 
     template <class Func>
-    void foreachCommittedParts(const Func & func) const;
+    void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
@@ -460,14 +468,17 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
 
     CreateMergeEntryResult createLogEntryToMutatePart(
         const IMergeTreeDataPart & part,
+        const UUID & new_part_uuid,
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);
@@ -477,6 +488,8 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
+
+    bool checkReplicaHavePart(const String & replica, const String & part_name);
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
@@ -527,12 +540,16 @@ private:
       * NOTE: This method must be called without table lock held.
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
+      *
+      * One method for convenient use on current table, another for waiting on foregin shards.
       */
+    Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
+    bool waitForTableReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /// Throw an exception if the table is readonly.
@@ -574,7 +591,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 

@@ -37,7 +37,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & elem = arguments[0];
         return ColumnUInt8::create(input_rows_count, isColumnConst(*elem.column));

@@ -10,8 +10,11 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -74,16 +77,19 @@ namespace
             ReadWriteBufferFromHTTP::HTTPHeaderEntries header;
 
             // Propagate OpenTelemetry trace context, if any, downstream.
-            const auto & client_info = context.getClientInfo();
-            if (client_info.opentelemetry_trace_id)
+            if (CurrentThread::isInitialized())
             {
-                header.emplace_back("traceparent",
-                    client_info.composeTraceparentHeader());
-
-                if (!client_info.opentelemetry_tracestate.empty())
+                const auto & thread_trace_context = CurrentThread::get().thread_trace_context;
+                if (thread_trace_context.trace_id)
                 {
-                    header.emplace_back("tracestate",
-                        client_info.opentelemetry_tracestate);
+                    header.emplace_back("traceparent",
+                        thread_trace_context.composeTraceparentHeader());
+
+                    if (!thread_trace_context.tracestate.empty())
+                    {
+                        header.emplace_back("tracestate",
+                            thread_trace_context.tracestate);
+                    }
                 }
             }
 
@@ -100,10 +106,9 @@ namespace
                     context.getRemoteHostFilter()),
                 compression_method);
 
-            reader = FormatFactory::instance().getInput(format, *read_buf,
-                sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader,
-                columns, context);
+            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
+            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
         }
 
         String getName() const override
@@ -150,7 +155,7 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
             compression_method, 3);
-    writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block,
+    writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
 }
 

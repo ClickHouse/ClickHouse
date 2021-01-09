@@ -17,6 +17,6 @@ std::string extractTimeZoneNameFromFunctionArguments(
     const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num);
 
 const DateLUTImpl & extractTimeZoneFromFunctionArguments(
-    ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num);
+    const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num, size_t datetime_arg_num);
 
 }

@@ -82,7 +82,7 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_type.get())->getScale();
         return result_type->createColumnConst(input_rows_count, nowSubsecond(scale));

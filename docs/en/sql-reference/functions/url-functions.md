@@ -115,7 +115,55 @@ Returns the “first significant subdomain”. This is a non-standard concept sp
 
 Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain” (see the explanation above).
 
-For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+For example:
+
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
+-   `cutToFirstSignificantSubdomain('tr') = ''`.
+
+### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
+
+Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
+
+For example:
+
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
+-   `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
+-   `cutToFirstSignificantSubdomain('tr') = ''`.
+
+### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
+
+Same as `cutToFirstSignificantSubdomain` but accept custom TLD list name, useful if:
+
+- you need fresh TLD list,
+- or you have custom.
+
+Configuration example:
+
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+<top_level_domains_lists>
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
+    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    <!-- NOTE: path is under top_level_domains_path -->
+</top_level_domains_lists>
+```
+
+Example:
+
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/', 'public_suffix_list') = 'yandex.com.tr'`.
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
+
+### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
+
+Same as `firstSignificantSubdomain` but accept custom TLD list name.
+
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
+
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
 
 ### port(URL\[, default_port = 0\]) {#port}
 

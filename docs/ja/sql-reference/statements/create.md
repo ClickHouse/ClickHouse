@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 作成 [外部辞書](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) 与えられたと [構造](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [ソース](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [レイアウト](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) と [生涯](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).

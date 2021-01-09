@@ -29,7 +29,8 @@ public:
         size_t quorum_timeout_ms_,
         size_t max_parts_per_block_,
         bool quorum_parallel_,
-        bool deduplicate_);
+        bool deduplicate_,
+        bool optimize_on_insert);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -71,6 +72,8 @@ private:
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
+
+    bool optimize_on_insert;
 };
 
 }

@@ -10,7 +10,9 @@
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Interpreters/Cluster.h>
 
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -23,9 +25,6 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -126,11 +125,13 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    std::unique_ptr<Context> global_context;
+    const Context & global_context;
     Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
@@ -198,6 +199,9 @@ protected:
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
 
+    // For random shard index generation
+    mutable std::mutex rng_mutex;
+    pcg64 rng;
 };
 
 }

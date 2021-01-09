@@ -4,9 +4,18 @@
 namespace DB
 {
 
-MySQLBinlogEventReadBuffer::MySQLBinlogEventReadBuffer(ReadBuffer & in_)
-    : ReadBuffer(nullptr, 0, 0), in(in_)
+namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+}
+
+MySQLBinlogEventReadBuffer::MySQLBinlogEventReadBuffer(ReadBuffer & in_, size_t checksum_signature_length_)
+    : ReadBuffer(nullptr, 0, 0), in(in_), checksum_signature_length(checksum_signature_length_)
+{
+    if (checksum_signature_length > MAX_CHECKSUM_SIGNATURE_LENGTH)
+        throw Exception("LOGICAL ERROR: checksum_signature_length must be less than MAX_CHECKSUM_SIGNATURE_LENGTH. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
     nextIfAtEnd();
 }
 
@@ -20,15 +29,15 @@ bool MySQLBinlogEventReadBuffer::nextImpl()
 
     if (checksum_buff_size == checksum_buff_limit)
     {
-        if (likely(in.available() > CHECKSUM_CRC32_SIGNATURE_LENGTH))
+        if (likely(in.available() > checksum_signature_length))
         {
-            working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+            working_buffer = ReadBuffer::Buffer(in.position(), in.buffer().end() - checksum_signature_length);
             in.ignore(working_buffer.size());
             return true;
         }
 
-        in.readStrict(checksum_buf, CHECKSUM_CRC32_SIGNATURE_LENGTH);
-        checksum_buff_size = checksum_buff_limit = CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        in.readStrict(checksum_buf, checksum_signature_length);
+        checksum_buff_size = checksum_buff_limit = checksum_signature_length;
     }
     else
     {
@@ -36,17 +45,17 @@ bool MySQLBinlogEventReadBuffer::nextImpl()
             checksum_buf[index] = checksum_buf[checksum_buff_limit + index];
 
         checksum_buff_size -= checksum_buff_limit;
-        size_t read_bytes = CHECKSUM_CRC32_SIGNATURE_LENGTH - checksum_buff_size;
-        in.readStrict(checksum_buf + checksum_buff_size, read_bytes);   /// Minimum CHECKSUM_CRC32_SIGNATURE_LENGTH bytes
-        checksum_buff_size = checksum_buff_limit = CHECKSUM_CRC32_SIGNATURE_LENGTH;
+        size_t read_bytes = checksum_signature_length - checksum_buff_size;
+        in.readStrict(checksum_buf + checksum_buff_size, read_bytes);   /// Minimum checksum_signature_length bytes
+        checksum_buff_size = checksum_buff_limit = checksum_signature_length;
     }
 
     if (in.eof())
         return false;
 
-    if (in.available() < CHECKSUM_CRC32_SIGNATURE_LENGTH)
+    if (in.available() < checksum_signature_length)
     {
-        size_t left_move_size = CHECKSUM_CRC32_SIGNATURE_LENGTH - in.available();
+        size_t left_move_size = checksum_signature_length - in.available();
         checksum_buff_limit = checksum_buff_size - left_move_size;
     }
 
@@ -58,7 +67,7 @@ MySQLBinlogEventReadBuffer::~MySQLBinlogEventReadBuffer()
 {
     try
     {
-        /// ignore last 4 bytes
+        /// ignore last checksum_signature_length bytes
         nextIfAtEnd();
     }
     catch (...)

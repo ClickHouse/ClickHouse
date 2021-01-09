@@ -239,7 +239,8 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
     {
         return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }

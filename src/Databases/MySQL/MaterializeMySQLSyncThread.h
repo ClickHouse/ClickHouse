@@ -20,6 +20,7 @@
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
 
+
 namespace DB
 {
 
@@ -63,6 +64,12 @@ private:
     MaterializeMySQLSettings * settings;
     String query_prefix;
 
+    // USE MySQL ERROR CODE:
+    // https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
+    const int ER_ACCESS_DENIED_ERROR = 1045;
+    const int ER_DBACCESS_DENIED_ERROR = 1044;
+    const int ER_BAD_DB_ERROR = 1049;
+
     struct Buffers
     {
         String database;
@@ -88,11 +95,11 @@ private:
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
     };
 
-    void synchronization(const String & mysql_version);
+    void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
+    std::optional<MaterializeMetadata> prepareSynchronized();
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 

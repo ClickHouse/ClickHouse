@@ -48,7 +48,7 @@ public:
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         ColumnPtr first_column = arguments[0].column;
         const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(arguments[1].column.get());

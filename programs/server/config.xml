@@ -11,6 +11,9 @@
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <!-- Rotation policy
+             See https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/FileChannel.h#L54-L85
+          -->
         <size>1000M</size>
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
@@ -45,34 +48,165 @@
         -->
     </logger>
 
-    <send_crash_reports>
-        <!-- Changing <enabled> to true allows sending crash reports to -->
-        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
-        <!-- Doing so at least in pre-production environments is highly appreciated -->
-        <enabled>false</enabled>
-        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
-        <anonymize>false</anonymize>
-        <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
-        <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
-        <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
-    </send_crash_reports>
-
-    <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <mysql_port>9004</mysql_port>
-    <!-- For HTTPS and SSL over native protocol. -->
-    <!--
-    <https_port>8443</https_port>
-    <tcp_port_secure>9440</tcp_port_secure>
+    <!-- It is the name that will be shown in the clickhouse-client.
+         By default, anything with "production" will be highlighted in red in query prompt.
     -->
+    <!--display_name>production</display_name-->
+
+    <!-- Port for HTTP API. See also 'https_port' for secure connections.
+         This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
+         and by most of web interfaces (embedded UI, Grafana, Redash, ...).
+      -->
+    <http_port>8123</http_port>
+
+    <!-- Port for interaction by native protocol with:
+         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+         - clickhouse-server with other clickhouse-servers for distributed query processing;
+         - ClickHouse drivers and applications supporting native protocol
+         (this protocol is also informally called as "the TCP protocol");
+         See also 'tcp_port_secure' for secure connections.
+    -->
+    <tcp_port>9000</tcp_port>
+
+    <!-- Compatibility with MySQL protocol.
+         ClickHouse will pretend to be MySQL for applications connecting to this port.
+    -->
+    <mysql_port>9004</mysql_port>
+
+    <!-- Compatibility with PostgreSQL protocol.
+         ClickHouse will pretend to be PostgreSQL for applications connecting to this port.
+    -->
+    <!-- <postgresql_port>9005</postgresql_port> -->
+
+    <!-- HTTP API with TLS (HTTPS).
+         You have to configure certificate to enable this interface.
+         See the openSSL section below.
+    -->
+    <!-- <https_port>8443</https_port> -->
+
+    <!-- Native interface with TLS.
+         You have to configure certificate to enable this interface.
+         See the openSSL section below.
+    -->
+    <!-- <tcp_port_secure>9440</tcp_port_secure> -->
+
+    <!-- Native interface wrapped with PROXYv1 protocol
+         PROXYv1 header sent for every connection.
+         ClickHouse will extract information about proxy-forwarded client address from the header.
+    -->
+    <!-- <tcp_with_proxy_port>9011</tcp_with_proxy_port> -->
+
+    <!-- Port for communication between replicas. Used for data exchange.
+         It provides low-level data access between servers.
+         This port should not be accessible from untrusted networks.
+         See also 'interserver_http_credentials'.
+         Data transferred over connections to this port should not go through untrusted networks.
+         See also 'interserver_https_port'.
+      -->
+    <interserver_http_port>9009</interserver_http_port>
+
+    <!-- Port for communication between replicas with TLS.
+         You have to configure certificate to enable this interface.
+         See the openSSL section below.
+         See also 'interserver_http_credentials'.
+      -->
+    <!-- <interserver_https_port>9010</interserver_https_port> -->
+
+    <!-- Hostname that is used by other replicas to request this server.
+         If not specified, than it is determined analogous to 'hostname -f' command.
+         This setting could be used to switch replication to another network interface
+         (the server may be connected to multiple networks via multiple addresses)
+      -->
+    <!--
+    <interserver_http_host>example.yandex.ru</interserver_http_host>
+    -->
+
+    <!-- You can specify credentials for authenthication between replicas.
+         This is required when interserver_https_port is accessible from untrusted networks,
+         and also recommended to avoid SSRF attacks from possibly compromised services in your network.
+      -->
+    <!--<interserver_http_credentials>
+        <user>interserver</user>
+        <password></password>
+    </interserver_http_credentials>-->
+
+    <!-- Listen specified address.
+         Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
+         Notes:
+         If you open connections from wildcard address, make sure that at least one of the following measures applied:
+         - server is protected by firewall and not accessible from untrusted networks;
+         - all users are restricted to subset of network addresses (see users.xml);
+         - all users have strong passwords, only secure (TLS) interfaces are accessible, or connections are only made via TLS interfaces.
+         - users without password have readonly access.
+         See also: https://www.shodan.io/search?query=clickhouse
+      -->
+    <!-- <listen_host>::</listen_host> -->
+
+    <!-- Same for hosts without support for IPv6: -->
+    <!-- <listen_host>0.0.0.0</listen_host> -->
+
+    <!-- Default values - try listen localhost on IPv4 and IPv6. -->
+    <!--
+    <listen_host>::1</listen_host>
+    <listen_host>127.0.0.1</listen_host>
+    -->
+
+    <!-- Don't exit if IPv6 or IPv4 networks are unavailable while trying to listen. -->
+    <!-- <listen_try>0</listen_try> -->
+
+    <!-- Allow multiple servers to listen on the same address:port. This is not recommended.
+      -->
+    <!-- <listen_reuse_port>0</listen_reuse_port> -->
+
+    <!-- <listen_backlog>64</listen_backlog> -->
+
+    <max_connections>4096</max_connections>
+
+    <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
+    <keep_alive_timeout>3</keep_alive_timeout>
+
+    <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
+    <!-- <grpc_port>9100</grpc_port> -->
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if enable_ssl=1 -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server will request client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=1 -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+
+        <!-- Enable if you want very detailed logs -->
+        <verbose_logs>false</verbose_logs>
+    </grpc>
+
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
-            <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+            <!-- dhparams are optional. You can delete the <dhParamsFile> element.
+                 To generate dhparams, use the following command:
+                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
+                 Only file format with BEGIN DH PARAMETERS is supported.
+              -->
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
@@ -98,38 +232,6 @@
     <!--
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
-
-    <!-- Port for communication between replicas. Used for data exchange. -->
-    <interserver_http_port>9009</interserver_http_port>
-
-    <!-- Hostname that is used by other replicas to request this server.
-         If not specified, than it is determined analogous to 'hostname -f' command.
-         This setting could be used to switch replication to another network interface.
-      -->
-    <!--
-    <interserver_http_host>example.yandex.ru</interserver_http_host>
-    -->
-
-    <!-- Listen specified host. use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere. -->
-    <!-- <listen_host>::</listen_host> -->
-    <!-- Same for hosts with disabled ipv6: -->
-    <!-- <listen_host>0.0.0.0</listen_host> -->
-
-    <!-- Default values - try listen localhost on ipv4 and ipv6: -->
-    <!--
-    <listen_host>::1</listen_host>
-    <listen_host>127.0.0.1</listen_host>
-    -->
-    <!-- Don't exit if ipv6 or ipv4 unavailable, but listen_host with this protocol specified -->
-    <!-- <listen_try>0</listen_try> -->
-
-    <!-- Allow listen on same address:port -->
-    <!-- <listen_reuse_port>0</listen_reuse_port> -->
-
-    <!-- <listen_backlog>64</listen_backlog> -->
-
-    <max_connections>4096</max_connections>
-    <keep_alive_timeout>3</keep_alive_timeout>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
@@ -222,6 +324,9 @@
                 auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
                         Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
                         Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
+                         to be successfully authenticated for all consecutive requests without contacting the LDAP server.
+                        Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
                 enable_tls - flag to trigger use of secure connection to the LDAP server.
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
@@ -241,6 +346,7 @@
                     <port>636</port>
                     <auth_dn_prefix>uid=</auth_dn_prefix>
                     <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
+                    <verification_cooldown>300</verification_cooldown>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
@@ -326,7 +432,7 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
-    <remote_servers incl="clickhouse_remote_servers" >
+    <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries
@@ -460,17 +566,37 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
-    <zookeeper incl="zookeeper-servers" optional="true" />
+    <!--
+    <zookeeper>
+        <node>
+            <host>example1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
+    -->
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
-    <macros incl="macros" optional="true" />
+    <!--
+    <macros>
+        <shard>01</shard>
+        <replica>example01-01-1</replica>
+    </macros>
+    -->
 
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
@@ -550,7 +676,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -558,6 +684,15 @@
                 toStartOfHour(event_time)
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
+        <!--
+            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Example:
+                event_date + INTERVAL 1 WEEK
+                event_date + INTERVAL 7 DAY DELETE
+                event_date + INTERVAL 2 WEEK TO DISK 'bbb'
+
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        -->
 
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
@@ -674,16 +809,29 @@
     <!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
 
 
+    <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
+    <!-- Custom TLD lists.
+         Format: <name>/path/to/file</name>
+
+         Changes will not be applied w/o server restart.
+         Path to the list is under top_level_domains_path (see above).
+    -->
+    <top_level_domains_lists>
+        <!--
+        <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+        -->
+    </top_level_domains_lists>
+
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
-    <compression incl="clickhouse_compression">
     <!--
+    <compression>
         <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
         <case>
 
@@ -694,8 +842,8 @@
             <!- - What compression method to use. - ->
             <method>zstd</method>
         </case>
-    -->
     </compression>
+    -->
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -823,6 +971,18 @@
         </rule>
     </http_handlers>
     -->
+
+    <send_crash_reports>
+        <!-- Changing <enabled> to true allows sending crash reports to -->
+        <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
+        <!-- Doing so at least in pre-production environments is highly appreciated -->
+        <enabled>false</enabled>
+        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
+        <anonymize>false</anonymize>
+        <!-- Default endpoint should be changed to different Sentry DSN only if you have -->
+        <!-- some in-house engineers or hired consultants who're going to debug ClickHouse issues for you -->
+        <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
+    </send_crash_reports>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

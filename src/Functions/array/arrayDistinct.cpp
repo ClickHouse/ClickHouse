@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -85,7 +85,7 @@ private:
 };
 
 
-ColumnPtr FunctionArrayDistinct::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
 {
     ColumnPtr array_ptr = arguments[0].column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());

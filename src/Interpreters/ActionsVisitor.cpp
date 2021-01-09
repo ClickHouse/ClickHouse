@@ -735,6 +735,39 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    if (node.is_window_function)
+    {
+        // Also add columns from PARTITION BY and ORDER BY of window functions.
+        if (node.window_partition_by)
+        {
+            visit(node.window_partition_by, data);
+        }
+        if (node.window_order_by)
+        {
+            visit(node.window_order_by, data);
+        }
+
+        // Also manually add columns for arguments of the window function itself.
+        // ActionVisitor is written in such a way that this method must itself
+        // descend into all needed function children. Window functions can't have
+        // any special functions as argument, so the code below that handles
+        // special arguments is not needed. This is analogous to the
+        // appendWindowFunctionsArguments() in SelectQueryExpressionAnalyzer and
+        // partially duplicates its code. Probably we can remove most of the
+        // logic from that function, but I don't yet have it all figured out...
+        for (const auto & arg : node.arguments->children)
+        {
+            visit(arg, data);
+        }
+
+        // Don't need to do anything more for window functions here -- the
+        // resulting column is added in ExpressionAnalyzer, similar to the
+        // aggregate functions.
+        return;
+    }
+
+    // An aggregate function can also be calculated as a window function, but we
+    // checked for it above, so no need to do anything more.
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
@@ -757,39 +790,102 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     /// If the function has an argument-lambda expression, you need to determine its type before the recursive call.
     bool has_lambda_arguments = false;
-    size_t num_arguments = node.arguments->children.size();
-    for (size_t arg = 0; arg < num_arguments; ++arg)
+
+    if (node.arguments)
     {
-        auto & child = node.arguments->children[arg];
-
-        const auto * function = child->as<ASTFunction>();
-        const auto * identifier = child->as<ASTIdentifier>();
-        if (function && function->name == "lambda")
+        size_t num_arguments = node.arguments->children.size();
+        for (size_t arg = 0; arg < num_arguments; ++arg)
         {
-            /// If the argument is a lambda expression, just remember its approximate type.
-            if (function->arguments->children.size() != 2)
-                throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            auto & child = node.arguments->children[arg];
 
-            const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
-
-            if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-                throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
-
-            has_lambda_arguments = true;
-            argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
-            /// Select the name in the next cycle.
-            argument_names.emplace_back();
-        }
-        else if (function && function->name == "untuple")
-        {
-            auto columns = doUntuple(function, data);
-
-            if (columns.empty())
-                continue;
-
-            for (const auto & column : columns)
+            const auto * function = child->as<ASTFunction>();
+            const auto * identifier = child->as<ASTIdentifier>();
+            if (function && function->name == "lambda")
             {
-                if (auto name_type = getNameAndTypeFromAST(column, data))
+                /// If the argument is a lambda expression, just remember its approximate type.
+                if (function->arguments->children.size() != 2)
+                    throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+                const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
+
+                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                    throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
+
+                has_lambda_arguments = true;
+                argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
+                /// Select the name in the next cycle.
+                argument_names.emplace_back();
+            }
+            else if (function && function->name == "untuple")
+            {
+                auto columns = doUntuple(function, data);
+
+                if (columns.empty())
+                    continue;
+
+                for (const auto & column : columns)
+                {
+                    if (auto name_type = getNameAndTypeFromAST(column, data))
+                    {
+                        argument_types.push_back(name_type->type);
+                        argument_names.push_back(name_type->name);
+                    }
+                    else
+                        arguments_present = false;
+                }
+
+                node.arguments->children.erase(node.arguments->children.begin() + arg);
+                node.arguments->children.insert(node.arguments->children.begin() + arg, columns.begin(), columns.end());
+                num_arguments += columns.size() - 1;
+                arg += columns.size() - 1;
+            }
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
+            {
+                ColumnWithTypeAndName column;
+                column.type = std::make_shared<DataTypeSet>();
+
+                /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
+                ///  so that sets with the same literal representation do not fuse together (they can have different types).
+                if (!prepared_set->empty())
+                    column.name = data.getUniqueName("__set");
+                else
+                    column.name = child->getColumnName();
+
+                if (!data.hasColumn(column.name))
+                {
+                    auto column_set = ColumnSet::create(1, prepared_set);
+                    /// If prepared_set is not empty, we have a set made with literals.
+                    /// Create a const ColumnSet to make constant folding work
+                    if (!prepared_set->empty())
+                        column.column = ColumnConst::create(std::move(column_set), 1);
+                    else
+                        column.column = std::move(column_set);
+                    data.addColumn(column);
+                }
+
+                argument_types.push_back(column.type);
+                argument_names.push_back(column.name);
+            }
+            else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
+            {
+                auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+                table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
+                auto column_string = ColumnString::create();
+                column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
+                ColumnWithTypeAndName column(
+                    ColumnConst::create(std::move(column_string), 1),
+                    std::make_shared<DataTypeString>(),
+                    data.getUniqueName("__" + node.name));
+                data.addColumn(column);
+                argument_types.push_back(column.type);
+                argument_names.push_back(column.name);
+            }
+            else
+            {
+                /// If the argument is not a lambda expression, call it recursively and find out its type.
+                visit(child, data);
+
+                if (auto name_type = getNameAndTypeFromAST(child, data))
                 {
                     argument_types.push_back(name_type->type);
                     argument_names.push_back(name_type->name);
@@ -797,125 +893,66 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 else
                     arguments_present = false;
             }
-
-            node.arguments->children.erase(node.arguments->children.begin() + arg);
-            node.arguments->children.insert(node.arguments->children.begin() + arg, columns.begin(), columns.end());
-            num_arguments += columns.size() - 1;
-            arg += columns.size() - 1;
         }
-        else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
+
+        if (data.only_consts && !arguments_present)
+            return;
+
+        if (has_lambda_arguments && !data.only_consts)
         {
-            ColumnWithTypeAndName column;
-            column.type = std::make_shared<DataTypeSet>();
+            function_builder->getLambdaArgumentTypes(argument_types);
 
-            /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
-            ///  so that sets with the same literal representation do not fuse together (they can have different types).
-            if (!prepared_set->empty())
-                column.name = data.getUniqueName("__set");
-            else
-                column.name = child->getColumnName();
-
-            if (!data.hasColumn(column.name))
+            /// Call recursively for lambda expressions.
+            for (size_t i = 0; i < node.arguments->children.size(); ++i)
             {
-                auto column_set = ColumnSet::create(1, prepared_set);
-                /// If prepared_set is not empty, we have a set made with literals.
-                /// Create a const ColumnSet to make constant folding work
-                if (!prepared_set->empty())
-                    column.column = ColumnConst::create(std::move(column_set), 1);
-                else
-                    column.column = std::move(column_set);
-                data.addColumn(column);
-            }
+                ASTPtr child = node.arguments->children[i];
 
-            argument_types.push_back(column.type);
-            argument_names.push_back(column.name);
-        }
-        else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
-        {
-            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
-            table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
-            auto column_string = ColumnString::create();
-            column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
-            ColumnWithTypeAndName column(
-                ColumnConst::create(std::move(column_string), 1),
-                std::make_shared<DataTypeString>(),
-                data.getUniqueName("__" + node.name));
-            data.addColumn(column);
-            argument_types.push_back(column.type);
-            argument_names.push_back(column.name);
-        }
-        else
-        {
-            /// If the argument is not a lambda expression, call it recursively and find out its type.
-            visit(child, data);
-
-            if (auto name_type = getNameAndTypeFromAST(child, data))
-            {
-                argument_types.push_back(name_type->type);
-                argument_names.push_back(name_type->name);
-            }
-            else
-                arguments_present = false;
-        }
-    }
-
-    if (data.only_consts && !arguments_present)
-        return;
-
-    if (has_lambda_arguments && !data.only_consts)
-    {
-        function_builder->getLambdaArgumentTypes(argument_types);
-
-        /// Call recursively for lambda expressions.
-        for (size_t i = 0; i < node.arguments->children.size(); ++i)
-        {
-            ASTPtr child = node.arguments->children[i];
-
-            const auto * lambda = child->as<ASTFunction>();
-            if (lambda && lambda->name == "lambda")
-            {
-                const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
-                const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
-                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
-                NamesAndTypesList lambda_arguments;
-
-                for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
+                const auto * lambda = child->as<ASTFunction>();
+                if (lambda && lambda->name == "lambda")
                 {
-                    auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
-                    if (!opt_arg_name)
-                        throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
+                    const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
+                    const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
+                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                    NamesAndTypesList lambda_arguments;
 
-                    lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
+                    for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
+                    {
+                        auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
+                        if (!opt_arg_name)
+                            throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
+
+                        lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
+                    }
+
+                    data.actions_stack.pushLevel(lambda_arguments);
+                    visit(lambda->arguments->children.at(1), data);
+                    auto lambda_dag = data.actions_stack.popLevel();
+
+                    String result_name = lambda->arguments->children.at(1)->getColumnName();
+                    lambda_dag->removeUnusedActions(Names(1, result_name));
+
+                    auto lambda_actions = std::make_shared<ExpressionActions>(lambda_dag);
+
+                    DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
+
+                    Names captured;
+                    Names required = lambda_actions->getRequiredColumns();
+                    for (const auto & required_arg : required)
+                        if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
+                            captured.push_back(required_arg);
+
+                    /// We can not name `getColumnName()`,
+                    ///  because it does not uniquely define the expression (the types of arguments can be different).
+                    String lambda_name = data.getUniqueName("__lambda");
+
+                    auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
+                            lambda_actions, captured, lambda_arguments, result_type, result_name);
+                    auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
+                    data.addFunction(function_capture_adapter, captured, lambda_name);
+
+                    argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
+                    argument_names[i] = lambda_name;
                 }
-
-                data.actions_stack.pushLevel(lambda_arguments);
-                visit(lambda->arguments->children.at(1), data);
-                auto lambda_dag = data.actions_stack.popLevel();
-
-                String result_name = lambda->arguments->children.at(1)->getColumnName();
-                lambda_dag->removeUnusedActions(Names(1, result_name));
-
-                auto lambda_actions = std::make_shared<ExpressionActions>(lambda_dag);
-
-                DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
-
-                Names captured;
-                Names required = lambda_actions->getRequiredColumns();
-                for (const auto & required_arg : required)
-                    if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
-                        captured.push_back(required_arg);
-
-                /// We can not name `getColumnName()`,
-                ///  because it does not uniquely define the expression (the types of arguments can be different).
-                String lambda_name = data.getUniqueName("__lambda");
-
-                auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
-                        lambda_actions, captured, lambda_arguments, result_type, result_name);
-                auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
-                data.addFunction(function_capture_adapter, captured, lambda_name);
-
-                argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
-                argument_names[i] = lambda_name;
             }
         }
     }
@@ -1052,7 +1089,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * - this function shows the expression IN_data1.
           *
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
-          * Also it doesn't make sence if it is GLOBAL IN or ordinary IN.
+          * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         if (!subquery_for_set.source && data.create_source_for_in)
         {

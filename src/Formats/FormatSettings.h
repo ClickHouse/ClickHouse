@@ -71,6 +71,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
+        bool input_format_arrays_as_nested_csv = false;
     } csv;
 
     struct Custom
@@ -86,9 +87,11 @@ struct FormatSettings
 
     struct
     {
+        bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
         bool escape_forward_slashes = true;
+        bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
     } json;
 

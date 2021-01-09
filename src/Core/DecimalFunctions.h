@@ -6,14 +6,19 @@
 #include <common/arithmeticOverflow.h>
 
 #include <limits>
+#include <type_traits>
 
 
 namespace DB
 {
 
+template <typename T>
+class DataTypeNumber;
+
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DecimalUtils
@@ -23,6 +28,7 @@ static constexpr size_t minPrecision() { return 1; }
 template <typename T> static constexpr size_t maxPrecision() { return 0; }
 template <> constexpr size_t maxPrecision<Decimal32>() { return 9; }
 template <> constexpr size_t maxPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxPrecision<DateTime64>() { return 18; }
 template <> constexpr size_t maxPrecision<Decimal128>() { return 38; }
 template <> constexpr size_t maxPrecision<Decimal256>() { return 76; }
 
@@ -31,7 +37,7 @@ inline auto scaleMultiplier(UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
         return common::exp10_i32(scale);
-    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64>)
+    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);
@@ -49,6 +55,30 @@ struct DecimalComponents
 {
     T whole;
     T fractional;
+};
+
+/// Traits used for determining final Type/Precision/Scale for certain math operations on decimals.
+template <typename T>
+struct DataTypeDecimalTrait
+{
+    using FieldType = T;
+    const UInt32 precision;
+    const UInt32 scale;
+
+    DataTypeDecimalTrait(UInt32 precision_, UInt32 scale_)
+        : precision(precision_),
+          scale(scale_)
+    {}
+
+    /// @returns multiplier for U to become T with correct scale
+    template <typename U>
+    T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
+    {
+        if (scale < x.scale)
+            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        const UInt32 scale_delta = scale - x.scale; /// scale_delta >= 0
+        return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_delta);
+    }
 };
 
 /** Make a decimal value from whole and fractional components with given scale multiplier.
@@ -177,23 +207,32 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
 }
 
 /// Decimal to integer/float conversion
-template <typename To, typename DecimalType>
-To convertTo(const DecimalType & decimal, size_t scale)
+template <typename To, typename DecimalType, typename ReturnType>
+ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 {
     using NativeT = typename DecimalType::NativeType;
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     if constexpr (std::is_floating_point_v<To>)
     {
-        return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
+        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
     }
     else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
     {
         NativeT whole = getWholePart(decimal, scale);
 
         if constexpr (is_unsigned_v<To>)
+        {
             if (whole < 0)
-                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return static_cast<To>(whole);
+            {
+                if constexpr (throw_exception)
+                    throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                else
+                    return ReturnType(true);
+            }
+        }
+
+        result = static_cast<To>(whole);
     }
     else if constexpr (is_integer_v<To>)
     {
@@ -206,9 +245,63 @@ To convertTo(const DecimalType & decimal, size_t scale)
         static const constexpr CastTo max_to = std::numeric_limits<ToNativeT>::max();
 
         if (whole < min_to || whole > max_to)
-            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return static_cast<CastTo>(whole);
+        {
+            if constexpr (throw_exception)
+                throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            else
+                return ReturnType(true);
+        }
+
+        result = static_cast<CastTo>(whole);
     }
+
+    return ReturnType(true);
+}
+
+
+template <typename To, typename DecimalType>
+To convertTo(const DecimalType & decimal, size_t scale)
+{
+    To result;
+
+    convertToImpl<To, DecimalType, void>(decimal, scale, result);
+
+    return result;
+}
+
+template <typename To, typename DecimalType>
+bool tryConvertTo(const DecimalType & decimal, size_t scale, To & result)
+{
+    return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
+{
+    UInt32 scale{};
+    if constexpr (is_multiply)
+        scale = tx.getScale() + ty.getScale();
+    else if constexpr (is_division)
+        scale = tx.getScale();
+    else
+        scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+
+    if constexpr (sizeof(T) < sizeof(U))
+        return DataTypeDecimalTrait<U>(DecimalUtils::maxPrecision<U>(), scale);
+    else
+        return DataTypeDecimalTrait<T>(DecimalUtils::maxPrecision<T>(), scale);
+}
+
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
+{
+    return DataTypeDecimalTrait<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
+}
+
+template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
+inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
+{
+    return DataTypeDecimalTrait<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 }

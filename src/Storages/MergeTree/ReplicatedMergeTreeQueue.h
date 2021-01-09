@@ -22,6 +22,7 @@ class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
+class ReplicatedMergeTreeMergeStrategyPicker;
 
 
 class ReplicatedMergeTreeQueue
@@ -57,6 +58,7 @@ private:
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
     StorageReplicatedMergeTree & storage;
+    ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -275,7 +277,7 @@ private:
     size_t current_multi_batch_size = 1;
 
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
     ~ReplicatedMergeTreeQueue();
 
 

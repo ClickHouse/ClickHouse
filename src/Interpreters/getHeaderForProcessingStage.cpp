@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {

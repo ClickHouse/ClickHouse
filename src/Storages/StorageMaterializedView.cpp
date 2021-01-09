@@ -21,6 +21,7 @@
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 
@@ -30,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
@@ -72,7 +74,11 @@ StorageMaterializedView::StorageMaterializedView(
     setInMemoryMetadata(storage_metadata);
 
     if (!has_inner_table)
+    {
+        if (query.to_table_id.database_name == table_id_.database_name && query.to_table_id.table_name == table_id_.table_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
         target_table_id = query.to_table_id;
+    }
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
@@ -227,12 +233,13 @@ bool StorageMaterializedView::optimize(
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
+    const Names & deduplicate_by_columns,
     const Context & context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, context);
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
 }
 
 void StorageMaterializedView::alter(
@@ -351,11 +358,13 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
+    checkStackSize();
     return DatabaseCatalog::instance().getTable(target_table_id, global_context);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
+    checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
 }
 

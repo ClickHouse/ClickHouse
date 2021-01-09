@@ -55,32 +55,16 @@ void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    if constexpr (is_POD)
-    {
-        auto * pos = arena.allocContinue(sizeof(T), begin);
-        memcpy(pos, &data[n], sizeof(T));
-        return StringRef(pos, sizeof(T));
-    }
-    else
-    {
-        char * pos = arena.allocContinue(BigInt<T>::size, begin);
-        return BigInt<Int256>::serialize(data[n], pos);
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
+    memcpy(pos, &data[n], sizeof(T));
+    return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    if constexpr (is_POD)
-    {
-        data.push_back(unalignedLoad<T>(pos));
-        return pos + sizeof(T);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(pos));
-        return pos + BigInt<Int256>::size;
-    }
+    data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
 template <typename T>
@@ -252,24 +236,13 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (is_POD)
-        {
-            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-            {
-                void * tail = &new_col.data[count];
-                memset(tail, 0, (size - count) * sizeof(T));
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < count; i++)
-                new_col.data[i] = data[i];
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
-            if (size > count)
-                for (size_t i = count; i < size; i++)
-                    new_col.data[i] = T{};
+        if (size > count)
+        {
+            void * tail = &new_col.data[count];
+            memset(tail, 0, (size - count) * sizeof(T));
         }
     }
 
@@ -279,16 +252,9 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 template <typename T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    if constexpr (is_POD)
-    {
-        T tmp;
-        memcpy(&tmp, src, sizeof(T));
-        data.emplace_back(tmp);
-    }
-    else
-    {
-        data.push_back(BigInt<Int256>::deserialize(src));
-    }
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>
@@ -303,13 +269,8 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (is_POD)
-        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
-    else
-    {
-        for (size_t i = 0; i < length; i++)
-            data[old_size + i] = src_vec.data[start + i];
-    }
+
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -409,4 +370,5 @@ template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
+template class ColumnDecimal<DateTime64>;
 }
