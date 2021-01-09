@@ -709,12 +709,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     auto max_partitions_to_read
         = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data.getSettings()->max_partitions_to_read;
-    if (max_partitions_to_read)
+    if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
         for (auto & part_with_ranges : parts_with_ranges)
             partitions.insert(part_with_ranges.data_part->info.partition_id);
-        if (partitions.size() > max_partitions_to_read)
+        if (partitions.size() > size_t(max_partitions_to_read))
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTITIONS,
                 "Too many partitions to read. Current {}, max {}",
