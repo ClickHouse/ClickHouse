@@ -84,6 +84,7 @@ private:
     std::string path;
 
     const bool should_batch_inserts = false;
+    const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
