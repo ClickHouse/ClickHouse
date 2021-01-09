@@ -698,7 +698,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
     for (const auto & dir_name : dir_names)
     {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk_path, dir_name);
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
         directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
     }
 }

@@ -19,6 +19,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
+#include <Disks/IDisk.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -80,18 +81,25 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool)
+    StorageDistributed & storage_,
+    const DiskPtr & disk_,
+    const std::string & relative_path_,
+    ConnectionPoolPtr pool_,
+    ActionBlocker & monitor_blocker_,
+    BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
-    , path{path_ + '/'}
+    , disk(disk_)
+    , relative_path(relative_path_)
+    , path(disk->getPath() + relative_path + '/')
     , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
     , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
-    , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
-    , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
-    , log{&Poco::Logger::get(getLoggerName())}
+    , current_batch_file_path(path + "current_batch.txt")
+    , default_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , sleep_time(default_sleep_time)
+    , max_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
 {
@@ -788,14 +796,15 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
     return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
 }
 
-void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
+void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_relative_path)
 {
     task_handle->deactivate();
     std::lock_guard lock{mutex};
 
     {
         std::unique_lock metrics_lock(metrics_mutex);
-        path = new_path;
+        relative_path = new_relative_path;
+        path = disk->getPath() + relative_path + '/';
     }
     current_batch_file_path = path + "current_batch.txt";
 
