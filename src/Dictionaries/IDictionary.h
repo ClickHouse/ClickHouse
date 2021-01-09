@@ -28,9 +28,6 @@ namespace ErrorCodes
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-struct DictionaryStructure;
-class ColumnString;
-
 enum class DictionaryIdentifierType
 {
     simple,

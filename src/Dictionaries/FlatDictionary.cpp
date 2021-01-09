@@ -512,7 +512,6 @@ void FlatDictionary::resize(Attribute & attribute, const Key id)
 template <typename T>
 void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T & value)
 {
-    resize<T>(attribute, id);
     auto & array = std::get<ContainerType<T>>(attribute.arrays);
     array[id] = value;
     loaded_ids[id] = true;
@@ -521,11 +520,8 @@ void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, 
 template <>
 void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
 {
-    resize<StringRef>(attribute, id);
     const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
-    array[id] = StringRef{string_in_arena, value.size()};
-    loaded_ids[id] = true;
+    setAttributeValueImpl(attribute, id, StringRef{string_in_arena, value.size()});
 }
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
@@ -534,6 +530,9 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ResizeType = std::conditional_t<std::is_same_v<AttributeType, String>, StringRef, AttributeType>;
+
+        resize<ResizeType>(attribute, id);
 
         if (attribute.is_nullable)
         {
@@ -570,6 +569,8 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
     const auto ids_count = ext::size(loaded_ids);
 
     PaddedPODArray<Key> ids;
+    ids.reserve(ids_count);
+
     for (auto idx : ext::range(0, ids_count))
         if (loaded_ids[idx])
             ids.push_back(idx);
