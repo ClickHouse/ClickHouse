@@ -22,7 +22,7 @@ class RemoteQueryExecutorReadContext
 public:
     using Self = RemoteQueryExecutorReadContext;
 
-    bool is_read_in_progress = false;
+    std::atomic_bool is_read_in_progress = false;
     Packet packet;
 
     std::exception_ptr exception;
@@ -162,7 +162,7 @@ public:
 
     bool resumeRoutine()
     {
-        if (is_read_in_progress && !checkTimeout())
+        if (is_read_in_progress.load(std::memory_order_relaxed) && !checkTimeout())
             return false;
 
         {
@@ -226,9 +226,9 @@ public:
                     throw;
                 }
 
-                read_context.is_read_in_progress = true;
+                read_context.is_read_in_progress.store(true, std::memory_order_relaxed);
                 fiber = std::move(fiber).resume();
-                read_context.is_read_in_progress = false;
+                read_context.is_read_in_progress.store(false, std::memory_order_relaxed);
             }
         };
 
