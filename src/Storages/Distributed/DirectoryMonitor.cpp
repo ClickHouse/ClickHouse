@@ -6,8 +6,8 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/hex.h>
-#include <common/StringRef.h>
 #include <Common/ActionBlocker.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -464,6 +464,9 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
+        const auto & distributed_settings = parent.storage.getDistributedSettingsRef();
+        bool fsync = distributed_settings.fsync_after_insert;
+
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -480,6 +483,10 @@ struct StorageDistributedDirectoryMonitor::Batch
             {
                 WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
                 writeText(out);
+
+                out.finalize();
+                if (fsync)
+                    out.sync();
             }
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
