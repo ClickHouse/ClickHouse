@@ -592,7 +592,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
     bool fsync = distributed_settings.fsync_after_insert;
-    bool dir_fsync = distributed_settings.fsync_tmp_directory;
+    bool dir_fsync = distributed_settings.fsync_directories;
 
     std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
     std::optional<int> compression_level;

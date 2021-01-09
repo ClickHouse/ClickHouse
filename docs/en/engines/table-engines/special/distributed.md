@@ -29,7 +29,7 @@ Also it accept the following settings:
 
 - `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-- `fsync_tmp_directory` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+- `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
 
 !!! note "Note"
 
@@ -45,7 +45,7 @@ Example:
 Distributed(logs, default, hits[, sharding_key[, policy_name]])
 SETTINGS
     fsync_after_insert=0,
-    fsync_tmp_directory=0;
+    fsync_directories=0;
 ```
 
 Data will be read from all servers in the `logs` cluster, from the default.hits table located on every server in the cluster.

@@ -94,7 +94,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , relative_path(relative_path_)
     , path(disk->getPath() + relative_path + '/')
     , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , dir_fsync(storage.getDistributedSettingsRef().fsync_tmp_directory)
+    , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
