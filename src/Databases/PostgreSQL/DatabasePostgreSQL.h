@@ -27,7 +27,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & dbname_,
         const String & postgres_dbname,
-        PGConnectionPtr connection_,
+        PostgreSQLConnectionPtr connection_,
         const bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
@@ -65,7 +65,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String dbname;
-    PGConnectionPtr connection;
+    PostgreSQLConnectionPtr connection;
     const bool cache_tables;
 
     mutable Tables cached_tables;

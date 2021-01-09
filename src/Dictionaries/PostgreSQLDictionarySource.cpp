@@ -27,7 +27,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix,
-    PGConnectionPtr connection_,
+    PostgreSQLConnectionPtr connection_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
@@ -48,7 +48,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
 PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other)
     : dict_struct(other.dict_struct)
     , sample_block(other.sample_block)
-    , connection(std::make_shared<PGConnection>(other.connection->conn_str()))
+    , connection(std::make_shared<PostgreSQLConnection>(other.connection->conn_str()))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(other.db)
     , table(other.table)
@@ -176,7 +176,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             config.getUInt(fmt::format("{}.port", config_prefix), 0),
             config.getString(fmt::format("{}.user", config_prefix), ""),
             config.getString(fmt::format("{}.password", config_prefix), ""));
-        auto connection = std::make_shared<PGConnection>(connection_str);
+        auto connection = std::make_shared<PostgreSQLConnection>(connection_str);
 
         return std::make_unique<PostgreSQLDictionarySource>(
                 dict_struct, config, config_prefix, connection, sample_block);
