@@ -37,6 +37,7 @@ SRCS(
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
+    DirectorySyncGuard.cpp
     Dwarf.cpp
     Elf.cpp
     ErrorCodes.cpp
@@ -98,6 +99,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getHashOfLoadedBinary.cpp
     getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp
