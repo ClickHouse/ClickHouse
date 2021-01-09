@@ -234,7 +234,12 @@ void MemoryTracker::updatePeak(Int64 will_be)
 void MemoryTracker::free(Int64 size)
 {
     if (BlockerInThread::isBlocked(level))
+    {
+        /// Since the BlockerInThread should respect the level, we should go to the next parent.
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            loaded_next->free(size);
         return;
+    }
 
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
