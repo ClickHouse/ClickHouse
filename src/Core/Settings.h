@@ -413,6 +413,7 @@ class IColumn;
     \
     M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
     \
+    M(Bool, optimize_rewrite_sum_if_to_count_if, true, "Rewrite sumIf() and sum(if()) function countIf() function when logic equivalen", 0) \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(UInt64, max_memory_usage_for_all_queries, 0, "Obsolete. Will be removed after 2020-10-20", 0) \

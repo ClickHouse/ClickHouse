@@ -21,7 +21,6 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
@@ -181,96 +180,6 @@ struct CustomizeAggregateFunctionsMoveSuffixData
 
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
-
-struct CustomizeSumFunctionData
-{
-    using TypeToVisit = ASTFunction;
-
-    static void visit(ASTFunction & func, ASTPtr &)
-    {
-        if (Poco::toLower(func.name) == "sumif")
-        {
-            if (auto * expr_list = func.arguments->as<ASTExpressionList>(); expr_list->children.size() == 2)
-            {
-                if (expr_list->children.size() == 2)
-                {
-                    if (auto * literal = expr_list->children.at(0)->as<ASTLiteral>())
-                    {
-                        /// sumIf(1, cond) == countIf(cond)
-                        if (auto value = literal->value.get<Int64>(); value == 1)
-                        {
-                            func.name = "countIf";
-                            auto new_arguments = std::make_shared<ASTExpressionList>();
-                            new_arguments->children.push_back(expr_list->children.at(1));
-                            func.arguments = new_arguments;
-                            func.children.push_back(new_arguments);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (Poco::toLower(func.name) == "sum")
-        {
-            if (auto * expr_list = func.arguments->as<ASTExpressionList>())
-            {
-                if (expr_list->children.size() == 1)
-                {
-                    if (auto * nested_func = expr_list->children.at(0)->as<ASTFunction>())
-                    {
-                        if (Poco::toLower(nested_func->name) == "if")
-                        {
-                            if (auto * nested_expr_list = nested_func->arguments->as<ASTExpressionList>())
-                            {
-                                if (nested_expr_list->children.size() == 3)
-                                {
-                                    auto * literal1 = nested_expr_list->children.at(1)->as<ASTLiteral>();
-                                    auto * literal2 = nested_expr_list->children.at(2)->as<ASTLiteral>();
-                                    if (literal1 && literal2)
-                                    {
-                                        auto value1 = literal1->value.get<Int64>();
-                                        auto value2 = literal2->value.get<Int64>();
-                                        /// sum(if(cond, 1, 0)) == countIf(cond)
-                                        if (value1 == 1 && value2 == 0)
-                                        {
-                                            func.name = "countIf";
-                                            auto new_arguments = std::make_shared<ASTExpressionList>();
-                                            func.arguments = new_arguments;
-                                            func.children.push_back(new_arguments);
-                                            new_arguments->children.push_back(nested_expr_list->children.at(0));
-                                            return;
-                                        }
-                                        /// sum(if(cond, 0, 1)) == countIf(not(cond))
-                                        if (value1 == 0 && value2 == 1)
-                                        {
-                                            func.name = "countIf";
-
-                                            auto not_func = std::make_shared<ASTFunction>();
-                                            auto not_func_arguments = std::make_shared<ASTExpressionList>();
-                                            not_func->name = "not";
-                                            not_func->arguments = not_func_arguments;
-                                            not_func->children.push_back(not_func_arguments);
-                                            not_func_arguments->children.push_back(nested_expr_list->children.at(0));
-
-                                            auto new_arguments = std::make_shared<ASTExpressionList>();
-                                            func.arguments = new_arguments;
-                                            func.children.push_back(new_arguments);
-                                            new_arguments->children.push_back(std::move(not_func));
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-};
-
-using CustomizeSumFunctionVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeSumFunctionData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -969,9 +878,6 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
         CustomizeAggregateFunctionsOrNullVisitor::Data data_or_null{"OrNull"};
         CustomizeAggregateFunctionsOrNullVisitor(data_or_null).visit(query);
     }
-
-    CustomizeSumFunctionVisitor::Data data_sum_sum_if{};
-    CustomizeSumFunctionVisitor(data_sum_sum_if).visit(query);
 
     /// Move -OrNull suffix ahead, this should execute after add -OrNull suffix
     CustomizeAggregateFunctionsMoveOrNullVisitor::Data data_or_null{"OrNull"};
