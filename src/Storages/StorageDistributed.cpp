@@ -1005,6 +1005,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.attach);
     },
     {
+        .supports_parallel_insert = true,
         .source_access_type = AccessType::REMOTE,
     });
 }
