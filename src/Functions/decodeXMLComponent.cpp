@@ -83,9 +83,9 @@ namespace
                     }
                     else if (isValidNumeric(src_curr_pos, src_next_pos))
                     {
-                        std::vector<char> decodeNumericChars;
-                        decodeNumericPart(src_curr_pos + 2, src_next_pos, decodeNumericChars);
-                        if (decodeNumericChars.empty())
+                        std::vector<char> decode_numeric_chars;
+                        decodeNumericPart(src_curr_pos + 2, src_next_pos, decode_numeric_chars);
+                        if (decode_numeric_chars.empty())
                         {
                             ++src_curr_pos;
                             size_t bytes_to_copy = src_curr_pos - src_prev_pos;
@@ -98,9 +98,9 @@ namespace
                             size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                             memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
                             dst_pos += bytes_to_copy;
-                            for (size_t i = 0; i < decodeNumericChars.size(); i++)
+                            for (auto cur_char : decode_numeric_chars)
                             {
-                                *dst_pos = decodeNumericChars[i];
+                                *dst_pos = cur_char;
                                 ++dst_pos;
                             }
                             src_prev_pos = src_next_pos + 1;
