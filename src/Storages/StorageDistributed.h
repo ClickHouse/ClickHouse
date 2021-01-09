@@ -24,6 +24,9 @@ class Context;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -104,9 +107,9 @@ public:
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
     /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors(const std::string & disk);
+    void createDirectoryMonitors(const DiskPtr & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;

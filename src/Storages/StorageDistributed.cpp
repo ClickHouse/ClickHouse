@@ -2,7 +2,7 @@
 
 #include <Databases/IDatabase.h>
 #include <Disks/StoragePolicy.h>
-#include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -604,7 +604,7 @@ void StorageDistributed::startup()
         return;
 
     for (const DiskPtr & disk : data_volume->getDisks())
-        createDirectoryMonitors(disk->getPath());
+        createDirectoryMonitors(disk);
 
     for (const String & path : getDataPaths())
     {
@@ -684,9 +684,9 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
-void StorageDistributed::createDirectoryMonitors(const std::string & disk)
+void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
-    const std::string path(disk + relative_data_path);
+    const std::string path(disk->getPath() + relative_data_path);
     Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
@@ -717,10 +717,10 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
 {
-    const std::string path(disk + relative_data_path + name);
-    const std::string key(disk + name);
+    const std::string & disk_path = disk->getPath();
+    const std::string key(disk_path + name);
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
@@ -728,7 +728,10 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     {
         node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.connection_pool, monitors_blocker, global_context.getDistributedSchedulePool());
+            *this, disk, relative_data_path + name,
+            node_data.connection_pool,
+            monitors_blocker,
+            global_context.getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
@@ -935,7 +938,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)
-            node.second.directory_monitor->updatePath(new_path);
+            node.second.directory_monitor->updatePath(new_path_to_table_data);
     }
 
     relative_data_path = new_path_to_table_data;
