@@ -138,17 +138,16 @@ public:
     }
 };
 
-struct NameMapContains { static constexpr auto name = "mapContains"; };
 
 class FunctionMapContains : public IFunction
 {
 public:
-    static constexpr auto name = NameMapContains::name;
+    static constexpr auto name = "mapContains";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
-        return NameMapContains::name ;
+        return name;
     }
 
     size_t getNumberOfArguments() const override { return 2; }
@@ -200,6 +199,7 @@ public:
     }
 };
 
+
 class FunctionMapKeys : public IFunction
 {
 public:
@@ -208,7 +208,7 @@ public:
 
     String getName() const override
     {
-        return name ;
+        return name;
     }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -244,6 +244,7 @@ public:
     }
 };
 
+
 class FunctionMapValues : public IFunction
 {
 public:
@@ -252,7 +253,7 @@ public:
 
     String getName() const override
     {
-        return name ;
+        return name;
     }
 
     size_t getNumberOfArguments() const override { return 1; }
