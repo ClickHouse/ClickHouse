@@ -6,8 +6,9 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/hex.h>
-#include <common/StringRef.h>
 #include <Common/ActionBlocker.h>
+#include <Common/DirectorySyncGuard.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -19,6 +20,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
+#include <Disks/IDisk.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -80,18 +82,26 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool)
+    StorageDistributed & storage_,
+    const DiskPtr & disk_,
+    const std::string & relative_path_,
+    ConnectionPoolPtr pool_,
+    ActionBlocker & monitor_blocker_,
+    BackgroundSchedulePool & bg_pool)
     : storage(storage_)
     , pool(std::move(pool_))
-    , path{path_ + '/'}
+    , disk(disk_)
+    , relative_path(relative_path_)
+    , path(disk->getPath() + relative_path + '/')
     , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
-    , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
-    , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
-    , log{&Poco::Logger::get(getLoggerName())}
+    , current_batch_file_path(path + "current_batch.txt")
+    , default_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , sleep_time(default_sleep_time)
+    , max_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
 {
@@ -133,6 +143,10 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         quit = true;
         task_handle->deactivate();
     }
+
+    std::optional<DirectorySyncGuard> dir_sync_guard;
+    if (dir_fsync)
+        dir_sync_guard.emplace(disk, relative_path);
 
     Poco::File(path).remove(true);
 }
@@ -337,6 +351,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
+    std::optional<DirectorySyncGuard> dir_sync_guard;
+    if (dir_fsync)
+        dir_sync_guard.emplace(disk, relative_path);
+
     Poco::File{file_path}.remove();
     metric_pending_files.sub();
 
@@ -444,10 +462,16 @@ struct StorageDistributedDirectoryMonitor::Batch
     StorageDistributedDirectoryMonitor & parent;
     const std::map<UInt64, String> & file_index_to_path;
 
+    bool fsync = false;
+    bool dir_fsync = false;
+
     Batch(
         StorageDistributedDirectoryMonitor & parent_,
         const std::map<UInt64, String> & file_index_to_path_)
-        : parent(parent_), file_index_to_path(file_index_to_path_)
+        : parent(parent_)
+        , file_index_to_path(file_index_to_path_)
+        , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
+        , dir_fsync(parent.dir_fsync)
     {}
 
     bool isEnoughSize() const
@@ -474,12 +498,20 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
+            std::optional<DirectorySyncGuard> dir_sync_guard;
+            if (dir_fsync)
+                dir_sync_guard.emplace(parent.disk, parent.relative_path);
+
             if (Poco::File{tmp_file}.exists())
                 LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
 
             {
                 WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
                 writeText(out);
+
+                out.finalize();
+                if (fsync)
+                    out.sync();
             }
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
@@ -536,6 +568,10 @@ struct StorageDistributedDirectoryMonitor::Batch
         if (!batch_broken)
         {
             LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
+
+            std::optional<DirectorySyncGuard> dir_sync_guard;
+            if (dir_fsync)
+                dir_sync_guard.emplace(parent.disk, parent.relative_path);
 
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
@@ -734,10 +770,16 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         metric_pending_files.sub(batch.file_indices.size());
     }
 
-    /// current_batch.txt will not exist if there was no send
-    /// (this is the case when all batches that was pending has been marked as pending)
-    if (Poco::File{current_batch_file_path}.exists())
-        Poco::File{current_batch_file_path}.remove();
+    {
+        std::optional<DirectorySyncGuard> dir_sync_guard;
+        if (dir_fsync)
+            dir_sync_guard.emplace(disk, relative_path);
+
+        /// current_batch.txt will not exist if there was no send
+        /// (this is the case when all batches that was pending has been marked as pending)
+        if (Poco::File{current_batch_file_path}.exists())
+            Poco::File{current_batch_file_path}.remove();
+    }
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
@@ -759,6 +801,15 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     const auto & broken_file_path = broken_path + file_name;
 
     Poco::File{broken_path}.createDirectory();
+
+    std::optional<DirectorySyncGuard> dir_sync_guard;
+    std::optional<DirectorySyncGuard> broken_dir_sync_guard;
+    if (dir_fsync)
+    {
+        broken_dir_sync_guard.emplace(disk, relative_path + "/broken/");
+        dir_sync_guard.emplace(disk, relative_path);
+    }
+
     Poco::File{file_path}.renameTo(broken_file_path);
 
     LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
@@ -781,14 +832,15 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
     return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
 }
 
-void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
+void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_relative_path)
 {
     task_handle->deactivate();
     std::lock_guard lock{mutex};
 
     {
         std::unique_lock metrics_lock(metrics_mutex);
-        path = new_path;
+        relative_path = new_relative_path;
+        path = disk->getPath() + relative_path + '/';
     }
     current_batch_file_path = path + "current_batch.txt";
 

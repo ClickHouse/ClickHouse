@@ -71,8 +71,8 @@ public:
     enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
-        Totals,  /// Stream for totals. No more then one.
-        Extremes, /// Stream for extremes. No more then one.
+        Totals,  /// Stream for totals. No more than one.
+        Extremes, /// Stream for extremes. No more than one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;

@@ -847,6 +847,13 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
     if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
         return false;
 
+    if (auto * alter = ast_ddl->as<ASTAlterQuery>())
+    {
+        // Setting alters should be executed on all replicas
+        if (alter->isSettingsAlter())
+            return false;
+    }
+
     return storage->supportsReplication();
 }
 
