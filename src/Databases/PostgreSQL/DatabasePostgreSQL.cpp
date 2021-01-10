@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -353,16 +354,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, co
     {
         const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
-
-        std::function<ASTPtr(const DataTypePtr &)> convert_datatype_to_query = [&](const DataTypePtr & data_type) -> ASTPtr
-        {
-            WhichDataType which(data_type);
-            if (!which.isNullable())
-                return std::make_shared<ASTIdentifier>(data_type->getName());
-            return makeASTFunction("Nullable", convert_datatype_to_query(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-        };
-
-        column_declaration->type = convert_datatype_to_query(column_type_and_name.type);
+        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
         columns_expression_list->children.emplace_back(column_declaration);
     }
 
@@ -378,6 +370,20 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, co
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
 
     return create_table_query;
+}
+
+
+ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
+{
+    WhichDataType which(data_type);
+
+    if (which.isNullable())
+        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+
+    if (which.isArray())
+        return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+
+    return std::make_shared<ASTIdentifier>(data_type->getName());
 }
 
 }

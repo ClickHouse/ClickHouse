@@ -76,6 +76,7 @@ private:
     std::unordered_set<std::string> fetchTablesList() const;
     StoragePtr fetchTable(const String & table_name, const Context & context, const bool table_checked) const;
     void removeOutdatedTables();
+    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }
