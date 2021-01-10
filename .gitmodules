@@ -214,7 +214,7 @@
 	url = https://github.com/jtv/libpqxx
 [submodule "contrib/libpq"]
 	path = contrib/libpq
-	url = https://github.com/kssenii/libpq
+	url = https://github.com/ClickHouse-Extras/libpq
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse-Extras/boringssl.git

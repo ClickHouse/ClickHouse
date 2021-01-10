@@ -158,8 +158,7 @@ public:
     {
         if (stream_inserter)
             stream_inserter->complete();
-        if (work)
-            work->commit();
+        work->commit();
     }
 
 
@@ -201,7 +200,7 @@ public:
 
     /// Conversion is done via column casting because with writeText(Array..) got incorrect conversion
     /// of Date and DateTime data types and it added extra quotes for values inside array.
-    std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
+    static std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
     {
         auto nested = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
         ColumnPtr nested_column(createNested(nested));
@@ -221,7 +220,7 @@ public:
         if (nested->isNullable())
         {
             is_nullable = true;
-            nested = typeid_cast<const DataTypeNullable *>(nested.get())->getNestedType();
+            nested = static_cast<const DataTypeNullable *>(nested.get())->getNestedType();
         }
 
         WhichDataType which(nested);
