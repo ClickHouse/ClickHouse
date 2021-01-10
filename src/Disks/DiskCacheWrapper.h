@@ -36,7 +36,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase>
     readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
     std::unique_ptr<WriteBufferFromFileBase>
-    writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold) override;
+    writeFile(const String & path, size_t buf_size, WriteMode mode) override;
     void remove(const String & path) override;
     void removeRecursive(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
