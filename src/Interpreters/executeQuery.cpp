@@ -240,7 +240,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.current_database = context.getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
+    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
     // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
 
@@ -605,7 +605,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context.getCurrentDatabase();
             elem.query = query_for_logging;
-            elem.normalized_query_hash = normalizedQueryHash(query_for_logging);
+            elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = context.getClientInfo();
 
