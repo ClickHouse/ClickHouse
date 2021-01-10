@@ -83,6 +83,10 @@ namespace
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
+
+        /// .bin file cannot have zero rows/bytes.
+        size_t rows = 0;
+        size_t bytes = 0;
     };
 
     static DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
@@ -119,6 +123,12 @@ namespace
             if (header_buf.hasPendingData())
                 header.client_info.read(header_buf, initiator_revision);
 
+            if (header_buf.hasPendingData())
+            {
+                readVarUInt(header.rows, header_buf);
+                readVarUInt(header.bytes, header_buf);
+            }
+
             /// Add handling new data here, for example:
             ///
             /// if (header_buf.hasPendingData())
@@ -142,6 +152,19 @@ namespace
         return header;
     }
 
+    /// FIXME: suboptimal
+    void verifyDistributedChecksum(ReadBufferFromFile & in)
+    {
+        CompressedReadBuffer decompressing_in(in);
+        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+        block_in.readPrefix();
+
+        while (Block block = block_in.read())
+        {
+            /// Just do the per-block checksum checks in the CompressedReadBuffer.
+        }
+        block_in.readSuffix();
+    }
 }
 
 
@@ -390,24 +413,13 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
     /// Check that the file is valid
-    /// FIXME: suboptimal
     try
     {
-        Block sample_block;
-
         /// Determine metadata of the current file and check if it is not broken.
         ReadBufferFromFile in{file_path};
         readDistributedHeader(in, log);
 
-        CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        block_in.readPrefix();
-
-        while (Block block = block_in.read())
-        {
-            /// Just do the per-block checksum checks in the CompressedReadBuffer.
-        }
-        block_in.readSuffix();
+        verifyDistributedChecksum(in);
     }
     catch (const Exception & e)
     {
@@ -751,19 +763,40 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             ReadBufferFromFile in{file_path};
             header = readDistributedHeader(in, log);
 
-            CompressedReadBuffer decompressing_in(in);
-            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-            block_in.readPrefix();
-
-            while (Block block = block_in.read())
+            if (header.rows)
             {
-                total_rows += block.rows();
-                total_bytes += block.bytes();
+                total_rows += header.rows;
+                total_bytes += header.bytes;
 
-                if (!sample_block)
+                CompressedReadBuffer decompressing_in(in);
+                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+                block_in.readPrefix();
+
+                /// We still need to read one block for the header.
+                while (Block block = block_in.read())
+                {
                     sample_block = block.cloneEmpty();
+                    break;
+                }
+
+                verifyDistributedChecksum(in);
             }
-            block_in.readSuffix();
+            else
+            {
+                CompressedReadBuffer decompressing_in(in);
+                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+                block_in.readPrefix();
+
+                while (Block block = block_in.read())
+                {
+                    total_rows += block.rows();
+                    total_bytes += block.bytes();
+
+                    if (!sample_block)
+                        sample_block = block.cloneEmpty();
+                }
+                block_in.readSuffix();
+            }
         }
         catch (const Exception & e)
         {
