@@ -17,6 +17,7 @@ SRCS(
     ConstraintsDescription.cpp
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedBlockOutputStream.cpp
+    Distributed/DistributedSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
