@@ -231,23 +231,23 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
 
     Field default_value = nested->getDefault();
     if (nested->isNullable())
-        nested = typeid_cast<const DataTypeNullable *>(nested.get())->getNestedType();
+        nested = static_cast<const DataTypeNullable *>(nested.get())->getNestedType();
 
     WhichDataType which(nested);
     std::function<Field(std::string & fields)> parser;
 
     if (which.isUInt8() || which.isUInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
-    else if (which.isUInt32())
-        parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
-    else if (which.isUInt64())
-        parser = [](std::string & field) -> Field { return pqxx::from_string<uint64_t>(field); };
     else if (which.isInt8() || which.isInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int16_t>(field); };
+    else if (which.isUInt32())
+        parser = [](std::string & field) -> Field { return pqxx::from_string<uint32_t>(field); };
     else if (which.isInt32())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int32_t>(field); };
+    else if (which.isUInt64())
+        parser = [](std::string & field) -> Field { return pqxx::from_string<uint64_t>(field); };
     else if (which.isInt64())
-        parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
+        parser = [](std::string & field) -> Field { return pqxx::from_string<int64_t>(field); };
     else if (which.isFloat32())
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
@@ -277,6 +277,13 @@ void PostgreSQLBlockInputStream::prepareArrayInfo(size_t column_idx, const DataT
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal128> *>(nested.get());
             DataTypeDecimal<Decimal128> res(getDecimalPrecision(*type), getDecimalScale(*type));
+            return convertFieldToType(field, res);
+        };
+    else if (which.isDecimal256())
+        parser = [nested](std::string & field) -> Field
+        {
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal256> *>(nested.get());
+            DataTypeDecimal<Decimal256> res(getDecimalPrecision(*type), getDecimalScale(*type));
             return convertFieldToType(field, res);
         };
     else
