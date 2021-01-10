@@ -109,7 +109,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
     }
     catch (Exception & e)
     {
-        e.addMessage("while checking postgresql table existance");
+        e.addMessage("while checking postgresql table existence");
         throw;
     }
 

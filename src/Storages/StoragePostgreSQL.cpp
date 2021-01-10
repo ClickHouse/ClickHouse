@@ -111,6 +111,9 @@ public:
 
     void write(const Block & block) override
     {
+        if (!work)
+            return;
+
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows(), num_cols = block.columns();
         const auto data_types = block.getDataTypes();
@@ -154,10 +157,9 @@ public:
     void writeSuffix() override
     {
         if (stream_inserter)
-        {
             stream_inserter->complete();
+        if (work)
             work->commit();
-        }
     }
 
 
