@@ -113,6 +113,39 @@ def test_postgresql_database_engine_queries(started_cluster):
     assert 'test_database' not in node1.query('SHOW DATABASES')
 
 
+def test_get_create_table_query_with_multidim_arrays(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword')")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS array_columns (
+        b Integer[][][] NOT NULL,
+        c Integer[][][]
+    )""")
+
+    node1.query("DETACH TABLE test_database.array_columns")
+    node1.query("ATTACH TABLE test_database.array_columns")
+
+    node1.query("INSERT INTO test_database.array_columns "
+        "VALUES ("
+        "[[[1, 1], [1, 1]], [[3, 3], [3, 3]], [[4, 4], [5, 5]]], "
+        "[[[1, NULL], [NULL, 1]], [[NULL, NULL], [NULL, NULL]], [[4, 4], [5, 5]]] "
+        ")")
+    result = node1.query('''
+        SELECT * FROM test_database.array_columns''')
+    expected = (
+        "[[[1,1],[1,1]],[[3,3],[3,3]],[[4,4],[5,5]]]\t"
+        "[[[1,NULL],[NULL,1]],[[NULL,NULL],[NULL,NULL]],[[4,4],[5,5]]]\n"
+        )
+    assert(result == expected)
+
+    node1.query("DROP DATABASE test_database")
+    assert 'test_database' not in node1.query('SHOW DATABASES')
+
+
 def test_postgresql_database_engine_table_cache(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
