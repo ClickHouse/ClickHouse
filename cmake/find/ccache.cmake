@@ -35,7 +35,7 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
       # debian (debhlpers) set SOURCE_DATE_EPOCH environment variable, that is
       # filled from the debian/changelog or current time.
       #
-      # - 4.0+ ccache always includes this environemtn variable into the hash
+      # - 4.0+ ccache always includes this environment variable into the hash
       #   of the manifest, which do not allow to use previous cache,
       # - 4.2+ ccache ignores SOURCE_DATE_EPOCH under time_macros sloppiness.
       #
