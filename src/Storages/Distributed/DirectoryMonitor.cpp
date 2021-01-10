@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
@@ -150,20 +151,6 @@ namespace
         in.readStrict(header.insert_query.data(), query_size);
 
         return header;
-    }
-
-    /// FIXME: suboptimal
-    void verifyDistributedChecksum(ReadBufferFromFile & in)
-    {
-        CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        block_in.readPrefix();
-
-        while (Block block = block_in.read())
-        {
-            /// Just do the per-block checksum checks in the CompressedReadBuffer.
-        }
-        block_in.readSuffix();
     }
 }
 
@@ -412,34 +399,21 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
-    /// Check that the file is valid
-    try
-    {
-        /// Determine metadata of the current file and check if it is not broken.
-        ReadBufferFromFile in{file_path};
-        readDistributedHeader(in, log);
-
-        verifyDistributedChecksum(in);
-    }
-    catch (const Exception & e)
-    {
-        maybeMarkAsBroken(file_path, e);
-        throw;
-    }
-
     try
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-        ReadBufferFromFile in{file_path};
+        ReadBufferFromFile in(file_path);
         const auto & header = readDistributedHeader(in, log);
 
         auto connection = pool->get(timeouts, &header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
             header.insert_query, header.insert_settings, header.client_info};
 
+        CheckingCompressedReadBuffer checking_in(in);
+
         remote.writePrefix();
-        remote.writePrepared(in);
+        remote.writePrepared(checking_in);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -592,7 +566,8 @@ struct StorageDistributedDirectoryMonitor::Batch
                     remote->writePrefix();
                 }
 
-                remote->writePrepared(in);
+                CheckingCompressedReadBuffer checking_in(in);
+                remote->writePrepared(checking_in);
             }
 
             if (remote)
@@ -778,8 +753,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     sample_block = block.cloneEmpty();
                     break;
                 }
-
-                verifyDistributedChecksum(in);
             }
             else
             {
