@@ -2,9 +2,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/hex.h>
 #include <common/find_symbols.h>
 
-#include <vector>
 namespace DB
 {
 namespace ErrorCodes
@@ -83,28 +83,29 @@ namespace
                     }
                     else if (isValidNumeric(src_curr_pos, src_next_pos))
                     {
-                        std::vector<char> decode_numeric_chars;
-                        decodeNumericPart(src_curr_pos + 2, src_next_pos, decode_numeric_chars);
-                        if (decode_numeric_chars.empty())
+                        int numeric_entity;
+                        size_t bytes_to_copy = src_curr_pos - src_prev_pos;
+                        memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                        dst_pos += bytes_to_copy;
+                        if (*(src_curr_pos + 2) == 'x' || *(src_curr_pos + 2) == 'X')
                         {
-                            ++src_curr_pos;
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            src_prev_pos = src_curr_pos;
+                            numeric_entity = hexOrDecStrToInt(src_curr_pos + 3, src_next_pos, 0x10);
                         }
                         else
                         {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            for (auto cur_char : decode_numeric_chars)
-                            {
-                                *dst_pos = cur_char;
-                                ++dst_pos;
-                            }
-                            src_prev_pos = src_next_pos + 1;
+                            numeric_entity = hexOrDecStrToInt(src_curr_pos + 2, src_next_pos, 10);
                         }
+                        if (numeric_entity > max_legal_unicode_value)
+                        {
+                            bytes_to_copy = src_next_pos - src_curr_pos + 1;
+                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_curr_pos, bytes_to_copy);
+                            dst_pos += bytes_to_copy;
+                        }
+                        else
+                        {
+                            decodeNumericPart(numeric_entity, dst_pos);
+                        }
+                        src_prev_pos = src_next_pos + 1;
                         src_curr_pos = src_next_pos + 1;
                     }
                     else if (src_next_pos - src_curr_pos == 3)
@@ -212,39 +213,31 @@ namespace
             return dst_pos - dst;
         }
 
-        static void decodeNumericPart(const char * src, const char * end, std::vector<char> & decodeNumericChars)
+        static void decodeNumericPart(int numeric_entity, char *& dst_pos)
         {
-            int numeric_ans;
-            if (*src == 'x' || *src == 'X')
-            {
-                numeric_ans = hexOrDecStrToInt(src + 1, end, 16);
-            }
-            else
-            {
-                numeric_ans = hexOrDecStrToInt(src, end, 10);
-            }
-            const auto num_bits = numBitsCount(numeric_ans);
+            const auto num_bits = numBitsCount(numeric_entity);
             if (num_bits <= 7)
             {
-                decodeNumericChars.push_back('\0' + (numeric_ans & 0x7F));
+                *(dst_pos++) = '\0' + (numeric_entity & 0x7F);
             }
             else if (num_bits <= 11)
             {
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 6) & 0x1F) + 0xC0);
-                decodeNumericChars.push_back('\0' + (numeric_ans & 0x3F) + 0x80);
+                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x1F) + 0xC0;
+
+                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
             }
             else if (num_bits <= 16)
             {
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 12) & 0x0F) + 0xE0);
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 6) & 0x3F) + 0x80);
-                decodeNumericChars.push_back('\0' + (numeric_ans & 0x3F) + 0x80);
+                *(dst_pos++) = '\0' + ((numeric_entity >> 12) & 0x0F) + 0xE0;
+                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x3F) + 0x80;
+                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
             }
-            else if ((num_bits <= 21) && (numeric_ans <= max_legal_unicode_value))
+            else
             {
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 18) & 0x07) + 0xF0);
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 12) & 0x3F) + 0x80);
-                decodeNumericChars.push_back('\0' + ((numeric_ans >> 6) & 0x3F) + 0x80);
-                decodeNumericChars.push_back('\0' + (numeric_ans & 0x3F) + 0x80);
+                *(dst_pos++) = '\0' + ((numeric_entity >> 18) & 0x07) + 0xF0;
+                *(dst_pos++) = '\0' + ((numeric_entity >> 12) & 0x3F) + 0x80;
+                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x3F) + 0x80;
+                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
             }
         }
 
@@ -252,22 +245,11 @@ namespace
         {
             int numeric_ans = 0;
             int pos = 0;
-            if (base == 16)
+            if (base == 0x10)
             {
                 while (src + pos != end)
                 {
-                    if (isNumericASCII(*(src + pos)))
-                    {
-                        numeric_ans = numeric_ans * base + (*(src + pos) - '0');
-                    }
-                    else if (*(src + pos) >= 'a' && *(src + pos) <= 'f')
-                    {
-                        numeric_ans = numeric_ans * base + (*(src + pos) - 'a' + 10);
-                    }
-                    else if (*(src + pos) >= 'A' && *(src + pos) <= 'F')
-                    {
-                        numeric_ans = numeric_ans * base + (*(src + pos) - 'A' + 10);
-                    }
+                    numeric_ans = numeric_ans * 0x10 + static_cast<UInt8>(unhex(*(src + pos)));
                     ++pos;
                 }
             }
