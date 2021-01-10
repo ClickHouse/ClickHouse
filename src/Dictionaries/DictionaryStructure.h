@@ -56,6 +56,7 @@ struct DictionaryAttribute final
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
+    const DataTypePtr nested_type;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
@@ -157,6 +158,7 @@ struct DictionaryStructure final
     bool isKeySizeFixed() const;
     size_t getKeySize() const;
 
+    const DictionaryAttribute &getAttribute(const String& attribute_name) const;
 private:
     /// range_min and range_max have to be parsed before this function call
     std::vector<DictionaryAttribute> getAttributes(

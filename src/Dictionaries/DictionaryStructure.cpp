@@ -379,11 +379,31 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(
-            DictionaryAttribute{name, underlying_type, initial_type, expression, null_value, hierarchical, injective, is_object_id, is_nullable, is_array});
+        res_attributes.emplace_back(DictionaryAttribute{
+            name,
+            underlying_type,
+            initial_type,
+            type,
+            expression,
+            null_value,
+            hierarchical,
+            injective,
+            is_object_id,
+            is_nullable,
+            is_array});
     }
 
     return res_attributes;
 }
 
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name) const
+{
+    auto find_iter
+        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+
+    if (find_iter == attributes.end())
+        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    return *find_iter;
+}
 }

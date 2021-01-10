@@ -4,15 +4,17 @@
 #include <variant>
 #include <vector>
 #include <optional>
+
 #include <Common/HashTable/HashSet.h>
+#include <Common/Arena.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/IDataType.h>
-#include <Common/Arena.h>
 #include <Core/Block.h>
 #include <ext/range.h>
 #include <ext/size.h>
+
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -92,8 +94,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        bool is_nullable;
-        std::unique_ptr<NullableSet> nullable_set;
+        std::optional<NullableSet> nullable_set;
 
         std::variant<
             UInt8,

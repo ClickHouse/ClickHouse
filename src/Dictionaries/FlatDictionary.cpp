@@ -1,12 +1,14 @@
 #include "FlatDictionary.h"
+
+#include <Core/Defines.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
-#include <Core/Defines.h>
-
 
 namespace DB
 {
@@ -120,10 +122,11 @@ ColumnPtr FlatDictionary::getColumn(
     auto size = ids.size();
 
     const auto & attribute = getAttribute(attribute_name);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name);
 
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_nullable)
+    if (attribute.nullable_set)
     {
         col_null_map_to = ColumnUInt8::create(size, false);
         vec_null_map_to = &col_null_map_to->getData();
@@ -188,8 +191,8 @@ ColumnPtr FlatDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
@@ -239,7 +242,7 @@ ColumnPtr FlatDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (attribute.is_nullable)
+    if (attribute.nullable_set)
     {
         for (size_t row = 0; row < ids.size(); ++row)
         {
@@ -461,8 +464,8 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
 {
-    auto nullable_set = attribute.is_nullable ? std::make_unique<NullableSet>() : nullptr;
-    Attribute attr{attribute.underlying_type, attribute.is_nullable, std::move(nullable_set), {}, {}, {}};
+    auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
+    Attribute attr{attribute.underlying_type, std::move(nullable_set), {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -534,7 +537,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
 
         resize<ResizeType>(attribute, id);
 
-        if (attribute.is_nullable)
+        if (attribute.nullable_set)
         {
             if (value.isNull())
             {
