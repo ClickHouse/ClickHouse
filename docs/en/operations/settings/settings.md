@@ -844,7 +844,7 @@ Higher values will lead to higher memory usage.
 
 ## max_compress_block_size {#max-compress-block-size}
 
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
+The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
 !!! note "Warning"
     This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
