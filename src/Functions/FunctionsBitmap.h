@@ -720,14 +720,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+        if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt64>::name()))
             throw Exception(
                 "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        const auto * arg_type1 = typeid_cast<const DataTypeNumber<UInt32> *>(arguments[1].get());
+        const auto * arg_type1 = typeid_cast<const DataTypeNumber<UInt64> *>(arguments[1].get());
         if (!(arg_type1))
             throw Exception(
-                "Second argument for function " + getName() + " must be UInt32 but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be UInt64 but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<UInt8>>();
@@ -766,7 +766,7 @@ private:
         const IColumn * column_ptrs[2];
         bool is_column_const[2];
         const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt32> * container1;
+        const PaddedPODArray<UInt64> * container1;
 
         for (size_t i = 0; i < 2; ++i)
         {
@@ -778,14 +778,14 @@ private:
         else
             container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
         else
-            container1 = &typeid_cast<const ColumnUInt32*>(column_ptrs[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt64*>(column_ptrs[1])->getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
-            const UInt32 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
+            const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             vec_to[i] = bitmap_data_0.rbs.rb_contains(data1);

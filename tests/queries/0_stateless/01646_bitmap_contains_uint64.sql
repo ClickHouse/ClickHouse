@@ -1,0 +1,1 @@
+WITH (SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res) AS res SELECT bitmapContains(res, number) from system.numbers limit 10
