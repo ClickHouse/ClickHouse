@@ -182,3 +182,4 @@
 01601_custom_tld
 01636_nullable_fuzz2
 01639_distributed_sync_insert_zero_rows
+01644_distributed_async_insert_fsync_smoke
