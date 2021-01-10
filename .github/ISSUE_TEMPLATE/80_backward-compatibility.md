@@ -1,6 +1,6 @@
 ---
 name: Backward compatibility issue
-about: Create a report to help us improve ClickHouse
+about: Report the case when the behaviour of a new version can break existing use cases
 title: ''
 labels: backward compatibility
 assignees: ''

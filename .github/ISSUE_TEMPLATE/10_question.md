@@ -1,6 +1,6 @@
 ---
 name: Question
-about: Ask question about ClickHouse
+about: Ask a question about ClickHouse
 title: ''
 labels: question
 assignees: ''
