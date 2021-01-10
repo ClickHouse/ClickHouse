@@ -90,7 +90,7 @@ namespace
         size_t bytes = 0;
     };
 
-    static DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
+    DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
     {
         DistributedHeader header;
 
