@@ -299,6 +299,10 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
         const Settings & settings = context.getSettingsRef();
 
+        /// Do not initiate INSERT for empty block.
+        if (shard_block.rows() == 0)
+            return;
+
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
             if (!job.stream)
@@ -368,7 +372,8 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
-    size_t start = 0, end = shards_info.size();
+    size_t start = 0;
+    size_t end = shards_info.size();
     if (random_shard_insert)
     {
         start = storage.getRandomShardIndex(shards_info);
@@ -582,6 +587,17 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
+    const auto & settings = context.getSettingsRef();
+
+    std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
+    std::optional<int> compression_level;
+
+    if (compression_method == "ZSTD")
+        compression_level = settings.network_zstd_compression_level;
+
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs);
+    CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
+
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
@@ -607,7 +623,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         /// Write batch to temporary location
         {
             WriteBufferFromFile out{first_file_tmp_path};
-            CompressedWriteBuffer compress{out};
+            CompressedWriteBuffer compress{out, compression_codec};
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.

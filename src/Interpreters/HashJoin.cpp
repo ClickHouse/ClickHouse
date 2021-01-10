@@ -357,16 +357,32 @@ void HashJoin::init(Type type_)
     joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
-size_t HashJoin::getTotalRowCount() const
+bool HashJoin::overDictionary() const
 {
-    std::shared_lock lock(data->rwlock);
-    return getTotalRowCountLocked();
+    return data->type == Type::DICT;
+}
+
+bool HashJoin::empty() const
+{
+    return data->type == Type::EMPTY;
 }
 
 size_t HashJoin::getTotalByteCount() const
 {
     std::shared_lock lock(data->rwlock);
     return getTotalByteCountLocked();
+}
+
+size_t HashJoin::getTotalRowCount() const
+{
+    std::shared_lock lock(data->rwlock);
+    return getTotalRowCountLocked();
+}
+
+bool HashJoin::alwaysReturnsEmptySet() const
+{
+    std::shared_lock lock(data->rwlock);
+    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
 }
 
 size_t HashJoin::getTotalRowCountLocked() const

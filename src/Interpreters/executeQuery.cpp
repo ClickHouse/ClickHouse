@@ -351,7 +351,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 #if !defined(ARCADIA_BUILD)
         if (settings.use_antlr_parser)
         {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context.getCurrentDatabase());
         }
         else
         {
@@ -974,7 +974,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
+            auto out = context.getOutputStream(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();
@@ -1019,7 +1019,7 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+                auto out = context.getOutputFormat(format_name, *out_buf, pipeline.getHeader());
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.

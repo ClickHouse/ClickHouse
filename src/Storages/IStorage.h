@@ -120,9 +120,6 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
-    /// Returns true if the storage supports settings.
-    virtual bool supportsSettings() const { return false; }
-
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
     virtual bool noPushingToViews() const { return false; }
 
