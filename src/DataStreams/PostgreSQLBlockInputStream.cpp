@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -67,13 +66,9 @@ Block PostgreSQLBlockInputStream::readImpl()
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
+        /// row is nullptr if pqxx::stream_from is finished
         if (!row)
-        {
-            /// row is nullptr if pqxx::stream_from is finished
-            stream->complete();
-            tx->commit();
             break;
-        }
 
         for (const auto idx : ext::range(0, row->size()))
         {
@@ -106,6 +101,16 @@ Block PostgreSQLBlockInputStream::readImpl()
     }
 
     return description.sample_block.cloneWithColumns(std::move(columns));
+}
+
+
+void PostgreSQLBlockInputStream::readSuffix()
+{
+    if (stream)
+    {
+        stream->complete();
+        tx->commit();
+    }
 }
 
 
@@ -160,7 +165,8 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         case ValueType::vtDateTime64:[[fallthrough]];
         case ValueType::vtDecimal32: [[fallthrough]];
         case ValueType::vtDecimal64: [[fallthrough]];
-        case ValueType::vtDecimal128:
+        case ValueType::vtDecimal128: [[fallthrough]];
+        case ValueType::vtDecimal256:
         {
             ReadBufferFromString istr(value);
             data_type->deserializeAsWholeText(column, istr, FormatSettings{});
@@ -207,8 +213,6 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
-        default:
-            throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
     }
 }
 

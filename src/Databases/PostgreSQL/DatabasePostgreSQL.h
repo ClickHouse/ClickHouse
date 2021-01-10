@@ -10,13 +10,17 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <pqxx/pqxx>
 
 namespace DB
 {
 
 class Context;
 
+/** Real-time access to table list and table structure from remote PostgreSQL.
+ *  All tables are created after pull-out structure from remote PostgreSQL.
+ *  If `cache_tables` == 1 (default: 0) table structure is cached and not checked for being modififed,
+ *  but it will be updated during detach->attach.
+ */
 class DatabasePostgreSQL final : public IDatabase
 {
 

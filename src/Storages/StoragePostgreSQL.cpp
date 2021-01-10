@@ -102,10 +102,12 @@ public:
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
+
     void writePrefix() override
     {
         work = std::make_unique<pqxx::work>(*connection);
     }
+
 
     void write(const Block & block) override
     {
@@ -143,24 +145,28 @@ public:
                     row[j] = ostr.str();
                 }
             }
-            /// pqxx::stream_to is much faster than simple insert, especially for large number of rows
+
             stream_inserter->write_values(row);
         }
     }
 
+
     void writeSuffix() override
     {
         if (stream_inserter)
+        {
             stream_inserter->complete();
-        work->commit();
+            work->commit();
+        }
     }
+
 
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
     /// any dimension number array into text format, because it incloses in '[]' and for postgres it must be '{}'.
-    void parseArray(Field array_field, DataTypePtr data_type, WriteBuffer & ostr)
+    void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
-        const auto nested = array_type->getNestedType();
+        const auto & nested = array_type->getNestedType();
         const auto & array = array_field.get<Array>();
 
         if (!isArray(nested))
@@ -190,13 +196,14 @@ public:
         writeChar('}', ostr);
     }
 
+
     /// Conversion is done via column casting because with writeText(Array..) got incorrect conversion
     /// of Date and DateTime data types and it added extra quotes for values inside array.
-    std::string clickhouseToPostgresArray(const Array & array_field, DataTypePtr data_type)
+    std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
     {
         auto nested = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
         ColumnPtr nested_column(createNested(nested));
-        const auto array_column{ColumnArray::create(nested_column)};
+        auto array_column{ColumnArray::create(nested_column)};
         const_cast<ColumnArray *>(array_column.get())->insert(array_field);
         WriteBufferFromOwnString ostr;
         data_type->serializeAsText(*array_column, 0, ostr, FormatSettings{});
@@ -205,7 +212,8 @@ public:
         return '{' + std::string(ostr.str().begin() + 1, ostr.str().end() - 1) + '}';
     }
 
-    ColumnPtr createNested(DataTypePtr nested)
+
+    static ColumnPtr createNested(DataTypePtr nested)
     {
         bool is_nullable = false;
         if (nested->isNullable())
@@ -241,6 +249,11 @@ public:
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal128> *>(nested.get());
             nested_column = ColumnDecimal<Decimal128>::create(0, type->getScale());
+        }
+        else if (which.isDecimal256())
+        {
+            const auto & type = typeid_cast<const DataTypeDecimal<Decimal256> *>(nested.get());
+            nested_column = ColumnDecimal<Decimal256>::create(0, type->getScale());
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
