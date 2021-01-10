@@ -1,6 +1,6 @@
 ---
 name: Unexpected behaviour
-about: Create a report to help us improve ClickHouse
+about: Some feature is working in non-obvious way
 title: ''
 labels: unexpected behaviour
 assignees: ''
