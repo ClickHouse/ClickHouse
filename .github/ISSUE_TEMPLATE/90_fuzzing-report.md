@@ -1,6 +1,6 @@
 ---
 name: Assertion found via fuzzing
-about: Create a report to help us improve ClickHouse
+about: Potential issue has been found via Fuzzer or Stress tests
 title: ''
 labels: fuzz
 assignees: ''

@@ -1,6 +1,6 @@
 ---
 name: Usability issue
-about: Create a report to help us improve ClickHouse
+about: Report something can be made more convenient to use
 title: ''
 labels: usability
 assignees: ''
