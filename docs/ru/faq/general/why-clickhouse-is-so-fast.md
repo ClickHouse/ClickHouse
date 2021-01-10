@@ -8,23 +8,21 @@ toc_priority: 8
 
 Изначально он был разработан так, чтобы быть быстрым. Производительность выполнения запросов всегда была самой важной в процессе разработки, но и другие важные характеристики, как например, комфорт пользователя, масштабируемость и защищенность также принимались во внимание, так чтобы ClickHouse стал системой с серьезной производительностью. 
 
+Сначала ClickHouse был построен как прототип для выполнения одной вещи на отлично: фильтровать и агрегировать данные так быстро, насколько это возможно. Это именно то, что необходимо, чтобы создать типичный аналитический ответ и то, что происходит по стандартном запросу [GROUP BY](../../sql-reference/statements/select/group-by.md). Команда ClickHouse приняла несколько высокоуровневых решения, которые все вместе сделали достижимой следующую цель: 
 
+Колоночое хранилище
+:   Исходные данные часто содержат сотни или даже тысячи столбцов, в то время как для отчета нужно только несколько из них. Система не должна читать ненужные столбцы, иначе самые дорогостоящие операции прочтения с диска будут производиться зря. 
 
-ClickHouse was initially built as a prototype to do just a single task well: to filter and aggregate data as fast as possible. That’s what needs to be done to build a typical analytical report and that’s what a typical [GROUP BY](../../sql-reference/statements/select/group-by.md) query does. ClickHouse team has made several high-level decisions that combined made achieving this task possible:
+Индексы
+:   ClickHouse хранит в памяти структуры данных, а это позволяет читать не только используемые столбцы, но только необходимые диапазоны строк для этих столбцов.
 
-Column-oriented storage
-:   Source data often contain hundreds or even thousands of columns, while a report can use just a few of them. The system needs to avoid reading unnecessary columns, or most expensive disk read operations would be wasted.
-
-Indexes
-:   ClickHouse keeps data structures in memory that allows reading not only used columns but only necessary row ranges of those columns.
-
-Data compression
-:   Storing different values of the same column together often leads to better compression ratios (compared to row-oriented systems) because in real data column often has the same or not so many different values for neighboring rows. In addition to general-purpose compression, ClickHouse supports [specialized codecs](../../sql-reference/statements/create/table.md#create-query-specialized-codecs) that can make data even more compact.
+Сжатие данных
+:   Хранение различных значений одной и той же колонки вместе часто ведет к лучшим пропорциям сжатия (по сравнению со стандартными ориентированными на строки системами). Причина тому — в реальности столбец данных часто имеет такие же или не слишком различные значения для соседних строк. А в дополнение к универсальному сжатию ClickHouse поддерживает [специализированные кодеки](../../sql-reference/statements/create/table.md#create-query-specialized-codecs), которые могут ужать данные еще больше. 
 
 Vectorized query execution
-:   ClickHouse not only stores data in columns but also processes data in columns. It leads to better CPU cache utilization and allows for [SIMD](https://en.wikipedia.org/wiki/SIMD) CPU instructions usage.
+:   ClickHouse не только хранит данные в столбцах, но также обрабатывает их. А это приводит к улучшению использования кеша процессора и позволяет использовать инструкции [SIMD](https://en.wikipedia.org/wiki/SIMD).
 
-Scalability
+Масштабируемость
 :   ClickHouse can leverage all available CPU cores and disks to execute even a single query. Not only on a single server but all CPU cores and disks of a cluster as well.
 
 But many other database management systems use similar techniques. What really makes ClickHouse stand out is **attention to low-level details**. Most programming languages provide implementations for most common algorithms and data structures, but they tend to be too generic to be effective. Every task can be considered as a landscape with various characteristics, instead of just throwing in random implementation. For example, if you need a hash table, here are some key questions to consider:
