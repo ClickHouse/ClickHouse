@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TYPE;
     extern const int UNKNOWN_TABLE;
 }
 
