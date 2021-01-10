@@ -86,7 +86,6 @@ std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    /// Already connected to the needed database, search will be done there
     pqxx::read_transaction tx(*connection->conn());
 
     for (auto table_name : tx.stream<std::string>(query))
@@ -99,11 +98,22 @@ std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
 bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 {
     pqxx::nontransaction tx(*connection->conn());
-    pqxx::result result = tx.exec(fmt::format(
-        "SELECT tablename FROM pg_catalog.pg_tables "
-        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '{}'", table_name));
 
-    return !result.empty();
+    try
+    {
+        pqxx::result result = tx.exec(fmt::format("select '{}'::regclass", table_name));
+    }
+    catch (pqxx::undefined_table const &)
+    {
+        return false;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while checking postgresql table existance");
+        throw;
+    }
+
+    return true;
 }
 
 
@@ -137,7 +147,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-        auto columns = fetchTableStructure(connection->conn(), table_name, use_nulls);
+        auto columns = fetchPostgreSQLTableStructure(connection->conn(), table_name, use_nulls);
 
         if (!columns)
             return StoragePtr{};
@@ -146,8 +156,6 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
                 StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(connection->conn_str()),
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
-        /// There is no easy (embedded) way in postgres to check table modification time, so if `cache_tables` == 1 (default: 0)
-        /// table structure is cached and not checked for being modififed, but it will be updated during detach->attach.
         if (cache_tables)
             cached_tables[table_name] = storage;
 

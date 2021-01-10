@@ -32,6 +32,7 @@ private:
 
     void readPrefix() override;
     Block readImpl() override;
+    void readSuffix() override;
 
     void insertValue(IColumn & column, std::string_view value,
         const ExternalResultDescription::ValueType type, const DataTypePtr data_type, size_t idx);

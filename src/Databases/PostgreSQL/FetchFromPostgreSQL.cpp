@@ -2,6 +2,7 @@
 
 #if USE_LIBPQXX
 
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,10 +20,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
+    extern const int UNKNOWN_TABLE;
 }
 
 
-std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection, const String & postgres_table_name, bool use_nulls)
+std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(ConnectionPtr connection, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
 
@@ -32,18 +34,30 @@ std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection,
            "FROM pg_attribute "
            "WHERE attrelid = '{}'::regclass "
            "AND NOT attisdropped AND attnum > 0", postgres_table_name);
-    pqxx::read_transaction tx(*connection);
-    pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
-    std::tuple<std::string, std::string, std::string, uint16_t> row;
-
-    while (stream >> row)
+    try
     {
-        columns.push_back(NameAndTypePair(
-                std::get<0>(row),
-                getDataType(std::get<1>(row), use_nulls && (std::get<2>(row) == "f"), std::get<3>(row))));
+        pqxx::read_transaction tx(*connection);
+        pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
+
+        std::tuple<std::string, std::string, std::string, uint16_t> row;
+        while (stream >> row)
+        {
+            columns.push_back(NameAndTypePair(
+                    std::get<0>(row),
+                    convertPostgreSQLDataType(
+                        std::get<1>(row),
+                        use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false, i.e. value is nullable
+                        std::get<3>(row))));
+        }
+        stream.complete();
+        tx.commit();
     }
-    stream.complete();
-    tx.commit();
+    catch (pqxx::undefined_table const &)
+    {
+        throw Exception(fmt::format(
+                    "PostgreSQL table {}.{} does not exist",
+                    connection->dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+    }
 
     if (columns.empty())
         return nullptr;
@@ -52,12 +66,12 @@ std::shared_ptr<NamesAndTypesList> fetchTableStructure(ConnectionPtr connection,
 }
 
 
-DataTypePtr getDataType(std::string & type, bool is_nullable, uint16_t dimensions)
+DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
 {
     DataTypePtr res;
 
     /// Get rid of trailing '[]' for arrays
-    if (dimensions)
+    if (dimensions && type.ends_with("[]"))
         type.resize(type.size() - 2);
 
     if (type == "smallint")
@@ -80,20 +94,10 @@ DataTypePtr getDataType(std::string & type, bool is_nullable, uint16_t dimension
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))
     {
-        /// Numeric and decimal will both end up here as numeric
-        /// Will get numeric(precision, scale) string, need to extract precision and scale
-        std::vector<std::string> result;
-        boost::split(result, type, [](char c){ return c == '(' || c == ',' || c == ')'; });
-        for (std::string & key : result)
-            boost::trim(key);
-
-        /// If precision or scale are not specified, postgres creates a column in which numeric values of
-        /// any precision and scale can be stored, so may be maxPrecision may be used instead of exception
-        if (result.size() < 3)
-            throw Exception("Numeric lacks precision and scale in its definition", ErrorCodes::UNKNOWN_TYPE);
-
-        uint32_t precision = pqxx::from_string<uint32_t>(result[1]);
-        uint32_t scale = pqxx::from_string<uint32_t>(result[2]);
+        /// Numeric and decimal will both end up here as numeric.
+        res = DataTypeFactory::instance().get(type);
+        uint32_t precision = getDecimalPrecision(*res);
+        uint32_t scale = getDecimalScale(*res);
 
         if (precision <= DecimalUtils::maxPrecision<Decimal32>())
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
@@ -101,6 +105,8 @@ DataTypePtr getDataType(std::string & type, bool is_nullable, uint16_t dimension
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+        else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
+            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
     }
 
     if (!res)

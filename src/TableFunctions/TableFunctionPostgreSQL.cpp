@@ -37,7 +37,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
 {
     const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-    auto columns = fetchTableStructure(connection->conn(), remote_table_name, use_nulls);
+    auto columns = fetchPostgreSQLTableStructure(connection->conn(), remote_table_name, use_nulls);
 
     return ColumnsDescription{*columns};
 }
