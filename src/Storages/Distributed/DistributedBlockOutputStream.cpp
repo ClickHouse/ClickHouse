@@ -653,9 +653,12 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().write(header_buf);
             context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            writeVarUInt(block.rows(), header_buf);
+            writeVarUInt(block.bytes(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
+            /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
             const StringRef header = header_buf.stringRef();
