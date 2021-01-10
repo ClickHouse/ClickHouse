@@ -35,7 +35,6 @@ SRCS(
     MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
-    ParallelParsingBlockInputStream.cpp
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp

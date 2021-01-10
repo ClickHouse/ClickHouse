@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 // FunctionStringHash
@@ -30,6 +31,8 @@ public:
     static constexpr auto name = Name::name;
     static constexpr size_t default_shingle_size = 3;
     static constexpr size_t default_num_hashes = 6;
+    static constexpr size_t max_shingle_size = 25;
+    static constexpr size_t max_num_hashes = 25;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringHash>(); }
 
@@ -77,7 +80,7 @@ public:
         {
             if constexpr (is_simhash)
                 throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                                "Function {} expect no more then two arguments (text, shingle size), got {}",
+                                "Function {} expect no more than two arguments (text, shingle size), got {}",
                                 getName(), arguments.size());
 
             if (!isUnsignedInteger(arguments[2].type))
@@ -95,15 +98,19 @@ public:
         if (arguments.size() > 3)
         {
             throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                            "Function {} expect no more then three arguments (text, shingle size, num hashes), got {}",
+                            "Function {} expect no more than three arguments (text, shingle size, num hashes), got {}",
                             getName(), arguments.size());
         }
 
         if (shingle_size == 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (shingle size) of function {} cannot be zero", getName());
-
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument (shingle size) of function {} cannot be zero", getName());
         if (num_hashes == 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (num hashes) of function {} cannot be zero", getName());
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument (num hashes) of function {} cannot be zero", getName());
+
+        if (shingle_size > max_shingle_size)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument (shingle size) of function {} cannot be greater then {}", getName(), max_shingle_size);
+        if (num_hashes > max_num_hashes)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument (num hashes) of function {} cannot be greater then {}", getName(), max_num_hashes);
 
         auto type = std::make_shared<DataTypeUInt64>();
         if constexpr (is_simhash)

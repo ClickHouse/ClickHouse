@@ -1,5 +1,4 @@
 #include "BackgroundSchedulePool.h"
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
