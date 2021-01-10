@@ -223,7 +223,6 @@ namespace
             else if (num_bits <= 11)
             {
                 *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x1F) + 0xC0;
-
                 *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
             }
             else if (num_bits <= 16)
