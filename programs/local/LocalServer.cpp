@@ -289,7 +289,7 @@ try
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else
+    else if (!config().has("no-system-tables"))
     {
         attachSystemTables(*global_context);
     }
@@ -541,6 +541,7 @@ void LocalServer::init(int argc, char ** argv)
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ;
 
@@ -603,6 +604,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+    if (options.count("no-system-tables"))
+        config().setBool("no-system-tables", true);
 
     std::vector<std::string> arguments;
     for (int arg_num = 1; arg_num < argc; ++arg_num)
