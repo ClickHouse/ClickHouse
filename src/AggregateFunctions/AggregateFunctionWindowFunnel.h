@@ -47,8 +47,13 @@ struct AggregateFunctionWindowFunnelData
     void add(T timestamp, UInt8 event)
     {
         // Since most events should have already been sorted by timestamp.
-        if (sorted && events_list.size() > 0 && events_list.back().first > timestamp)
-            sorted = false;
+        if (sorted && events_list.size() > 0)
+        {
+            if (events_list.back().first == timestamp)
+                sorted = events_list.back().second <= event;
+            else
+                sorted = events_list.back().first <= timestamp;
+        }
         events_list.emplace_back(timestamp, event);
     }
 
