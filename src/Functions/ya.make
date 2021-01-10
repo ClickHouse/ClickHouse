@@ -204,6 +204,7 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp

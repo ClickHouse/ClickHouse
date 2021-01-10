@@ -228,7 +228,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         {
             if (primary_key)
             {
-                throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                /// Multiple primary keys are not allowed.
+                return false;
             }
             primary_key = elem;
         }
