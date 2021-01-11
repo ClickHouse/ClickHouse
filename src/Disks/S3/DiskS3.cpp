@@ -924,19 +924,24 @@ void DiskS3::startup()
 
     /// Find last revision.
     UInt64 l = 0, r = LATEST_REVISION;
-    while (r - l > 1)
+    while (l < r)
     {
-        auto revision = (r - l) >> 1;
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check revision in bounds {}-{}", l, r);
+
+        auto revision = l + (r - l + 1) / 2;
         auto revision_str = revisionToString(revision);
-        /// Check that file or operation with such revision exists.
+
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object with revision {}", revision);
+
+        /// Check file or operation with such revision exists.
         if (checkObjectExists(s3_root_path + "r" + revision_str)
             || checkObjectExists(s3_root_path + "operations/r" + revision_str))
             l = revision;
         else
-            r = revision;
+            r = revision - 1;
     }
     revision_counter = l;
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {}", revision_counter);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, name);
 }
 
 bool DiskS3::checkObjectExists(const String & prefix)
@@ -969,7 +974,7 @@ void DiskS3::listObjects(const String & source_bucket, const String & source_pat
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(source_bucket);
     request.SetPrefix(source_path);
-    request.SetMaxKeys(1000);
+    request.SetMaxKeys(list_object_keys_size);
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
@@ -1000,13 +1005,13 @@ void DiskS3::copyObject(const String & src_bucket, const String & src_key, const
 struct DiskS3::RestoreInformation
 {
     UInt64 revision = LATEST_REVISION;
-    String bucket;
-    String path;
+    String source_bucket;
+    String source_path;
 };
 
 void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
 {
-    ReadBufferFromFile buffer(metadata_path + restore_file, 512);
+    ReadBufferFromFile buffer(metadata_path + restore_file_name, 512);
     buffer.next();
 
     /// Empty file - just restore all metadata.
@@ -1021,13 +1026,13 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
         if (!buffer.hasPendingData())
             return;
 
-        readText(restore_information.bucket, buffer);
+        readText(restore_information.source_bucket, buffer);
         assertChar('\n', buffer);
 
         if (!buffer.hasPendingData())
             return;
 
-        readText(restore_information.path, buffer);
+        readText(restore_information.source_path, buffer);
         assertChar('\n', buffer);
 
         if (buffer.hasPendingData())
@@ -1041,35 +1046,42 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
 
 void DiskS3::restore()
 {
-    if (!exists(restore_file))
+    if (!exists(restore_file_name))
         return;
 
     try
     {
         RestoreInformation information;
-        information.bucket = bucket;
-        information.path = s3_root_path;
+        information.source_bucket = bucket;
+        information.source_path = s3_root_path;
 
         readRestoreInformation(information);
         if (information.revision == 0)
             information.revision = LATEST_REVISION;
+        if (!information.source_path.ends_with('/'))
+            information.source_path += '/';
 
-        if (information.bucket == bucket)
+        if (information.source_bucket == bucket)
         {
             /// In this case we need to additionally cleanup S3 from objects with later revision.
             /// Will be simply just restore to different path.
-            if (information.path == s3_root_path && information.revision != LATEST_REVISION)
+            if (information.source_path == s3_root_path && information.revision != LATEST_REVISION)
                 throw Exception("Restoring to the same bucket and path is allowed if revision is latest (0)", ErrorCodes::BAD_ARGUMENTS);
 
             /// This case complicates S3 cleanup in case of unsuccessful restore.
-            if (information.path != s3_root_path && (information.path.starts_with(s3_root_path) || s3_root_path.starts_with(information.path)))
-                throw Exception("Restoring to the same bucket is allowed only if restore paths are same or not prefixes of each other", ErrorCodes::BAD_ARGUMENTS);
+            if (information.source_path != s3_root_path && s3_root_path.starts_with(information.source_path))
+                throw Exception("Restoring to the same bucket is allowed only if source path is not a sub-path of configured path in S3 disk", ErrorCodes::BAD_ARGUMENTS);
         }
 
         ///TODO: Cleanup FS and bucket if previous restore was failed.
 
-        restoreFiles(information.bucket, information.path, information.revision);
-        restoreFileOperations(information.bucket, information.path, information.revision);
+        restoreFiles(information.source_bucket, information.source_path, information.revision);
+        restoreFileOperations(information.source_bucket, information.source_path, information.revision);
+
+        Poco::File restore_file(metadata_path + restore_file_name);
+        restore_file.remove();
+
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
     }
     catch (const Exception & e)
     {
@@ -1093,7 +1105,7 @@ void DiskS3::restoreFiles(const String & source_bucket, const String & source_pa
             if (key.find("/operations/") != String::npos)
                 continue;
 
-            auto [revision, _] = extractRevisionAndOperationFromKey(key);
+            const auto [revision, _] = extractRevisionAndOperationFromKey(key);
             /// Filter early if it's possible to get revision from key.
             if (revision > target_revision)
                 continue;
@@ -1129,11 +1141,11 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         auto head_result = headObject(source_bucket, key);
         auto object_metadata = head_result.GetMetadata();
 
-        /// If object has 'path' in metadata then restore it.
+        /// Restore file if object has 'path' in metadata.
         auto path_entry = object_metadata.find("path");
         if (path_entry == object_metadata.end())
         {
-            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' key in metadata", key);
+            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' in metadata", key);
             continue;
         }
 
@@ -1141,17 +1153,16 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
 
         createDirectories(directoryPath(path));
         auto metadata = createMeta(path);
-
         auto relative_key = shrinkKey(source_path, key);
-        metadata.addObject(relative_key, head_result.GetContentLength());
 
         /// Copy object if we restore to different bucket / path.
         if (bucket != source_bucket || s3_root_path != source_path)
             copyObject(source_bucket, key, bucket, s3_root_path + relative_key);
 
+        metadata.addObject(relative_key, head_result.GetContentLength());
         metadata.save();
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored {} file", path);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored file {}", path);
     }
 }
 
@@ -1159,7 +1170,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 {
     LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", name);
 
-    /// Enable record file operations if we restore to different bucket / path.
+    /// Enable recording file operations if we restore to different bucket / path.
     send_metadata = bucket != source_bucket || s3_root_path != source_path;
 
     listObjects(source_bucket, source_path + "operations/", [this, &source_bucket, &target_revision](auto list_result)
@@ -1171,15 +1182,15 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
         {
             const String & key = row.GetKey();
 
-            auto [revision, operation] = extractRevisionAndOperationFromKey(key);
-            if (revision == 0)
+            const auto [revision, operation] = extractRevisionAndOperationFromKey(key);
+            if (revision == UNKNOWN_REVISION)
             {
-                LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} with unknown revision", revision);
+                LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} with unknown revision", key);
                 continue;
             }
 
-            /// Stop processing when get revision more than required.
-            /// S3 ensures that keys will be listed in ascending UTF-8 bytes order.
+            /// S3 ensures that keys will be listed in ascending UTF-8 bytes order (revision order).
+            /// We can stop processing if revision of the object is already more than required.
             if (revision > target_revision)
                 return false;
 
@@ -1220,7 +1231,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
 std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)
 {
-    UInt64 revision = 0;
+    UInt64 revision = UNKNOWN_REVISION;
     String operation;
 
     re2::RE2::FullMatch(key, key_regexp, &revision, &operation);
@@ -1247,6 +1258,12 @@ String DiskS3::revisionToString(UInt64 revision)
         revision_str = "0" + revision_str;
 
     return revision_str;
+}
+
+void DiskS3::onFreeze(const String & path)
+{
+    WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
+    writeIntText(revision_counter.load(), revision_file_buf);
 }
 
 }

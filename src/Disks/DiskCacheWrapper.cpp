@@ -108,7 +108,7 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
     if (!cache_file_predicate(path))
         return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Read file {} from cache", backQuote(path));
+    LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
         return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
@@ -122,11 +122,11 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
         {
             /// This thread will responsible for file downloading to cache.
             metadata->status = DOWNLOADING;
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File {} doesn't exist in cache. Will download it", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskCache"), "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
         else if (metadata->status == DOWNLOADING)
         {
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Waiting for file {} download to cache", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Waiting for file {} download to cache", backQuote(path));
             metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
         }
     }
@@ -151,11 +151,11 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
                 }
                 cache_disk->moveFile(tmp_path, path);
 
-                LOG_DEBUG(&Poco::Logger::get("DiskS3"), "File {} downloaded to cache", backQuote(path));
+                LOG_DEBUG(&Poco::Logger::get("DiskCache"), "File {} downloaded to cache", backQuote(path));
             }
             catch (...)
             {
-                tryLogCurrentException("DiskS3", "Failed to download file + " + backQuote(path) + " to cache");
+                tryLogCurrentException("DiskCache", "Failed to download file + " + backQuote(path) + " to cache");
                 result_status = ERROR;
             }
         }
@@ -180,7 +180,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
 
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write file {} to cache", backQuote(path));
+    LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
