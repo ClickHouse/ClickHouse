@@ -26,18 +26,19 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 if (COMPILER_GCC)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include-fixed OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_FIXED_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_FLAGS "-nostdinc -idirafter ${COMPILER_GCC_INCLUDE_DIR} -idirafter ${COMPILER_GCC_INCLUDE_FIXED_DIR}")
 elseif (COMPILER_CLANG)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_CLANG_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_FLAGS "-nostdinc -idirafter ${COMPILER_CLANG_INCLUDE_DIR}")
 endif ()
 
 # glibc-compatibility library relies to constant version of libc headers
 # (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
 # This is for x86_64. For other architectures we have separate toolchains.
 if (ARCH_AMD64 AND NOT_UNBUNDLED)
-    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
-    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers ${COMPILER_GCC_INCLUDE_DIR} ${COMPILER_GCC_INCLUDE_FIXED_DIR} ${COMPILER_CLANG_INCLUDE_DIR})
+    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers ${COMPILER_GCC_INCLUDE_DIR} ${COMPILER_GCC_INCLUDE_FIXED_DIR} ${COMPILER_CLANG_INCLUDE_DIR})
+
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc")
 endif ()
 
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
