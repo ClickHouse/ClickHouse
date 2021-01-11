@@ -14,6 +14,10 @@ namespace DB
 namespace
 {
 
+/** Custom substreams representation for single subcolumn.
+  * It serializes/deserializes column as a nested type, but in that way
+  * if it was a named tuple with one element and a given name.
+  */
 class DataTypeOneElementTupleStreams : public IDataTypeCustomStreams
 {
 private:
@@ -103,11 +107,6 @@ DataTypePtr createOneElementTuple(const DataTypePtr & type, const String & name,
         std::make_unique<DataTypeOneElementTupleStreams>(type, name, escape_delimiter));
 
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
-}
-
-bool isOneElementTuple(const DataTypePtr & type)
-{
-    return typeid_cast<const DataTypeOneElementTupleStreams *>(type->getCustomStreams()) != nullptr;
 }
 
 }
