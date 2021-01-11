@@ -101,7 +101,12 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 
     try
     {
-        pqxx::result result = tx.exec(fmt::format("select '{}'::regclass", table_name));
+        /// Casting table_name::regclass throws pqxx::indefined_table exception if table_name is incorrect.
+        pqxx::result result = tx.exec(fmt::format(
+                    "SELECT '{}'::regclass, tablename "
+                    "FROM pg_catalog.pg_tables "
+                    "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' "
+                    "AND tablename = '{}'", table_name, table_name));
     }
     catch (pqxx::undefined_table const &)
     {

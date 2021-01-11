@@ -11,6 +11,7 @@
 #include "readInvalidateQuery.h"
 #endif
 
+
 namespace DB
 {
 
