@@ -1002,6 +1002,9 @@ void registerStorageBuffer(StorageFactory & factory)
             StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_id,
             static_cast<bool>(args.local_context.getSettingsRef().insert_allow_materialized_columns));
+    },
+    {
+        .supports_parallel_insert = true,
     });
 }
 

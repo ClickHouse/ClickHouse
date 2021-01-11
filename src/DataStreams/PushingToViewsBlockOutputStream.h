@@ -1,14 +1,15 @@
 #pragma once
 
-#include <DataStreams/copyData.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <Storages/StorageMaterializedView.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage.h>
+
 
 namespace DB
 {
 
 class ReplicatedMergeTreeBlockOutputStream;
+class Context;
 
 
 /** Writes data to the specified table and to all dependent materialized views.
