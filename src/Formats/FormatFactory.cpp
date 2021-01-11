@@ -5,17 +5,21 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/ParallelParsingBlockInputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
+#include <Processors/Formats/Impl/NativeFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
+#include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
+
+#include <IO/ReadHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -132,7 +136,7 @@ FormatSettings getFormatSettings<Settings>(const Context & context,
     const Settings & settings);
 
 
-BlockInputStreamPtr FormatFactory::getInput(
+InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
@@ -141,19 +145,14 @@ BlockInputStreamPtr FormatFactory::getInput(
     const std::optional<FormatSettings> & _format_settings) const
 {
     if (name == "Native")
-        return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
+        return std::make_shared<NativeInputFormatFromNativeBlockInputStream>(sample, buf);
 
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
     if (!getCreators(name).input_processor_creator)
     {
-        const auto & input_getter = getCreators(name).input_creator;
-        if (!input_getter)
-            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
-
-
-        return input_getter(buf, sample, max_block_size, {}, format_settings);
+        throw Exception("Format " + name + " is not suitable for input (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -163,7 +162,10 @@ BlockInputStreamPtr FormatFactory::getInput(
     // (segmentator + two parsers + reader).
     bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
-    if (settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+        parallel_parsing = false;
+
+    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
 
     if (parallel_parsing && name == "JSONEachRow")
@@ -179,8 +181,6 @@ BlockInputStreamPtr FormatFactory::getInput(
     if (parallel_parsing)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
-        if (!input_getter)
-            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
         RowInputFormatParams row_input_format_params;
         row_input_format_params.max_block_size = max_block_size;
@@ -189,23 +189,56 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        auto input_creator_params =
-            ParallelParsingBlockInputStream::InputCreatorParams{sample,
-                row_input_format_params, format_settings};
-        ParallelParsingBlockInputStream::Params params{buf, input_getter,
-            input_creator_params, file_segmentation_engine,
-            settings.max_threads,
-            settings.min_chunk_bytes_for_parallel_parsing};
-        return std::make_shared<ParallelParsingBlockInputStream>(params);
+        /// Const reference is copied to lambda.
+        auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+            (ReadBuffer & input) -> InputFormatPtr
+            { return input_getter(input, sample, row_input_format_params, format_settings); };
+
+
+        ParallelParsingInputFormat::Params params{
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
+        return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size,
-        format_settings);
-    return std::make_shared<InputStreamFromInputFormat>(std::move(format));
+
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+    return format;
+}
+
+BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(const String & name,
+    WriteBuffer & buf, const Block & sample, const Context & context,
+    WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & output_getter = getCreators(name).output_processor_creator;
+
+    const Settings & settings = context.getSettingsRef();
+    bool parallel_formatting = settings.output_format_parallel_formatting;
+
+    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
+        && !settings.output_format_json_array_of_rows)
+    {
+        auto format_settings = _format_settings
+        ? *_format_settings : getFormatSettings(context);
+
+        auto formatter_creator = [output_getter, sample, callback, format_settings]
+            (WriteBuffer & output) -> OutputFormatPtr
+            { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+
+        ParallelFormattingOutputFormat::Params params{buf, sample, formatter_creator, settings.max_threads};
+        auto format = std::make_shared<ParallelFormattingOutputFormat>(params);
+
+        /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+        if (format_settings.enable_streaming)
+            format->setAutoFlush();
+
+        return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
+    }
+
+    return getOutputStream(name, buf, sample, context, callback, _format_settings);
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
+BlockOutputStreamPtr FormatFactory::getOutputStream(const String & name,
     WriteBuffer & buf, const Block & sample, const Context & context,
     WriteCallback callback, const std::optional<FormatSettings> & _format_settings) const
 {
@@ -226,10 +259,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name,
             sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback),
-        format_settings);
-    return std::make_shared<MaterializingBlockOutputStream>(
-        std::make_shared<OutputStreamToOutputFormat>(format), sample);
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), _format_settings);
+    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
 
@@ -266,6 +297,35 @@ InputFormatPtr FormatFactory::getInputFormat(
     return format;
 }
 
+OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
+    const String & name, WriteBuffer & buf, const Block & sample,
+    const Context & context, WriteCallback callback,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & output_getter = getCreators(name).output_processor_creator;
+    if (!output_getter)
+        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+
+    auto format_settings = _format_settings
+        ? *_format_settings : getFormatSettings(context);
+
+    const Settings & settings = context.getSettingsRef();
+
+    if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
+        && !settings.output_format_json_array_of_rows)
+    {
+        auto formatter_creator = [output_getter, sample, callback, format_settings]
+        (WriteBuffer & output) -> OutputFormatPtr
+        { return output_getter(output, sample, {std::move(callback)}, format_settings);};
+
+        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
+
+        return std::make_shared<ParallelFormattingOutputFormat>(builder);
+    }
+
+    return getOutputFormat(name, buf, sample, context, callback, _format_settings);
+}
+
 
 OutputFormatPtr FormatFactory::getOutputFormat(
     const String & name, WriteBuffer & buf, const Block & sample,
@@ -274,7 +334,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
     RowOutputFormatParams params;
     params.callback = std::move(callback);
@@ -338,6 +398,16 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
         throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(file_segmentation_engine);
 }
+
+
+void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & name)
+{
+    auto & target = dict[name].supports_parallel_formatting;
+    if (target)
+        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting.", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
+
 
 FormatFactory & FormatFactory::instance()
 {

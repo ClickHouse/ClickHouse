@@ -20,7 +20,8 @@ toc_title: Cloud
 
 ## Altinity.Cloud {#altinity.cloud}
 
-[Altinity.Cloud](https://altinity.com/cloud-database/) is a fully managed ClickHouse-as-a-Service for the Amazon public cloud. 
+[Altinity.Cloud](https://altinity.com/cloud-database/) is a fully managed ClickHouse-as-a-Service for the Amazon public cloud.
+
 -   Fast deployment of ClickHouse clusters on Amazon resources
 -   Easy scale-out/scale-in as well as vertical scaling of nodes
 -   Isolated per-tenant VPCs with public endpoint or VPC peering
