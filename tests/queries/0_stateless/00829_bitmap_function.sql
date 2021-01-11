@@ -344,5 +344,4 @@ ALL LEFT JOIN
     WHERE pickup_date = '2019-01-01'
     GROUP BY city_id
 ) AS js2 USING (city_id) FORMAT Null;
-
 drop table bitmap_test;
