@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.1.0
+ARG version=21.2.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
