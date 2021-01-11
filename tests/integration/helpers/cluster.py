@@ -1078,7 +1078,7 @@ class ClickHouseInstance:
         return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(["pidof", "{}".format(process_name)])
+        output = self.exec_in_container(["bash", "-c", "pidof {}".format(process_name)])
         if output:
             try:
                 pid = int(output.split('\n')[0].strip())
