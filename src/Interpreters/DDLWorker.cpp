@@ -251,7 +251,7 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & 
     : context(context_)
     , log(&Poco::Logger::get("DDLWorker"))
     , pool_size(pool_size_)
-    , worker_pool(pool_size_)
+    , worker_pool(std::make_unique<ThreadPool>(pool_size))
 {
     CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, 0);
     last_tasks.reserve(pool_size);
@@ -288,7 +288,7 @@ DDLWorker::~DDLWorker()
     stop_flag = true;
     queue_updated_event->set();
     cleanup_event->set();
-    worker_pool.wait();
+    worker_pool.reset();
     main_thread.join();
     cleanup_thread.join();
 }
@@ -453,7 +453,7 @@ void DDLWorker::scheduleTasks()
 
         if (!already_processed)
         {
-            worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
+            worker_pool->scheduleOrThrowOnError([this, task_ptr = task.release()]()
             {
                 setThreadName("DDLWorkerExec");
                 enqueueTask(DDLTaskPtr(task_ptr));
@@ -1074,6 +1074,17 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
 void DDLWorker::runMainThread()
 {
+    auto reset_state = [&](bool reset_pool = true)
+    {
+        /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
+        /// We create new thread pool to forget previous exceptions.
+        if (reset_pool)
+            worker_pool = std::make_unique<ThreadPool>(pool_size);
+        /// Clear other in-memory state, like server just started.
+        last_tasks.clear();
+        max_id = 0;
+    };
+
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
@@ -1089,7 +1100,12 @@ void DDLWorker::runMainThread()
         catch (const Coordination::Exception & e)
         {
             if (!Coordination::isHardwareError(e.code))
-                throw;  /// A logical error.
+            {
+                /// A logical error.
+                LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.",getCurrentExceptionMessage(true));
+                reset_state(false);
+                assert(false);  /// Catch such failures in tests with debug build
+            }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -1098,8 +1114,8 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
-            return;
+            tryLogCurrentException(log, "Cannot initialize DDL queue.");
+            reset_state(false);
         }
     }
     while (!initialized && !stop_flag);
@@ -1128,14 +1144,14 @@ void DDLWorker::runMainThread()
             }
             else
             {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: {}. Terminating.", getCurrentExceptionMessage(true));
-                return;
+                LOG_ERROR(log, "Unexpected ZooKeeper error: {}", getCurrentExceptionMessage(true));
+                reset_state();
             }
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will terminate:");
-            return;
+            tryLogCurrentException(log, "Unexpected error:");
+            reset_state();
         }
     }
 }
