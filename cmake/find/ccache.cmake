@@ -29,15 +29,24 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
    execute_process(COMMAND ${CCACHE_FOUND} "-V" OUTPUT_VARIABLE CCACHE_VERSION)
    string(REGEX REPLACE "ccache version ([0-9\\.]+).*" "\\1" CCACHE_VERSION ${CCACHE_VERSION})
 
-   if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR TRUE)
+   if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       message(STATUS "Using ${CCACHE_FOUND} ${CCACHE_VERSION}")
 
-      # 4+ ccache respect SOURCE_DATE_EPOCH (always includes it into the hash
-      # of the manifest) and debian will extract these from d/changelog, and
-      # makes cache of ccache unusable
+      # debian (debhlpers) set SOURCE_DATE_EPOCH environment variable, that is
+      # filled from the debian/changelog or current time.
       #
-      # FIXME: once sloppiness will be introduced for this this can be removed.
-      if (CCACHE_VERSION VERSION_GREATER "4.0" OR TRUE)
+      # - 4.0+ ccache always includes this environment variable into the hash
+      #   of the manifest, which do not allow to use previous cache,
+      # - 4.2+ ccache ignores SOURCE_DATE_EPOCH under time_macros sloppiness.
+      #
+      # So for:
+      # - 4.2+ time_macros sloppiness is used,
+      # - 4.0+ will ignore SOURCE_DATE_EPOCH environment variable.
+      if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.2")
+         message(STATUS "Use time_macros sloppiness for ccache")
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_FOUND} --set-config=sloppiness=time_macros")
+         set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "${CCACHE_FOUND} --set-config=sloppiness=time_macros")
+      elseif (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
          message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache")
          set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
          set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")

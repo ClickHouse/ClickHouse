@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/createWriteBufferFromFileBase.h>
 #include <common/logger_useful.h>
 #include <unistd.h>
 
@@ -232,10 +231,10 @@ DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
 void DiskLocal::remove(const String & path)
