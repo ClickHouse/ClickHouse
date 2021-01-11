@@ -53,6 +53,7 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
+    FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
@@ -185,6 +186,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitHammingDistance.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -202,6 +204,7 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -504,6 +507,7 @@ SRCS(
     tryBase64Decode.cpp
     tuple.cpp
     tupleElement.cpp
+    tupleHammingDistance.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
