@@ -176,7 +176,6 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name_and_type, path);
-        
         auto & stream = streams[stream_name];
         if (!stream)
         {

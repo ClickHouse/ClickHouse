@@ -63,6 +63,11 @@ public:
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
 };
 
+/** Allows to customize an existing data type by representation with custom substreams.
+  * Customized data type will be serialized/deserialized to files with different names than base type,
+  * but binary and text representation will be unchanged.
+  * E.g it can be used for reading single subcolumns of complex types.
+  */
 class IDataTypeCustomStreams
 {
 public:

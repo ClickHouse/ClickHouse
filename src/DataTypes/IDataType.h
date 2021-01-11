@@ -100,9 +100,10 @@ public:
         };
         Type type;
 
-        /// Index of tuple element, starting at 1.
+        /// Index of tuple element, starting at 1 or name.
         String tuple_element_name;
 
+        /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
 
         Substream(Type type_) : type(type_) {}
@@ -115,6 +116,8 @@ public:
         String toString() const;
     };
 
+    /// Cache for common substreams of one type, but possible different its subcolumns.
+    /// E.g. sizes of arrays of Nested data type.
     using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
 
     using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
