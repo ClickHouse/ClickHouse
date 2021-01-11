@@ -211,6 +211,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             ASTPtr{},
             String{},
             String{},
+            DistributedSettings{},
             false,
             cluster)
         : StorageDistributed::create(
@@ -224,6 +225,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             ASTPtr{},
             String{},
             String{},
+            DistributedSettings{},
             false,
             cluster);
 

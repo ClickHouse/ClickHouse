@@ -7,7 +7,9 @@ namespace DB {
 
 class ParseTreeVisitor : public ClickHouseParserVisitor
 {
+    const String & current_database_name;
 public:
+    explicit ParseTreeVisitor(const String & database_name) : ClickHouseParserVisitor(), current_database_name(database_name) {}
     virtual ~ParseTreeVisitor() override = default;
 
     // Top-level statements

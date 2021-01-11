@@ -79,8 +79,7 @@ private:
 
     void addStreams(
         const NameAndTypePair & column,
-        const ASTPtr & effective_codec_desc,
-        size_t estimated_size);
+        const ASTPtr & effective_codec_desc);
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical

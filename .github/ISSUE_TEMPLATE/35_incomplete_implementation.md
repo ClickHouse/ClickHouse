@@ -1,15 +1,15 @@
 ---
-name: Usability issue
-about: Create a report to help us improve ClickHouse
+name: Incomplete implementation
+about: Implementation of existing feature is not finished
 title: ''
-labels: usability
+labels: unfinished code
 assignees: ''
 
 ---
 
 (you don't have to strictly follow this form)
 
-**Describe the issue**
+**Describe the unexpected behaviour**
 A clear and concise description of what works not as it is supposed to.
 
 **How to reproduce**

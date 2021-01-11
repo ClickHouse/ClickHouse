@@ -86,7 +86,7 @@ private:
     DiskPtr disk;
     String table_path;
 
-    mutable std::shared_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Files files;
 
@@ -107,7 +107,7 @@ private:
     /// Read marks files if they are not already read.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     /// You can not call with a write locked `rwlock`.
-    void loadMarks();
+    void loadMarks(std::chrono::seconds lock_timeout);
 
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
