@@ -15,7 +15,8 @@
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01474_executable_dictionary", /// informational stderr from sanitizer at start
         "functions_bad_arguments", /// Too long for TSan
-        "01603_read_with_backoff_bug" /// Too long for TSan
+        "01603_read_with_backoff_bug", /// Too long for TSan
+        "01646_system_restart_replicas_smoke" /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
     ],
     "address-sanitizer": [
         "00877",
