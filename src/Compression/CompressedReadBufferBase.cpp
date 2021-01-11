@@ -67,25 +67,20 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
         buf[pos / 8] ^= 1 << pos % 8;
     };
 
-    /// If size is too huge, then this may be caused by corruption.
-    /// And anyway this is pretty heavy, so avoid burning too much CPU here.
-    if (size < (1ULL << 20))
+    /// Check if the difference caused by single bit flip in data.
+    for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
     {
-        /// Check if the difference caused by single bit flip in data.
-        for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
+        flip_bit(data, bit_pos);
+
+        auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+        if (expected_checksum == checksum_of_data_with_flipped_bit)
         {
-            flip_bit(data, bit_pos);
-
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
-            if (expected_checksum == checksum_of_data_with_flipped_bit)
-            {
-                message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
-                    << message_hardware_failure;
-                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
-            }
-
-            flip_bit(data, bit_pos);    /// Restore
+            message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
+                << message_hardware_failure;
+            throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
         }
+
+        flip_bit(data, bit_pos);    /// Restore
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.

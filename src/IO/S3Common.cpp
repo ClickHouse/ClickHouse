@@ -7,10 +7,6 @@
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/auth/AWSCredentialsProvider.h>
-#    include <aws/core/auth/AWSCredentialsProviderChain.h>
-#    include <aws/core/auth/STSCredentialsProvider.h>
-#    include <aws/core/client/DefaultRetryStrategy.h>
-#    include <aws/core/platform/Environment.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
@@ -19,7 +15,6 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
-#    include <boost/algorithm/string/case_conv.hpp>
 #    include <common/logger_useful.h>
 
 namespace
@@ -90,107 +85,15 @@ private:
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
-class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
-{
-public:
-    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials)
-    {
-        if (use_environment_credentials)
-        {
-            const DB::RemoteHostFilter & remote_host_filter = configuration.remote_host_filter;
-            const unsigned int s3_max_redirects = configuration.s3_max_redirects;
-
-            static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
-            static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
-            static const char AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN[] = "AWS_CONTAINER_AUTHORIZATION_TOKEN";
-            static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
-
-            auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
-
-            /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-            /// is that this chain uses custom ClientConfiguration.
-
-            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
-            AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleWebIdentityCredentialsProvider>());
-
-            /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
-            const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
-            LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI,
-                    relative_uri);
-
-            const auto absolute_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI);
-            LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI,
-                    absolute_uri);
-
-            const auto ec2_metadata_disabled = Aws::Environment::GetEnv(AWS_EC2_METADATA_DISABLED);
-            LOG_DEBUG(logger, "The environment variable value {} is {}", AWS_EC2_METADATA_DISABLED,
-                    ec2_metadata_disabled);
-
-            if (!relative_uri.empty())
-            {
-                AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(relative_uri.c_str()));
-                LOG_INFO(logger, "Added ECS metadata service credentials provider with relative path: [{}] to the provider chain.",
-                        relative_uri);
-            }
-            else if (!absolute_uri.empty())
-            {
-                const auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
-                AddProvider(std::make_shared<Aws::Auth::TaskRoleCredentialsProvider>(absolute_uri.c_str(), token.c_str()));
-
-                /// DO NOT log the value of the authorization token for security purposes.
-                LOG_INFO(logger, "Added ECS credentials provider with URI: [{}] to the provider chain with a{} authorization token.",
-                        absolute_uri, token.empty() ? "n empty" : " non-empty");
-            }
-            else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
-            {
-                Aws::Client::ClientConfiguration aws_client_configuration;
-
-                /// See MakeDefaultHttpResourceClientConfiguration().
-                /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
-                /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
-                aws_client_configuration.maxConnections = 2;
-                aws_client_configuration.scheme = Aws::Http::Scheme::HTTP;
-
-                /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
-                /// in the future.
-                aws_client_configuration.proxyHost = "";
-                aws_client_configuration.proxyUserName = "";
-                aws_client_configuration.proxyPassword = "";
-                aws_client_configuration.proxyPort = 0;
-
-                /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
-                /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
-                aws_client_configuration.connectTimeoutMs = 1000;
-                aws_client_configuration.requestTimeoutMs = 1000;
-                aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-
-                DB::S3::PocoHTTPClientConfiguration client_configuration(aws_client_configuration, remote_host_filter, s3_max_redirects);
-                auto ec2_metadata_client = std::make_shared<Aws::Internal::EC2MetadataClient>(client_configuration);
-                auto config_loader = std::make_shared<Aws::Config::EC2InstanceProfileConfigLoader>(ec2_metadata_client);
-
-                AddProvider(std::make_shared<Aws::Auth::InstanceProfileCredentialsProvider>(config_loader));
-                LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
-            }
-        }
-
-        AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
-    }
-};
-
 class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
 {
 public:
     S3AuthSigner(
         const Aws::Client::ClientConfiguration & client_configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        const DB::HeaderCollection & headers_,
-        bool use_environment_credentials)
+        const DB::HeaderCollection & headers_)
         : Aws::Client::AWSAuthV4Signer(
-            std::make_shared<S3CredentialsProviderChain>(
-                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
-                credentials,
-                use_environment_credentials),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -261,22 +164,14 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Client::ClientConfiguration cfg;
 
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg,
-            is_virtual_hosted_style,
-            access_key_id,
-            secret_access_key,
-            use_environment_credentials,
-            remote_host_filter,
-            s3_max_redirects);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key, remote_host_filter);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
@@ -284,21 +179,16 @@ namespace S3
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter, s3_max_redirects);
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter);
 
         client_configuration.updateSchemeAndRegion();
 
         return std::make_shared<Aws::S3::S3Client>(
-            std::make_shared<S3CredentialsProviderChain>(
-                client_configuration,
-                credentials,
-                use_environment_credentials), // AWS credentials provider.
+            credentials, // Aws credentials.
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
             is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
@@ -311,11 +201,9 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         HeaderCollection headers,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
+        const RemoteHostFilter & remote_host_filter)
     {
-        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter, s3_max_redirects);
+        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter);
 
         if (!endpoint.empty())
             client_configuration.endpointOverride = endpoint;
@@ -323,10 +211,8 @@ namespace S3
         client_configuration.updateSchemeAndRegion();
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-
-        auto auth_signer = std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers), use_environment_credentials);
         return std::make_shared<Aws::S3::S3Client>(
-            std::move(auth_signer),
+            std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers)),
             std::move(client_configuration), // Client configuration.
             is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );

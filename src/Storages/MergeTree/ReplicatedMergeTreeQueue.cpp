@@ -158,7 +158,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     if (entry->type == LogEntry::ALTER_METADATA)
     {
         LOG_TRACE(log, "Adding alter metadata version {} to the queue", entry->alter_version);
-        alter_sequence.addMetadataAlter(entry->alter_version, state_lock);
+        alter_sequence.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
     }
 }
 

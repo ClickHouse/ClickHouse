@@ -1,10 +1,5 @@
----
-toc_priority: 23
-toc_title: ODBC驱动
----
+# ODBC 驱动 {#odbc-qu-dong}
 
-# ODBC驱动 {#odbc-driver}
-
--   [官方驱动](https://github.com/ClickHouse/clickhouse-odbc)。
+-   ClickHouse官方有 ODBC 的驱动。 见 [这里](https://github.com/ClickHouse/clickhouse-odbc)。
 
 [来源文章](https://clickhouse.tech/docs/zh/interfaces/odbc/) <!--hide-->

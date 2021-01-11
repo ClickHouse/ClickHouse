@@ -2,7 +2,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>

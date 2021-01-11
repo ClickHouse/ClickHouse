@@ -21,7 +21,7 @@ CREATE DICTIONARY db_01509.dict
   value String DEFAULT '-'
 )
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'data' PASSWORD '' DB 'db_01509'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'data' PASSWORD '' DB 'db_01509'))
 LAYOUT(SPARSE_HASHED())
 LIFETIME(0);
 

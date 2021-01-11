@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <variant>

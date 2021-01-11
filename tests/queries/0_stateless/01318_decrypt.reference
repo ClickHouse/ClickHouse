@@ -1,5 +1,6 @@
 0
 0
+0
 1
 MySQL-compatitable mode, with key folding, no length checks, etc.
 aes-128-cbc	1
@@ -11,6 +12,24 @@ aes-192-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
 aes-128-cfb128	1
 aes-128-cfb128	1
 aes-128-cfb128	1
@@ -48,6 +67,24 @@ aes-192-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-128-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-192-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-256-cfb1	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-128-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-192-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
+aes-256-cfb8	1
 aes-128-cfb128	1
 aes-128-cfb128	1
 aes-128-cfb128	1

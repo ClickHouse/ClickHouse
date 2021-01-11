@@ -48,8 +48,7 @@ public:
 
 private:
     String source_database;
-    std::optional<std::unordered_set<String>> source_tables;
-    std::optional<OptimizedRegularExpression> source_table_regexp;
+    OptimizedRegularExpression table_name_regexp;
     const Context & global_context;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
@@ -73,14 +72,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & source_database_,
-        const Strings & source_tables_,
-        const Context & context_);
-
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & source_database_,
-        const String & source_table_regexp_,
+        const String & table_name_regexp_,
         const Context & context_);
 
     Pipe createSources(

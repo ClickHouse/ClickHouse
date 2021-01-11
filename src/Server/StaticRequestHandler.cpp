@@ -10,7 +10,6 @@
 #include <IO/copyData.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
 

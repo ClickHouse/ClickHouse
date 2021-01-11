@@ -1,10 +1,8 @@
 #include <Storages/ReadInOrderOptimizer.h>
-
-#include <Functions/IFunction.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Interpreters/TableJoin.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {

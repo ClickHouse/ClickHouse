@@ -143,15 +143,6 @@ public:
             map.erase(it);
         }
 
-        void remove(std::list<Node *>::iterator it)
-        {
-            auto map_it = map.find((*it)->result_name);
-            if (map_it != map.end() && map_it->second == it)
-                map.erase(map_it);
-
-            list.erase(it);
-        }
-
         void swap(Index & other)
         {
             list.swap(other.list);
@@ -185,7 +176,6 @@ private:
 
 public:
     ActionsDAG() = default;
-    ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
@@ -232,7 +222,6 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
-    bool hasStatefulFunctions() const;
     bool empty() const; /// If actions only contain inputs.
 
     const ActionsSettings & getSettings() const { return settings; }
@@ -258,12 +247,6 @@ public:
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
-
-    /// Create ActionsDAG which represents expression equivalent to applying lhs and rhs actions consequently.
-    /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
-    /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
-    /// Otherwise, any two actions may be combined.
-    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
 private:
     Node & addNode(Node node, bool can_replace = false);

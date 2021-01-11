@@ -424,14 +424,6 @@ size_t ColumnTuple::byteSize() const
     return res;
 }
 
-size_t ColumnTuple::byteSizeAt(size_t n) const
-{
-    size_t res = 0;
-    for (const auto & column : columns)
-        res += column->byteSizeAt(n);
-    return res;
-}
-
 size_t ColumnTuple::allocatedBytes() const
 {
     size_t res = 0;
