@@ -1,5 +1,6 @@
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
