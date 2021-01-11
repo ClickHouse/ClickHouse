@@ -44,6 +44,10 @@ TTLBlockInputStream::TTLBlockInputStream(
         algorithms.emplace_back(std::move(algorithm));
     }
 
+    for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTL())
+        algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
+            where_ttl, old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
             group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_, header, storage_));

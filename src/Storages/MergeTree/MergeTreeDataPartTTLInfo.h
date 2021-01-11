@@ -45,6 +45,8 @@ struct MergeTreeDataPartTTLInfos
     time_t part_min_ttl = 0;
     time_t part_max_ttl = 0;
 
+    TTLInfoMap rows_where_ttl;
+
     TTLInfoMap moves_ttl;
 
     TTLInfoMap recompression_ttl;
