@@ -195,6 +195,9 @@ public:
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
 
+    /// Invoked when partitions freeze is invoked.
+    virtual void onFreeze(const String &) { }
+
 private:
     std::unique_ptr<Executor> executor;
 };
