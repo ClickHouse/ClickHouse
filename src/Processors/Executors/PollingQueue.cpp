@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
 namespace DB
 {
 
@@ -46,7 +49,7 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.count(key))
-        throw Exception("Task was already added to task queue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
 
@@ -56,6 +59,21 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+}
+
+std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
+{
+    WriteBufferFromOwnString res;
+    res << "Tasks = [";
+
+    for (const auto & task : tasks)
+    {
+        res << "(id " << task.first << " thread " << task.second.thread_num;
+        res << " ptr " << task.second.data << " fd " << task.second.fd << ")";
+    }
+
+    res << "]";
+    return res.str();
 }
 
 PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
@@ -84,7 +102,10 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     std::uintptr_t key = reinterpret_cast<uintptr_t>(event.data.ptr);
     auto it = tasks.find(key);
     if (it == tasks.end())
-        throw Exception("Task was not found in task queue", ErrorCodes::LOGICAL_ERROR);
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}",
+                        key, event.data.ptr, dumpTasks(tasks));
+    }
 
     auto res = it->second;
     tasks.erase(it);
