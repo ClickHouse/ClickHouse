@@ -7,6 +7,7 @@
 #if USE_LIBPQXX
 #include <Storages/StoragePostgreSQL.h>
 
+
 namespace DB
 {
 

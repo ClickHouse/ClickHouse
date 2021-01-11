@@ -18,6 +18,7 @@
 #include <ext/range.h>
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -25,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
     ConnectionPtr connection_,

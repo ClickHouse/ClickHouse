@@ -157,8 +157,10 @@ public:
     void writeSuffix() override
     {
         if (stream_inserter)
+        {
             stream_inserter->complete();
-        work->commit();
+            work->commit();
+        }
     }
 
 

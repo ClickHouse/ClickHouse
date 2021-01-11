@@ -14,6 +14,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <pqxx/pqxx>
 
+
 namespace DB
 {
 
@@ -56,6 +57,11 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(ConnectionPtr c
         throw Exception(fmt::format(
                     "PostgreSQL table {}.{} does not exist",
                     connection->dbname(), postgres_table_name), ErrorCodes::UNKNOWN_TABLE);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while fetching postgresql table structure");
+        throw;
     }
 
     if (columns.empty())
