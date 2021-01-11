@@ -68,8 +68,9 @@ std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::Tas
 
     for (const auto & task : tasks)
     {
-        res << "(id " << task.first << " thread " << task.second.thread_num;
-        res << " ptr " << task.second.data << " fd " << task.second.fd << ")";
+        res << "(id " << task.first << " thread " << task.second.thread_num << " ptr ";
+        writePointerHex(task.second.data, res);
+        res << " fd " << task.second.fd << ")";
     }
 
     res << "]";
