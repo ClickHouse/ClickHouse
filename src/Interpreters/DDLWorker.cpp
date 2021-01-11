@@ -13,7 +13,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -34,7 +32,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <Poco/Net/NetException.h>
 #include <common/sleep.h>
 #include <common/getFQDNOrHostName.h>
 #include <pcg_random.hpp>
@@ -62,107 +59,46 @@ namespace ErrorCodes
 }
 
 
-namespace
+String DDLLogEntry::toString()
 {
+    WriteBufferFromOwnString wb;
 
-struct HostID
-{
-    String host_name;
-    UInt16 port;
+    Strings host_id_strings(hosts.size());
+    std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
 
-    HostID() = default;
+    auto version = CURRENT_VERSION;
+    wb << "version: " << version << "\n";
+    wb << "query: " << escape << query << "\n";
+    wb << "hosts: " << host_id_strings << "\n";
+    wb << "initiator: " << initiator << "\n";
 
-    explicit HostID(const Cluster::Address & address)
-    : host_name(address.host_name), port(address.port) {}
-
-    static HostID fromString(const String & host_port_str)
-    {
-        HostID res;
-        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
-        return res;
-    }
-
-    String toString() const
-    {
-        return Cluster::Address::toString(host_name, port);
-    }
-
-    String readableString() const
-    {
-        return host_name + ":" + DB::toString(port);
-    }
-
-    bool isLocalAddress(UInt16 clickhouse_port) const
-    {
-        try
-        {
-            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            /// Avoid "Host not found" exceptions
-            return false;
-        }
-    }
-
-    static String applyToString(const HostID & host_id)
-    {
-        return host_id.toString();
-    }
-};
-
+    return wb.str();
 }
 
-
-struct DDLLogEntry
+void DDLLogEntry::parse(const String & data)
 {
-    String query;
-    std::vector<HostID> hosts;
-    String initiator; // optional
+    ReadBufferFromString rb(data);
 
-    static constexpr int CURRENT_VERSION = 1;
+    int version;
+    rb >> "version: " >> version >> "\n";
 
-    String toString()
-    {
-        WriteBufferFromOwnString wb;
+    if (version != CURRENT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
 
-        Strings host_id_strings(hosts.size());
-        std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
+    Strings host_id_strings;
+    rb >> "query: " >> escape >> query >> "\n";
+    rb >> "hosts: " >> host_id_strings >> "\n";
 
-        auto version = CURRENT_VERSION;
-        wb << "version: " << version << "\n";
-        wb << "query: " << escape << query << "\n";
-        wb << "hosts: " << host_id_strings << "\n";
-        wb << "initiator: " << initiator << "\n";
+    if (!rb.eof())
+        rb >> "initiator: " >> initiator >> "\n";
+    else
+        initiator.clear();
 
-        return wb.str();
-    }
+    assertEOF(rb);
 
-    void parse(const String & data)
-    {
-        ReadBufferFromString rb(data);
-
-        int version;
-        rb >> "version: " >> version >> "\n";
-
-        if (version != CURRENT_VERSION)
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
-
-        Strings host_id_strings;
-        rb >> "query: " >> escape >> query >> "\n";
-        rb >> "hosts: " >> host_id_strings >> "\n";
-
-        if (!rb.eof())
-            rb >> "initiator: " >> initiator >> "\n";
-        else
-            initiator.clear();
-
-        assertEOF(rb);
-
-        hosts.resize(host_id_strings.size());
-        std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
-    }
-};
+    hosts.resize(host_id_strings.size());
+    std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
+}
 
 
 struct DDLTask
