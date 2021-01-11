@@ -168,7 +168,7 @@ public:
         {
             for (const auto & x : small)
             {
-                if (rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.rb->contains(static_cast<Value>(x.getValue())))
                     buffer.push_back(x.getValue());
             }
 
@@ -262,10 +262,9 @@ public:
         }
         else if (isSmall() && r1.isLarge())
         {
-            const auto & new_rb = r1.rb;
             for (const auto & x : small)
             {
-                if (new_rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.rb->contains(static_cast<Value>(x.getValue())))
                     ++ret;
             }
         }
