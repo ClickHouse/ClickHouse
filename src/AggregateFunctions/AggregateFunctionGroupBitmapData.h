@@ -262,9 +262,10 @@ public:
         }
         else if (isSmall() && r1.isLarge())
         {
+            const auto & new_rb = r1.rb;
             for (const auto & x : small)
             {
-                if (rb->contains(static_cast<Value>(x.getValue())))
+                if (new_rb->contains(static_cast<Value>(x.getValue())))
                     ++ret;
             }
         }
