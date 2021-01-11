@@ -2474,6 +2474,45 @@ Possible values:
 
 Default value: `0`.
 
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+
+Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following query with aggregate functions:
+```sql
+SELECT
+    SUM(-1),
+    MAX(0)
+FROM system.one
+WHERE 0
+```
+
+With `aggregate_functions_null_for_empty = 0` it would produce:
+```text
+┌─SUM(-1)─┬─MAX(0)─┐
+│       0 │      0 │
+└─────────┴────────┘
+```
+
+With `aggregate_functions_null_for_empty = 1` the result would be:
+```text
+┌─SUMOrNull(-1)─┬─MAXOrNull(0)─┐
+│          NULL │         NULL │
+└───────────────┴──────────────┘
+```
+
+
 ## union_default_mode {#union-default-mode}
 
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -2488,6 +2527,7 @@ Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
 
+
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
@@ -2498,6 +2538,7 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 
 Default value: `0`.
+
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
