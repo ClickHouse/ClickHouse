@@ -23,39 +23,11 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
+Only time zones that differ from UTC by a whole number of hours are supported.
+
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
-
-```sql
-SELECT
-    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
-    toTypeName(time_utc) AS type_utc,
-    toInt32(time_utc) AS int32utc,
-    toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
-    toTypeName(time_yekat) AS type_yekat,
-    toInt32(time_yekat) AS int32yekat,
-    toTimeZone(time_utc, 'US/Samoa') AS time_samoa,
-    toTypeName(time_samoa) AS type_samoa,
-    toInt32(time_samoa) AS int32samoa
-FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-time_utc:   2019-01-01 00:00:00
-type_utc:   DateTime('UTC')
-int32utc:   1546300800
-time_yekat: 2019-01-01 05:00:00
-type_yekat: DateTime('Asia/Yekaterinburg')
-int32yekat: 1546300800
-time_samoa: 2018-12-31 13:00:00
-type_samoa: DateTime('US/Samoa')
-int32samoa: 1546300800
-```
-
-`toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
+Convert time or date and time to the specified time zone.
 
 ## toYear {#toyear}
 
@@ -97,8 +69,9 @@ Leap seconds are not accounted for.
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
-For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
+For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
+For Date argument: the behaviour is unspecified.
 
 **Syntax**
 
@@ -245,7 +218,7 @@ Rounds down a date with time to the start of the ten-minute interval.
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## toStartOfInterval(time\_or\_data, INTERVAL x unit \[, time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -366,124 +339,26 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## date\_trunc {#date_trunc}
+## date_trunc(datepart, time\_or\_data\[, time\_zone\]), dateTrunc(datepart, time\_or\_data\[, time\_zone\]) {#date_trunc}
 
-Truncates date and time data to the specified part of date.
-
-**Syntax** 
-
-``` sql
-date_trunc(unit, value[, timezone])
-```
-
-Alias: `dateTrunc`. 
-
-**Parameters**
-
--   `unit` — Part of date. [String](../syntax.md#syntax-string-literal).
-    Possible values:
-
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
-
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Value, truncated to the specified part of date.
-
-Type: [Datetime](../../sql-reference/data-types/datetime.md).
-
-**Example**
-
-Query without timezone:
-
-``` sql
-SELECT now(), date_trunc('hour', now());
-```
-
-Result:
-
-``` text
-┌───────────────now()─┬─date_trunc('hour', now())─┐
-│ 2020-09-28 10:40:45 │       2020-09-28 10:00:00 │
-└─────────────────────┴───────────────────────────┘
-```
-
-Query with the specified timezone:
+Truncates a date or date with time based on the specified datepart, such as
+- `second`
+- `minute`
+- `hour`
+- `day`
+- `week`
+- `month`
+- `quarter`
+- `year`
 
 ```sql
-SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
+SELECT date_trunc('hour', now())
 ```
-
-Result:
-
-```text
-┌───────────────now()─┬─date_trunc('hour', now(), 'Europe/Moscow')─┐
-│ 2020-09-28 10:46:26 │                        2020-09-28 13:00:00 │
-└─────────────────────┴────────────────────────────────────────────┘
-```
-
-**See also**
-
--   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
 ## now {#now}
 
-Returns the current date and time. 
-
-**Syntax** 
-
-``` sql
-now([timezone])
-```
-
-**Parameters**
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Current date and time.
-
-Type: [Datetime](../../sql-reference/data-types/datetime.md).
-
-**Example**
-
-Query without timezone:
-
-``` sql
-SELECT now();
-```
-
-Result:
-
-``` text
-┌───────────────now()─┐
-│ 2020-10-17 07:42:09 │
-└─────────────────────┘
-```
-
-Query with the specified timezone:
-
-``` sql
-SELECT now('Europe/Moscow');
-```
-
-Result:
-
-``` text
-┌─now('Europe/Moscow')─┐
-│  2020-10-17 10:42:23 │
-└──────────────────────┘
-```
+Accepts zero or one arguments(timezone) and returns the current time at one of the moments of request execution, or current time of specific timezone at one of the moments of request execution if `timezone` argument provided.
+This function returns a constant, even if the request took a long time to complete.
 
 ## today {#today}
 
@@ -564,7 +439,18 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 -   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-        Supported values: second, minute, hour, day, week, month, quarter, year.
+        Supported values:
+
+        | unit   |
+        | ---- |
+        |second  |
+        |minute  |
+        |hour    |
+        |day     |
+        |week    |
+        |month   |
+        |quarter |
+        |year    |
 
 -   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -600,32 +486,20 @@ For a time interval starting at ‘StartTime’ and continuing for ‘Duration�
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
-## formatDateTime {#formatdatetime}
+## formatDateTime(Time, Format\[, Timezone\]) {#formatdatetime}
 
 Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
 
-**Syntax**
+Supported modifiers for Format:
+(“Example” column shows formatting result for time `2018-01-02 22:33:44`)
 
-``` sql
-formatDateTime(Time, Format\[, Timezone\])
-```
-
-**Returned value(s)**
-
-Returnes time and date values according to the determined format.
-
-**Replacement fields**
-Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
-
-| Placeholder | Description                                             | Example    |
+| Modifier | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
-| %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
@@ -644,25 +518,9 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %Y       | Year                                                    | 2018       |
 | %%       | a % sign                                                | %          |
 
-**Example**
-
-Query:
-
-``` sql
-SELECT formatDateTime(toDate('2010-01-04'), '%g')
-```
-
-Result:
-
-```
-┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
-│ 10                                         │
-└────────────────────────────────────────────┘
-```
-
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
-## FROM\_UNIXTIME {#fromunixfime}
+## FROM_UNIXTIME
 
 When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
 type.
@@ -691,148 +549,4 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime
 ┌─DateTime────────────┐
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
-```
-
-## toModifiedJulianDay {#tomodifiedjulianday}
-
-Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
-
-**Syntax**
-
-``` sql
-toModifiedJulianDay(date)
-```
-
-**Parameters**
-
--   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-
-**Returned value**
-
--   Modified Julian Day number.
-
-Type: [Int32](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT toModifiedJulianDay('2020-01-01');
-```
-
-Result:
-
-``` text
-┌─toModifiedJulianDay('2020-01-01')─┐
-│                             58849 │
-└───────────────────────────────────┘
-```
-
-## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
-
-Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
-
-**Syntax**
-
-``` sql
-toModifiedJulianDayOrNull(date)
-```
-
-**Parameters**
-
--   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-
-**Returned value**
-
--   Modified Julian Day number.
-
-Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT toModifiedJulianDayOrNull('2020-01-01');
-```
-
-Result:
-
-``` text
-┌─toModifiedJulianDayOrNull('2020-01-01')─┐
-│                                   58849 │
-└─────────────────────────────────────────┘
-```
-
-## fromModifiedJulianDay {#frommodifiedjulianday}
-
-Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
-
-**Syntax**
-
-``` sql
-fromModifiedJulianDay(day)
-```
-
-**Parameters**
-
--   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   Date in text form.
-
-Type: [String](../../sql-reference/data-types/string.md)
-
-**Example**
-
-Query:
-
-``` sql
-SELECT fromModifiedJulianDay(58849);
-```
-
-Result:
-
-``` text
-┌─fromModifiedJulianDay(58849)─┐
-│ 2020-01-01                   │
-└──────────────────────────────┘
-```
-
-## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
-
-Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but instead of raising exceptions it returns `NULL`.
-
-**Syntax**
-
-``` sql
-fromModifiedJulianDayOrNull(day)
-```
-
-**Parameters**
-
--   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   Date in text form.
-
-Type: [Nullable(String)](../../sql-reference/data-types/string.md)
-
-**Example**
-
-Query:
-
-``` sql
-SELECT fromModifiedJulianDayOrNull(58849);
-```
-
-Result:
-
-``` text
-┌─fromModifiedJulianDayOrNull(58849)─┐
-│ 2020-01-01                         │
-└────────────────────────────────────┘
 ```

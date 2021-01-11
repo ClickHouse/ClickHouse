@@ -7,14 +7,6 @@
 namespace DB
 {
 
-struct ASTExistsDatabaseQueryIDAndQueryNames
-{
-    static constexpr auto ID = "ExistsDatabaseQuery";
-    static constexpr auto Query = "EXISTS DATABASE";
-    /// No temporary databases are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
-};
-
 struct ASTExistsTableQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsTableQuery";
@@ -35,14 +27,6 @@ struct ASTShowCreateTableQueryIDAndQueryNames
     static constexpr auto ID = "ShowCreateTableQuery";
     static constexpr auto Query = "SHOW CREATE TABLE";
     static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY TABLE";
-};
-
-struct ASTShowCreateViewQueryIDAndQueryNames
-{
-    static constexpr auto ID = "ShowCreateViewQuery";
-    static constexpr auto Query = "SHOW CREATE VIEW";
-    /// No temporary view are supported, just for parsing
-    static constexpr auto QueryTemporary = "";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
@@ -67,11 +51,9 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "DESCRIBE TEMPORARY TABLE";
 };
 
-using ASTExistsDatabaseQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>;
 using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
 using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
-using ASTShowCreateViewQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateViewQueryIDAndQueryNames>;
 using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>

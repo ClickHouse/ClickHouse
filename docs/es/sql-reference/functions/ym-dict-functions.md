@@ -17,12 +17,12 @@ ClickHouse admite trabajar con múltiples geobases alternativas (jerarquías reg
 
 El ‘clickhouse-server’ config especifica el archivo con la jerarquía regional::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Además de este archivo, también busca archivos cercanos que tengan el símbolo _ y cualquier sufijo anexado al nombre (antes de la extensión del archivo).
+Además de este archivo, también busca archivos cercanos que tengan el símbolo \_ y cualquier sufijo anexado al nombre (antes de la extensión del archivo).
 Por ejemplo, también encontrará el archivo `/opt/geo/regions_hierarchy_ua.txt` si está presente.
 
 `ua` se llama la clave del diccionario. Para un diccionario sin un sufijo, la clave es una cadena vacía.
 
-Todos los diccionarios se vuelven a cargar en tiempo de ejecución (una vez cada cierto número de segundos, como se define en el parámetro de configuración builtin_dictionaries_reload_interval , o una vez por hora por defecto). Sin embargo, la lista de diccionarios disponibles se define una vez, cuando se inicia el servidor.
+Todos los diccionarios se vuelven a cargar en tiempo de ejecución (una vez cada cierto número de segundos, como se define en el parámetro de configuración builtin\_dictionaries\_reload\_interval , o una vez por hora por defecto). Sin embargo, la lista de diccionarios disponibles se define una vez, cuando se inicia el servidor.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Ejemplo:

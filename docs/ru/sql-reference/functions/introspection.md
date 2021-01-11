@@ -1,8 +1,3 @@
----
-toc_priority: 65
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0438\u043d\u0442\u0440\u043e\u0441\u043f\u0435\u043a\u0446\u0438\u0438"
----
-
 # Функции интроспекции {#introspection-functions}
 
 Функции из этого раздела могут использоваться для интроспекции [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) и [DWARF](https://en.wikipedia.org/wiki/DWARF) в целях профилирования запросов.
@@ -14,7 +9,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0438\u043d\u0442\u
 
 -   Установите пакет `clickhouse-common-static-dbg`.
 
--   Установите настройку [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
+-   Установите настройку [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) в 1.
 
 Из соображений безопасности данные функции отключены по умолчанию.
 
@@ -306,68 +301,3 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-
-## tid {#tid}
-
-Возвращает id потока, в котором обрабатывается текущий [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
-
-**Синтаксис**
-
-``` sql
-tid()
-```
-
-**Возвращаемое значение**
-
--   Id текущего потока. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT tid();
-```
-
-Результат:
-
-``` text
-┌─tid()─┐
-│  3878 │
-└───────┘
-```
-## logTrace {#logtrace}
-
- Выводит сообщение в лог сервера для каждого [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
-
-**Синтаксис**
-
-``` sql
-logTrace('message')
-```
-
-**Параметры**
-
--   `message` — сообщение, которое отправляется в серверный лог. [String](../../sql-reference/data-types/string.md#string).
-
-**Возвращаемое значение**
-
--   Всегда возвращает 0.
-
-**Example**
-
-Запрос:
-
-``` sql
-SELECT logTrace('logTrace message');
-```
-
-Результат:
-
-``` text
-┌─logTrace('logTrace message')─┐
-│                            0 │
-└──────────────────────────────┘
-```
-
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->

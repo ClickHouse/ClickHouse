@@ -4,16 +4,11 @@
 #include <vector>
 #include <memory>
 
-#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
-
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
-#define ABORT_ON_LOGICAL_ERROR
-#endif
 
 namespace Poco { class Logger; }
 
@@ -26,7 +21,6 @@ class Exception : public Poco::Exception
 public:
     Exception() = default;
     Exception(const std::string & msg, int code);
-    Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -94,42 +88,6 @@ private:
 
     const char * name() const throw() override { return "DB::ErrnoException"; }
     const char * className() const throw() override { return "DB::ErrnoException"; }
-};
-
-
-/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
-/// more convenient calculation of problem line number.
-class ParsingException : public Exception
-{
-public:
-    ParsingException();
-    ParsingException(const std::string & msg, int code);
-    ParsingException(int code, const std::string & message);
-
-    // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    ParsingException(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {
-        Exception::message(Exception::message() + "{}");
-    }
-
-
-    std::string displayText() const
-#if defined(POCO_CLICKHOUSE_PATCH)
-    override
-#endif
-    ;
-
-    int getLineNumber() { return line_number_; }
-    void setLineNumber(int line_number) { line_number_ = line_number;}
-
-private:
-    ssize_t line_number_{-1};
-    mutable std::string formatted_message_;
-
-    const char * name() const throw() override { return "DB::ParsingException"; }
-    const char * className() const throw() override { return "DB::ParsingException"; }
 };
 
 

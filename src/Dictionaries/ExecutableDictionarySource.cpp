@@ -173,6 +173,7 @@ namespace
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
     };
+
 }
 
 
@@ -184,7 +185,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
         context, format, sample_block, command, log,
         [&ids, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context.getOutputStream(format, out, sample_block);
+            auto output_stream = context.getOutputFormat(format, out, sample_block);
             formatIDs(output_stream, ids);
             out.close();
         });
@@ -198,7 +199,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
         context, format, sample_block, command, log,
         [key_columns, &requested_rows, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context.getOutputStream(format, out, sample_block);
+            auto output_stream = context.getOutputFormat(format, out, sample_block);
             formatKeys(dict_struct, output_stream, key_columns, requested_rows);
             out.close();
         });

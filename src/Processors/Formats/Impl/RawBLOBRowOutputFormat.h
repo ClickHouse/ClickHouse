@@ -30,7 +30,7 @@ public:
     RawBLOBRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_);
+        FormatFactory::WriteCallback callback);
 
     String getName() const override { return "RawBLOBRowOutputFormat"; }
 

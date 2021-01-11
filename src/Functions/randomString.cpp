@@ -57,18 +57,21 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
         if (input_rows_count == 0)
-            return col_to;
+        {
+            block.getByPosition(result).column = std::move(col_to);
+            return;
+        }
 
         /// Fill offsets.
         offsets_to.resize(input_rows_count);
-        const IColumn & length_column = *arguments[0].column;
+        const IColumn & length_column = *block.getByPosition(arguments[0]).column;
 
         IColumn::Offset offset = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
@@ -90,7 +93,7 @@ public:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             pos[offsets_to[row_num] - 1] = 0;
 
-        return col_to;
+        block.getByPosition(result).column = std::move(col_to);
     }
 };
 
@@ -108,9 +111,9 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)

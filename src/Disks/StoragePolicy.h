@@ -14,7 +14,6 @@
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <unistd.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -36,13 +35,6 @@ public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
-
-    StoragePolicy(
-        const StoragePolicy & storage_policy,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        DiskSelectorPtr disks
-    );
 
     bool isDefaultPolicy() const;
 
@@ -83,29 +75,29 @@ public:
     /// which should be kept with help of background moves
     double getMoveFactor() const { return move_factor; }
 
-    /// Get volume by index.
-    VolumePtr getVolume(size_t index) const;
+    /// Get volume by index from storage_policy
+    VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
 
-    VolumePtr getVolumeByName(const String & volume_name) const;
+    VolumePtr getVolumeByName(const String & volume_name) const
+    {
+        auto it = volumes_names.find(volume_name);
+        if (it == volumes_names.end())
+            return {};
+        return getVolume(it->second);
+    }
 
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Check if we have any volume with stopped merges
-    bool hasAnyVolumeWithDisabledMerges() const;
-
 private:
     Volumes volumes;
     const String name;
-    std::unordered_map<String, size_t> volume_index_by_volume_name;
-    std::unordered_map<String, size_t> volume_index_by_disk_name;
+    std::map<String, size_t> volumes_names;
 
     /// move_factor from interval [0., 1.]
     /// We move something if disk from this policy
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
-
-    void buildVolumeIndices();
 };
 
 
