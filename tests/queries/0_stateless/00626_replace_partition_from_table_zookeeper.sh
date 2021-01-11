@@ -7,6 +7,7 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 function query_with_retry
@@ -150,7 +151,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d), uniqExact(_part) FROM dst_r2
 
 $CLICKHOUSE_CLIENT --query="SELECT 'After restart';"
 $CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r1;"
-$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICAS;"
+$CLICKHOUSE_CLIENT --query="SYSTEM RESTART REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r2;"
 
