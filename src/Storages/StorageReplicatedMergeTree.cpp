@@ -81,6 +81,9 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric Parts;
+    extern const Metric PartsActive;
+    extern const Metric PartsInactive;
 }
 
 namespace DB
@@ -3683,6 +3686,22 @@ void StorageReplicatedMergeTree::shutdown()
     /// which will remove themselves in their descrutors. If so, we may have
     /// race condition between our remove call and background process.
     clearOldPartsFromFilesystem(true);
+
+    auto lock = lockParts();
+    DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
+
+    size_t committed_parts_count = 0;
+    for (const auto & parts_info : all_parts)
+    {
+        if (parts_info->state == DataPartState::Committed)
+        {
+            committed_parts_count++;
+        }
+    }
+
+    CurrentMetrics::sub(CurrentMetrics::Parts, all_parts.size());
+    CurrentMetrics::sub(CurrentMetrics::PartsActive, committed_parts_count);
+    CurrentMetrics::sub(CurrentMetrics::PartsInactive, all_parts.size() - committed_parts_count);
 }
 
 
