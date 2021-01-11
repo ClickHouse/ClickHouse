@@ -1,0 +1,10 @@
+version: '2.3'
+services:
+    mysql8_0:
+        image: mysql:8.0
+        restart: 'no'
+        environment:
+            MYSQL_ROOT_PASSWORD: clickhouse
+        ports:
+          - 33308:3306
+        command: --server_id=100 --log-bin='mysql-bin-1.log' --default_authentication_plugin='mysql_native_password' --default-time-zone='+3:00' --gtid-mode="ON" --enforce-gtid-consistency

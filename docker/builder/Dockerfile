@@ -1,32 +1,41 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
-RUN apt-get update -y \
-    && apt-get install -y software-properties-common \
-    && add-apt-repository ppa:ubuntu-toolchain-r/test \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
-            bash \
-            ccache \
-            cmake \
-            curl \
-            expect \
-            g++-9 \
-            gcc-9 \
-            libreadline-dev \
-            ninja-build \
-            perl \
-            pkg-config \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
-            sudo \
-            tzdata \
-            gperf
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
-RUN apt install -y wget
-RUN printf "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main\ndeb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list \
-    && wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && apt update && apt-get install -y clang-8 lldb-8 lld-8
+RUN apt-get update \
+    && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
+        --yes --no-install-recommends --verbose-versions \
+    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
+    && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
+    && apt-key add /tmp/llvm-snapshot.gpg.key \
+    && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb [trusted=yes] http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
+        /etc/apt/sources.list
+
+RUN apt-get update \
+    && apt-get install \
+        bash \
+        ccache \
+        cmake \
+        curl \
+        expect \
+        g++ \
+        gcc \
+        ninja-build \
+        perl \
+        pkg-config \
+        python3 \
+        python3-lxml \
+        python3-requests \
+        python3-termcolor \
+        tzdata \
+        llvm-${LLVM_VERSION} \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
+        lld-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
+        --yes --no-install-recommends
 
 COPY build.sh /
 

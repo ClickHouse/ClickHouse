@@ -1,1 +1,0 @@
-../../../en/getting_started/example_datasets/star_schema.md

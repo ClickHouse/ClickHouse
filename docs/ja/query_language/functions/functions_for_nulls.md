@@ -1,1 +1,0 @@
-../../../en/query_language/functions/functions_for_nulls.md

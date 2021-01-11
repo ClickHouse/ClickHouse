@@ -1,0 +1,16 @@
+CREATE TABLE default.codecs1\n(\n    `a` UInt8 CODEC(NONE, NONE)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs2\n(\n    `a` UInt8 CODEC(NONE, LZ4)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs3\n(\n    `a` UInt8 CODEC(LZ4, NONE)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs4\n(\n    `a` UInt8 CODEC(LZ4, LZ4)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs5\n(\n    `a` UInt8 CODEC(LZ4, ZSTD(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs6\n(\n    `a` UInt8 CODEC(Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs7\n(\n    `a` UInt8 CODEC(Delta(1), Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs8\n(\n    `a` UInt8 CODEC(LZ4, Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs1\n(\n    `a` UInt8 CODEC(NONE, NONE)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs2\n(\n    `a` UInt8 CODEC(NONE, LZ4)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs3\n(\n    `a` UInt8 CODEC(LZ4, NONE)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs4\n(\n    `a` UInt8 CODEC(LZ4, LZ4)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs5\n(\n    `a` UInt8 CODEC(LZ4, ZSTD(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs6\n(\n    `a` UInt8 CODEC(Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs7\n(\n    `a` UInt8 CODEC(Delta(1), Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.codecs8\n(\n    `a` UInt8 CODEC(LZ4, Delta(1))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

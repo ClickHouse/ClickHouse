@@ -1,0 +1,3 @@
+<yandex>
+    <database_atomic_delay_before_drop_table_sec>60</database_atomic_delay_before_drop_table_sec>
+</yandex>

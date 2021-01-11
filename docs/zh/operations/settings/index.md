@@ -1,24 +1,29 @@
-# Settings {#settings}
+---
+toc_folder_title: "\u8BBE\u7F6E"
+---
 
-There are multiple ways to make all the settings described below.
-Settings are configured in layers, so each subsequent layer redefines the previous settings.
+# 设置 {#settings}
 
-Ways to configure settings, in order of priority:
+有多种方法可以进行以下所述的所有设置。
+设置是在图层中配置的，因此每个后续图层都会重新定义以前的设置。
 
-- Settings in the `users.xml` server configuration file.
+按优先级顺序配置设置的方法:
 
-    Set in the element `<profiles>`.
+-   在设置 `users.xml` 服务器配置文件。
 
-- Session settings.
+        Set in the element `<profiles>`.
 
-    Send ` SET setting=value` from the ClickHouse console client in interactive mode.
-Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` HTTP parameter.
+-   会话设置。
 
-- Query settings.
-    - When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
-    - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+        Send ` SET setting=value` from the ClickHouse console client in interactive mode.
 
-Settings that can only be made in the server config file are not covered in this section.
+    同样，您可以在HTTP协议中使用ClickHouse会话。 要做到这一点，你需要指定 `session_id` HTTP参数。
 
+-   查询设置。
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/) <!--hide-->
+    -   在非交互模式下启动ClickHouse控制台客户端时，设置startup参数 `--setting=value`.
+    -   使用HTTP API时，请传递CGI参数 (`URL?setting_1=value&setting_2=value...`).
+
+本节不介绍只能在服务器配置文件中进行的设置。
+
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->

@@ -1,1 +1,0 @@
-../../en/getting_started/install.md

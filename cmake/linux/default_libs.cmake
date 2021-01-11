@@ -11,7 +11,12 @@ else ()
     set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+if (OS_ANDROID)
+    # pthread and rt are included in libc
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+else ()
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
@@ -21,41 +26,33 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 if (COMPILER_GCC)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include-fixed OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_FIXED_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_FLAGS "-idirafter ${COMPILER_GCC_INCLUDE_DIR} -idirafter ${COMPILER_GCC_INCLUDE_FIXED_DIR}")
+    set (COMPILER_INCLUDE_FLAGS "-nostdinc -idirafter ${COMPILER_GCC_INCLUDE_DIR} -idirafter ${COMPILER_GCC_INCLUDE_FIXED_DIR}")
 elseif (COMPILER_CLANG)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_CLANG_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_FLAGS "-idirafter ${COMPILER_CLANG_INCLUDE_DIR}")
+    set (COMPILER_INCLUDE_FLAGS "-nostdinc -idirafter ${COMPILER_CLANG_INCLUDE_DIR}")
 endif ()
 
-# Global libraries
-
-add_library(global-libs INTERFACE)
+# glibc-compatibility library relies to constant version of libc headers
+# (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
+# This is for x86_64. For other architectures we have separate toolchains.
+if (ARCH_AMD64 AND NOT_UNBUNDLED)
+    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+endif ()
 
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_subdirectory(libs/libglibc-compatibility)
+if (NOT OS_ANDROID)
+    # Our compatibility layer doesn't build under Android, many errors in musl.
+    add_subdirectory(base/glibc-compatibility)
+    add_subdirectory(base/harmful)
+endif ()
+
 include (cmake/find/unwind.cmake)
 include (cmake/find/cxx.cmake)
-
-# glibc-compatibility library relies to fixed version of libc headers
-# (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
-# This is for x86_64. For other architectures we have separate toolchains.
-if (ARCH_AMD64)
-    if (USE_INTERNAL_LIBCXX_LIBRARY)
-        set (LIBCXX_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx/include)
-    endif ()
-
-    # Disable unwanted includes to get more isolated build. The build should not depend on the percularities of the user environment.
-    # NOTE It is very similar to using custom "toolchain". And using custom toolchain is more simple but is less convenient for users.
-    # This is also very helpful to avoid mess with system libraries (e.g. using wrong version of zlib.h)
-    # This will also help for further migration to musl-libc.
-
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -idirafter ${LIBCXX_INCLUDE_DIR} ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
-endif ()
 
 add_library(global-group INTERFACE)
 target_link_libraries(global-group INTERFACE

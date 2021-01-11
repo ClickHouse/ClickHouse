@@ -1,1 +1,0 @@
-lunr.jp.js

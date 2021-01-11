@@ -1,0 +1,26 @@
+FROM alpine
+
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    TZ=UTC \
+    CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml
+
+COPY alpine-root/ /
+
+# from https://github.com/ClickHouse/ClickHouse/blob/master/debian/clickhouse-server.postinst
+RUN addgroup clickhouse \
+    && adduser -S -H -h /nonexistent -s /bin/false -G clickhouse -g "ClickHouse server" clickhouse \
+    && chown clickhouse:clickhouse /var/lib/clickhouse \
+    && chmod 700 /var/lib/clickhouse \
+    && chown root:clickhouse /var/log/clickhouse-server \
+    && chmod 775 /var/log/clickhouse-server \
+    && chmod +x /entrypoint.sh \
+    && apk add --no-cache su-exec
+
+EXPOSE 9000 8123 9009
+
+VOLUME /var/lib/clickhouse \
+       /var/log/clickhouse-server
+
+ENTRYPOINT ["/entrypoint.sh"]

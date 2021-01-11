@@ -1,0 +1,6 @@
+<test>
+    <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomFixedString(10))</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(randomFixedString(100))</query>
+    <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(randomFixedString(1000))</query>
+    <query>SELECT count() FROM zeros(10000) WHERE NOT ignore(randomFixedString(10000))</query>
+</test>

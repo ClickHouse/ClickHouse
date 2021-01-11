@@ -54,15 +54,8 @@ endif ()
 
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
-check_cxx_compiler_flag(-Wreserved-id-macro HAVE_WARNING_RESERVED_ID_MACRO)
-if (HAVE_WARNING_RESERVED_ID_MACRO)
-    target_compile_options(cxx PUBLIC -Wno-reserved-id-macro)
-endif ()
-
-check_cxx_compiler_flag(-Wctad-maybe-unsupported HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
-if (HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
-    target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
-endif ()
+# Third party library may have substandard code.
+target_compile_options(cxx PRIVATE -w)
 
 target_link_libraries(cxx PUBLIC cxxabi)
 

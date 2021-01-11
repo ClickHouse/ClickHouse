@@ -22,7 +22,16 @@ set_source_files_properties(${LIBUNWIND_C_SOURCES} PROPERTIES COMPILE_FLAGS "-st
 set(LIBUNWIND_ASM_SOURCES
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersRestore.S
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersSave.S)
-set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
+
+# CMake doesn't pass the correct architecture for Apple prior to CMake 3.19 [1]
+# Workaround these two issues by compiling as C.
+#
+#   [1]: https://gitlab.kitware.com/cmake/cmake/-/issues/20771
+if (APPLE AND CMAKE_VERSION VERSION_LESS 3.19)
+    set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
+else()
+    enable_language(ASM)
+endif()
 
 set(LIBUNWIND_SOURCES
     ${LIBUNWIND_CXX_SOURCES}
@@ -48,6 +57,13 @@ endif ()
 check_cxx_compiler_flag(-Wmaybe-uninitialized HAVE_WARNING_MAYBE_UNINITIALIZED)
 if (HAVE_WARNING_MAYBE_UNINITIALIZED)
     target_compile_options(unwind PRIVATE -Wno-maybe-uninitialized)
+endif ()
+
+# The library is using register variables that are bound to specific registers
+# Example: DwarfInstructions.hpp: register unsigned long long x16 __asm("x16") = cfa;
+check_cxx_compiler_flag(-Wregister HAVE_WARNING_REGISTER)
+if (HAVE_WARNING_REGISTER)
+    target_compile_options(unwind PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-register>")
 endif ()
 
 install(

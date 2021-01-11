@@ -1,0 +1,16 @@
+<div id="toc" class="{% if single_page %}toc-left{% else %}col-xl-2 d-none d-xl-block d-print-none p-3 overflow-auto toc-right{% endif %} mb-5">
+    {% set toc_ = page.toc %}
+    {% if toc_ | first is defined and "\x3ch1 id=" in page.content %}
+        {% set toc_ = (toc_ | first).children %}
+    {% endif %}
+    <nav class="nav flex-column text-wrap">
+    {% if toc_ | first is defined %}
+        <label for="toc">{{ _('Table of Contents') }}</label>
+    {% endif %}
+    {% for toc_item in toc_ %}
+        {% set path = "toc-" + loop.index | string %}
+        {% set level = 1 %}
+        {% include "templates/docs/toc-item.html" %}
+    {% endfor %}
+    </nav>
+</div>

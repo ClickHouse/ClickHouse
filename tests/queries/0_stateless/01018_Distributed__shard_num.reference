@@ -1,0 +1,34 @@
+remote(system.one)
+0
+0
+0
+1	0
+1	0
+2	0
+1	0
+dist_1
+1
+1	10
+10
+1
+1
+1	10
+1	20
+10
+20
+dist_2
+1
+2
+1	100
+2	100
+100
+100
+remote(Distributed)
+1	100
+1	100
+JOIN system.clusters
+1	10	localhost	::1	9000
+1	20	localhost	::1	9000
+dist_3
+100	foo
+foo	100	foo

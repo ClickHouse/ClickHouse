@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+<yandex>
+      <dictionary>
+      <name>dict2</name>
+      <source>
+         <mysql >
+            <db>test</db>
+            <host>mysql1</host>
+            <port>3306</port>
+            <user>root</user>
+            <password>clickhouse</password>
+            <table>test2</table>
+            <close_connection>true</close_connection>
+            <share_connection>true</share_connection>
+         </mysql>
+      </source>
+      <layout>
+         <hashed/>
+      </layout>
+      <structure>
+         <id>
+            <name>id</name>
+            <type>UInt32</type>
+            <expression>CAST(id AS UNSIGNED)</expression>
+         </id>
+         <attribute>
+            <name>id</name>
+            <type>Int32</type>
+            <null_value></null_value>
+         </attribute>
+         <attribute>
+            <name>value</name>
+            <type>String</type>
+            <null_value>(UNDEFINED)</null_value>
+         </attribute>
+      </structure>
+      <lifetime>0</lifetime>
+   </dictionary>
+   
+   <dictionary>
+      <name>dict3</name>
+      <source>
+         <mysql >
+            <db>test</db>
+            <host>mysql1</host>
+            <port>3306</port>
+            <user>root</user>
+            <password>clickhouse</password>
+            <table>test3</table>
+            <close_connection>true</close_connection>
+            <share_connection>true</share_connection>
+         </mysql>
+      </source>
+      <layout>
+         <hashed/>
+      </layout>
+      <structure>
+         <id>
+            <name>id</name>
+            <type>UInt32</type>
+            <expression>CAST(id AS UNSIGNED)</expression>
+         </id>
+         <attribute>
+            <name>id</name>
+            <type>Int32</type>
+            <null_value></null_value>
+         </attribute>
+         <attribute>
+            <name>value</name>
+            <type>String</type>
+            <null_value>(UNDEFINED)</null_value>
+         </attribute>
+      </structure>
+      <lifetime>0</lifetime>
+   </dictionary>
+   <dictionary>
+      <name>dict4</name>
+      <source>
+         <mysql >
+            <db>test</db>
+            <host>mysql1</host>
+            <port>3306</port>
+            <user>root</user>
+            <password>clickhouse</password>
+            <table>test4</table>
+            <close_connection>true</close_connection>
+            <share_connection>true</share_connection>
+         </mysql>
+      </source>
+      <layout>
+         <hashed/>
+      </layout>
+      <structure>
+         <id>
+            <name>id</name>
+            <type>UInt32</type>
+            <expression>CAST(id AS UNSIGNED)</expression>
+         </id>
+         <attribute>
+            <name>id</name>
+            <type>Int32</type>
+            <null_value></null_value>
+         </attribute>
+         <attribute>
+            <name>value</name>
+            <type>String</type>
+            <null_value>(UNDEFINED)</null_value>
+         </attribute>
+      </structure>
+      <lifetime>0</lifetime>
+   </dictionary>
+   
+</yandex>

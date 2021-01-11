@@ -124,11 +124,9 @@ namespace pdqsort_detail {
     inline bool partial_insertion_sort(Iter begin, Iter end, Compare comp) {
         typedef typename std::iterator_traits<Iter>::value_type T;
         if (begin == end) return true;
-        
-        int limit = 0;
-        for (Iter cur = begin + 1; cur != end; ++cur) {
-            if (limit > partial_insertion_sort_limit) return false;
 
+        std::size_t limit = 0;
+        for (Iter cur = begin + 1; cur != end; ++cur) {
             Iter sift = cur;
             Iter sift_1 = cur - 1;
 
@@ -142,6 +140,8 @@ namespace pdqsort_detail {
                 *sift = PDQSORT_PREFER_MOVE(tmp);
                 limit += cur - sift;
             }
+
+            if (limit > partial_insertion_sort_limit) return false;
         }
 
         return true;
@@ -232,7 +232,7 @@ namespace pdqsort_detail {
         unsigned char* offsets_r = align_cacheline(offsets_r_storage);
         int num_l, num_r, start_l, start_r;
         num_l = num_r = start_l = start_r = 0;
-        
+
         while (last - first > 2 * block_size) {
             // Fill up offset blocks with elements that are on the wrong side.
             if (num_l == 0) {
@@ -275,7 +275,7 @@ namespace pdqsort_detail {
         }
 
         int l_size = 0, r_size = 0;
-        int unknown_left = (last - first) - ((num_r || num_l) ? block_size : 0);
+        int unknown_left = (int)(last - first) - ((num_r || num_l) ? block_size : 0);
         if (num_r) {
             // Handle leftover block by assigning the unknown elements to the other block.
             l_size = unknown_left;
@@ -311,7 +311,7 @@ namespace pdqsort_detail {
         start_l += num; start_r += num;
         if (num_l == 0) first += l_size;
         if (num_r == 0) last -= r_size;
-        
+
         // We have now fully identified [first, last)'s proper position. Swap the last elements.
         if (num_l) {
             offsets_l += start_l;
@@ -340,7 +340,7 @@ namespace pdqsort_detail {
     template<class Iter, class Compare>
     inline std::pair<Iter, bool> partition_right(Iter begin, Iter end, Compare comp) {
         typedef typename std::iterator_traits<Iter>::value_type T;
-        
+
         // Move pivot into local for speed.
         T pivot(PDQSORT_PREFER_MOVE(*begin));
 
@@ -359,7 +359,7 @@ namespace pdqsort_detail {
         // If the first pair of elements that should be swapped to partition are the same element,
         // the passed in sequence already was correctly partitioned.
         bool already_partitioned = first >= last;
-        
+
         // Keep swapping pairs of elements that are on the wrong side of the pivot. Previously
         // swapped pairs guard the searches, which is why the first iteration is special-cased
         // above.
@@ -388,7 +388,7 @@ namespace pdqsort_detail {
         T pivot(PDQSORT_PREFER_MOVE(*begin));
         Iter first = begin;
         Iter last = end;
-        
+
         while (comp(pivot, *--last));
 
         if (last + 1 == end) while (first < last && !comp(pivot, *++first));
@@ -475,11 +475,11 @@ namespace pdqsort_detail {
                         std::iter_swap(pivot_pos - 3, pivot_pos - (l_size / 4 + 2));
                     }
                 }
-                
+
                 if (r_size >= insertion_sort_threshold) {
                     std::iter_swap(pivot_pos + 1, pivot_pos + (1 + r_size / 4));
                     std::iter_swap(end - 1,                   end - r_size / 4);
-                    
+
                     if (r_size > ninther_threshold) {
                         std::iter_swap(pivot_pos + 2, pivot_pos + (2 + r_size / 4));
                         std::iter_swap(pivot_pos + 3, pivot_pos + (3 + r_size / 4));
@@ -493,7 +493,7 @@ namespace pdqsort_detail {
                 if (already_partitioned && partial_insertion_sort(begin, pivot_pos, comp)
                                         && partial_insertion_sort(pivot_pos + 1, end, comp)) return;
             }
-                
+
             // Sort the left partition first using recursion and do tail recursion elimination for
             // the right-hand partition.
             pdqsort_loop<Iter, Compare, Branchless>(begin, pivot_pos, comp, bad_allowed, leftmost);

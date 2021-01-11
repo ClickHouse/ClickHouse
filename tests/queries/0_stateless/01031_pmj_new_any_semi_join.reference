@@ -1,0 +1,47 @@
+any left
+0	a1	0	
+1	a2	0	
+2	a3	2	b1
+3	a4	0	
+4	a5	4	b3
+any left (rev)
+0		5	b6
+2	a3	2	b1
+2	a3	2	b2
+4	a5	4	b3
+4	a5	4	b4
+4	a5	4	b5
+any inner
+2	a3	2	b1
+4	a5	4	b3
+any inner (rev)
+2	a3	2	b1
+4	a5	4	b3
+any right
+0		5	b6
+2	a3	2	b1
+2	a3	2	b2
+4	a5	4	b3
+4	a5	4	b4
+4	a5	4	b5
+any right (rev)
+0	a1	0	
+1	a2	0	
+2	a3	2	b1
+3	a4	0	
+4	a5	4	b3
+semi left
+2	a3	2	b1
+4	a5	4	b3
+semi right
+2	a3	2	b1
+2	a3	2	b2
+4	a5	4	b3
+4	a5	4	b4
+4	a5	4	b5
+anti left
+0	a1	0	
+1	a2	1	
+3	a4	3	
+anti right
+0		5	b6

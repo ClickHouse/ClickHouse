@@ -1,13 +1,10 @@
-if (HAVE_SSE42) # Not used. Pretty easy to port.
-    set (SOURCES_SSE42_ONLY src/metrohash128crc.cpp src/metrohash128crc.h)
-endif ()
-
-add_library(metrohash
-    src/metrohash.h
-    src/testvector.h
-
+set (SRCS
     src/metrohash64.cpp
     src/metrohash128.cpp
-    ${SOURCES_SSE42_ONLY})
+)
+if (HAVE_SSE42) # Not used. Pretty easy to port.
+    list (APPEND SRCS src/metrohash128crc.cpp)
+endif ()
 
-target_include_directories(metrohash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_library(metrohash ${SRCS})
+target_include_directories(metrohash PUBLIC src)

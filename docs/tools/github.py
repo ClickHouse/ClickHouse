@@ -3,43 +3,40 @@ import copy
 import io
 import logging
 import os
+import random
+import sys
 import tarfile
+import time
 
 import requests
 
 import util
 
 
-def choose_latest_releases():
-    seen = collections.OrderedDict()
-    candidates = requests.get('https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100').json()
-    for tag in candidates:
-        name = tag.get('name', '')
-        if ('v18' in name) or ('stable' not in name) or ('prestable' in name):
-            continue
-        major_version = '.'.join((name.split('.', 2))[:2])
-        if major_version not in seen:
-            seen[major_version] = (name, tag.get('tarball_url'),)
-            
-    return seen.items()
-    
-
-def process_release(args, callback, release):
-    name, (full_name, tarball_url,) = release
-    logging.info('Building docs for %s', full_name)
-    buf = io.BytesIO(requests.get(tarball_url).content)
-    tar = tarfile.open(mode='r:gz', fileobj=buf)
-    with util.temp_dir() as base_dir:
-        tar.extractall(base_dir)
-        args = copy.deepcopy(args)
-        args.version_prefix = name
-        args.is_stable_release = True
-        args.docs_dir = os.path.join(base_dir, os.listdir(base_dir)[0], 'docs')
-        callback(args)
+def get_events(args):
+    events = []
+    skip = True
+    with open(os.path.join(args.docs_dir, '..', 'README.md')) as f:
+        for line in f:
+            if skip:
+                if 'Upcoming Events' in line:
+                    skip = False
+            else:
+                if not line:
+                    continue
+                line = line.strip().split('](')
+                if len(line) == 2:
+                    tail = line[1].split(') ')
+                    events.append({
+                        'signup_link': tail[0],
+                        'event_name':  line[0].replace('* [', ''),
+                        'event_date':  tail[1].replace('on ', '').replace('.', '')
+                    })
+    return events
 
 
-def build_releases(args, callback):
-    for release in args.stable_releases:
-        process_release(args, callback, release)
-
-
+if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        stream=sys.stderr
+    )

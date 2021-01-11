@@ -1,1 +1,0 @@
-CREATE VIEW default.test_view_00599 (`id` UInt64) AS SELECT * FROM default.test_00599 WHERE id = (SELECT 1)

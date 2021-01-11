@@ -13,21 +13,21 @@ Run build:
 make build
 ```
 
-Before run, ensure that your user has access to docker:  
-To check, that you have access to Docker, run `docker ps`.  
-If not, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and relogin.  
+Before run, ensure that your user has access to docker:
+To check, that you have access to Docker, run `docker ps`.
+If not, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and relogin.
 (You must close all your sessions. For example, restart your computer.)
 
-Build results are available in `build_docker` directory at top level of your working copy.  
+Build results are available in `build_docker` directory at top level of your working copy.
 It builds only binaries, not packages.
 
 For example, run server:
 ```
-cd $(git rev-parse --show-toplevel)/dbms/src/Server
-$(git rev-parse --show-toplevel)/docker/builder/dbms/programs/clickhouse server --config-file $(git rev-parse --show-toplevel)/dbms/programs/server/config.xml
+cd $(git rev-parse --show-toplevel)/src/Server
+$(git rev-parse --show-toplevel)/docker/builder/programs/clickhouse server --config-file $(git rev-parse --show-toplevel)/programs/server/config.xml
 ```
 
 Run client:
 ```
-$(git rev-parse --show-toplevel)/docker/builder/dbms/programs/clickhouse client
+$(git rev-parse --show-toplevel)/docker/builder/programs/clickhouse client
 ```

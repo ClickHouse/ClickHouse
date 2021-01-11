@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<yandex>
+    <dictionaries_config>/etc/clickhouse-server/dictionaries/*.xml</dictionaries_config>
+</yandex>

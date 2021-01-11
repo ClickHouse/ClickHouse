@@ -1,0 +1,8 @@
+"n"
+0
+SELECT any(number) * any(number) AS n
+FROM numbers(100)
+"n"
+0,0
+SELECT (any(number), any(number) * 2) AS n
+FROM numbers(100)
