@@ -613,7 +613,7 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 {
     //create a new col to return
     auto cloneCol = cloneEmpty();
-    auto res = typeid_cast<ColumnAggregateFunction *>(cloneCol.get());
+    auto* res = typeid_cast<ColumnAggregateFunction *>(cloneCol.get());
     if (size == 0)
         return cloneCol;
 
