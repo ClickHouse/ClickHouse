@@ -126,15 +126,6 @@ function gen_revision_author {
                 fi
             fi
 
-
-            # Reset testing branch to current commit.
-            git checkout testing
-            git reset --hard "$tag"
-
-            if [ -z $NO_PUSH ]; then
-                git push
-            fi
-
         else
             get_version
             echo reusing old version $VERSION_STRING
