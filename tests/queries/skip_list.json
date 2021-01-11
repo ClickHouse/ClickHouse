@@ -4,22 +4,19 @@
 {
     "thread-sanitizer": [
         "00877",
-        "00985",
         "query_profiler",
         "memory_profiler",
-        /// 01083 and 00505 and 00505 are critical and temproray disabled
-        "01083_expressions_in_engine_arguments",
-        "00505_shard_secure",
-        "00505_secure",
         "01103_check_cpu_instructions_at_startup",
-        "01098_temporary_and_external_tables", /// race in openssl (should be enabled as fast as possible)
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01474_executable_dictionary" /// informational stderr from sanitizer at start
+        "01474_executable_dictionary", /// informational stderr from sanitizer at start
+        "functions_bad_arguments", /// Too long for TSan
+        "01603_read_with_backoff_bug", /// Too long for TSan
+        "01646_system_restart_replicas_smoke" /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
     ],
     "address-sanitizer": [
         "00877",
@@ -48,7 +45,6 @@
         "01103_check_cpu_instructions_at_startup",
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
-        "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01193_metadata_loading"

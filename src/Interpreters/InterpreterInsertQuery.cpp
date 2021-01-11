@@ -29,6 +29,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 #include <Interpreters/QueryLog.h>
