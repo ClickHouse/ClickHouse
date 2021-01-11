@@ -730,7 +730,7 @@ public:
         WhichDataType which(arguments[1].get());
         if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
             throw Exception(
-                "Second argument for function " + getName() + " must be UInt but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<UInt8>>();
