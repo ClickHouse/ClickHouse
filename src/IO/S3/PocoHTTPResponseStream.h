@@ -8,7 +8,7 @@ namespace DB::S3
 /**
  * Wrapper of IStream to store response stream and corresponding HTTP session.
  */
-class PocoHTTPResponseStream : public Aws::IOStream
+class PocoHTTPResponseStream : public Aws::IStream
 {
 public:
     PocoHTTPResponseStream(std::shared_ptr<Poco::Net::HTTPClientSession> session_, std::istream & response_stream_);

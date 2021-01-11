@@ -148,9 +148,9 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(IAST * node, Data & data)
+void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
-    if (auto * func_node = node->as<ASTFunction>())
+    if (const auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
         {
@@ -164,27 +164,14 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->name == "lambda")
             first_pos = 1;
 
-        if (func_node->arguments)
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & func_children = func_node->arguments->children;
+            auto & child = func_children[i];
 
-            for (size_t i = first_pos; i < func_children.size(); ++i)
-            {
-                auto & child = func_children[i];
-
-                if (needVisitChild(child))
-                    visit(child, data);
-            }
-        }
-
-        if (func_node->window_partition_by)
-        {
-            visitChildren(func_node->window_partition_by.get(), data);
-        }
-
-        if (func_node->window_order_by)
-        {
-            visitChildren(func_node->window_order_by.get(), data);
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -231,7 +218,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast.get(), data);
+        visitChildren(ast, data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());

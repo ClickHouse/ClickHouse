@@ -1,5 +1,3 @@
-#include <filesystem>
-
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -13,6 +11,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
+#include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -30,18 +31,18 @@
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
+#include <Poco/Net/NetException.h>
 #include <common/sleep.h>
 #include <common/getFQDNOrHostName.h>
+#include <random>
 #include <pcg_random.hpp>
 
-namespace fs = std::filesystem;
-
-namespace CurrentMetrics
-{
-    extern const Metric MaxDDLEntryID;
-}
 
 namespace DB
 {
@@ -59,46 +60,107 @@ namespace ErrorCodes
 }
 
 
-String DDLLogEntry::toString()
+namespace
 {
-    WriteBufferFromOwnString wb;
 
-    Strings host_id_strings(hosts.size());
-    std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
+struct HostID
+{
+    String host_name;
+    UInt16 port;
 
-    auto version = CURRENT_VERSION;
-    wb << "version: " << version << "\n";
-    wb << "query: " << escape << query << "\n";
-    wb << "hosts: " << host_id_strings << "\n";
-    wb << "initiator: " << initiator << "\n";
+    HostID() = default;
 
-    return wb.str();
+    explicit HostID(const Cluster::Address & address)
+    : host_name(address.host_name), port(address.port) {}
+
+    static HostID fromString(const String & host_port_str)
+    {
+        HostID res;
+        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
+        return res;
+    }
+
+    String toString() const
+    {
+        return Cluster::Address::toString(host_name, port);
+    }
+
+    String readableString() const
+    {
+        return host_name + ":" + DB::toString(port);
+    }
+
+    bool isLocalAddress(UInt16 clickhouse_port) const
+    {
+        try
+        {
+            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
+        }
+        catch (const Poco::Net::NetException &)
+        {
+            /// Avoid "Host not found" exceptions
+            return false;
+        }
+    }
+
+    static String applyToString(const HostID & host_id)
+    {
+        return host_id.toString();
+    }
+};
+
 }
 
-void DDLLogEntry::parse(const String & data)
+
+struct DDLLogEntry
 {
-    ReadBufferFromString rb(data);
+    String query;
+    std::vector<HostID> hosts;
+    String initiator; // optional
 
-    int version;
-    rb >> "version: " >> version >> "\n";
+    static constexpr int CURRENT_VERSION = 1;
 
-    if (version != CURRENT_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
+    String toString()
+    {
+        WriteBufferFromOwnString wb;
 
-    Strings host_id_strings;
-    rb >> "query: " >> escape >> query >> "\n";
-    rb >> "hosts: " >> host_id_strings >> "\n";
+        Strings host_id_strings(hosts.size());
+        std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
 
-    if (!rb.eof())
-        rb >> "initiator: " >> initiator >> "\n";
-    else
-        initiator.clear();
+        auto version = CURRENT_VERSION;
+        wb << "version: " << version << "\n";
+        wb << "query: " << escape << query << "\n";
+        wb << "hosts: " << host_id_strings << "\n";
+        wb << "initiator: " << initiator << "\n";
 
-    assertEOF(rb);
+        return wb.str();
+    }
 
-    hosts.resize(host_id_strings.size());
-    std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
-}
+    void parse(const String & data)
+    {
+        ReadBufferFromString rb(data);
+
+        int version;
+        rb >> "version: " >> version >> "\n";
+
+        if (version != CURRENT_VERSION)
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
+
+        Strings host_id_strings;
+        rb >> "query: " >> escape >> query >> "\n";
+        rb >> "hosts: " >> host_id_strings >> "\n";
+
+        if (!rb.eof())
+            rb >> "initiator: " >> initiator >> "\n";
+        else
+            initiator.clear();
+
+        assertEOF(rb);
+
+        hosts.resize(host_id_strings.size());
+        std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
+    }
+};
 
 
 struct DDLTask
@@ -164,7 +226,7 @@ public:
         const std::string & lock_message_ = "")
     :
         zookeeper(zookeeper_),
-        lock_path(fs::path(lock_prefix_) / lock_name_),
+        lock_path(lock_prefix_ + "/" + lock_name_),
         lock_message(lock_message_),
         log(&Poco::Logger::get("zkutil::Lock"))
     {
@@ -253,7 +315,6 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & 
     , pool_size(pool_size_)
     , worker_pool(pool_size_)
 {
-    CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, 0);
     last_tasks.reserve(pool_size);
 
     queue_dir = zk_root_dir;
@@ -333,7 +394,7 @@ void DDLWorker::recoverZooKeeper()
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
     String node_data;
-    String entry_path = fs::path(queue_dir) / entry_name;
+    String entry_path = queue_dir + "/" + entry_name;
 
     if (!zookeeper->tryGet(entry_path, node_data))
     {
@@ -362,7 +423,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         try
         {
             createStatusDirs(entry_path, zookeeper);
-            zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_fqdn_id, status, zkutil::CreateMode::Persistent);
+            zookeeper->tryCreate(entry_path + "/finished/" + host_fqdn_id, status, zkutil::CreateMode::Persistent);
         }
         catch (...)
         {
@@ -443,7 +504,7 @@ void DDLWorker::scheduleTasks()
             continue;
         }
 
-        bool already_processed = zookeeper->exists(fs::path(task->entry_path)  / "finished" / task->host_id_str);
+        bool already_processed = zookeeper->exists(task->entry_path + "/finished/" + task->host_id_str);
         if (!server_startup && !task->was_executed && already_processed)
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -748,22 +809,6 @@ void DDLWorker::processTask(DDLTask & task)
         task.was_executed = true;
     }
 
-    {
-        DB::ReadBufferFromString in(task.entry_name);
-        DB::assertString("query-", in);
-        UInt64 id;
-        readText(id, in);
-        auto prev_id = max_id.load(std::memory_order_relaxed);
-        while (prev_id < id)
-        {
-            if (max_id.compare_exchange_weak(prev_id, id))
-            {
-                CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
-                break;
-            }
-        }
-    }
-
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
@@ -782,13 +827,6 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
 
     if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
         return false;
-
-    if (auto * alter = ast_ddl->as<ASTAlterQuery>())
-    {
-        // Setting alters should be executed on all replicas
-        if (alter->isSettingsAlter())
-            return false;
-    }
 
     return storage->supportsReplication();
 }
@@ -824,10 +862,10 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     };
 
     String shard_node_name = get_shard_name(task.cluster->getShardsAddresses().at(task.host_shard_num));
-    String shard_path = fs::path(node_path) / "shards" / shard_node_name;
-    String is_executed_path = fs::path(shard_path) / "executed";
-    String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    zookeeper->createAncestors(fs::path(shard_path) / ""); /* appends "/" at the end of shard_path */
+    String shard_path = node_path + "/shards/" + shard_node_name;
+    String is_executed_path = shard_path + "/executed";
+    String tries_to_execute_path = shard_path + "/tries_to_execute";
+    zookeeper->createAncestors(shard_path + "/");
 
     /// Node exists, or we will create or we will get an exception
     zookeeper->tryCreate(tries_to_execute_path, "0", zkutil::CreateMode::Persistent);
@@ -956,8 +994,8 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             return;
 
         String node_name = *it;
-        String node_path = fs::path(queue_dir) / node_name;
-        String lock_path = fs::path(node_path) / "lock";
+        String node_path = queue_dir + "/" + node_name;
+        String lock_path = node_path + "/lock";
 
         Coordination::Stat stat;
         String dummy;
@@ -980,7 +1018,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 continue;
 
             /// Skip if there are active nodes (it is weak guard)
-            if (zookeeper->exists(fs::path(node_path) / "active", &stat) && stat.numChildren > 0)
+            if (zookeeper->exists(node_path + "/active", &stat) && stat.numChildren > 0)
             {
                 LOG_INFO(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
                 continue;
@@ -1006,7 +1044,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
                 for (const String & child : children)
                 {
                     if (child != "lock")
-                        zookeeper->tryRemoveRecursive(fs::path(node_path) / child);
+                        zookeeper->tryRemoveRecursive(node_path + "/" + child);
                 }
 
                 /// Remove the lock node and its parent atomically
@@ -1030,12 +1068,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     Coordination::Requests ops;
     {
         Coordination::CreateRequest request;
-        request.path = fs::path(node_path) / "active";
+        request.path = node_path + "/active";
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     {
         Coordination::CreateRequest request;
-        request.path = fs::path(node_path) / "finished";
+        request.path = node_path + "/finished";
         ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     Coordination::Responses responses;
@@ -1053,7 +1091,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
     auto zookeeper = getAndSetZooKeeper();
 
-    String query_path_prefix = fs::path(queue_dir) / "query-";
+    String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
@@ -1083,7 +1121,7 @@ void DDLWorker::runMainThread()
         try
         {
             auto zookeeper = getAndSetZooKeeper();
-            zookeeper->createAncestors(fs::path(queue_dir) / "");
+            zookeeper->createAncestors(queue_dir + "/");
             initialized = true;
         }
         catch (const Coordination::Exception & e)
@@ -1256,12 +1294,12 @@ public:
                     node_path);
             }
 
-            Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "finished"));
+            Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
             ++try_number;
             if (new_hosts.empty())
                 continue;
 
-            current_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
+            current_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
 
             MutableColumns columns = sample.cloneEmptyColumns();
             for (const String & host_id : new_hosts)
@@ -1269,7 +1307,7 @@ public:
                 ExecutionStatus status(-1, "Cannot obtain error message");
                 {
                     String status_data;
-                    if (zookeeper->tryGet(fs::path(node_path) / "finished" / host_id, status_data))
+                    if (zookeeper->tryGet(node_path + "/finished/" + host_id, status_data))
                         status.tryDeserializeText(status_data);
                 }
 
@@ -1374,9 +1412,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
-        for (const auto & command : query_alter->command_list->children)
+        for (const auto & command : query_alter->command_list->commands)
         {
-            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterType(command->type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }

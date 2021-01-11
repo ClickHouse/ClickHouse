@@ -67,7 +67,7 @@ public:
       * If the data type require single stream (it's true for most of data types), the stream will have empty path.
       * Otherwise, the path can have components like "array elements", "array sizes", etc.
       *
-      * For multidimensional arrays, path can have arbitrary length.
+      * For multidimensional arrays, path can have arbiraty length.
       * As an example, for 2-dimensional arrays of numbers we have at least three streams:
       * - array sizes;                      (sizes of top level arrays)
       * - array elements / array sizes;     (sizes of second level (nested) arrays)
@@ -90,8 +90,6 @@ public:
             NullMap,
 
             TupleElement,
-
-            MapElement,
 
             DictionaryKeys,
             DictionaryIndexes,
@@ -451,7 +449,6 @@ public:
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
-    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
@@ -520,7 +517,6 @@ struct WhichDataType
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
-    constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
@@ -608,14 +604,6 @@ inline bool isColumnedAsDecimal(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isDecimal() || which.isDateTime64();
-}
-
-// Same as isColumnedAsDecimal but also checks value type of underlyig column.
-template <typename T, typename DataType>
-inline bool isColumnedAsDecimalT(const DataType & data_type)
-{
-    const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
 }
 
 template <typename T>
