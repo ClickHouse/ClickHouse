@@ -1031,20 +1031,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
     if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
-
-    {
-        WriteBufferFromOwnString buf;
-        QueryPlan::ExplainPlanOptions query_plan_options{true, true, true};
-        query_plan.explainPlan(buf, query_plan_options);
-        LOG_TRACE(log, "__TEST__ \n{}", buf.str());
-    }
-
-    {
-        WriteBufferFromOwnString buf;
-        QueryPlan::ExplainPipelineOptions query_pipeline_options{true};
-        query_plan.explainPipeline(buf, query_pipeline_options);
-        LOG_TRACE(log, "__TEST__ \n{}", buf.str());
-    }
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)

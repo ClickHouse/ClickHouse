@@ -33,7 +33,7 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
-    std::vector<std::string> function_type_arguments; /// Colection of argument's names for function types.
+    std::vector<std::string> function_type_arguments; /// Collection of argument's names for function types.
 
     SortColumnDescription(
             size_t column_number_, int direction_, int nulls_direction_,
