@@ -11,7 +11,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/FileSyncGuard.h>
+#include <Common/DirectorySyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -549,6 +549,13 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
+            String path_to_data_file = getFullRelativePath() + getFileNameForColumn(part_column) + ".bin";
+            if (!volume->getDisk()->exists(path_to_data_file))
+            {
+                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but data file {} doesn't exists", name, backQuoteIfNeed(part_column.name), path_to_data_file);
+                continue;
+            }
+
             result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
             break;
         }
@@ -828,12 +835,8 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String from = getFullRelativePath();
     String to = storage.relative_data_path + new_relative_path + "/";
 
-    std::optional<FileSyncGuard> sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
-
     if (!volume->getDisk()->exists(from))
-        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
 
     if (volume->getDisk()->exists(to))
     {
@@ -855,6 +858,10 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
+
+    std::optional<DirectorySyncGuard> sync_guard;
+    if (storage.getSettings()->fsync_part_directory)
+        sync_guard.emplace(volume->getDisk(), to);
 }
 
 

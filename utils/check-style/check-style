@@ -85,16 +85,6 @@ find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | gre
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
-# Check for typos in code
-CURDIR=$(dirname "${BASH_SOURCE[0]}")
-"${CURDIR}"/check-typos
-
-# Check sh tests with Shellcheck
-(cd $ROOT_PATH/tests/queries/0_stateless/ && shellcheck --check-sourced --external-sources --severity info --exclude SC1071,SC2086 *.sh ../1_stateful/*.sh)
-
-# Check docker scripts with shellcheck
-find "$ROOT_PATH/docker" -executable -type f -exec file -F'	' --mime-type {} \; | awk -F'	' '$2==" text/x-shellscript" {print $1}' | xargs shellcheck
-
 # There shouldn't be any docker containers outside docker directory
 find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
 
