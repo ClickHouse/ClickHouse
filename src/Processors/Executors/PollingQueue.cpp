@@ -100,12 +100,13 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     if (event.data.ptr == pipe_fd)
         return {};
 
-    std::uintptr_t key = reinterpret_cast<uintptr_t>(event.data.ptr);
+    void * ptr = event.data.ptr;
+    std::uintptr_t key = reinterpret_cast<uintptr_t>(ptr);
     auto it = tasks.find(key);
     if (it == tasks.end())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}",
-                        key, event.data.ptr, dumpTasks(tasks));
+                        key, ptr, dumpTasks(tasks));
     }
 
     auto res = it->second;
