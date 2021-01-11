@@ -260,6 +260,7 @@ TTLDescription TTLDescription::getTTLFromAST(
 TTLTableDescription::TTLTableDescription(const TTLTableDescription & other)
  : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
  , rows_ttl(other.rows_ttl)
+ , rows_where_ttl(other.rows_where_ttl)
  , move_ttl(other.move_ttl)
  , recompression_ttl(other.recompression_ttl)
  , group_by_ttl(other.group_by_ttl)
@@ -277,6 +278,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
         definition_ast.reset();
 
     rows_ttl = other.rows_ttl;
+    rows_where_ttl = other.rows_where_ttl;
     move_ttl = other.move_ttl;
     recompression_ttl = other.recompression_ttl;
     group_by_ttl = other.group_by_ttl;
@@ -296,16 +298,24 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 
     result.definition_ast = definition_ast->clone();
 
-    bool seen_delete_ttl = false;
+    bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
         auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key);
         if (ttl.mode == TTLMode::DELETE)
         {
-            if (seen_delete_ttl)
-                throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
-            result.rows_ttl = ttl;
-            seen_delete_ttl = true;
+            if (!ttl.where_expression)
+            {
+                if (have_unconditional_delete_ttl)
+                    throw Exception("More than one DELETE TTL expression without WHERE expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+
+                have_unconditional_delete_ttl = true;
+                result.rows_ttl = ttl;
+            }
+            else
+            {
+                result.rows_where_ttl.emplace_back(std::move(ttl));
+            }
         }
         else if (ttl.mode == TTLMode::RECOMPRESS)
         {

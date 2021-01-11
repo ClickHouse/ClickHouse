@@ -109,6 +109,9 @@ struct StorageInMemoryMetadata
     TTLDescription getRowsTTL() const;
     bool hasRowsTTL() const;
 
+    TTLDescriptions getRowsWhereTTL() const;
+    bool hasRowsWhereTTL() const;
+
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
     TTLDescriptions getMoveTTLs() const;

@@ -148,6 +148,16 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression != nullptr;
 }
 
+TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTL() const
+{
+    return table_ttl.rows_where_ttl;
+}
+
+bool StorageInMemoryMetadata::hasRowsWhereTTL() const
+{
+    return !table_ttl.rows_where_ttl.empty();
+}
+
 TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
