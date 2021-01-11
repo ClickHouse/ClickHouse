@@ -18,4 +18,5 @@ select mapContains(a, b), mapContains(a, c), mapContains(a, 233) from table_map;
 select mapContains(a, 'aaa') from table_map; -- { serverError 43 }
 select mapContains(b, 'aaa') from table_map; -- { serverError 43 }
 select mapKeys(a) from table_map;
+select mapValues(a) from table_map;
 drop table if exists table_map;
