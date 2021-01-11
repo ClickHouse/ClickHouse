@@ -195,6 +195,13 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+    # On platforms other than macOS, linkers have an option to disable size optimizations. (-O0)
+    # By setting the options, builds (and in particular, linking stages) may be marginally faster.
+    # Additionally, the linker behavior will fall closer in line with what the user would expect.
+    if (NOT OS_DARWIN)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-O0")
+    endif()
+
     # Can be lld or ld-lld.
     if (LINKER_NAME MATCHES "lld$")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
@@ -569,7 +576,6 @@ include (cmake/sanitize_target_link_libraries.cmake)
 # Various build speed optimizations.
 option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder. (No-op on CMake < 3.16.0)" ON)
 option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder. (No-op on CMake < 3.19.0)" ON)
-option(FASTBUILD_NO_LINK_OPT "Disable linker optimizations, such as string merging. Reduces link times." ON)
 option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows GDB symbol loading. Reduces IO." OFF)
 option(FASTBUILD_SPLIT_DWARF "Build with split DWARF files. Makes debugging symbols non-portable. Reduces IO." OFF)
 
@@ -602,7 +608,7 @@ if (FASTBUILD_SPLIT_DWARF AND COMPILER_MATCHES_CCACHE AND CCACHE_VERSION VERSION
     set(FASTBUILD_SPLIT_DWARF OFF CACHE BOOL INTERNAL FORCE)
 endif()
 
-# Handles FASTBUILD_SPLIT_DWARF, FASTBUILD_NO_PUBNAMES, FASTBUILD_NO_LINK_OPT, and FASTBUILD_CONTRIB_UNITY.
+# Handles FASTBUILD_SPLIT_DWARF, FASTBUILD_NO_PUBNAMES, and FASTBUILD_CONTRIB_UNITY.
 # Depends on sanitize_target_link_libraries.cmake
 foreach(TARGET ${all_targets})
     get_target_property(TARGET_TYPE ${TARGET} TYPE)
@@ -627,12 +633,6 @@ foreach(TARGET ${all_targets})
     if (FASTBUILD_NO_PUBNAMES)
         # Improves link times by omitting some debug information. Pairs well with FASTBUILD_SPLIT_DWARF.
         target_compile_options(${TARGET} PRIVATE -gno-pubnames)
-    endif()
-
-    # This handles FASTBUILD_NO_LINK_OPT.
-    if (FASTBUILD_SPLIT_DWARF)
-        # Improves link times by skipping e.g. string merging.
-        target_link_options(${TARGET} PRIVATE -Wl,-O0)
     endif()
 
     # This handles FASTBUILD_CONTRIB_UNITY.
