@@ -457,8 +457,21 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         /// Now they must be equal
         if (column->size() != index_granularity_rows)
         {
-            if (must_be_last && !settings.can_use_adaptive_granularity)
-                break;
+
+            if (must_be_last)
+            {
+                /// The only possible mark after bin.eof() is final mark. When we
+                /// cannot use adaptive granularity we cannot have last mark.
+                /// So finish validation.
+                if (!settings.can_use_adaptive_granularity)
+                    break;
+
+                /// If we don't compute granularity then we are not responsible
+                /// for last mark (for example we mutating some column from part
+                /// with fixed granularity where last mark is not adjusted)
+                if (!compute_granularity)
+                    continue;
+            }
 
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), actually in bin file {}, in mrk file {}, total marks {}",
