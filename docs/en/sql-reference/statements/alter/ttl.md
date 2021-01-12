@@ -15,19 +15,15 @@ ALTER TABLE table_name MODIFY TTL ttl_expression;
 
 ## REMOVE TTL {#remove-ttl}
 
-Removes TTL-property from the specified column.
-
-Syntax:
+TTL-property can be removed from table with the following query:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE TTL 
+ALTER TABLE table_name REMOVE TTL 
 ```
 
 **Example**
 
-Requests and results:
-
-Consider the table:
+Consider the table with table `TTL`:
 
 ```sql
 CREATE TABLE table_with_ttl
@@ -46,13 +42,13 @@ INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');
 INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
 ```
 
-Trigger `TTL` works clearly with `OPTIMIZE` query. Make this to start the background cleaning using TTL:
+Run `OPTIMIZE` to force `TTL` cleanup:
 
 ```sql
 OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
-As a result you see that the second line was deleted.
+Second row was deleted from table.
 
 ```text
 ┌─────────event_time────┬──UserID─┬─────Comment──┐
@@ -60,14 +56,21 @@ As a result you see that the second line was deleted.
 └───────────────────────┴─────────┴──────────────┘
 ```
 
+Now remove table `TTL` with the following query:
+
 ```sql
 ALTER TABLE table_with_ttl REMOVE TTL;
+```
+
+Re-insert the deleted row and force the `TTL` cleanup again with `OPTIMIZE`:
+
+```sql
 INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
 OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
 
-Now TTL-property was removed and there is nothing to be deleted.
+The `TTL` is no longer there, so the second row is not deleted:
 
 ```text
 ┌─────────event_time────┬──UserID─┬─────Comment──┐
