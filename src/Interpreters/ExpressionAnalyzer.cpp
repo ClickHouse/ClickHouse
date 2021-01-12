@@ -561,7 +561,7 @@ void ExpressionAnalyzer::getRootActionsForPushdownLimitToShards(const ASTPtr & a
     ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
                                    no_subqueries, false, only_consts, !isRemoteStorage(), true);
-    for (auto agg : aggregate_descriptions)
+    for (const auto & agg : aggregate_descriptions)
         visitor_data.aggregate_descriptions.push_back(agg);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
