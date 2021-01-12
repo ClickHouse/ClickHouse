@@ -544,6 +544,11 @@ std::string ActionsDAG::dumpDAG() const
         out << "\n";
     }
 
+    out << "Index:";
+    for (const auto * node : index)
+        out << ' ' << map[node];
+    out << '\n';
+
     return out.str();
 }
 
