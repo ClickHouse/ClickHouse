@@ -39,13 +39,14 @@ namespace DB
   * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
-  * - select the leader replica (/leader_election) - these are the replicas that assigning merges, mutations and partition manipulations
+  * - the leader replica election (/leader_election) - these are the replicas that assign merges, mutations
+  *   and partition manipulations.
   *   (after ClickHouse version 20.5 we allow multiple leaders to act concurrently);
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
-  * - coordinates writes with quorum (/quorum).
+  * - coordinate writes with quorum (/quorum).
   * - Storage of mutation entries (ALTER DELETE, ALTER UPDATE etc.) to execute (/mutations).
   *   See comments in StorageReplicatedMergeTree::mutate() for details.
   */
@@ -64,6 +65,8 @@ namespace DB
   * - when creating a new replica, actions are put on GET from other replicas (createReplica);
   * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check (at start - checkParts, while running - searchForMissingPart),
   *   actions are put on GET from other replicas;
+  *
+  * TODO Update the GET part after rewriting the code (search locally).
   *
   * The replica to which INSERT was made in the queue will also have an entry of the GET of this data.
   * Such an entry is considered to be executed as soon as the queue handler sees it.
