@@ -234,8 +234,8 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & c
         /// Materialize column.
         /// Column is not empty if it is constant, but after Join all constants will be materialized.
         /// So, we need remove constants from header.
-        if (col.column)
-            col.column = nullptr;
+        // if (col.column)
+        //     col.column = nullptr;
 
         if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
