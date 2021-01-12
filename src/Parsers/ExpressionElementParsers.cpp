@@ -23,6 +23,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTAssignment.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
@@ -1875,8 +1876,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
-    ParserExpressionList parser_expression_list(false);
+    ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
+
+    ParserList parser_assignment_list(
+        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -1911,9 +1915,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     ASTPtr where_expr;
-    ASTPtr ast_group_by_key;
+    ASTPtr group_by_key;
     ASTPtr recompression_codec;
-    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
+    ASTPtr group_by_assignments;
 
     if (mode == TTLMode::MOVE)
     {
@@ -1925,30 +1929,13 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (mode == TTLMode::GROUP_BY)
     {
-        if (!parser_expression_list.parse(pos, ast_group_by_key, expected))
+        if (!parser_keys_list.parse(pos, group_by_key, expected))
             return false;
 
         if (s_set.ignore(pos))
         {
-            while (true)
-            {
-                if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
-                    break;
-
-                ASTPtr name;
-                ASTPtr value;
-                if (!parser_identifier.parse(pos, name, expected))
-                    return false;
-                if (!s_eq.ignore(pos))
-                    return false;
-                if (!parser_exp.parse(pos, value, expected))
-                    return false;
-
-                String name_str;
-                if (!tryGetIdentifierNameInto(name, name_str))
-                    return false;
-                group_by_aggregations.emplace_back(name_str, std::move(value));
-            }
+            if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
+                return false;
         }
     }
     else if (mode == TTLMode::DELETE && s_where.ignore(pos))
@@ -1972,8 +1959,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::GROUP_BY)
     {
-        ttl_element->group_by_key = std::move(ast_group_by_key->children);
-        ttl_element->group_by_aggregations = std::move(group_by_aggregations);
+        ttl_element->group_by_key = std::move(group_by_key->children);
+        ttl_element->group_by_assignments = std::move(group_by_assignments->children);
     }
 
     if (mode == TTLMode::RECOMPRESS)
@@ -2006,6 +1993,33 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     }
 
     return false;
+}
+
+bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto assignment = std::make_shared<ASTAssignment>();
+    node = assignment;
+
+    ParserIdentifier p_identifier;
+    ParserToken s_equals(TokenType::Equals);
+    ParserExpression p_expression;
+
+    ASTPtr column;
+    if (!p_identifier.parse(pos, column, expected))
+        return false;
+
+    if (!s_equals.ignore(pos, expected))
+        return false;
+
+    ASTPtr expression;
+    if (!p_expression.parse(pos, expression, expected))
+        return false;
+
+    tryGetIdentifierNameInto(column, assignment->column_name);
+    if (expression)
+        assignment->children.push_back(expression);
+
+    return true;
 }
 
 }
