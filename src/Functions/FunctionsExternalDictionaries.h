@@ -402,7 +402,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         DataTypePtr result;
-        
+
         if constexpr (IsDataTypeDecimal<DataType>)
             result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else

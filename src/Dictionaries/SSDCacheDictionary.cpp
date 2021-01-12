@@ -22,7 +22,6 @@
 #include <filesystem>
 #include <city.h>
 #include <fcntl.h>
-
 #include <Functions/FunctionHelpers.h>
 
 namespace ProfileEvents
