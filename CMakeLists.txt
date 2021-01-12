@@ -195,13 +195,6 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # On platforms other than macOS, linkers have an option to disable size optimizations. (-O0)
-    # By setting the options, builds (and in particular, linking stages) may be marginally faster.
-    # Additionally, the linker behavior will fall closer in line with what the user would expect.
-    if (NOT OS_DARWIN)
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-O0")
-    endif()
-
     # Can be lld or ld-lld.
     if (LINKER_NAME MATCHES "lld$")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
@@ -302,6 +295,16 @@ set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
+
+# On platforms other than macOS, linkers have an option to disable size optimizations. (-O0)
+# By setting the options, builds (and in particular, linking stages) may be marginally faster.
+# Additionally, the linker behavior will fall closer in line with what the user would expect.
+# For releases, we allow the linker optimizer to do whatever it can, so options are left as-is.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    if (NOT OS_DARWIN)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-O0")
+    endif()
+endif()
 
 if (COMPILER_CLANG)
     if (OS_DARWIN)
