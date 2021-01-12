@@ -139,7 +139,7 @@ The `ALTER` query for changing columns is replicated. The instructions are saved
 
 ## MODIFY COLUMN REMOVE {#modify-remove}
 
-Removes one of the column properties: DEFAULT, ALIAS, MATERIALIZED, CODEC, COMMENT, TTL.
+Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
 
 Syntax:
 
