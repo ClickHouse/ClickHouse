@@ -6,7 +6,7 @@ toc_priority: 11
 
 # Как импортировать JSON в ClickHouse? {#how-to-import-json-into-clickhouse}
 
-ClickHouse supports a wide range of [data formats for input and output](../../interfaces/formats.md). There are multiple JSON variations among them, but the most commonly used for data ingestion is [JSONEachRow](../../interfaces/formats.md#jsoneachrow). It expects one JSON object per row, each object separated by a newline.
+ClickHouse поддерживаем широкий спектр [форматов данных на входе и выходе](../../interfaces/formats.md). Среди них есть множество вариаци JSON, но чаще всего для импорта данных используют [JSONeachRow](../../interfaces/formats.md#jsoneachrow): один JSON-объект в строке, между ними пустая строка.
 
 ## Примеры {#examples}
 
@@ -26,8 +26,8 @@ $ echo '{"foo":"bar"}'  | clickhouse-client ---query="INSERT INTO test FORMAT JS
 
 ## Полезные настройки {#useful-settings}
 
--   `input_format_skip_unknown_fields` позволяет вставить JSON даже если есть дополнительные поля, которые не были представлены в табличной схеме (отбрасывая их).
+-   `input_format_skip_unknown_fields` позволяет вставить JSON, даже если есть дополнительные поля, которые не были представлены в табличной схеме (отбрасывая их).
 -   `input_format_import_nested_json` позволяет вставить вложенные JSON-объекты в столбцы типа [Nested](../../sql-reference/data-types/nested-data-structures/nested.md).
 
-!!! note "Note"
-    Settings are specified as `GET` parameters for the HTTP interface or as additional command-line arguments prefixed with `--` for the `CLI` interface.
+!!! note "Примечание"
+    Настройки обозначаются как параметры `GET` для HTTP-интерфейса или как дополнительные аргументы командной строки `CLI` interface, начинающиеся с `--`.

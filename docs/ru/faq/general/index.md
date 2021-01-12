@@ -9,7 +9,7 @@ toc_title: Общие вопросы
 
 Вопросы:
 
--   [Что такое ClickHouse?](../../index.md#what-is-clickhouse)
+<!-- -   [Что такое ClickHouse?](../../index.md#what-is-clickhouse)-->
 -   [Почему ClickHouse такой быстрый?](why-clickhouse-is-so-fast.md)
 -   [Кто пользуется ClickHouse?](who-is-using-clickhouse.md)
 -   [Что обозначает название “ClickHouse”?](dbms-naming.md)
