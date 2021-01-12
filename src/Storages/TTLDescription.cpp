@@ -1,5 +1,6 @@
 #include <Storages/TTLDescription.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -7,11 +8,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
 
 #include <Parsers/queryToString.h>
-
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -197,16 +199,31 @@ TTLDescription TTLDescription::getTTLFromAST(
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
 
-            for (const auto & [name, _] : ttl_element->group_by_aggregations)
+            std::vector<std::pair<String, ASTPtr>> aggregations;
+            for (const auto & ast : ttl_element->group_by_assignments)
+            {
+                const auto assignment = ast->as<const ASTAssignment &>();
+                auto expression = assignment.expression();
+
+                const auto * expression_func = expression->as<const ASTFunction>();
+                if (!expression_func || !AggregateFunctionFactory::instance().isAggregateFunctionName(expression_func->name))
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                    "Invalid expression for assignment of column {}. Should be an aggregate function", assignment.column_name);
+
+                auto type_literal = std::make_shared<ASTLiteral>(columns.getPhysical(assignment.column_name).type->getName());
+                expression = makeASTFunction("cast", expression->clone(), type_literal);
+                aggregations.emplace_back(assignment.column_name, std::move(expression));
+            }
+
+            for (const auto & [name, _] : aggregations)
                 aggregation_columns_set.insert(name);
 
-            if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
+            if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(
                     "Multiple aggregations set for one column in TTL Expression",
                     ErrorCodes::BAD_TTL_EXPRESSION);
 
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
-            auto aggregations = ttl_element->group_by_aggregations;
 
             const auto & primary_key_expressions = primary_key.expression_list_ast->children;
             for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
