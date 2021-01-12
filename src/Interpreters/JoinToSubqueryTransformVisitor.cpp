@@ -475,8 +475,10 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             if (!ident->isShort())
             {
                 if (got_alias)
-                    throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-
+                {
+                    if (aliases.find(ident->name())->second->ptr().get() != ident)
+                        throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                }
                 String short_name = ident->shortName();
                 String original_long_name;
                 if (public_identifiers.count(ident))
