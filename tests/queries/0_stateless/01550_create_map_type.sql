@@ -63,3 +63,4 @@ SELECT sum(m['1']), sum(m['7']), sum(m['100']) FROM table_map;
 
 DROP TABLE IF EXISTS table_map;
 
+SELECT CAST(([2, 1, 1023], ['', '']), 'Map(UInt8, String)') AS map, map[10] -- { serverError 53}

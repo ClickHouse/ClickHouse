@@ -12,7 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
-#include <Common/FileSyncGuard.h>
+#include <Common/DirectorySyncGuard.h>
 #include <DataStreams/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
@@ -352,7 +352,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    std::optional<FileSyncGuard> sync_guard;
+    std::optional<DirectorySyncGuard> sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
         /// The name could be non-unique in case of stale files from previous runs.

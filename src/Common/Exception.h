@@ -98,7 +98,7 @@ private:
 
 
 /// Special class of exceptions, used mostly in ParallelParsingInputFormat for
-/// more convinient calculation of problem line number.
+/// more convenient calculation of problem line number.
 class ParsingException : public Exception
 {
 public:

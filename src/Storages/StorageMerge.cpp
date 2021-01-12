@@ -1,6 +1,5 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -542,7 +541,6 @@ void StorageMerge::convertingSourceStream(
                                     + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
-
     }
 }
 

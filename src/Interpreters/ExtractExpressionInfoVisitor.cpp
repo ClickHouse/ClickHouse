@@ -22,14 +22,21 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     {
         data.is_array_join = true;
     }
-    // "is_aggregate_function" doesn't mean much by itself. Apparently here it is
-    // used to move filters from HAVING to WHERE, and probably for this purpose
-    // an aggregate function calculated as a window function is not relevant.
+    // "is_aggregate_function" is used to determine whether we can move a filter
+    // (1) from HAVING to WHERE or (2) from WHERE of a parent query to HAVING of
+    // a subquery.
+    // For aggregate functions we can't do (1) but can do (2).
+    // For window functions both don't make sense -- they are not allowed in
+    // WHERE or HAVING.
     else if (!ast_function.is_window_function
         && AggregateFunctionFactory::instance().isAggregateFunctionName(
             ast_function.name))
     {
         data.is_aggregate_function = true;
+    }
+    else if (ast_function.is_window_function)
+    {
+        data.is_window_function = true;
     }
     else
     {
@@ -75,15 +82,26 @@ bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
     return !node->as<ASTSubquery>();
 }
 
-bool hasStatefulFunction(const ASTPtr & node, const Context & context)
+bool hasNonRewritableFunction(const ASTPtr & node, const Context & context)
 {
     for (const auto & select_expression : node->children)
     {
         ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
-        if (expression_info.is_stateful_function)
+        if (expression_info.is_stateful_function
+            || expression_info.is_window_function)
+        {
+            // If an outer query has a WHERE on window function, we can't move
+            // it into the subquery, because window functions are not allowed in
+            // WHERE and HAVING. Example:
+            // select * from (
+            //     select number,
+            //          count(*) over (partition by intDiv(number, 3)) c
+            //     from numbers(3)
+            // ) where c > 1;
             return true;
+        }
     }
 
     return false;
