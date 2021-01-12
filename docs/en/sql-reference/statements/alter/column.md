@@ -23,7 +23,7 @@ The following actions are supported:
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY REMOVE](#modify-remove) — Removes one of the column properties.
+-   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
 
 These actions are described in detail below.
 
@@ -137,7 +137,7 @@ If there is a failure during one of the successive stages, data can be restored 
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-## MODIFY REMOVE {#modify-remove}
+## MODIFY COLUMN REMOVE {#modify-remove}
 
 Removes one of the column properties: DEFAULT, ALIAS, MATERIALIZED, CODEC, COMMENT, TTL.
 
