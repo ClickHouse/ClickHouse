@@ -612,10 +612,10 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
 MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 {
     //create a new col to return
-    MutableColumnPtr cloneCol = cloneEmpty();
-    auto * res = typeid_cast<ColumnAggregateFunction *>(cloneCol.get());
+    MutableColumnPtr cloned_col = cloneEmpty();
+    auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
     if (size == 0)
-        return cloneCol;
+        return cloned_col;
 
     size_t from_size = data.size();
     auto & res_data = res->data;
@@ -638,6 +638,6 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
             res->insertDefault();
         }
     }
-    return cloneCol;
+    return cloned_col;
 }
 }
