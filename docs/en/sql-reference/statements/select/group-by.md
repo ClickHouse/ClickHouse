@@ -255,6 +255,10 @@ For every different key value encountered, `GROUP BY` calculates a set of aggreg
 
 Aggregation is one of the most important features of a column-oriented DBMS, and thus it’s implementation is one of the most heavily optimized parts of ClickHouse. By default, aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
 
+### GROUP BY Optimization Depending on Table Sorting Key {#aggregation-in-order}
+
+If a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions, the in-between result of aggreagtion can be finalized and sent to client when a new key is read from table. This behaviour is switched on with the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting.
+
 ### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
