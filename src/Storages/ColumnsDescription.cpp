@@ -541,12 +541,12 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     return result;
 }
 
-void ColumnsDescription::addSubcolumns(const String & storage_name, const DataTypePtr & storage_type)
+void ColumnsDescription::addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
 {
-    for (const auto & subcolumn_name : storage_type->getSubcolumnNames())
+    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
     {
-        auto subcolumn = NameAndTypePair(storage_name, subcolumn_name,
-            storage_type, storage_type->getSubcolumnType(subcolumn_name));
+        auto subcolumn = NameAndTypePair(name_in_storage, subcolumn_name,
+            type_in_storage, type_in_storage->getSubcolumnType(subcolumn_name));
 
         if (has(subcolumn.name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -556,10 +556,10 @@ void ColumnsDescription::addSubcolumns(const String & storage_name, const DataTy
     }
 }
 
-void ColumnsDescription::removeSubcolumns(const String & storage_name, const DataTypePtr & storage_type)
+void ColumnsDescription::removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage)
 {
-    for (const auto & subcolumn_name : storage_type->getSubcolumnNames())
-        subcolumns.erase(storage_name + "." + subcolumn_name);
+    for (const auto & subcolumn_name : type_in_storage->getSubcolumnNames())
+        subcolumns.erase(name_in_storage + "." + subcolumn_name);
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context)
