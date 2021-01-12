@@ -697,7 +697,8 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     /// Will store merged result in `first`.
 
     /// This map contains nodes which should be removed from `first` index, cause they are used as inputs for `second`.
-    std::unordered_set<Node *> removed_first_result;
+    /// The second element is the number of removes (cause one node may be repeated several times in result).
+    std::unordered_map<Node *, size_t> removed_first_result;
     /// Map inputs of `second` to nodes of `first`.
     std::unordered_map<Node *, Node *> inputs_map;
 
@@ -722,7 +723,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             else
             {
                 inputs_map[node] = it->second.front();
-                removed_first_result.emplace(it->second.front());
+                removed_first_result[it->second.front()] += 1;
                 it->second.pop_front();
             }
         }
@@ -766,8 +767,12 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             auto cur = it;
             ++it;
 
-            if (removed_first_result.count(*cur))
+            auto jt = removed_first_result.find(*cur);
+            if (jt != removed_first_result.end() && jt->second > 0)
+            {
                 first.index.remove(cur);
+                --jt->second;
+            }
         }
 
         for (auto * node : second.index)
