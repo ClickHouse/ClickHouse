@@ -56,6 +56,9 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/getExecutablePath.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Elf.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -78,16 +81,6 @@ static void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
     raise(sig);
-}
-
-const char * msan_strsignal(int sig)
-{
-    // Apparently strsignal is not instrumented by MemorySanitizer, so we
-    // have to unpoison it to avoid msan reports inside fmt library when we
-    // print it.
-    const char * signal_name = sys_siglist[sig];
-    __msan_unpoison_string(signal_name);
-    return signal_name;
 }
 
 static constexpr size_t max_query_id_size = 127;
@@ -294,13 +287,13 @@ private:
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (no query) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, msan_strsignal(sig), sig);
+                thread_num, strsignal(sig), sig);
         }
         else
         {
             LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, msan_strsignal(sig), sig);
+                thread_num, query_id, strsignal(sig), sig);
         }
 
         String error_message;
@@ -327,6 +320,32 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+#if defined(__linux__)
+        /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+        if (daemon.stored_binary_hash.empty())
+        {
+            LOG_FATAL(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == daemon.stored_binary_hash)
+        {
+            LOG_FATAL(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+        }
+        else
+        {
+            LOG_FATAL(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                " to the reference checksum stored in the binary ({1})."
+                " It may indicate one of the following:"
+                " - the file was changed just after startup;"
+                " - the file is damaged on disk due to faulty hardware;"
+                " - the loaded executable is damaged in memory due to faulty hardware;"
+                " - the file was intentionally modified;"
+                " - logical error in code."
+                , calculated_binary_hash, daemon.stored_binary_hash);
+        }
+#endif
 
         /// Write crash to system.crash_log table if available.
         if (collectCrashLog)
@@ -481,8 +500,9 @@ void BaseDaemon::kill()
 {
     dumpCoverageReportIfPossible();
     pid_file.reset();
-    if (::raise(SIGKILL) != 0)
-        throw Poco::SystemException("cannot kill process");
+    /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+    /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+    _exit(128 + SIGKILL);
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
@@ -787,6 +807,13 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 #else
     build_id_info = "no build id";
 #endif
+
+#if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+
+    if (!executable_path.empty())
+        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
+#endif
 }
 
 void BaseDaemon::logRevision() const
@@ -846,13 +873,13 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + msan_strsignal(signal_id), 0);
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", msan_strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
@@ -997,4 +1024,10 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, original_process_name.c_str(), original_process_name.size());
 #endif
     }
+}
+
+
+String BaseDaemon::getStoredBinaryHash() const
+{
+    return stored_binary_hash;
 }
