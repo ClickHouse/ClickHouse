@@ -255,7 +255,8 @@ void DiskCacheWrapper::removeRecursive(const String & path)
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)
 {
-    if (cache_disk->exists(src_path))
+    /// Don't create hardlinks for cache files to shadow directory as it just waste cache disk space.
+    if (cache_disk->exists(src_path) && !dst_path.starts_with("shadow/"))
     {
         auto dir_path = directoryPath(dst_path);
         if (!cache_disk->exists(dir_path))

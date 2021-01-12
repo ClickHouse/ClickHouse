@@ -50,6 +50,7 @@ public:
     void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
     Executor & getExecutor() override;
+    void onFreeze(const String & path) override;
 
 protected:
     DiskPtr delegate;
