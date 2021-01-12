@@ -130,7 +130,7 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, res.fd, &event))
         throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 
-    log.emplace_back(Log{.add = true, .key = key, .ptr = ptr});
+    log.emplace_back(Log{.add = false, .key = key, .ptr = ptr});
 
     return res;
 }
