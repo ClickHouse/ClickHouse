@@ -9,7 +9,6 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/getThreadId.h>
 
 namespace DB
 {

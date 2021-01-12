@@ -4,7 +4,6 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
