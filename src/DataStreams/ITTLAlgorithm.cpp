@@ -25,7 +25,8 @@ bool ITTLAlgorithm::isTTLExpired(time_t ttl) const
     return (ttl && (ttl <= current_time));
 }
 
-ColumnPtr ITTLAlgorithm::extractRequieredColumn(const ExpressionActionsPtr & expression, const Block & block, const String & result_column)
+ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
+    const ExpressionActionsPtr & expression, const Block & block, const String & result_column)
 {
     if (!expression)
         return nullptr;
@@ -37,7 +38,10 @@ ColumnPtr ITTLAlgorithm::extractRequieredColumn(const ExpressionActionsPtr & exp
     for (const auto & column_name : expression->getRequiredColumns())
         block_copy.insert(block.getByName(column_name));
 
-    expression->execute(block_copy);
+    /// Keep number of rows for const expression.
+    size_t num_rows = block.rows();
+    expression->execute(block_copy, num_rows);
+
     return block_copy.getByName(result_column).column;
 }
 

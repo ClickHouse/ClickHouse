@@ -14,7 +14,7 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     if (!block)
         return;
 
-    auto ttl_column = extractRequieredColumn(description.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
     for (size_t i = 0; i < block.rows(); ++i)
     {
         UInt32 cur_ttl = ITTLAlgorithm::getTimestampByIndex(ttl_column.get(), i);

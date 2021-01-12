@@ -16,8 +16,8 @@ void TTLDeleteAlgorithm::execute(Block & block)
     if (!block || !isMinTTLExpired())
         return;
 
-    auto ttl_column = extractRequieredColumn(description.expression, block, description.result_column);
-    auto where_column = extractRequieredColumn(description.where_expression, block, description.where_result_column);
+    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+    auto where_column = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
 
     MutableColumns result_columns;
     const auto & column_names = block.getNames();

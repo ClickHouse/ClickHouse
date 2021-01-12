@@ -23,10 +23,15 @@ public:
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }
     bool isMaxTTLExpired() const { return isTTLExpired(old_ttl_info.max); }
 
+    /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
+      * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
+      */
+    static ColumnPtr executeExpressionAndGetColumn(
+        const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
+
 protected:
     bool isTTLExpired(time_t ttl) const;
     UInt32 getTimestampByIndex(const IColumn * column, size_t index) const;
-    static ColumnPtr extractRequieredColumn(const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
     const TTLDescription description;
     const TTLInfo old_ttl_info;

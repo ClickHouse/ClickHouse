@@ -56,8 +56,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
     MutableColumns result_columns = header.cloneEmptyColumns();
     MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
-    auto ttl_column = extractRequieredColumn(description.expression, block, description.result_column);
-    auto where_column = extractRequieredColumn(description.where_expression, block, description.where_result_column);
+    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+    auto where_column = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
 
     size_t rows_aggregated = 0;
     size_t current_key_start = 0;
