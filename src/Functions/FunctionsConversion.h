@@ -2101,7 +2101,7 @@ private:
 
     template <typename ToDataType>
     std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
-    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type) const
+    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
     {
         TypeIndex type_index = from_type->getTypeId();
         UInt32 scale = to_type->getScale();
@@ -2117,7 +2117,7 @@ private:
             throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        return [type_index, scale, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        return [type_index, scale, to_type, requested_result_is_nullable] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
         {
             ColumnPtr result_column;
             auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
@@ -2125,6 +2125,20 @@ private:
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
+
+                if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
+                {
+                    if (requested_result_is_nullable)
+                    {
+                        /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
+                        /// In case when converting to Nullable type, we apply different parsing rule,
+                        /// that will not throw an exception but return NULL in case of malformed input.
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast, ConvertReturnNullOnErrorTag>::execute(
+                            arguments, result_type, input_rows_count, scale);
+
+                        return true;
+                    }
+                }
 
                 result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, scale);
                 return true;
@@ -2598,7 +2612,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>> ||
                 std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
-                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
+                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
             }
             if constexpr (std::is_same_v<ToDataType, DataTypeUUID>)
