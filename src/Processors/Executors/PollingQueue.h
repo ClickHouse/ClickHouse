@@ -25,20 +25,11 @@ public:
         explicit operator bool() const { return data; }
     };
 
-    struct Log
-    {
-        bool add;
-        std::uintptr_t key;
-        const void * ptr;
-        uint64_t thread_id;
-    };
-
 private:
     int epoll_fd;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
-    std::vector<Log> log;
 
 public:
     PollingQueue();
