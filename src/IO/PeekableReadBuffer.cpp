@@ -8,9 +8,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/,
-                                                              size_t unread_limit_ /* = default_limit*/)
-        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_), unread_limit(unread_limit_)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
+        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_)
 {
     padded &= sub_buf.isPadded();
     /// Read from sub-buffer
@@ -191,8 +190,6 @@ void PeekableReadBuffer::checkStateCorrect() const
     }
     if (currentlyReadFromOwnMemory() && !peeked_size)
         throw DB::Exception("Pos in empty own buffer", ErrorCodes::LOGICAL_ERROR);
-    if (unread_limit < memory.size())
-        throw DB::Exception("Size limit exceed", ErrorCodes::LOGICAL_ERROR);
 }
 
 void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
@@ -222,16 +219,11 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         }
         else
         {
-            if (unread_limit < new_size)
-                throw DB::Exception("PeekableReadBuffer: Memory limit exceed", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-
             size_t pos_offset = pos - memory.data();
 
             size_t new_size_amortized = memory.size() * 2;
             if (new_size_amortized < new_size)
                 new_size_amortized = new_size;
-            else if (unread_limit < new_size_amortized)
-                new_size_amortized = unread_limit;
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)
