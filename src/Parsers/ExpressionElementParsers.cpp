@@ -1960,7 +1960,8 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (mode == TTLMode::GROUP_BY)
     {
         ttl_element->group_by_key = std::move(group_by_key->children);
-        ttl_element->group_by_assignments = std::move(group_by_assignments->children);
+        if (group_by_assignments)
+            ttl_element->group_by_assignments = std::move(group_by_assignments->children);
     }
 
     if (mode == TTLMode::RECOMPRESS)
