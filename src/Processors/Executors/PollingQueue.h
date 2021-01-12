@@ -30,6 +30,7 @@ public:
         bool add;
         std::uintptr_t key;
         const void * ptr;
+        uint64_t thread_id;
     };
 
 private:
