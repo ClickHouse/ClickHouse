@@ -23,7 +23,6 @@ SKIP_LIST = [
     "00933_test_fix_extra_seek_on_compressed_cache",
     "00965_logs_level_bugfix",
     "00965_send_logs_level_concurrent_queries",
-    # "00967_insert_into_distributed_different_types.sql",  # FLAKY
     "00990_hasToken",
     "00990_metric_log_table_not_empty",
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
@@ -38,6 +37,7 @@ SKIP_LIST = [
     "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
     "01098_temporary_and_external_tables",
+    "01099_parallel_distributed_insert_select",
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
@@ -74,12 +74,14 @@ SKIP_LIST = [
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
     "01586_storage_join_low_cardinality_key",
+    "01591_window_functions",  # problem with global echo-mode
     "01599_multiline_input_and_singleline_comments",
     "01600_benchmark_query",
     "01601_custom_tld",
     "01601_proxy_protocol",
     "01606_git_import",
     "01610_client_spawn_editor",
+    "01621_clickhouse_compressor",
 ]
 
 

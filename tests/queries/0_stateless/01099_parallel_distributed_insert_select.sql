@@ -1,4 +1,4 @@
-set insert_distributed_sync = 1;
+-- set insert_distributed_sync = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
 
 DROP TABLE IF EXISTS local_01099_a;
 DROP TABLE IF EXISTS local_01099_b;
