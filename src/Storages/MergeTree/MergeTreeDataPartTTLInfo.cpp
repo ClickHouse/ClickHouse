@@ -143,8 +143,8 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         if (!is_first)
             writeString(",", out);
 
-        writeString(type, out);
-        writeString(R"(:[)", out);
+        writeDoubleQuotedString(type, out);
+        writeString(":[", out);
         for (auto it = infos.begin(); it != infos.end(); ++it)
         {
             if (it != infos.begin())
@@ -162,16 +162,26 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
     };
 
     bool is_first = columns_ttl.empty() && !table_ttl.min;
-    write_infos(moves_ttl, "moves", is_first);
+    if (!moves_ttl.empty())
+    {
+        write_infos(moves_ttl, "moves", is_first);
+        is_first = false;
+    }
 
-    is_first &= moves_ttl.empty();
-    write_infos(recompression_ttl, "recompression", is_first);
+    if (!recompression_ttl.empty())
+    {
+        write_infos(recompression_ttl, "recompression", is_first);
+        is_first = false;
+    }
 
-    is_first &= recompression_ttl.empty();
-    write_infos(group_by_ttl, "group_by", is_first);
+    if (!group_by_ttl.empty())
+    {
+        write_infos(group_by_ttl, "group_by", is_first);
+        is_first = false;
+    }
 
-    is_first &= group_by_ttl.empty();
-    write_infos(rows_where_ttl, "rows_where", is_first);
+    if (!rows_where_ttl.empty())
+        write_infos(rows_where_ttl, "rows_where", is_first);
 
     writeString("}", out);
 }
