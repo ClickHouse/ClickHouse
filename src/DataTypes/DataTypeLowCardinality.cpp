@@ -584,9 +584,8 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreamsImpl(
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
+    SubstreamsCache * /* cache */) const
 {
-    UNUSED(cache);
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(column);
 
     settings.path.push_back(Substream::DictionaryKeys);

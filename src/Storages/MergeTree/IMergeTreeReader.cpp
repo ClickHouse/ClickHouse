@@ -285,7 +285,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part->getColumnPosition(part_column);
+            auto position = data_part->getColumnPosition(part_column.name);
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }

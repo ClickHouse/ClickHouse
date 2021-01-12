@@ -174,7 +174,7 @@ void MergeTreeReaderWide::readData(
     {
         return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
         {
-            /// If offsets for arrays have already been read. TODO
+            /// If substream have already been read.
             if (cache.count(IDataType::getSubcolumnNameForStream(substream_path)))
                 return nullptr;
 

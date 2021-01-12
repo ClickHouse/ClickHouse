@@ -57,7 +57,7 @@ private:
     void seekToMark(size_t row_index, size_t column_index);
 
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
-        size_t column_position, size_t rows_to_read, bool only_offsets, IDataType::SubstreamsCache & cache);
+        size_t column_position, size_t rows_to_read, bool only_offsets);
 
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.

@@ -121,7 +121,7 @@ Chunk TinyLogSource::generate()
 {
     Block res;
 
-    if (is_finished || (!streams.empty() && streams.begin()->second->compressed.eof()))
+    if (is_finished || file_sizes.empty() || (!streams.empty() && streams.begin()->second->compressed.eof()))
     {
         /** Close the files (before destroying the object).
           * When many sources are created, but simultaneously reading only a few of them,
@@ -131,10 +131,6 @@ Chunk TinyLogSource::generate()
         streams.clear();
         return {};
     }
-
-    /// if there are no files in the folder, it means that the table is empty
-    if (storage.disk->isDirectoryEmpty(storage.table_path))
-        return {};
 
     std::unordered_map<String, IDataType::SubstreamsCache> caches;
     for (const auto & name_type : columns)
