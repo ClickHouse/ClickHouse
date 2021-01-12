@@ -1352,29 +1352,25 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
 
     bool do_fetch = false;
+
     if (entry.type == LogEntry::GET_PART)
     {
+        /// Before fetching the part, we need to look for it in the detached/ folder by checksum.
+        /// If we are lucky, we do not copy the part over the network.
+        // TODO
         do_fetch = true;
     }
     else if (entry.type == LogEntry::MERGE_PARTS)
-    {
         /// Sometimes it's better to fetch merged part instead of merge
         /// For example when we don't have all source parts for merge
         do_fetch = !tryExecuteMerge(entry);
-    }
     else if (entry.type == LogEntry::MUTATE_PART)
-    {
         /// Sometimes it's better to fetch mutated part instead of merge
         do_fetch = !tryExecutePartMutation(entry);
-    }
     else if (entry.type == LogEntry::ALTER_METADATA)
-    {
         return executeMetadataAlter(entry);
-    }
     else
-    {
         throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
-    }
 
     if (do_fetch)
         return executeFetch(entry);
@@ -4460,13 +4456,19 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false);   /// TODO Allow to use quorum here.
+    /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false);
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        String old_name = loaded_parts[i]->name;
+        const String old_name = loaded_parts[i]->name;
+
         output.writeExistingPart(loaded_parts[i]);
+
         renamed_parts.old_and_new_names[i].first.clear();
+
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
+
         results.push_back(PartitionCommandResultInfo{
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
