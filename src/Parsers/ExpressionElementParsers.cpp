@@ -8,21 +8,22 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
 
-#include <Parsers/IAST.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTTTLElement.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTTTLElement.h>
+#include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/IAST.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
@@ -413,8 +414,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // of a different type, hence this workaround with a temporary pointer.
         ASTPtr function_node_as_iast = function_node;
 
-        ParserWindowDefinition window_definition;
-        if (!window_definition.parse(pos, function_node_as_iast, expected))
+        ParserWindowReference window_reference;
+        if (!window_reference.parse(pos, function_node_as_iast, expected))
         {
             return false;
         }
@@ -424,7 +425,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
 
@@ -493,6 +494,102 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     ++pos;
 
+    return true;
+}
+
+bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto result = std::make_shared<ASTWindowDefinition>();
+
+    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_openging_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    ParserKeyword keyword_partition_by("PARTITION BY");
+    ParserNotEmptyExpressionList columns_partition_by(
+        false /* we don't allow declaring aliases here*/);
+    ParserKeyword keyword_order_by("ORDER BY");
+    ParserOrderByExpressionList columns_order_by;
+
+    if (keyword_partition_by.ignore(pos, expected))
+    {
+        ASTPtr partition_by_ast;
+        if (columns_partition_by.parse(pos, partition_by_ast, expected))
+        {
+            result->children.push_back(partition_by_ast);
+            result->partition_by = partition_by_ast;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    if (keyword_order_by.ignore(pos, expected))
+    {
+        ASTPtr order_by_ast;
+        if (columns_order_by.parse(pos, order_by_ast, expected))
+        {
+            result->children.push_back(order_by_ast);
+            result->order_by = order_by_ast;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+    if (!parser_closing_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    node = result;
+    return true;
+}
+
+bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto result = std::make_shared<ASTExpressionList>();
+
+    for (;;)
+    {
+        auto elem = std::make_shared<ASTWindowListElement>();
+
+        ParserIdentifier parser_window_name;
+        ASTPtr window_name_identifier;
+        if (!parser_window_name.parse(pos, window_name_identifier, expected))
+        {
+            return false;
+        }
+        elem->name = getIdentifierName(window_name_identifier);
+
+        ParserKeyword keyword_as("AS");
+        if (!keyword_as.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        ParserWindowDefinition parser_window_definition;
+        if (!parser_window_definition.parse(pos, elem->definition, expected))
+        {
+            return false;
+        }
+
+        result->children.push_back(elem);
+
+        // If the list countinues, there should be a comma.
+        ParserToken parser_comma(TokenType::Comma);
+        if (!parser_comma.ignore(pos))
+        {
+            break;
+        }
+    }
+
+    node = result;
     return true;
 }
 
@@ -1267,41 +1364,42 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 const char * ParserAlias::restricted_keywords[] =
 {
-    "FROM",
-    "FINAL",
-    "SAMPLE",
-    "ARRAY",
-    "LEFT",
-    "RIGHT",
-    "INNER",
-    "FULL",
-    "CROSS",
-    "JOIN",
-    "GLOBAL",
-    "ANY",
     "ALL",
-    "ASOF",
-    "SEMI",
     "ANTI",
-    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
-    "ON",
-    "USING",
-    "PREWHERE",
-    "WHERE",
-    "GROUP",
-    "WITH",
-    "HAVING",
-    "ORDER",
-    "LIMIT",
-    "OFFSET",
-    "SETTINGS",
-    "FORMAT",
-    "UNION",
-    "INTO",
-    "NOT",
+    "ANY",
+    "ARRAY",
+    "ASOF",
     "BETWEEN",
-    "LIKE",
+    "CROSS",
+    "FINAL",
+    "FORMAT",
+    "FROM",
+    "FULL",
+    "GLOBAL",
+    "GROUP",
+    "HAVING",
     "ILIKE",
+    "INNER",
+    "INTO",
+    "JOIN",
+    "LEFT",
+    "LIKE",
+    "LIMIT",
+    "NOT",
+    "OFFSET",
+    "ON",
+    "ONLY", /// YQL synonym for ANTI. Note: YQL is the name of one of Yandex proprietary languages, completely unrelated to ClickHouse.
+    "ORDER",
+    "PREWHERE",
+    "RIGHT",
+    "SAMPLE",
+    "SEMI",
+    "SETTINGS",
+    "UNION",
+    "USING",
+    "WHERE",
+    "WINDOW",
+    "WITH",
     nullptr
 };
 
