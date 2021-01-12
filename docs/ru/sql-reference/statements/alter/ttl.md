@@ -15,19 +15,15 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 ## REMOVE TTL {#remove-ttl}
 
-Убирает свойство TTL из выбранного вами столбца.
-
-Синтаксис:
+Удалить табличный TTL можно запросом следующего вида:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE TTL 
+ALTER TABLE table_name REMOVE TTL 
 ```
 
 **Пример**
 
-Запросы и результаты:
-
-Создадим таблицу:
+Создадим таблицу с табличным `TTL` и заполним её данными:
 
 ```sql
 CREATE TABLE table_with_ttl
@@ -46,11 +42,11 @@ INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');
 INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
 ```
 
-Чтобы провести фоновую очистку с помощью TTL, выполните:
+Выполним `OPTIMIZE` для принудительной очистки по `TTL`:
 
 ```sql
 OPTIMIZE TABLE table_with_ttl FINAL;
-SELECT * FROM table_with_ttl FORMAT PrettyCompact;
+SELECT * FROM table_with_ttl;
 ```
 В результате видно, что вторая строка удалена.
 
@@ -60,14 +56,21 @@ SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 └───────────────────────┴─────────┴──────────────┘
 ```
 
+Удаляем табличный `TTL`:
+
 ```sql
 ALTER TABLE table_with_ttl REMOVE TTL;
-INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
-OPTIMIZE TABLE table_with_ttl FINAL;
-SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
 
-А вот теперь ничего не удалено.
+Заново вставляем удаленную строку и снова принудительно запускаем очистку по `TTL` с помощью `OPTIMIZE`:
+
+```sql 
+INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+OPTIMIZE TABLE table_with_ttl FINAL;
+SELECT * FROM table_with_ttl;
+```
+
+`TTL` больше нет, поэтому данные не удаляются:
 
 ```text
 ┌─────────event_time────┬──UserID─┬─────Comment──┐
