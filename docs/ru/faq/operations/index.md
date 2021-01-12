@@ -1,5 +1,5 @@
 ---
-title: Question about operating ClickHouse servers and clusters
+title: Вопросы о производительности серверов и кластеров ClickHouse
 toc_hidden_folder: true
 toc_priority: 3
 toc_title: Операции

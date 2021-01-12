@@ -1,5 +1,5 @@
 ---
-title: Questions about integrating ClickHouse and other systems
+title: Вопросы об интеграции ClickHouse с другими системами
 toc_hidden_folder: true
 toc_priority: 4
 toc_title: Интеграция

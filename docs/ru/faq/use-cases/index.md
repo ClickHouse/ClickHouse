@@ -1,5 +1,5 @@
 ---
-title: Questions about ClickHouse use cases
+title: Вопросы о применении ClickHouse
 toc_hidden_folder: true
 toc_priority: 2
 toc_title: Применение

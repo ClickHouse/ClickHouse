@@ -1,5 +1,5 @@
 ---
-title: How do I export data from ClickHouse to a file?
+title: Как экспортировать данные из ClickHouse в файл?
 toc_hidden: true
 toc_priority: 10
 ---

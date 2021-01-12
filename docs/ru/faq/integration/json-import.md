@@ -1,5 +1,5 @@
 ---
-title: How to import JSON into ClickHouse?
+title: Как импортировать JSON в ClickHouse?
 toc_hidden: true
 toc_priority: 11
 ---

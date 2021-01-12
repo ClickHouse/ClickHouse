@@ -1,15 +1,15 @@
 ---
-title: Can I use ClickHouse as a time-series database?
+title: Можно ли использовать ClickHouse как базу данных временных рядов??
 toc_hidden: true
 toc_priority: 101
 ---
 
 # Можно ли использовать ClickHouse как базу данных временных рядов? {#can-i-use-clickhouse-as-a-time-series-database}
 
-ClickHouse is a generic data storage solution for [OLAP](../../faq/general/olap.md) workloads, while there are many specialized time-series database management systems. Nevertheless, ClickHouse’s [focus on query execution speed](../../faq/general/why-clickhouse-is-so-fast.md) allows it to outperform specialized systems in many cases. There are many independent benchmarks on this topic out there ([example](https://medium.com/@AltinityDB/clickhouse-for-time-series-scalability-benchmarks-e181132a895b)), so we’re not going to conduct one here. Instead, let’s focus on ClickHouse features that are important to use if that’s your use case.
+ClickHouse — это общее решение хранения данных для рабочих потоков [OLAP](../../faq/general/olap.md), в то время как существует много специализированных систем управления базами данных временных рядов. Тем не менее, CLickHouse [сосредотачивается на скорости выполнения запроса](../../faq/general/why-clickhouse-is-so-fast.md) и это позволяет во многих случаях срабатывать лучше специализированных систем. Есть много [примеров](https://medium.com/@AltinityDB/clickhouse-for-time-series-scalability-benchmarks-e181132a895b) несвязанных направлений в этой теме, так что мы не будем останавливаться на этом. Лучше давайте сосредоточимся на характеристиках ClickHouse — тех, которые важно использовать, если они вам подходят.
 
-First of all, there are **[specialized codecs](../../sql-reference/statements/create/table.md#create-query-specialized-codecs)** which make typical time-series. Either common algorithms like `DoubleDelta` and `Gorilla` or specific to ClickHouse like `T64`.
+Начнем со **[специальных кодеков](../../sql-reference/statements/create/table.md#create-query-specialized-codecs)**, которые составляют типичные временные ряды. А также алгоритмах по типу `DoubleDelta` и `Gorilla` или специфических применительно к ClickHouse как `T64`.
 
-Second, time-series queries often hit only recent data, like one day or one week old. It makes sense to use servers that have both fast nVME/SSD drives and high-capacity HDD drives. ClickHouse [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) feature allows to configure keeping fresh hot data on fast drives and gradually move it to slower drives as it ages. Rollup or removal of even older data is also possible if your requirements demand it.
+Во-вторых, запросы временных рядов часто касаются только недавних данных, не старше, чем один день или неделю. Имеет смысл пользоваться серверами, у которых есть как быстрые приводы nVME/SSD, так и HDD с большим объемом. Свойство [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) позволяет конфигурировать хранение свежих данных на быстрых дисках и постепенно сдвигать это на медленные диски с увеличением времени хранения. Свертывание или удаление даже старых данных становится возможным если ваши требования заявляют о такой необходимости.
 
-Even though it’s against ClickHouse philosophy of storing and processing raw data, you can use [materialized views](../../sql-reference/statements/create/view.md) to fit into even tighter latency or costs requirements.
+Даже если это и противоречит философии ClickHouse о хранении и обработке сырых данных, можете пользоваться [обычными представлениями](../../sql-reference/statements/create/view.md), чтобы вписаться в даже очень жесткие требования по времени или затратам.
