@@ -12,7 +12,7 @@ toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u
 -   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
--   [MODIFY REMOVE](#modify-remove) — удаляет какое-либо из свойств колонки.
+-   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -126,9 +126,9 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Запрос `ALTER` на изменение столбцов реплицируется. Соответствующие инструкции сохраняются в ZooKeeper, и затем каждая реплика их применяет. Все запросы `ALTER` выполняются в одном и том же порядке. Запрос ждёт выполнения соответствующих действий на всех репликах. Но при этом, запрос на изменение столбцов в реплицируемой таблице можно прервать, и все действия будут осуществлены асинхронно.
 
-## MODIFY REMOVE {#modify-remove}
+## MODIFY COLUMN REMOVE {#modify-remove}
 
-Удаляет какое-либо из свойств колонки. Например, DEFAULT, ALIAS, MATERIALIZED, CODEC, COMMENT, TTL. В примере мы удаляем свойство TTL.
+Удаляет какое-либо из свойств столбца: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
 
 Синтаксис:
 
@@ -137,6 +137,8 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ```
 
 **Пример**
+
+Удаление свойства TTL:
 
 ```sql
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
