@@ -59,9 +59,11 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &socket_event))
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+
+    log.emplace_back(Log{.add = true, .key = key, .ptr = data});
 }
 
-std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
+static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
 {
     WriteBufferFromOwnString res;
     res << "Tasks = [";
@@ -74,6 +76,19 @@ std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::Tas
     }
 
     res << "]";
+    return res.str();
+}
+
+static std::string dumpLog(const std::vector<PollingQueue::Log> & log)
+{
+    WriteBufferFromOwnString res;
+    for (const auto & item : log)
+    {
+        res << (item.add ? '+' : '-') << ' ' << item.key << ' ';
+        writePointerHex(item.ptr, res);
+        res << '\n';
+    }
+
     return res.str();
 }
 
@@ -105,8 +120,8 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
     auto it = tasks.find(key);
     if (it == tasks.end())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}",
-                        key, ptr, dumpTasks(tasks));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} ({}) was not found in task queue: {}\n {}",
+                        key, ptr, dumpTasks(tasks), dumpLog(log));
     }
 
     auto res = it->second;
@@ -114,6 +129,8 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, res.fd, &event))
         throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+
+    log.emplace_back(Log{.add = true, .key = key, .ptr = ptr});
 
     return res;
 }
