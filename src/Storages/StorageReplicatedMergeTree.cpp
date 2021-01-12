@@ -2483,23 +2483,23 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         if (get_is_lost.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", Coordination::errorMessage(get_is_lost.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", source_replica_name, Coordination::errorMessage(get_is_lost.error));
             continue;
         }
         else if (get_is_lost.data != "0")
         {
-            LOG_INFO(log, "Not cloning {}, it's lost");
+            LOG_INFO(log, "Not cloning {}, it's lost", source_replica_name);
             continue;
         }
 
         if (get_log_pointer.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", Coordination::errorMessage(get_log_pointer.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", source_replica_name, Coordination::errorMessage(get_log_pointer.error));
             continue;
         }
         if (get_queue.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", Coordination::errorMessage(get_queue.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", source_replica_name, Coordination::errorMessage(get_queue.error));
             continue;
         }
 
@@ -4958,8 +4958,13 @@ void StorageReplicatedMergeTree::fetchPartition(
     const String & from_,
     const Context & query_context)
 {
-    String auxiliary_zookeeper_name = extractZooKeeperName(from_);
-    String from = extractZooKeeperPath(from_);
+    Macros::MacroExpansionInfo info;
+    info.expand_special_macros_only = false;
+    info.table_id = getStorageID();
+    info.table_id.uuid = UUIDHelpers::Nil;
+    auto expand_from = query_context.getMacros()->expand(from_, info);
+    String auxiliary_zookeeper_name = extractZooKeeperName(expand_from);
+    String from = extractZooKeeperPath(expand_from);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

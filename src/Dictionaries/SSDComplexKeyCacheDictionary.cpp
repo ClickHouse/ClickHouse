@@ -22,6 +22,8 @@
 #include <numeric>
 #include <filesystem>
 #include <city.h>
+#include <fcntl.h>
+
 
 namespace ProfileEvents
 {
