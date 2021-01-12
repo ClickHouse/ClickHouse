@@ -12,6 +12,10 @@
 #include <random>
 #include <cstdlib>
 
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
+#endif
+
 namespace
 {
 
@@ -164,6 +168,14 @@ void MemoryTracker::alloc(Int64 size)
             will_be = size + total_amount;
         }
     }
+
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+    if (unlikely(_memory_tracker_always_throw_logical_error_on_allocation))
+    {
+        _memory_tracker_always_throw_logical_error_on_allocation = false;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
+    }
+#endif
 
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))

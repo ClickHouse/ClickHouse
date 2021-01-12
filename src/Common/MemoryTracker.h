@@ -5,6 +5,24 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
+#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#define MEMORY_TRACKER_DEBUG_CHECKS
+#endif
+
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+#include <ext/scope_guard.h>
+extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
+#define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
+        bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \
+        _memory_tracker_always_throw_logical_error_on_allocation = val; \
+        SCOPE_EXIT({ _memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+#define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
+#define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
+#define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
+#else
+#define DENY_ALLOCATIONS_IN_SCOPE static_assert(true)
+#define ALLOW_ALLOCATIONS_IN_SCOPE static_assert(true)
+#endif
 
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
