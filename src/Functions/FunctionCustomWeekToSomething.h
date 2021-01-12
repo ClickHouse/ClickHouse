@@ -102,14 +102,14 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return CustomWeekTransformImpl<DataTypeDate, ToDataType>::execute(
+            return CustomWeek::TransformImpl<DataTypeDate, ToDataType>::execute(
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime())
-            return CustomWeekTransformImpl<DataTypeDateTime, ToDataType>::execute(
+            return CustomWeek::TransformImpl<DataTypeDateTime, ToDataType>::execute(
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDateTime64())
         {
-            return CustomWeekTransformImpl<DataTypeDateTime64, ToDataType>::execute(
+            return CustomWeek::TransformImpl<DataTypeDateTime64, ToDataType>::execute(
                 arguments, result_type, input_rows_count,
                 TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
@@ -127,7 +127,7 @@ public:
         IFunction::Monotonicity is_monotonic{true};
         IFunction::Monotonicity is_not_monotonic;
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+        if (std::is_same_v<typename Transform::FactorTransform, CustomWeek::ZeroTransform>)
         {
             is_monotonic.is_always_monotonic = true;
             return is_monotonic;

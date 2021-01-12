@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
+namespace NormalizedQueryHash
 {
 
 struct Impl
@@ -82,7 +82,7 @@ public:
             auto col_res = ColumnUInt64::create();
             typename ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
-            Impl::vector(col->getChars(), col->getOffsets(), vec_res);
+            NormalizedQueryHash::Impl::vector(col->getChars(), col->getOffsets(), vec_res);
             return col_res;
         }
         else
@@ -95,7 +95,7 @@ public:
 
 void registerFunctionNormalizedQueryHash(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNormalizedQueryHash>();
+    factory.registerFunction<NormalizedQueryHash::FunctionNormalizedQueryHash>();
 }
 
 }

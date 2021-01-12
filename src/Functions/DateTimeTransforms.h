@@ -20,6 +20,69 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/// Namespace for some DateTimeTransforms symbols. Shares commonalities with CustomWeekTransform.h's namespace. Helps avoid ODR violations.
+namespace DateTime
+{
+    static inline UInt32 dateIsNotSupported(const char * name)
+    {
+        throw Exception("Illegal type Date of argument for function " + std::string(name),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// This factor transformation will say that the function is monotone everywhere.
+    struct ZeroTransform
+    {
+        static inline UInt16 execute(UInt32, const DateLUTImpl &) { return 0; }
+        static inline UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
+    };
+
+    template <typename FromType, typename ToType, typename Transform>
+    struct Transformer
+    {
+        template <typename FromTypeVector, typename ToTypeVector>
+        static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to,
+                           const DateLUTImpl & time_zone, const Transform & transform)
+        {
+            size_t size = vec_from.size();
+            vec_to.resize(size);
+
+            for (size_t i = 0; i < size; ++i)
+                vec_to[i] = transform.execute(vec_from[i], time_zone);
+        }
+    };
+
+
+    template <typename FromDataType, typename ToDataType, typename Transform>
+    struct TransformImpl
+    {
+        static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                 size_t /*input_rows_count*/, const Transform & transform = {})
+        {
+            using Op = DateTime::Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
+
+            const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 1, 0);
+
+            const ColumnPtr source_col = arguments[0].column;
+            if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
+            {
+                auto mutable_result_col = result_type->createColumn();
+                auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
+
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
+
+                return mutable_result_col;
+            }
+            else
+            {
+                throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + Transform::name,
+                                ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    };
+
+}
+
+
 /** Transformations.
   * Represents two functions - from datetime (UInt32) and from date (UInt16).
   *
@@ -33,17 +96,6 @@ namespace ErrorCodes
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
-static inline UInt32 dateIsNotSupported(const char * name)
-{
-    throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-}
-
-/// This factor transformation will say that the function is monotone everywhere.
-struct ZeroTransform
-{
-    static inline UInt16 execute(UInt32, const DateLUTImpl &) { return 0; }
-    static inline UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
-};
 
 struct ToDateImpl
 {
@@ -58,7 +110,7 @@ struct ToDateImpl
         return d;
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfDayImpl
@@ -74,7 +126,7 @@ struct ToStartOfDayImpl
         return time_zone.toDate(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToMondayImpl
@@ -90,7 +142,7 @@ struct ToMondayImpl
         return time_zone.toFirstDayNumOfWeek(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfMonthImpl
@@ -106,7 +158,7 @@ struct ToStartOfMonthImpl
         return time_zone.toFirstDayNumOfMonth(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfQuarterImpl
@@ -122,7 +174,7 @@ struct ToStartOfQuarterImpl
         return time_zone.toFirstDayNumOfQuarter(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfYearImpl
@@ -138,7 +190,7 @@ struct ToStartOfYearImpl
         return time_zone.toFirstDayNumOfYear(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 
@@ -154,7 +206,7 @@ struct ToTimeImpl
 
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
     using FactorTransform = ToDateImpl;
@@ -170,10 +222,10 @@ struct ToStartOfMinuteImpl
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 // Rounding towards negative infinity.
@@ -205,10 +257,10 @@ struct ToStartOfSecondImpl
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfFiveMinuteImpl
@@ -221,10 +273,10 @@ struct ToStartOfFiveMinuteImpl
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfTenMinutesImpl
@@ -237,10 +289,10 @@ struct ToStartOfTenMinutesImpl
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfFifteenMinutesImpl
@@ -253,10 +305,10 @@ struct ToStartOfFifteenMinutesImpl
     }
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 /// Round to start of half-an-hour length interval with unspecified offset. This transform is specific for Yandex.Metrica.
@@ -271,10 +323,10 @@ struct TimeSlotImpl
 
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfHourImpl
@@ -288,10 +340,10 @@ struct ToStartOfHourImpl
 
     static inline UInt32 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToYearImpl
@@ -307,7 +359,7 @@ struct ToYearImpl
         return time_zone.toYear(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToQuarterImpl
@@ -401,7 +453,7 @@ struct ToHourImpl
 
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
     using FactorTransform = ToDateImpl;
@@ -417,7 +469,7 @@ struct ToMinuteImpl
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
     using FactorTransform = ToStartOfHourImpl;
@@ -433,7 +485,7 @@ struct ToSecondImpl
     }
     static inline UInt8 execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
     using FactorTransform = ToStartOfMinuteImpl;
@@ -452,7 +504,7 @@ struct ToISOYearImpl
         return time_zone.toISOYear(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToStartOfISOYearImpl
@@ -468,7 +520,7 @@ struct ToStartOfISOYearImpl
         return time_zone.toFirstDayNumOfISOYear(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToISOWeekImpl
@@ -500,7 +552,7 @@ struct ToRelativeYearNumImpl
         return time_zone.toYear(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeQuarterNumImpl
@@ -516,7 +568,7 @@ struct ToRelativeQuarterNumImpl
         return time_zone.toRelativeQuarterNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeMonthNumImpl
@@ -532,7 +584,7 @@ struct ToRelativeMonthNumImpl
         return time_zone.toRelativeMonthNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeWeekNumImpl
@@ -548,7 +600,7 @@ struct ToRelativeWeekNumImpl
         return time_zone.toRelativeWeekNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeDayNumImpl
@@ -564,7 +616,7 @@ struct ToRelativeDayNumImpl
         return static_cast<DayNum>(d);
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 
@@ -581,7 +633,7 @@ struct ToRelativeHourNumImpl
         return time_zone.toRelativeHourNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeMinuteNumImpl
@@ -597,7 +649,7 @@ struct ToRelativeMinuteNumImpl
         return time_zone.toRelativeMinuteNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToRelativeSecondNumImpl
@@ -613,7 +665,7 @@ struct ToRelativeSecondNumImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToYYYYMMImpl
@@ -629,7 +681,7 @@ struct ToYYYYMMImpl
         return time_zone.toNumYYYYMM(static_cast<DayNum>(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToYYYYMMDDImpl
@@ -645,7 +697,7 @@ struct ToYYYYMMDDImpl
         return time_zone.toNumYYYYMMDD(static_cast<DayNum>(d));
     }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 struct ToYYYYMMDDhhmmssImpl
@@ -661,51 +713,7 @@ struct ToYYYYMMDDhhmmssImpl
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<DayNum>(d)));
     }
 
-    using FactorTransform = ZeroTransform;
-};
-
-
-template <typename FromType, typename ToType, typename Transform>
-struct Transformer
-{
-    template <typename FromTypeVector, typename ToTypeVector>
-    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
-    {
-        size_t size = vec_from.size();
-        vec_to.resize(size);
-
-        for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], time_zone);
-    }
-};
-
-
-template <typename FromDataType, typename ToDataType, typename Transform>
-struct DateTimeTransformImpl
-{
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
-    {
-        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
-
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 1, 0);
-
-        const ColumnPtr source_col = arguments[0].column;
-        if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
-        {
-            auto mutable_result_col = result_type->createColumn();
-            auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
-
-            Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
-
-            return mutable_result_col;
-        }
-        else
-        {
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
-        }
-    }
+    using FactorTransform = DateTime::ZeroTransform;
 };
 
 }

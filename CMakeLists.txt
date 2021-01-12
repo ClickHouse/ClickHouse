@@ -683,21 +683,10 @@ if (FASTBUILD_FUNCTIONS_UNITY)
     set(FUNCTIONS_TARGETS
         clickhouse_functions_gatherutils clickhouse_functions_array clickhouse_functions_array clickhouse_functions)
 
-    # Collect files that trigger C++ ODR violations, so as to exclude them.
-    file(GLOB ODR_VIOLATIONS RELATIVE ${CMAKE_SOURCE_DIR}
-         "src/Functions/toDayOf*.cpp" "src/Functions/normalize*.cpp" "src/Functions/format*.cpp"
-         )
-
     # Turn on Unity builds at a moderate batch size.
     set_target_properties(${FUNCTIONS_TARGETS}
                           PROPERTIES
                           UNITY_BUILD ON
                           UNITY_BUILD_BATCH_SIZE 4
                           )
-
-    # Exclude ODR violating files.
-    set_property(SOURCE ${ODR_VIOLATIONS}
-                 TARGET_DIRECTORY ${FUNCTIONS_TARGETS}
-                 PROPERTY SKIP_UNITY_BUILD_INCLUSION ON
-                 )
 endif()

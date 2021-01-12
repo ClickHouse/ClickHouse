@@ -101,14 +101,14 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTime::TransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
-            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
+            return DateTime::TransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
             const TransformDateTime64<Transform> transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
+            return DateTime::TransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else
             throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
@@ -125,7 +125,7 @@ public:
         IFunction::Monotonicity is_monotonic { true };
         IFunction::Monotonicity is_not_monotonic;
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+        if (std::is_same_v<typename Transform::FactorTransform, DateTime::ZeroTransform>)
         {
             is_monotonic.is_always_monotonic = true;
             return is_monotonic;

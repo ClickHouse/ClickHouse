@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
+namespace NormalizeQuery
 {
 
 struct Impl
@@ -56,7 +56,7 @@ struct Name
 
 void registerFunctionNormalizeQuery(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionStringToString<Impl, Name>>();
+    factory.registerFunction<FunctionStringToString<NormalizeQuery::Impl, NormalizeQuery::Name>>();
 }
 
 }

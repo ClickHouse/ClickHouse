@@ -5,7 +5,7 @@
 namespace DB
 {
 
-namespace
+namespace FormatReadableSize
 {
     struct Impl
     {
@@ -20,7 +20,7 @@ namespace
 
 void registerFunctionFormatReadableSize(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionFormatReadable<Impl>>();
+    factory.registerFunction<FunctionFormatReadable<FormatReadableSize::Impl>>();
 }
 
 }

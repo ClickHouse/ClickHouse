@@ -113,7 +113,7 @@ namespace
     {
         static constexpr auto name = function_name;
 
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return DateTime::dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
     };
@@ -123,7 +123,7 @@ namespace
     {
         static constexpr auto name = function_name;
 
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return DateTime::dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone)
         {
@@ -136,7 +136,7 @@ namespace
     {
         static constexpr auto name = function_name;
 
-        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
+        static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return DateTime::dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone)
         {

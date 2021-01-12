@@ -73,7 +73,7 @@ template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
 /// Used to indicate undefined operation
-struct InvalidType;
+struct InvalidUnaryOperationType;
 
 
 template <template <typename> class Op, typename Name, bool is_injective>
@@ -244,7 +244,7 @@ public:
             {
                 using T0 = typename DataType::FieldType;
                 using T1 = typename Op<T0>::ResultType;
-                if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
+                if constexpr (!std::is_same_v<T1, InvalidUnaryOperationType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
