@@ -147,6 +147,7 @@ class ClickHouseCluster:
         self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
+        self.minio_bucket_2 = "root2"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -549,17 +550,18 @@ class ClickHouseCluster:
 
                 print("Connected to Minio.")
 
-                if minio_client.bucket_exists(self.minio_bucket):
-                    minio_client.remove_bucket(self.minio_bucket)
+                buckets = [self.minio_bucket, self.minio_bucket_2]
 
-                minio_client.make_bucket(self.minio_bucket)
-
-                print(("S3 bucket '%s' created", self.minio_bucket))
+                for bucket in buckets:
+                    if minio_client.bucket_exists(bucket):
+                        minio_client.remove_bucket(bucket)
+                    minio_client.make_bucket(bucket)
+                    print("S3 bucket '%s' created", bucket)
 
                 self.minio_client = minio_client
                 return
             except Exception as ex:
-                print(("Can't connect to Minio: %s", str(ex)))
+                print("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait Minio to start")
@@ -1078,7 +1080,9 @@ class ClickHouseInstance:
         return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(["bash", "-c", "pidof {}".format(process_name)])
+        output = self.exec_in_container(["bash", "-c",
+                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(
+                                             process_name)])
         if output:
             try:
                 pid = int(output.split('\n')[0].strip())

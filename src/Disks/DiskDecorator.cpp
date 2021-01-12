@@ -180,4 +180,9 @@ Executor & DiskDecorator::getExecutor()
     return delegate->getExecutor();
 }
 
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
+}
+
 }

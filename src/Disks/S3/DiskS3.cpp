@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
@@ -848,7 +849,7 @@ Poco::Timestamp DiskS3::getLastModified(const String & path)
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
     /// We don't need to record hardlinks created to shadow folder.
-    if (send_metadata && dst_path.find("/shadow/") != String::npos)
+    if (send_metadata && !dst_path.starts_with("shadow/"))
     {
         auto revision = ++revision_counter;
         const ObjectMetadata object_metadata {
@@ -1075,6 +1076,9 @@ void DiskS3::restore()
 
         ///TODO: Cleanup FS and bucket if previous restore was failed.
 
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
+                 name, information.revision, information.source_bucket, information.source_path);
+
         restoreFiles(information.source_bucket, information.source_path, information.revision);
         restoreFileOperations(information.source_bucket, information.source_path, information.revision);
 
@@ -1085,6 +1089,8 @@ void DiskS3::restore()
     }
     catch (const Exception & e)
     {
+        LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to restore disk. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+
         throw Exception("Failed to restore disk: " + name, e, ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -1206,7 +1212,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                 if (exists(from_path))
                 {
                     moveFile(from_path, to_path);
-                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored rename {} -> {}", from_path, to_path);
+                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
                 }
             }
             else if (operation == hardlink)
@@ -1215,8 +1221,9 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                 auto dst_path = object_metadata["dst_path"];
                 if (exists(src_path))
                 {
+                    createDirectories(directoryPath(dst_path));
                     createHardLink(src_path, dst_path);
-                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored hardlink {} -> {}", src_path, dst_path);
+                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
                 }
             }
         }
@@ -1262,8 +1269,10 @@ String DiskS3::revisionToString(UInt64 revision)
 
 void DiskS3::onFreeze(const String & path)
 {
+    createDirectories(path);
     WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
     writeIntText(revision_counter.load(), revision_file_buf);
+    revision_file_buf.finalize();
 }
 
 }

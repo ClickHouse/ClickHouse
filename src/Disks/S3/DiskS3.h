@@ -126,6 +126,7 @@ public:
     /// Restore S3 metadata files on file system.
     void restore();
 
+    /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
 private:
@@ -156,7 +157,6 @@ private:
     static String shrinkKey(const String & path, const String & key);
     std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
 
-private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
@@ -176,9 +176,9 @@ private:
     static constexpr UInt64 LATEST_REVISION = (static_cast<UInt64>(1)) << 63;
     static constexpr UInt64 UNKNOWN_REVISION = 0;
 
-    /// File at path {metadata_path}/restore indicates that metadata restore is needed and contains restore information
+    /// File at path {metadata_path}/restore contains metadata restore information
     const String restore_file_name = "restore";
-    /// The number of keys listed in one request (1000 is max value).
+    /// The number of keys listed in one request (1000 is max value)
     int list_object_keys_size;
 
     /// Key has format: ../../r{revision}-{operation}
