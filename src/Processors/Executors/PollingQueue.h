@@ -4,6 +4,7 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -24,11 +25,19 @@ public:
         explicit operator bool() const { return data; }
     };
 
+    struct Log
+    {
+        bool add;
+        std::uintptr_t key;
+        const void * ptr;
+    };
+
 private:
     int epoll_fd;
     int pipe_fd[2];
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
+    std::vector<Log> log;
 
 public:
     PollingQueue();
