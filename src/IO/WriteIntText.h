@@ -24,7 +24,7 @@ namespace detail
 template <typename T>
 void writeIntText(T x, WriteBuffer & buf)
 {
-    if (likely(buf.position() + WRITE_HELPERS_MAX_INT_WIDTH < buf.buffer().end()))
+    if (likely(reinterpret_cast<intptr_t>(buf.position()) + WRITE_HELPERS_MAX_INT_WIDTH < reinterpret_cast<intptr_t>(buf.buffer().end())))
         buf.position() = itoa(x, buf.position());
     else
         detail::writeUIntTextFallback(x, buf);

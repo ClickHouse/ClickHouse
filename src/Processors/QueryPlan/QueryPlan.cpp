@@ -247,6 +247,15 @@ static void explainStep(
         step.describeActions(settings);
 }
 
+std::string debugExplainStep(const IQueryPlanStep & step)
+{
+    WriteBufferFromOwnString out;
+    IQueryPlanStep::FormatSettings settings{.out = out};
+    QueryPlan::ExplainPlanOptions options{.actions = true};
+    explainStep(step, settings, options);
+    return out.str();
+}
+
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
@@ -488,6 +497,7 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
 {
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
     /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());

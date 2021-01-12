@@ -88,9 +88,7 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        size_t estimated_size,
-        size_t aio_threshold) override;
+        WriteMode mode) override;
 
     void remove(const String & path) override;
 

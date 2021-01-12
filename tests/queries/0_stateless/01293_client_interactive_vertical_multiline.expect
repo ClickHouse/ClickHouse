@@ -34,7 +34,7 @@ send -- ""
 expect eof
 
 set timeout 60
-spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)"
+spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT) --multiline"
 match_max 100000
 
 expect ":) "
