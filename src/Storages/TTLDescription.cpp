@@ -4,6 +4,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
@@ -80,6 +81,24 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
             ErrorCodes::BAD_TTL_EXPRESSION);
     }
 }
+
+class FindAggregateFunctionData
+{
+public:
+    using TypeToVisit = ASTFunction;
+    bool has_aggregate_function = false;
+
+    void visit(const ASTFunction & func, ASTPtr &)
+    {
+        /// Do not throw if found aggregate function inside another aggregate function,
+        /// because it will be checked, while creating expressions.
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func.name))
+            has_aggregate_function = true;
+    }
+};
+
+using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
+using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
 }
 
@@ -205,8 +224,10 @@ TTLDescription TTLDescription::getTTLFromAST(
                 const auto assignment = ast->as<const ASTAssignment &>();
                 auto expression = assignment.expression();
 
-                const auto * expression_func = expression->as<const ASTFunction>();
-                if (!expression_func || !AggregateFunctionFactory::instance().isAggregateFunctionName(expression_func->name))
+                FindAggregateFunctionVisitor::Data data{false};
+                FindAggregateFunctionVisitor(data).visit(expression);
+
+                if (!data.has_aggregate_function)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should be an aggregate function", assignment.column_name);
 
