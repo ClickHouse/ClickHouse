@@ -490,7 +490,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
     {
-        if (settings.blocks_are_granules_size || !compute_granularity)
+        if (settings.blocks_are_granules_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granule is not allowed while blocks are granules size even for last granule. "
                 "Mark number {} (rows {}), rows written for last mark {}, total marks {}",
                 getCurrentMark(), index_granularity.getMarkRows(getCurrentMark()), rows_written_in_last_mark, index_granularity.getMarksCount());
