@@ -60,19 +60,22 @@ TTLBlockInputStream::TTLBlockInputStream(
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
             ExpressionActionsPtr default_expression;
+            String default_column_name;
             auto it = column_defaults.find(name);
             if (it != column_defaults.end())
             {
                 const auto & column = storage_columns.get(name);
                 auto default_ast = it->second.expression->clone();
-                default_ast = setAlias(addTypeConversionToAST(std::move(default_ast), column.type->getName()), it->first);
+                default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
 
                 auto syntax_result = TreeRewriter(storage_.global_context).analyze(default_ast, metadata_snapshot_->getColumns().getAllPhysical());
                 default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.global_context}.getActions(true);
+                default_column_name = default_ast->getColumnName();
             }
 
             algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
-                description, old_ttl_infos.columns_ttl[name], current_time_, force_, name, default_expression));
+                description, old_ttl_infos.columns_ttl[name], current_time_,
+                force_, name, default_expression, default_column_name));
         }
     }
 

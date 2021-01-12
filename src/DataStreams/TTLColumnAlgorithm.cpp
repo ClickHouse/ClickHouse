@@ -9,10 +9,12 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     time_t current_time_,
     bool force_,
     const String & column_name_,
-    const ExpressionActionsPtr & default_expression_)
+    const ExpressionActionsPtr & default_expression_,
+    const String & default_column_name_)
     : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
+    , default_column_name(default_column_name_)
 {
     if (!isMinTTLExpired())
     {
@@ -38,17 +40,11 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (isMaxTTLExpired())
         return;
 
-    //// TODO: use extractRequiredColumn
-    ColumnPtr default_column;
-    if (default_expression)
-    {
-        Block block_with_defaults;
-        block_with_defaults = block;
-        default_expression->execute(block_with_defaults);
-        default_column = block_with_defaults.getByName(column_name).column->convertToFullColumnIfConst();
-    }
+    auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+    if (default_column)
+        default_column = default_column->convertToFullColumnIfConst();
 
-    auto ttl_column = extractRequieredColumn(description.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
 
     auto & column_with_type = block.getByName(column_name);
     const IColumn * values_column = column_with_type.column.get();

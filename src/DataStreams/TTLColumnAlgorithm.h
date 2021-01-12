@@ -14,7 +14,8 @@ public:
         time_t current_time_,
         bool force_,
         const String & column_name_,
-        const ExpressionActionsPtr & default_expression_);
+        const ExpressionActionsPtr & default_expression_,
+        const String & default_column_name_);
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;
@@ -22,6 +23,7 @@ public:
 private:
     const String column_name;
     const ExpressionActionsPtr default_expression;
+    const String default_column_name;
 
     bool is_fully_empty = true;
 };

@@ -13,6 +13,7 @@
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
 #include <Common/FileSyncGuard.h>
+#include <DataStreams/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
 
@@ -95,23 +96,20 @@ void updateTTL(
     const Block & block,
     bool update_part_min_max_ttls)
 {
-    Block block_copy = block;
-    if (!block_copy.has(ttl_entry.result_column))
-        ttl_entry.expression->execute(block_copy);
+    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(ttl_entry.expression, block, ttl_entry.result_column);
 
-    const IColumn * column = block_copy.getByName(ttl_entry.result_column).column.get();
-    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
     {
         const auto & date_lut = DateLUT::instance();
         for (const auto & val : column_date->getData())
             ttl_info.update(date_lut.fromDayNum(DayNum(val)));
     }
-    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
     {
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
-    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
         {

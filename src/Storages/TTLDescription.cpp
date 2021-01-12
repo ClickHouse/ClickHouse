@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
@@ -231,8 +232,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should be an aggregate function", assignment.column_name);
 
-                auto type_literal = std::make_shared<ASTLiteral>(columns.getPhysical(assignment.column_name).type->getName());
-                expression = makeASTFunction("cast", expression->clone(), type_literal);
+                expression = addTypeConversionToAST(std::move(expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(expression));
             }
 
