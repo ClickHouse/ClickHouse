@@ -467,6 +467,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
+
         bool got_alias = aliases.count(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
@@ -476,7 +477,16 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             {
                 if (got_alias)
                 {
-                    if (aliases.find(ident->name())->second->ptr().get() != ident)
+                    auto alias = aliases.find(ident->name())->second;
+                    auto alias_table = IdentifierSemantic::getTableName(alias->ptr());
+                    bool alias_equals_column_name = false;
+                    if (alias->ptr()->getColumnNameWithoutAlias()==ident->getColumnNameWithoutAlias()){
+                        alias_equals_column_name = true;
+                    } else if (alias_table == IdentifierSemantic::getTableName(ident->ptr()) && ident->shortName() == alias->as<ASTIdentifier>()->shortName())
+                    {
+                        alias_equals_column_name = true;
+                    }
+                    if (!alias_equals_column_name)
                         throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
                 String short_name = ident->shortName();
