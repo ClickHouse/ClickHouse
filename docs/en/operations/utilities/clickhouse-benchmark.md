@@ -41,14 +41,14 @@ clickhouse-benchmark [keys] < queries_file;
 ## Keys {#clickhouse-benchmark-keys}
 
 -   `--query=WORD` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input. 
--   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: `1`.
--   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (to disable reports set `0`). Default value: `1`.
+-   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
+-   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (to disable reports set 0). Default value: 1.
 -   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
--   `-p N`, `--port=N` — Server port. Default value: `9000`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
--   `-i N`, `--iterations=N` — Total number of queries. Default value: `0` (repeat forever).
+-   `-p N`, `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
+-   `-i N`, `--iterations=N` — Total number of queries. Default value: 0 (repeat forever).
 -   `-r`, `--randomize` — Random order of queries execution if there is more than one input query.
 -   `-s`, `--secure` — Using `TLS` connection.
--   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: `0` (time limit disabled).
+-   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
 -   `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student’s t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) to determine whether the two distributions aren’t different with the selected level of confidence.
 -   `--cumulative` — Printing cumulative data instead of data per interval.
 -   `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
