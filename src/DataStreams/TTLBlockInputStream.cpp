@@ -44,7 +44,7 @@ TTLBlockInputStream::TTLBlockInputStream(
         algorithms.emplace_back(std::move(algorithm));
     }
 
-    for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTL())
+    for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
         algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
             where_ttl, old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 

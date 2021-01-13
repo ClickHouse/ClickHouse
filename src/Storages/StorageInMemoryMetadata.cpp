@@ -125,7 +125,7 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL();
+    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
@@ -148,12 +148,12 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTL() const
+TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
 {
     return table_ttl.rows_where_ttl;
 }
 
-bool StorageInMemoryMetadata::hasRowsWhereTTL() const
+bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
 {
     return !table_ttl.rows_where_ttl.empty();
 }
