@@ -566,6 +566,7 @@ DiskS3::DiskS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
+    , revision_counter(0)
     , list_object_keys_size(list_object_keys_size_)
 {
 }
@@ -1091,7 +1092,7 @@ void DiskS3::restore()
     {
         LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to restore disk. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
 
-        throw Exception("Failed to restore disk: " + name, e, ErrorCodes::LOGICAL_ERROR);
+        throw;
     }
 }
 
