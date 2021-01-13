@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
@@ -17,7 +18,7 @@ function thread1
 
 function thread2
 {
-    for iter in {1..100}; do
+    while true; do
         $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7') format Values"
     done
 }
