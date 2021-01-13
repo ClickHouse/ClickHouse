@@ -16,10 +16,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
 #    Feature(test=load("example.regression", "regression"))(**args)
 #    Feature(test=load("ldap.regression", "regression"))(**args)
-    for i in range(100):
-        '''Run the checks 100 times to spot any fails.
-        '''
-        Feature(test=load("rbac.regression", "regression"))(**args)
+    Feature(test=load("rbac.regression", "regression"))(**args)
 #    Feature(test=load("aes_encryption.regression", "regression"))(**args)
 
 if main():
