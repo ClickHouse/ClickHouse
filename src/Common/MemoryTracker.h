@@ -5,10 +5,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
+/// DENY_ALLOCATIONS_IN_SCOPE macro makes MemoryTracker throw LOGICAL_ERROR on any allocation attempt
+/// until the end of the scope. It's useful to ensure that no allocations happen in signal handlers and
+/// outside of try/catch block of thread functions. ALLOW_ALLOCATIONS_IN_SCOPE cancels effect of
+/// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <ext/scope_guard.h>
 extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
