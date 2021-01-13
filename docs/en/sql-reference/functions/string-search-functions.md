@@ -626,7 +626,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 -   Number of occurrences.
 
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+Type: Positive integer.
 
 **Examples**
 
