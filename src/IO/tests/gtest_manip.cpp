@@ -21,22 +21,22 @@ void checkString(const T & str, U manip, const std::string & expected)
 TEST(OperatorsManipTest, EscapingTest)
 {
     checkString("Hello 'world'", escape, "Hello \\'world\\'");
-    checkString("Hello \\world\\", escape, "Hello \\\\world\\\\");
+    checkString("Hello \\world\\", escape, "Hello \\\\world\\\\"); // NOLINT
 
     std::string s1 = "Hello 'world'";
     checkString(s1, escape, "Hello \\'world\\'");
     std::string s2 = "Hello \\world\\";
-    checkString(s2, escape, "Hello \\\\world\\\\");
+    checkString(s2, escape, "Hello \\\\world\\\\"); // NOLINT
 
     std::string_view sv1 = s1;
     checkString(sv1, escape, "Hello \\'world\\'");
     std::string_view sv2 = s2;
-    checkString(sv2, escape, "Hello \\\\world\\\\");
+    checkString(sv2, escape, "Hello \\\\world\\\\"); // NOLINT
 
     StringRef sr1 = s1;
     checkString(sr1, escape, "Hello \\'world\\'");
     StringRef sr2 = s2;
-    checkString(sr2, escape, "Hello \\\\world\\\\");
+    checkString(sr2, escape, "Hello \\\\world\\\\"); // NOLINT
 }
 
 TEST(OperatorsManipTest, QuouteTest)
