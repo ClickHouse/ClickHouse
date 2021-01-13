@@ -8,13 +8,13 @@ DROP TABLE IF EXISTS binary_op_mono7;
 DROP TABLE IF EXISTS binary_op_mono8;
 
 CREATE TABLE binary_op_mono1(i int, j int) ENGINE MergeTree PARTITION BY toDate(i / 1000) ORDER BY j;
-CREATE TABLE binary_op_mono2(i int, j int) ENGINE MergeTree PARTITION BY 1000 / i ORDER BY j;
+CREATE TABLE binary_op_mono2(i int, j int) ENGINE MergeTree PARTITION BY 1000 / i ORDER BY j settings allow_floating_point_partition_key=true;;
 CREATE TABLE binary_op_mono3(i int, j int) ENGINE MergeTree PARTITION BY i + 1000 ORDER BY j;
 CREATE TABLE binary_op_mono4(i int, j int) ENGINE MergeTree PARTITION BY 1000 + i ORDER BY j;
 CREATE TABLE binary_op_mono5(i int, j int) ENGINE MergeTree PARTITION BY i - 1000 ORDER BY j;
 CREATE TABLE binary_op_mono6(i int, j int) ENGINE MergeTree PARTITION BY 1000 - i ORDER BY j;
-CREATE TABLE binary_op_mono7(i int, j int) ENGINE MergeTree PARTITION BY i / 1000.0 ORDER BY j;
-CREATE TABLE binary_op_mono8(i int, j int) ENGINE MergeTree PARTITION BY 1000.0 / i ORDER BY j;
+CREATE TABLE binary_op_mono7(i int, j int) ENGINE MergeTree PARTITION BY i / 1000.0 ORDER BY j settings allow_floating_point_partition_key=true;;
+CREATE TABLE binary_op_mono8(i int, j int) ENGINE MergeTree PARTITION BY 1000.0 / i ORDER BY j settings allow_floating_point_partition_key=true;;
 
 INSERT INTO binary_op_mono1 VALUES (toUnixTimestamp('2020-09-01 00:00:00') * 1000, 1), (toUnixTimestamp('2020-09-01 00:00:00') * 1000, 2);
 INSERT INTO binary_op_mono2 VALUES (1, 1), (10000, 2);
