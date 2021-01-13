@@ -48,6 +48,37 @@ void TemporaryLiveViewCleaner::init(Context & global_context_)
     the_instance.reset(new TemporaryLiveViewCleaner(global_context_));
 }
 
+void TemporaryLiveViewCleaner::startupIfNecessary()
+{
+    std::lock_guard lock{mutex};
+    if (background_thread_should_exit)
+        return;
+    if (!views.empty())
+        startupIfNecessaryImpl(lock);
+}
+
+void TemporaryLiveViewCleaner::startupIfNecessaryImpl(const std::lock_guard<std::mutex> &)
+{
+    /// If views.empty() the background thread isn't running or it's going to stop right now.
+    /// If can_start_background_thread is false, then the thread has not been started previously.
+    bool background_thread_is_running;
+    if (can_start_background_thread)
+    {
+        background_thread_is_running = !views.empty();
+    }
+    else
+    {
+        can_start_background_thread = true;
+        background_thread_is_running = false;
+    }
+
+    if (!background_thread_is_running)
+    {
+        if (background_thread.joinable())
+            background_thread.join();
+        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
+    }
+}
 
 void TemporaryLiveViewCleaner::shutdown()
 {
@@ -79,19 +110,12 @@ void TemporaryLiveViewCleaner::addView(const std::shared_ptr<StorageLiveView> & 
     if (background_thread_should_exit)
         return;
 
-    /// If views.empty() the background thread isn't running or it's going to stop right now.
-    bool background_thread_is_running = !views.empty();
+    if (can_start_background_thread)
+        startupIfNecessaryImpl(lock);
 
     /// Keep the vector `views` sorted by time of next check.
     StorageAndTimeOfCheck storage_and_time_of_check{view, time_of_next_check};
     views.insert(std::upper_bound(views.begin(), views.end(), storage_and_time_of_check), storage_and_time_of_check);
-
-    if (!background_thread_is_running)
-    {
-        if (background_thread.joinable())
-            background_thread.join();
-        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
-    }
 
     background_thread_wake_up.notify_one();
 }
