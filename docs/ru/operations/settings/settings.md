@@ -2343,45 +2343,6 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Значение по умолчанию: `0`.
 
-
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
-
-Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull). Включите для совместимости со стандартом SQL.
-Реализуется с помощью перезаписи запросов (аналогично настройке [count_distinct_implementation](#settings-count_distinct_implementation)), чтобы получить согласованные результаты для распределенных запросов.
-
-Возможные значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
-**Пример**
-
-Рассмотрим запрос с агрегирующими функциями:
-```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
-```
-
-Результат запроса с настройкой `aggregate_functions_null_for_empty = 0`:
-```text
-┌─SUM(-1)─┬─MAX(0)─┐
-│       0 │      0 │
-└─────────┴────────┘
-```
-
-Результат запроса с настройкой `aggregate_functions_null_for_empty = 1`:
-```text
-┌─SUMOrNull(-1)─┬─MAXOrNull(0)─┐
-│          NULL │         NULL │
-└───────────────┴──────────────┘
-```
-
-
 ## union_default_mode {#union-default-mode}
 
 Устанавливает режим объединения результатов `SELECT` запросов. Настройка используется только при совместном использовании с [UNION](../../sql-reference/statements/select/union.md) без явного указания `UNION ALL` или `UNION DISTINCT`.
@@ -2395,7 +2356,6 @@ WHERE 0
 Значение по умолчанию: `''`.
 
 Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
-
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 

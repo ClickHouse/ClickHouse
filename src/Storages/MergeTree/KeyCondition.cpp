@@ -444,7 +444,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    String column_name = expr->getColumnNameWithoutAlias();
+    String column_name = expr->getColumnName();
 
     if (const auto * lit = expr->as<ASTLiteral>())
     {
@@ -607,7 +607,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (strict)
         return false;
 
-    String expr_name = node->getColumnNameWithoutAlias();
+    String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -675,7 +675,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (strict)
         return false;
 
-    String expr_name = ast->getColumnNameWithoutAlias();
+    String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -934,7 +934,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
-    String name = node->getColumnNameWithoutAlias();
+    String name = node->getColumnName();
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)

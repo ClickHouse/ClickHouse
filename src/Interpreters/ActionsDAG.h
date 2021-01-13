@@ -133,6 +133,16 @@ public:
                 insert(node);
         }
 
+        void remove(Node * node)
+        {
+            auto it = map.find(node->result_name);
+            if (it != map.end())
+                return;
+
+            list.erase(it->second);
+            map.erase(it);
+        }
+
         void remove(std::list<Node *>::iterator it)
         {
             auto map_it = map.find((*it)->result_name);
@@ -209,6 +219,8 @@ public:
     /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
+    /// Removes column from index.
+    void removeColumn(const std::string & column_name);
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
 

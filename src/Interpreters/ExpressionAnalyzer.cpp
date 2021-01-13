@@ -1489,6 +1489,23 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
                 columns_to_remove.insert(step.required_output[i]);
         }
 
+        if (!columns_to_remove.empty())
+        {
+            auto columns = prewhere_info->prewhere_actions->getResultColumns();
+
+            auto remove_actions = std::make_shared<ActionsDAG>();
+            for (const auto & column : columns)
+            {
+                if (columns_to_remove.count(column.name))
+                {
+                    remove_actions->addInput(column);
+                    remove_actions->removeColumn(column.name);
+                }
+            }
+
+            prewhere_info->remove_columns_actions = std::move(remove_actions);
+        }
+
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
     }
     else if (hasFilter())

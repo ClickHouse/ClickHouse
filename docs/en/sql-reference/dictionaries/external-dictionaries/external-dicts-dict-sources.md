@@ -583,7 +583,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(MONGODB(
+SOURCE(MONGO(
     host 'localhost'
     port 27017
     user ''
