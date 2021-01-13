@@ -290,7 +290,7 @@ public:
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
             {
                 throw Exception(
-                    "The second or third argument for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but it has type " + arguments[1]->getName() + ".",
+                    "The second and third arguments for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but it has type " + arguments[1]->getName() + ".",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
         }
@@ -428,7 +428,7 @@ public:
         for (size_t i = 0; i < 2; ++i)
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
-            String msg = "The second or third argument for function " + getName() + " must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] but it has type " + arguments[i + 1]->getName() + ".";
+            String msg = "The second and third arguments for function " + getName() + " must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] but it has type " + arguments[i + 1]->getName() + ".";
 
             if (!array_type)
                 throw Exception(msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
