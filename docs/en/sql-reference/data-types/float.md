@@ -9,8 +9,8 @@ toc_title: Float32, Float64
 
 Types are equivalent to types of C:
 
--   `Float32` — `float`
--   `Float64` — `double`
+-   `Float32` — `float`.
+-   `Float64` — `double`.
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
