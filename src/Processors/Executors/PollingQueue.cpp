@@ -98,7 +98,6 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 void PollingQueue::finish()
 {
     is_finished = true;
-    tasks.clear();
 
     uint64_t buf = 0;
     while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))
