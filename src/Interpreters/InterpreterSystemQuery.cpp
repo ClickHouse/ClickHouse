@@ -467,8 +467,11 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
-    for (auto & table : replica_names)
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context, false); });
+    for (auto & replica : replica_names)
+    {
+        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
+    }
     pool.wait();
 }
 
