@@ -41,7 +41,7 @@ select * from (select * from numbers(5) order by rand()) order by count() over (
 -- Aggregate functions as window function arguments. This query is semantically
 -- the same as the above one, only we replace `number` with
 -- `any(number) group by number` and so on.
-select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc) desc;
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number) + 1) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't
