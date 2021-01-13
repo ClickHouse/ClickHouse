@@ -436,12 +436,6 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     settings.projected_output = true;
 }
 
-void ActionsDAG::removeColumn(const std::string & column_name)
-{
-    auto & node = getNode(column_name);
-    index.remove(&node);
-}
-
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 {
     if (index.contains(column_name))

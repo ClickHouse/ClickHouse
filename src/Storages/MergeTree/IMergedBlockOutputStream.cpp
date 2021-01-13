@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <IO/createWriteBufferFromFileBase.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
