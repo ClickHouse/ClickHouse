@@ -17,10 +17,10 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool with_names>
+template <bool keep_names>
 struct Impl
 {
-    static constexpr auto name = with_names ? "normalizeQueryWithNames" : "normalizeQuery";
+    static constexpr auto name = keep_names ? "normalizeQueryKeepNames" : "normalizeQuery";
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
@@ -34,7 +34,7 @@ struct Impl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            normalizeQueryToPODArray<with_names>(
+            normalizeQueryToPODArray<keep_names>(
                 reinterpret_cast<const char *>(&data[prev_src_offset]),
                 reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
                 res_data);
