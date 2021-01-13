@@ -19,7 +19,7 @@ function thread1
 function thread2
 {
     while true; do
-        $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7') format Values"
+        $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7, c default a + b') format Values"
     done
 }
 
@@ -34,4 +34,4 @@ timeout $TIMEOUT bash -c "thread2 $PORT" 2> /dev/null > $TEMP_FILE &
 
 wait
 
-grep -q '(1,7)' $TEMP_FILE && echo "Ok"
+grep -q '(1,7,8)' $TEMP_FILE && echo "Ok"
