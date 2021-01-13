@@ -19,7 +19,7 @@ function thread1
 function thread2
 {
     while true; do
-        $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7, c default a + b') format Values"
+        $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7, c default a + b') format Values"
     done
 }
 
