@@ -40,7 +40,7 @@ try
     DB::ReadBufferFromString b4(s4);
 
     DB::ConcatReadBuffer concat({&b1, &b2, &b3, &b4});
-    DB::PeekableReadBuffer peekable(concat, 0, 16);
+    DB::PeekableReadBuffer peekable(concat, 0);
 
     ASSERT_TRUE(!peekable.eof());
     assertAvailable(peekable, "0123456789");

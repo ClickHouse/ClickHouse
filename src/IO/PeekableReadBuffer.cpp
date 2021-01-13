@@ -4,7 +4,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
 }
 
