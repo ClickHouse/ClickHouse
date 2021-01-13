@@ -427,7 +427,7 @@
     document.onkeydown = function(event)
     {
         /// Firefox has code 13 for Enter and Chromium has code 10.
-        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10) ) {
+        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             post();
         }
     }
