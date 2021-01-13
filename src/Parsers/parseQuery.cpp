@@ -189,6 +189,10 @@ std::string getLexicalErrorMessage(
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
     out << getErrorTokenDescription(last_token.type);
+    if (last_token.size())
+    {
+       out << ": '" << StringRef{last_token.begin, last_token.size()} << "'";
+    }
 
     return out.str();
 }

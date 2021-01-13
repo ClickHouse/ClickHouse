@@ -1,5 +1,8 @@
 #include <Parsers/ASTWindowDefinition.h>
 
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
+
 namespace DB
 {
 
@@ -27,6 +30,37 @@ String ASTWindowDefinition::getID(char) const
     return "WindowDefinition";
 }
 
+void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
+    FormatState & state, FormatStateStacked frame) const
+{
+    if (partition_by)
+    {
+        settings.ostr << "PARTITION BY ";
+        partition_by->formatImpl(settings, state, frame);
+    }
+
+    if (partition_by && order_by)
+    {
+        settings.ostr << " ";
+    }
+
+    if (order_by)
+    {
+        settings.ostr << "ORDER BY ";
+        order_by->formatImpl(settings, state, frame);
+    }
+}
+
+std::string ASTWindowDefinition::getDefaultWindowName() const
+{
+    WriteBufferFromOwnString ostr;
+    FormatSettings settings{ostr, true /* one_line */};
+    FormatState state;
+    FormatStateStacked frame;
+    formatImpl(settings, state, frame);
+    return ostr.str();
+}
+
 ASTPtr ASTWindowListElement::clone() const
 {
     auto result = std::make_shared<ASTWindowListElement>();
@@ -41,6 +75,15 @@ ASTPtr ASTWindowListElement::clone() const
 String ASTWindowListElement::getID(char) const
 {
     return "WindowListElement";
+}
+
+void ASTWindowListElement::formatImpl(const FormatSettings & settings,
+    FormatState & state, FormatStateStacked frame) const
+{
+    settings.ostr << backQuoteIfNeed(name);
+    settings.ostr << " AS (";
+    definition->formatImpl(settings, state, frame);
+    settings.ostr << ")";
 }
 
 }

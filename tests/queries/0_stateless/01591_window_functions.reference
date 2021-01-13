@@ -123,16 +123,26 @@ select * from (select * from numbers(5) order by rand()) order by count() over (
 3
 4
 select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc) desc;
-
--- different windows
--- an explain test would also be helpful, but it's too immature now and I don't
--- want to change reference all the time
+-- some more simple cases w/aggregate functions
 
 0
 1
 2
 3
 4
+select sum(any(number)) over () from numbers(1);
+
+0
+select sum(any(number) + 1) over () from numbers(1);
+
+1
+select sum(any(number + 1)) over () from numbers(1);
+
+-- different windows
+-- an explain test would also be helpful, but it's too immature now and I don't
+-- want to change reference all the time
+
+1
 select number, max(number) over (partition by intDiv(number, 3) order by number desc), count(number) over (partition by intDiv(number, 5) order by number) as m from numbers(31) order by number settings max_block_size = 2;
 
 -- two functions over the same window
@@ -210,6 +220,8 @@ select distinct any(number) over () from numbers(2);
 0
 with number + 1 as x select intDiv(number, 3) as y, sum(x + y) over (partition by y order by x) from numbers(7);
 
+-- WINDOW clause
+
 0	1
 0	3
 0	6
@@ -217,3 +229,43 @@ with number + 1 as x select intDiv(number, 3) as y, sum(x + y) over (partition b
 1	11
 1	18
 2	9
+select 1 window w1 as ();
+
+
+1
+select sum(number) over w1, sum(number) over w2
+from numbers(10)
+window
+    w1 as (),
+    w2 as (partition by intDiv(number, 3))
+;
+
+
+0	0
+1	1
+3	3
+6	3
+10	7
+15	12
+21	6
+28	13
+36	21
+45	9
+select
+    sum(number) over w1,
+    sum(number) over (partition by intDiv(number, 3))
+from numbers(10)
+window
+    w1 as (partition by intDiv(number, 3))
+;
+
+0	0
+1	1
+3	3
+3	3
+7	7
+12	12
+6	6
+13	13
+21	21
+9	9

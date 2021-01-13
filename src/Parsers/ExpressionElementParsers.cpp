@@ -440,8 +440,7 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserIdentifier window_name_parser;
         if (window_name_parser.parse(pos, window_name_ast, expected))
         {
-            function->children.push_back(window_name_ast);
-            function->window_name = window_name_ast;
+            function->window_name = getIdentifierName(window_name_ast);
             return true;
         }
         else
@@ -449,52 +448,11 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
         }
     }
-    ++pos;
 
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
-    ParserKeyword keyword_partition_by("PARTITION BY");
-    ParserNotEmptyExpressionList columns_partition_by(
-        false /* we don't allow declaring aliases here*/);
-    ParserKeyword keyword_order_by("ORDER BY");
-    ParserOrderByExpressionList columns_order_by;
-
-    if (keyword_partition_by.ignore(pos, expected))
-    {
-        ASTPtr partition_by_ast;
-        if (columns_partition_by.parse(pos, partition_by_ast, expected))
-        {
-            function->children.push_back(partition_by_ast);
-            function->window_partition_by = partition_by_ast;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (keyword_order_by.ignore(pos, expected))
-    {
-        ASTPtr order_by_ast;
-        if (columns_order_by.parse(pos, order_by_ast, expected))
-        {
-            function->children.push_back(order_by_ast);
-            function->window_order_by = order_by_ast;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-    {
-        expected.add(pos, "')'");
-        return false;
-    }
-    ++pos;
-
-    return true;
+    ParserWindowDefinition parser_definition;
+    return parser_definition.parse(pos, function->window_definition, expected);
 }
 
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
