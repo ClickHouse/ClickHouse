@@ -619,7 +619,6 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 
     size_t from_size = data.size();
     auto & res_data = res->data;
-    
     //copy data to cloned column
     if (size <= from_size)
     {
