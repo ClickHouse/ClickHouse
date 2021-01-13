@@ -29,10 +29,10 @@ def test_part_should_reset_mutation(start_cluster):
     expected = TSV('''all_0_0_2\t1\ta''')
     assert TSV(node.query('SELECT _part, * FROM test')) == expected
 
-    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1")
-    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1")
-    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1")
-    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1")
+    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1", settings={"mutations_sync": "2"})
+    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1", settings={"mutations_sync": "2"})
+    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1", settings={"mutations_sync": "2"})
+    node.query("ALTER TABLE test UPDATE s='xxx' WHERE 1", settings={"mutations_sync": "2"})
 
     expected = TSV('''all_0_0_2_4\t1\txxx''')
     assert TSV(node.query('SELECT _part, * FROM test')) == expected
@@ -48,13 +48,13 @@ def test_part_should_reset_mutation(start_cluster):
     expected = TSV('''all_0_0_0\t1\txxx\nall_1_1_0\t2\ta''')
     assert TSV(node.query('SELECT _part, * FROM restore ORDER BY i')) == expected
 
-    node.query("ALTER TABLE restore UPDATE s='yyy' WHERE 1")
+    node.query("ALTER TABLE restore UPDATE s='yyy' WHERE 1", settings={"mutations_sync": "2"})
 
 
     expected = TSV('''all_0_0_0_2\t1\tyyy\nall_1_1_0_2\t2\tyyy''')
     assert TSV(node.query('SELECT _part, * FROM restore ORDER BY i')) == expected
 
-    node.query("ALTER TABLE restore DELETE WHERE 1")
+    node.query("ALTER TABLE restore DELETE WHERE 1", settings={"mutations_sync": "2"})
 
 
     assert node.query("SELECT count() FROM restore").strip() == "0"
