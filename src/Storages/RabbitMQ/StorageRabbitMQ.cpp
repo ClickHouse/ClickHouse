@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -48,8 +47,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_CONNECT_RABBITMQ;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_BIND_RABBITMQ_EXCHANGE;
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
@@ -70,11 +69,12 @@ namespace ExchangeType
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
-        const Context & context_,
+        Context & context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
+        , rabbitmq_context(Context(global_context))
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
         , format_name(global_context.getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
@@ -101,14 +101,21 @@ StorageRabbitMQ::StorageRabbitMQ(
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
     event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
-    restoreConnection(false);
+
+    if (!restoreConnection(false))
+    {
+        if (!connection->closed())
+            connection->close(true);
+
+        throw Exception("Cannot connect to RabbitMQ " + address, ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+    }
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    rabbitmq_context = addSettings(global_context);
-    rabbitmq_context->makeQueryContext();
+    rabbitmq_context.makeQueryContext();
+    rabbitmq_context = addSettings(rabbitmq_context);
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
@@ -117,9 +124,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     streaming_task = global_context.getSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
-
-    connection_task = global_context.getSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
-    connection_task->deactivate();
 
     if (queue_base.empty())
     {
@@ -182,24 +186,27 @@ AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 
 String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_id)
 {
+    std::stringstream ss;
+
     if (name.empty())
-        return fmt::format("{}_{}", table_id.database_name, table_id.table_name);
+        ss << table_id.database_name << "_" << table_id.table_name;
     else
-        return fmt::format("{}_{}_{}", name, table_id.database_name, table_id.table_name);
+        ss << name << "_" << table_id.database_name << "_" << table_id.table_name;
+
+    return ss.str();
 }
 
 
-std::shared_ptr<Context> StorageRabbitMQ::addSettings(const Context & context) const
+Context StorageRabbitMQ::addSettings(Context context) const
 {
-    auto modified_context = std::make_shared<Context>(context);
-    modified_context->setSetting("input_format_skip_unknown_fields", true);
-    modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    context.setSetting("input_format_skip_unknown_fields", true);
+    context.setSetting("input_format_allow_errors_ratio", 0.);
+    context.setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
     if (!schema_name.empty())
-        modified_context->setSetting("format_schema", schema_name);
+        context.setSetting("format_schema", schema_name);
 
-    return modified_context;
+    return context;
 }
 
 
@@ -207,15 +214,6 @@ void StorageRabbitMQ::loopingFunc()
 {
     if (event_handler->connectionRunning())
         event_handler->startLoop();
-}
-
-
-void StorageRabbitMQ::connectionFunc()
-{
-    if (restoreConnection(true))
-        initRabbitMQ();
-    else
-        connection_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
@@ -247,23 +245,6 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
          ? rabbitmq_settings->rabbitmq_max_block_size.value
          : (global_context.getSettingsRef().max_insert_block_size.value / num_consumers);
  }
-
-
-void StorageRabbitMQ::initRabbitMQ()
-{
-    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-
-    initExchange();
-    bindExchange();
-
-    for (const auto i : ext::range(0, num_queues))
-        bindQueue(i + 1);
-
-    LOG_TRACE(log, "RabbitMQ setup completed");
-
-    rabbit_is_ready = true;
-    setup_channel->close();
-}
 
 
 void StorageRabbitMQ::initExchange()
@@ -316,8 +297,7 @@ void StorageRabbitMQ::initExchange()
          * is bad.
          */
         throw Exception(
-           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
-           "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
+           ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
     });
 
     setup_channel->bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
@@ -357,7 +337,9 @@ void StorageRabbitMQ::bindExchange()
             throw Exception(
                 ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                 "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                exchange_name, bridge_exchange, std::string(message));
+                exchange_name,
+                bridge_exchange,
+                std::string(message));
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
@@ -369,7 +351,9 @@ void StorageRabbitMQ::bindExchange()
             throw Exception(
                 ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                 "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                exchange_name, bridge_exchange, std::string(message));
+                exchange_name,
+                bridge_exchange,
+                std::string(message));
         });
     }
     else
@@ -388,7 +372,9 @@ void StorageRabbitMQ::bindExchange()
                 throw Exception(
                     ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
                     "Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                    exchange_name, bridge_exchange, std::string(message));
+                    exchange_name,
+                    bridge_exchange,
+                    std::string(message));
             });
         }
     }
@@ -496,16 +482,9 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
 }
 
 
-bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
+void StorageRabbitMQ::updateChannel(ChannelPtr & channel)
 {
-    if (event_handler->connectionRunning())
-    {
-        channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-        return true;
-    }
-
-    channel = nullptr;
-    return false;
+    channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 }
 
 
@@ -551,27 +530,27 @@ void StorageRabbitMQ::unbindExchange()
 Pipe StorageRabbitMQ::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & /* query_info */,
+        const SelectQueryInfo & /* query_info */,
         const Context & context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
         unsigned /* num_streams */)
 {
-    if (!rabbit_is_ready)
-        throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
-
     if (num_created_consumers == 0)
         return {};
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+
     auto modified_context = addSettings(context);
     auto block_size = getMaxBlockSize();
 
+    bool update_channels = false;
     if (!event_handler->connectionRunning())
     {
         if (event_handler->loopRunning())
             deactivateTask(looping_task, false, true);
-        restoreConnection(true);
+
+        update_channels = restoreConnection(true);
     }
 
     Pipes pipes;
@@ -582,6 +561,21 @@ Pipe StorageRabbitMQ::read(
         auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
                 *this, metadata_snapshot, modified_context, column_names, block_size);
 
+        /* It is a possible but rare case when channel gets into error state and does not also close connection, so need manual update.
+         * But I believe that in current context and with local rabbitmq settings this will never happen and any channel error will also
+         * close connection, but checking anyway (in second condition of if statement). This must be done here (and also in streamToViews())
+         * and not in readPrefix as it requires to stop heartbeats and looping tasks to avoid race conditions inside the library
+         */
+        if (event_handler->connectionRunning() && (update_channels || rabbit_stream->needChannelUpdate()))
+        {
+            if (event_handler->loopRunning())
+            {
+                deactivateTask(looping_task, false, true);
+            }
+
+            rabbit_stream->updateChannel();
+        }
+
         auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
             rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
@@ -591,9 +585,7 @@ Pipe StorageRabbitMQ::read(
         looping_task->activateAndSchedule();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    auto united_pipe = Pipe::unitePipes(std::move(pipes));
-    united_pipe.addInterpreterContext(modified_context);
-    return united_pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -605,10 +597,16 @@ BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadat
 
 void StorageRabbitMQ::startup()
 {
-    if (event_handler->connectionRunning())
-        initRabbitMQ();
-    else
-        connection_task->activateAndSchedule();
+    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    initExchange();
+    bindExchange();
+
+    for (size_t i = 1; i <= num_queues; ++i)
+    {
+        bindQueue(i);
+    }
+
+    setup_channel->close();
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -636,7 +634,6 @@ void StorageRabbitMQ::shutdown()
 
     deactivateTask(streaming_task, true, false);
     deactivateTask(looping_task, true, true);
-    deactivateTask(connection_task, true, false);
 
     connection->close();
 
@@ -689,9 +686,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    ChannelPtr consumer_channel;
-    if (event_handler->connectionRunning())
-        consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         consumer_channel, event_handler, queues, ++consumer_id,
@@ -738,45 +733,42 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    if (rabbit_is_ready && (event_handler->connectionRunning() || restoreConnection(true)))
+    try
     {
-        try
+        auto table_id = getStorageID();
+
+        // Check if at least one direct dependency is attached
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+
+        if (dependencies_count)
         {
-            auto table_id = getStorageID();
+            auto start_time = std::chrono::steady_clock::now();
 
-            // Check if at least one direct dependency is attached
-            size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
-
-            if (dependencies_count)
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
             {
-                auto start_time = std::chrono::steady_clock::now();
+                if (!checkDependencies(table_id))
+                    break;
 
-                // Keep streaming as long as there are attached views and streaming is not cancelled
-                while (!stream_cancelled && num_created_consumers > 0)
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+                if (streamToViews())
+                    break;
+
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
-                    if (!checkDependencies(table_id))
-                        break;
-
-                    LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-                    if (streamToViews())
-                        break;
-
-                    auto end_time = std::chrono::steady_clock::now();
-                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-                    {
-                        event_handler->updateLoopState(Loop::STOP);
-                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                        break;
-                    }
+                    event_handler->updateLoopState(Loop::STOP);
+                    LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                    break;
                 }
             }
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     /// Wait for attached views
@@ -797,7 +789,7 @@ bool StorageRabbitMQ::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, *rabbitmq_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -875,21 +867,6 @@ bool StorageRabbitMQ::streamToViews()
             if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
                 ++queue_empty;
 
-            if (stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
-            {
-                auto buffer = stream->as<RabbitMQBlockInputStream>()->getBuffer();
-                if (buffer)
-                {
-                    if (buffer->queuesCount() != queues.size())
-                        buffer->updateQueues(queues);
-
-                    buffer->updateAckTracker();
-
-                    if (updateChannel(buffer->getChannel()))
-                        buffer->setupChannel();
-                }
-            }
-
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
              *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
@@ -906,8 +883,19 @@ bool StorageRabbitMQ::streamToViews()
             {
                 /// Iterate loop to activate error callbacks if they happened
                 event_handler->iterateLoop();
-                if (!event_handler->connectionRunning())
+
+                if (event_handler->connectionRunning())
+                {
+                    /* Almost any error with channel will lead to connection closure, but if so happens that channel errored and
+                     * connection is not closed - also need to restore channels
+                     */
+                    if (!stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
+                        stream->as<RabbitMQBlockInputStream>()->updateChannel();
+                }
+                else
+                {
                     break;
+                }
             }
 
             event_handler->iterateLoop();

@@ -248,7 +248,7 @@ bool Pool::Entry::tryForceConnected() const
         if (prev_connection_id != current_connection_id)
         {
             auto & logger = Poco::Util::Application::instance().logger();
-            logger.information("Connection to mysql server has been reestablished. Connection id changed: %lu -> %lu",
+            logger.information("Connection to mysql server has been reestablished. Connection id changed: %d -> %d",
                                 prev_connection_id, current_connection_id);
         }
         return true;

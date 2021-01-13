@@ -28,8 +28,8 @@ Follow the instructions on it's official website: <https://wkhtmltopdf.org/downl
 
 #### 2. Install CLI tools from npm
 
-1. `sudo apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
-2. `sudo npm install -g purify-css amphtml-validator`.
+1. `apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
+2. `npm install -g purifycss amphtml-validator`.
 
 #### 3. Set up virtualenv
 

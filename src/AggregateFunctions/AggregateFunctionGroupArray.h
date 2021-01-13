@@ -2,9 +2,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -188,13 +185,13 @@ public:
             if (!limit_num_elems)
             {
                 if (rhs_elems.value.size())
-                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
+                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
             }
             else
             {
                 UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
                 if (elems_to_insert)
-                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
+                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
             }
         }
 
@@ -247,9 +244,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << this->data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            std::ostringstream rng_stream;
+            rng_stream << this->data(place).rng;
+            DB::writeStringBinary(rng_stream.str(), buf);
         }
 
         // TODO
@@ -277,8 +274,8 @@ public:
             DB::readIntBinary<size_t>(this->data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> this->data(place).rng;
+            std::istringstream rng_stream(rng_string);
+            rng_stream >> this->data(place).rng;
         }
 
         // TODO
@@ -566,9 +563,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << data(place).rng;
-            DB::writeStringBinary(rng_buf.str(), buf);
+            std::ostringstream rng_stream;
+            rng_stream << data(place).rng;
+            DB::writeStringBinary(rng_stream.str(), buf);
         }
 
         // TODO
@@ -600,8 +597,8 @@ public:
             DB::readIntBinary<size_t>(data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> data(place).rng;
+            std::istringstream rng_stream(rng_string);
+            rng_stream >> data(place).rng;
         }
 
         // TODO

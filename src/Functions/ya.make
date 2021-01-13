@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 CFLAGS(
@@ -53,7 +51,6 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
-    FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
@@ -81,7 +78,6 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
-    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -91,7 +87,6 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
-    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
@@ -105,7 +100,6 @@ SRCS(
     URL/topLevelDomain.cpp
     abs.cpp
     acos.cpp
-    acosh.cpp
     addDays.cpp
     addHours.cpp
     addMinutes.cpp
@@ -121,7 +115,6 @@ SRCS(
     appendTrailingCharIfAbsent.cpp
     array/array.cpp
     array/arrayAUC.cpp
-    array/arrayAggregation.cpp
     array/arrayAll.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
@@ -157,6 +150,7 @@ SRCS(
     array/arraySlice.cpp
     array/arraySort.cpp
     array/arraySplit.cpp
+    array/arraySum.cpp
     array/arrayUniq.cpp
     array/arrayWithConstant.cpp
     array/arrayZip.cpp
@@ -174,11 +168,8 @@ SRCS(
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
-    asinh.cpp
     assumeNotNull.cpp
     atan.cpp
-    atan2.cpp
-    atanh.cpp
     bar.cpp
     base64Decode.cpp
     base64Encode.cpp
@@ -186,7 +177,6 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
-    bitHammingDistance.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -204,19 +194,13 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
-    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
     concat.cpp
     convertCharset.cpp
     cos.cpp
-    cosh.cpp
     countDigits.cpp
-    countMatches.cpp
-    countSubstrings.cpp
-    countSubstringsCaseInsensitive.cpp
-    countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
@@ -229,7 +213,6 @@ SRCS(
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
-    encodeXMLComponent.cpp
     encrypt.cpp
     endsWith.cpp
     equals.cpp
@@ -253,7 +236,6 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
-    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -289,7 +271,6 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
-    hypot.cpp
     identity.cpp
     if.cpp
     ifNotFinite.cpp
@@ -321,14 +302,12 @@ SRCS(
     like.cpp
     log.cpp
     log10.cpp
-    log1p.cpp
     log2.cpp
     logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
-    map.cpp
     match.cpp
     materialize.cpp
     minus.cpp
@@ -407,9 +386,9 @@ SRCS(
     registerFunctionsTuple.cpp
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
-    reinterpretAs.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
+    reinterpretStringAs.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
@@ -428,7 +407,6 @@ SRCS(
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
     sin.cpp
-    sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
     sqrt.cpp
@@ -445,7 +423,6 @@ SRCS(
     subtractYears.cpp
     tan.cpp
     tanh.cpp
-    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
@@ -463,7 +440,6 @@ SRCS(
     toISOYear.cpp
     toLowCardinality.cpp
     toMinute.cpp
-    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp
@@ -507,7 +483,6 @@ SRCS(
     tryBase64Decode.cpp
     tuple.cpp
     tupleElement.cpp
-    tupleHammingDistance.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

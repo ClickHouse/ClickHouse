@@ -247,6 +247,328 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
                     with Finally("I drop the user on a cluster"):
                         node.query(f"DROP USER {user_name} ON CLUSTER sharded_cluster")
 
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Grant("1.0"),
+)
+def user_with_privileges_from_user_with_grant_option(self, table_type, node=None):
+    """Check that user is able to ALTER TTL on a table when granted privilege
+    from another user with grant option.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            with table(node, table_name, table_type),user(node, user0_name), user(node, user1_name):
+                with When("I grant privileges with grant option to user"):
+                    node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
+
+                with And("I grant privileges to another user via grant option"):
+                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
+                        settings = [("user", user0_name)])
+
+                with Then(f"I try to ALTER TTL"):
+                    alter_ttl_privilege_handler(permutation, table_name, user1_name, node)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Grant("1.0"),
+)
+def role_with_privileges_from_user_with_grant_option(self, table_type, node=None):
+    """Check that user is able to ALTER TTL on a table when granted a role with
+    ALTER TTL privilege that was granted by another user with grant option.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role_name):
+                    with When("I grant subprivileges with grant option to user"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
+
+                    with And("I grant privileges to a role via grant option"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name}",
+                            settings = [("user", user0_name)])
+
+                    with And("I grant the role to another user"):
+                        node.query(f"GRANT {role_name} TO {user1_name}")
+
+                    with Then(f"I try to ALTER TTL"):
+                        alter_ttl_privilege_handler(permutation, table_name, user1_name, node)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Grant("1.0"),
+)
+def user_with_privileges_from_role_with_grant_option(self, table_type, node=None):
+    """Check that user is able to ALTER TTL on a table when granted privilege from
+    a role with grant option
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role_name):
+                    with When(f"I grant privileges with grant option to a role"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION")
+
+                    with When("I grant role to a user"):
+                        node.query(f"GRANT {role_name} TO {user0_name}")
+
+                    with And("I grant privileges to a user via grant option"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
+                            settings = [("user", user0_name)])
+
+                    with Then(f"I try to ALTER TTL"):
+                        alter_ttl_privilege_handler(permutation, table_name, user1_name, node)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Grant("1.0"),
+)
+def role_with_privileges_from_role_with_grant_option(self, table_type, node=None):
+    """Check that a user is able to ALTER TTL on a table with a role that was
+    granted privilege by another role with grant option
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role0_name), role(node, role1_name):
+                    with When(f"I grant privileges"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role0_name} WITH GRANT OPTION")
+
+                    with And("I grant the role to a user"):
+                        node.query(f"GRANT {role0_name} TO {user0_name}")
+
+                    with And("I grant privileges to another role via grant option"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name}",
+                            settings = [("user", user0_name)])
+
+                    with And("I grant the second role to another user"):
+                        node.query(f"GRANT {role1_name} TO {user1_name}")
+
+                    with Then(f"I try to ALTER TTL"):
+                        alter_ttl_privilege_handler(permutation, table_name, user1_name, node)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Revoke("1.0"),
+)
+def revoke_privileges_from_user_via_user_with_grant_option(self, table_type, node=None):
+    """Check that user is unable to revoke a privilege they don't have access to from a user.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            # This test does not apply when no privileges are granted (permutation 0)
+            if permutation == 0:
+                continue
+
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with Given(f"I grant privileges with grant option to user0"):
+                    node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
+
+                with And(f"I grant privileges with grant option to user1"):
+                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name} WITH GRANT OPTION",
+                        settings=[("user", user0_name)])
+
+                with When("I revoke privilege from user0 using user1"):
+                    node.query(f"REVOKE {privileges} ON {table_name} FROM {user0_name}",
+                        settings=[("user", user1_name)])
+
+                with Then("I verify that user0 has privileges revoked"):
+                    exitcode, message = errors.not_enough_privileges(user0_name)
+                    node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
+                        settings=[("user", user0_name)], exitcode=exitcode, message=message)
+                    node.query(f"REVOKE {privileges} ON {table_name} FROM {user1_name}",
+                        settings=[("user", user0_name)], exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Revoke("1.0"),
+)
+def revoke_privileges_from_role_via_user_with_grant_option(self, table_type, node=None):
+    """Check that user is unable to revoke a privilege they dont have access to from a role.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            # This test does not apply when no privileges are granted (permutation 0)
+            if permutation == 0:
+                continue
+
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role_name):
+                    with Given(f"I grant privileges with grant option to role0"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION")
+
+                    with And("I grant role0 to user0"):
+                        node.query(f"GRANT {role_name} TO {user0_name}")
+
+                    with And(f"I grant privileges with grant option to user1"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name} WITH GRANT OPTION",
+                            settings=[("user", user0_name)])
+
+                    with When("I revoke privilege from role0 using user1"):
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role_name}",
+                            settings=[("user", user1_name)])
+
+                    with Then("I verify that role0(user0) has privileges revoked"):
+                        exitcode, message = errors.not_enough_privileges(user0_name)
+                        node.query(f"GRANT {privileges} ON {table_name} TO {user1_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {user1_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Revoke("1.0"),
+)
+def revoke_privileges_from_user_via_role_with_grant_option(self, table_type, node=None):
+    """Check that user with a role is unable to revoke a privilege they dont have access to from a user.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            # This test does not apply when no privileges are granted (permutation 0)
+            if permutation == 0:
+                continue
+
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role_name):
+                    with Given(f"I grant privileges with grant option to user0"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {user0_name} WITH GRANT OPTION")
+
+                    with And(f"I grant privileges with grant option to role1"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name} WITH GRANT OPTION",
+                            settings=[("user", user0_name)])
+
+                    with When("I grant role1 to user1"):
+                        node.query(f"GRANT {role_name} TO {user1_name}")
+
+                    with And("I revoke privilege from user0 using role1(user1)"):
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {user0_name}",
+                            settings=[("user" ,user1_name)])
+
+                    with Then("I verify that user0 has privileges revoked"):
+                        exitcode, message = errors.not_enough_privileges(user0_name)
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_GrantOption_Revoke("1.0"),
+)
+def revoke_privileges_from_role_via_role_with_grant_option(self, table_type, node=None):
+    """Check that user with a role is unable to revoke a privilege they dont have access to from a role.
+    """
+    if node is None:
+        node = self.context.node
+
+    table_name = f"merge_tree_{getuid()}"
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+
+    for permutation in permutations():
+        privileges = alter_ttl_privileges(permutation)
+
+        with When(f"granted={privileges}"):
+            # This test does not apply when no privileges are granted (permutation 0)
+            if permutation == 0:
+                continue
+
+            with table(node, table_name, table_type), user(node, user0_name), user(node, user1_name):
+                with role(node, role0_name), role(node, role1_name):
+                    with Given(f"I grant privileges with grant option to role0"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role0_name} WITH GRANT OPTION")
+
+                    with And("I grant role0 to user0"):
+                        node.query(f"GRANT {role0_name} TO {user0_name}")
+
+                    with And(f"I grant privileges with grant option to role1"):
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name} WITH GRANT OPTION",
+                            settings=[("user", user0_name)])
+
+                    with When("I grant role1 to user1"):
+                        node.query(f"GRANT {role1_name} TO {user1_name}")
+
+                    with And("I revoke privilege from role0(user0) using role1(user1)"):
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role0_name}",
+                            settings=[("user", user1_name)])
+
+                    with Then("I verify that role0(user0) has privileges revoked"):
+                        exitcode, message = errors.not_enough_privileges(user0_name)
+                        node.query(f"GRANT {privileges} ON {table_name} TO {role1_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+                        node.query(f"REVOKE {privileges} ON {table_name} FROM {role1_name}",
+                            settings=[("user", user0_name)], exitcode=exitcode, message=message)
+
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterTTL("1.0"),
@@ -271,12 +593,12 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            pool = Pool(5)
+            pool = Pool(13)
             try:
                 tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                        run_scenario(pool, tasks, Scenario(test=scenario), {"table_type" : table_type})
                 finally:
                     join(tasks)
             finally:
