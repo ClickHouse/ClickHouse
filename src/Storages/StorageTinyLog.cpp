@@ -297,6 +297,8 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 
     if (serialize_states.count(name) == 0)
     {
+        /// Some stream getters may be called form `serializeBinaryBulkStatePrefix`.
+        /// Use different WrittenStreams set, or we get nullptr for them in `serializeBinaryBulkWithMultipleStreams`
         WrittenStreams prefix_written_streams;
         settings.getter = createStreamGetter(name, prefix_written_streams);
         type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
