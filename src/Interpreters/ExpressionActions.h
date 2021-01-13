@@ -87,6 +87,7 @@ public:
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
+    const ColumnNumbers & getResultPositions() const { return result_positions; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;
