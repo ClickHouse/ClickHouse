@@ -294,11 +294,15 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
 void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams)
 {
     IDataType::SerializeBinaryBulkSettings settings;
-    settings.getter = createStreamGetter(name, written_streams);
 
     if (serialize_states.count(name) == 0)
+    {
+        WrittenStreams prefix_written_streams;
+        settings.getter = createStreamGetter(name, prefix_written_streams);
         type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+    }
 
+    settings.getter = createStreamGetter(name, written_streams);
     type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 }
 
