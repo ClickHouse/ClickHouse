@@ -195,7 +195,7 @@ public:
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
 
-    /// Invoked when partitions freeze is invoked.
+    /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 
 private:

@@ -1398,7 +1398,7 @@ class ClickHouseKiller(object):
         self.clickhouse_node = clickhouse_node
 
     def __enter__(self):
-        self.clickhouse_node.stop_clickhouse()
+        self.clickhouse_node.stop_clickhouse(kill=True)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.start_clickhouse()

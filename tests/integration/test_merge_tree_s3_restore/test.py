@@ -86,7 +86,7 @@ def drop_shadow_information(node):
     node.exec_in_container(['bash', '-c', 'rm -rf /var/lib/clickhouse/shadow/*'], user='root')
 
 
-def create_restore_file(node, revision='0', bucket=None, path=None):
+def create_restore_file(node, revision=0, bucket=None, path=None):
     add_restore_option = 'echo -en "{}\n" >> /var/lib/clickhouse/disks/s3/restore'
     node.exec_in_container(['bash', '-c', add_restore_option.format(revision)], user='root')
     if bucket:
@@ -96,7 +96,7 @@ def create_restore_file(node, revision='0', bucket=None, path=None):
 
 
 def get_revision_counter(node, backup_number):
-    return node.exec_in_container(['bash', '-c', 'cat /var/lib/clickhouse/disks/s3/shadow/{}/revision.txt'.format(backup_number)], user='root')
+    return int(node.exec_in_container(['bash', '-c', 'cat /var/lib/clickhouse/disks/s3/shadow/{}/revision.txt'.format(backup_number)], user='root'))
 
 
 @pytest.fixture(autouse=True)
@@ -300,9 +300,12 @@ def test_restore_mutations(cluster):
     node_another_bucket.stop_clickhouse()
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
-    revision = str((int(revision_before_mutation) + int(revision_after_mutation)) // 2)
+    revision = (revision_before_mutation + revision_after_mutation) // 2
     create_restore_file(node_another_bucket, revision=revision, bucket="root")
     node_another_bucket.start_clickhouse()
+
+    # Wait for unfinished mutation completion.
+    time.sleep(3)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 2)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
