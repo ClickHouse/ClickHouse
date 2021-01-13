@@ -6,18 +6,18 @@ namespace DB
 namespace
 {
 using namespace nuraft;
-ptr<log_entry> makeClone(const ptr<log_entry>& entry) {
-    ptr<log_entry> clone = cs_new<log_entry>
-                           ( entry->get_term(),
-                             buffer::clone( entry->get_buf() ),
-                             entry->get_val_type() );
+ptr<log_entry> makeClone(const ptr<log_entry> & entry) {
+    ptr<log_entry> clone = cs_new<log_entry>(entry->get_term(), buffer::clone(entry->get_buf()), entry->get_val_type());
     return clone;
 }
 }
 
 InMemoryLogStore::InMemoryLogStore()
     : start_idx(1)
-{}
+{
+    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(sizeof(size_t));
+    logs[0] = nuraft::cs_new<nuraft::log_entry>(0, buf);
+}
 
 size_t InMemoryLogStore::start_index() const
 {
