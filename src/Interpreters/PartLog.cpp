@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -37,6 +38,7 @@ Block PartLogElement::createBlock()
         {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
         {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
         {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"},
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "duration_ms"},
 
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "database"},
