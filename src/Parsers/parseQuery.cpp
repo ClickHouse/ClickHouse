@@ -255,6 +255,27 @@ ASTPtr tryParseQuery(
     bool parse_res = parser.parse(token_iterator, res, expected);
     Token last_token = token_iterator.max();
 
+    pos = last_token.end;
+
+    // The query may also contain a test hint comment in the same line, e.g.
+    // select nonexistent_column; -- { serverError 12345 }.
+    // We must add this comment to the query text, so that it is handled by the
+    // test hint parser.
+    // The token iterator skips comments and whitespace, so we have to find the
+    // newline in the string manually. If it's earlier than the next significant
+    // token, it means that the text before newline is some trailing whitespace
+    // or comment, and we should add it to our query.
+    const auto newline = find_first_symbols<'\n'>(pos, end);
+    TokenIterator next_token_iterator = token_iterator;
+    const auto next_token_begin =
+        (next_token_iterator.isValid()
+            && (++next_token_iterator).isValid())
+            ? (*next_token_iterator).begin : end;
+    if (newline < next_token_begin)
+    {
+        pos = newline;
+    }
+
     /// If parsed query ends at data for insertion. Data for insertion could be in any format and not necessary be lexical correct.
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
@@ -308,7 +329,6 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    pos = token_iterator->begin;
     return res;
 }
 

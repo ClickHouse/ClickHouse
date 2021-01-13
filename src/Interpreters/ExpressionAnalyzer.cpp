@@ -289,8 +289,6 @@ void ExpressionAnalyzer::analyzeAggregation()
     {
         aggregated_columns = temp_actions->getNamesAndTypesList();
     }
-
-    fmt::print(stderr, "aggregated columns: {}\n", aggregated_columns.toString());
 }
 
 

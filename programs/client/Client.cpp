@@ -871,24 +871,14 @@ private:
 
         while (this_query_begin < all_queries_end)
         {
-            // Use the token iterator to skip any whitespace, semicolons and
-            // comments at the beginning of the query. An example from regression
-            // tests:
-            //      insert into table t values ('invalid'); -- { serverError 469 }
-            //      select 1
-            // Here the test hint comment gets parsed as a part of second query.
-            // We parse the `INSERT VALUES` up to the semicolon, and the rest
-            // looks like a two-line query:
-            //      -- { serverError 469 }
-            //      select 1
-            // and we expect it to fail with error 469, but this hint is actually
-            // for the previous query. Test hints should go after the query, so
-            // we can fix this by skipping leading comments. Token iterator skips
-            // comments and whitespace by itself, so we only have to check for
-            // semicolons.
-            // The code block is to limit visibility of `tokens` because we have
-            // another such variable further down the code, and get warnings for
-            // that.
+            // The query parser doesn't skip all the trailing whitespace and
+            // comments, because they are also the leading comments for the
+            // next queries, and it makes more sense to treat them as such.
+            // There is one special case -- trailing whitespace + comments at
+            // end of file. The parser interface doesn't really allow it to work
+            // with an empty query, so we have to handle this case ourselves.
+            // If it's all whitespace and comments up to the end of file, we
+            // just stop.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens,
@@ -898,8 +888,7 @@ private:
                 {
                     ++token_iterator;
                 }
-                this_query_begin = token_iterator->begin;
-                if (this_query_begin >= all_queries_end)
+                if (token_iterator->begin >= all_queries_end)
                 {
                     break;
                 }
@@ -917,8 +906,11 @@ private:
                     throw;
 
                 /// Try find test hint for syntax error
-                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
-                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
+                const char * end_of_line =
+                    find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                TestHint hint(true /* enabled */,
+                    String(this_query_begin, end_of_line - this_query_begin));
+
                 if (hint.serverError()) /// Syntax errors are considered as client errors
                     throw;
                 if (hint.clientError() != e.code())
