@@ -23,6 +23,7 @@ The following actions are supported:
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
 
 These actions are described in detail below.
 
@@ -144,6 +145,26 @@ Changing the column type is the only complex action – it changes the contents 
 The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
+
+## MODIFY COLUMN REMOVE {#modify-remove}
+
+Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
+
+Syntax:
+
+```sql
+ALTER TABLE table_name MODIFY column_name REMOVE property;
+```
+
+**Example**
+
+```sql
+ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
+```
+
+## See Also
+
+- [REMOVE TTL](ttl.md).
 
 ## Limitations {#alter-query-limitations}
 

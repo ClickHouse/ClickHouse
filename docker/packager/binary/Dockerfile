@@ -82,7 +82,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Download toolchain for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
