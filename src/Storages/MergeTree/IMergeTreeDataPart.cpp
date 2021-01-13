@@ -1142,7 +1142,7 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
             return false;
     }
 
-    for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTL())
+    for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
     {
         if (!ttl_infos.rows_where_ttl.count(rows_where_desc.result_column))
             return false;
