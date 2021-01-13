@@ -80,7 +80,7 @@ public:
     };
 
     /// Index is used to:
-    ///     * find Node buy it's result_name
+    ///     * find Node by it's result_name
     ///     * specify order of columns in result
     /// It represents a set of available columns.
     /// Removing of column from index is equivalent to removing of column from final result.
