@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_FSTAT;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 
@@ -84,7 +85,10 @@ public:
                 throwFromErrnoWithPath("Cannot read all bytes from " + std::string(filename), std::string(filename), ErrorCodes::ILLEGAL_COLUMN);
 
             res_buf[file_length] = '\0';
-            close(fd);
+            if (0 != close(fd))
+                throw Exception("Cannot close file " + std::string(filename), ErrorCodes::CANNOT_CLOSE_FILE);
+            fd = -1;
+
             return res;
         }
         else
