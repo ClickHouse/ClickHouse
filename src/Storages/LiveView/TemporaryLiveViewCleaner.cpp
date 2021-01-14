@@ -55,6 +55,8 @@ void TemporaryLiveViewCleaner::startupIfNecessary()
         return;
     if (!views.empty())
         startupIfNecessaryImpl(lock);
+    else
+        can_start_background_thread = true;
 }
 
 void TemporaryLiveViewCleaner::startupIfNecessaryImpl(const std::lock_guard<std::mutex> &)
