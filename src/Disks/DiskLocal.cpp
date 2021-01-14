@@ -241,20 +241,23 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 
 void DiskLocal::removeFile(const String & path)
 {
-    if (0 != unlink(path.c_str()))
-        throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
-    if (0 != unlink(path.c_str()) && errno != ENOENT)
-        throwFromErrnoWithPath("Cannot unlink file " + path, path, ErrorCodes::CANNOT_UNLINK);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void DiskLocal::removeDirectory(const String & path)
 {
-    if (0 != rmdir(path.c_str()))
-        throwFromErrnoWithPath("Cannot rmdir " + path, path, ErrorCodes::CANNOT_RMDIR);
+    auto fs_path = disk_path + path;
+    if (0 != rmdir(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
