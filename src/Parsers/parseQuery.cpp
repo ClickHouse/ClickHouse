@@ -249,13 +249,79 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    fmt::print(stderr, "before parsing: '{}'\n",
+        std::string_view(pos, end - pos));
+
     Expected expected;
 
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
-    Token last_token = token_iterator.max();
+    const Token last_token = token_iterator.max();
+
+    const auto * query_begin = pos;
 
     pos = last_token.end;
+
+    fmt::print(stderr, "parse res {}, ast {}\n", parse_res,
+        static_cast<void *>(res.get()));
+
+    // If parsed query ends at data for insertion. Data for insertion could be
+    // in any format and not necessary be lexical correct, so we can't perform
+    // most of the checks.
+    ASTInsertQuery * insert = nullptr;
+    if (parse_res)
+        insert = res->as<ASTInsertQuery>();
+
+    if (insert && insert->data)
+    {
+        if (!parse_res)
+        {
+            // Generic parse error.
+            out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
+            return nullptr;
+        }
+
+        return res;
+    }
+
+    // More granular checks for queries other than INSERT w/inline data.
+    /// Lexical error
+    if (last_token.isError())
+    {
+        out_error_message = getLexicalErrorMessage(pos, end, last_token, hilite, query_description);
+        return nullptr;
+    }
+
+    /// Unmatched parentheses
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token);
+    if (!unmatched_parens.empty())
+    {
+        out_error_message = getUnmatchedParenthesesErrorMessage(pos, end, unmatched_parens, hilite, query_description);
+        return nullptr;
+    }
+
+    // If multi-statements are not allowed, then after semicolon, there must
+    // be no non-space characters.
+    if (!allow_multi_statements
+        && !token_iterator->isEnd())
+    {
+        out_error_message = getSyntaxErrorMessage(pos, end, last_token, {}, hilite,
+            (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+        return nullptr;
+    }
+
+    if (!parse_res)
+    {
+        /// Generic parse error.
+        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
+        return nullptr;
+    }
+
+    // The query was parsed correctly, but now we have to do some extra work to
+    // determine where the next query begins, preserving its leading comments.
+
+    fmt::print(stderr, "before adding newline: '{}'\n",
+        std::string_view(query_begin, pos - query_begin));
 
     // The query may also contain a test hint comment in the same line, e.g.
     // select nonexistent_column; -- { serverError 12345 }.
@@ -265,9 +331,9 @@ ASTPtr tryParseQuery(
     // newline in the string manually. If it's earlier than the next significant
     // token, it means that the text before newline is some trailing whitespace
     // or comment, and we should add it to our query.
-    const auto newline = find_first_symbols<'\n'>(pos, end);
+    const auto * newline = find_first_symbols<'\n'>(pos, end);
     TokenIterator next_token_iterator = token_iterator;
-    const auto next_token_begin =
+    const auto * next_token_begin =
         (next_token_iterator.isValid()
             && (++next_token_iterator).isValid())
             ? (*next_token_iterator).begin : end;
@@ -276,58 +342,8 @@ ASTPtr tryParseQuery(
         pos = newline;
     }
 
-    /// If parsed query ends at data for insertion. Data for insertion could be in any format and not necessary be lexical correct.
-    ASTInsertQuery * insert = nullptr;
-    if (parse_res)
-        insert = res->as<ASTInsertQuery>();
-
-    if (!(insert && insert->data))
-    {
-        /// Lexical error
-        if (last_token.isError())
-        {
-            out_error_message = getLexicalErrorMessage(pos, end, last_token, hilite, query_description);
-            return nullptr;
-        }
-
-        /// Unmatched parentheses
-        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
-        if (!unmatched_parens.empty())
-        {
-            out_error_message = getUnmatchedParenthesesErrorMessage(pos, end, unmatched_parens, hilite, query_description);
-            return nullptr;
-        }
-    }
-
-    if (!parse_res)
-    {
-        /// Parse error.
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
-        return nullptr;
-    }
-
-    /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
-    if (!token_iterator->isEnd()
-        && token_iterator->type != TokenType::Semicolon
-        && !(insert && insert->data))
-    {
-        expected.add(pos, "end of query");
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
-        return nullptr;
-    }
-
-    while (token_iterator->type == TokenType::Semicolon)
-        ++token_iterator;
-
-    /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
-    if (!allow_multi_statements
-        && !token_iterator->isEnd()
-        && !(insert && insert->data))
-    {
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, {}, hilite,
-            (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
-        return nullptr;
-    }
+    fmt::print(stderr, "final: '{}'\n",
+        std::string_view(query_begin, pos - query_begin));
 
     return res;
 }

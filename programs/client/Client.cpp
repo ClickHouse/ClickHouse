@@ -888,14 +888,18 @@ private:
                 {
                     ++token_iterator;
                 }
-                if (token_iterator->begin >= all_queries_end)
+
+                if (!token_iterator.isValid())
                 {
                     break;
                 }
             }
 
+
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
+            fmt::print(stderr, "left to parse: '{}'\n", std::string_view(
+                this_query_end, all_queries_end - this_query_end));
             try
             {
                 parsed_query = parseQuery(this_query_end, all_queries_end, true);
@@ -924,6 +928,9 @@ private:
                 this_query_begin = end_of_line;
                 continue;
             }
+
+            fmt::print(stderr, "parsed query: '{}'\n", std::string_view(
+                this_query_begin, this_query_end - this_query_begin));
 
             if (!parsed_query)
             {
@@ -995,6 +1002,18 @@ private:
                         //, where the inline data is delimited by semicolon and not
                         // by a newline.
                         this_query_end = parsed_query->as<ASTInsertQuery>()->end;
+                        // We also have to skip the trailing semicolon that might
+                        // be left after VALUES parsing.
+                        Tokens after_insert_tokens(this_query_end,
+                            all_queries_end);
+                        IParser::Pos after_insert_iterator(after_insert_tokens,
+                            context.getSettingsRef().max_parser_depth);
+                        while (after_insert_iterator.isValid()
+                           && after_insert_iterator->type == TokenType::Semicolon)
+                        {
+                            this_query_end = after_insert_iterator->end;
+                            ++after_insert_iterator;
+                        }
                     }
                 }
                 catch (...)
