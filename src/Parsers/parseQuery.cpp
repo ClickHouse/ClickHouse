@@ -292,6 +292,12 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    // Skip the semicolon that might be left after parsing the VALUES format.
+    while (token_iterator->type == TokenType::Semicolon)
+    {
+        ++token_iterator;
+    }
+
     // If multi-statements are not allowed, then after semicolon, there must
     // be no non-space characters.
     if (!allow_multi_statements
