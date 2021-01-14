@@ -12,6 +12,10 @@
 #include <random>
 #include <cstdlib>
 
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
+#endif
+
 namespace
 {
 
@@ -165,6 +169,14 @@ void MemoryTracker::alloc(Int64 size)
         }
     }
 
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+    if (unlikely(_memory_tracker_always_throw_logical_error_on_allocation))
+    {
+        _memory_tracker_always_throw_logical_error_on_allocation = false;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
+    }
+#endif
+
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
     {
@@ -234,7 +246,12 @@ void MemoryTracker::updatePeak(Int64 will_be)
 void MemoryTracker::free(Int64 size)
 {
     if (BlockerInThread::isBlocked(level))
+    {
+        /// Since the BlockerInThread should respect the level, we should go to the next parent.
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            loaded_next->free(size);
         return;
+    }
 
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))

@@ -318,6 +318,10 @@ else ()
     if (USE_GDB_ADD_INDEX)
         add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
     endif()
+
+    if (USE_BINARY_HASH)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
+    endif()
 endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
