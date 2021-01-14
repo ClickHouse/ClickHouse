@@ -483,6 +483,10 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
+inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeEscapedString(ref.data(), ref.size(), buf);
+}
 
 template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
@@ -512,15 +516,29 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(s, buf);
 }
 
-
 inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
+inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
+}
+
+inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s, buf);
+}
+
 inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
+}
+
+inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
 
 /// Outputs a string in backquotes.
@@ -901,6 +919,7 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -1001,6 +1020,10 @@ writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
+inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
+inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
 inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
@@ -1042,6 +1065,10 @@ inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {

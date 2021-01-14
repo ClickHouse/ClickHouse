@@ -62,7 +62,11 @@ template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer buf,      
 template <typename T> WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf,   const T & x) { writeDoubleQuoted(x, buf.get()); return buf; }
 template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer buf,        const T & x) { writeBinary(x, buf.get());       return buf; }
 
-inline WriteBuffer & operator<< (EscapeManipWriteBuffer buf,      const char * x) { writeAnyEscapedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)           { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const std::string_view & x) { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const StringRef & x)        { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const char * x)             { writeEscapedString(x, strlen(x), buf); return buf; }
+
 inline WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
 inline WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf, const char * x) { writeAnyQuotedString<'"'>(x, x + strlen(x), buf.get()); return buf; }
 inline WriteBuffer & operator<< (BinaryManipWriteBuffer buf,      const char * x) { writeStringBinary(x, buf.get()); return buf; }

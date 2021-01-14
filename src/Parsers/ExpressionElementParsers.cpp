@@ -262,11 +262,13 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
+    ParserKeyword all("ALL");
     ParserExpressionList contents(false);
     ParserSelectWithUnionQuery select;
     ParserKeyword over("OVER");
 
-    bool has_distinct_modifier = false;
+    bool has_all = false;
+    bool has_distinct = false;
 
     ASTPtr identifier;
     ASTPtr query;
@@ -280,10 +282,34 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    auto pos_after_bracket = pos;
+    auto old_expected = expected;
+
+    if (all.ignore(pos, expected))
+        has_all = true;
 
     if (distinct.ignore(pos, expected))
-        has_distinct_modifier = true;
-    else
+        has_distinct = true;
+
+    if (!has_all && all.ignore(pos, expected))
+        has_all = true;
+
+    if (has_all && has_distinct)
+        return false;
+
+    if (has_all || has_distinct)
+    {
+        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+        {
+            pos = pos_after_bracket;
+            expected = old_expected;
+            has_all = false;
+            has_distinct = false;
+        }
+    }
+
+    if (!has_distinct && !has_all)
     {
         auto old_pos = pos;
         auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
@@ -371,14 +397,37 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
 
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
-        if (has_distinct_modifier)
+        if (has_distinct)
             return false;
 
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
 
+        pos_after_bracket = pos;
+        old_expected = expected;
+
+        if (all.ignore(pos, expected))
+            has_all = true;
+
         if (distinct.ignore(pos, expected))
-            has_distinct_modifier = true;
+            has_distinct = true;
+
+        if (!has_all && all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && has_distinct)
+            return false;
+
+        if (has_all || has_distinct)
+        {
+            /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+            if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+            {
+                pos = pos_after_bracket;
+                expected = old_expected;
+                has_distinct = false;
+            }
+        }
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
@@ -392,7 +441,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     tryGetIdentifierNameInto(identifier, function_node->name);
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
-    if (has_distinct_modifier)
+    if (has_distinct)
         function_node->name += "Distinct";
 
     function_node->arguments = expr_list_args;

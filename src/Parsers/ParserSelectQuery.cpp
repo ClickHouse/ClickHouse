@@ -30,6 +30,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = select_query;
 
     ParserKeyword s_select("SELECT");
+    ParserKeyword s_all("ALL");
     ParserKeyword s_distinct("DISTINCT");
     ParserKeyword s_from("FROM");
     ParserKeyword s_prewhere("PREWHERE");
@@ -93,13 +94,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
+    /// SELECT [ALL/DISTINCT] [TOP N [WITH TIES]] expr list
     {
+        bool has_all = false;
         if (!s_select.ignore(pos, expected))
             return false;
 
+        if (s_all.ignore(pos, expected))
+            has_all = true;
+
         if (s_distinct.ignore(pos, expected))
             select_query->distinct = true;
+
+        if (!has_all && s_all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && select_query->distinct)
+            return false;
 
         if (s_top.ignore(pos, expected))
         {
