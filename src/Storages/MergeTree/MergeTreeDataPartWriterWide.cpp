@@ -140,6 +140,12 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     /// If we didn't finished last granule than we will continue to write it from new block
     if (!last_granule.is_complete)
     {
+        if (settings.blocks_are_granules_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granules are not allowed while blocks are granules size. "
+                "Mark number {} (rows {}), rows written in last mark {}, rows to write in last mark from block {} (from row {}), total marks currently {}",
+                last_granule.mark_number, index_granularity.getMarkRows(last_granule.mark_number), rows_written_in_last_mark,
+                last_granule.rows_to_write, last_granule.start_row, index_granularity.getMarksCount());
+
         /// Shift forward except last granule
         setCurrentMark(getCurrentMark() + granules_written.size() - 1);
         bool still_in_the_same_granule = granules_written.size() == 1;
@@ -161,7 +167,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 {
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
-    /// but not in case of vertical merge)
+    /// but not in case of vertical part of vertical merge)
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(block);
@@ -451,12 +457,25 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
         /// Now they must be equal
         if (column->size() != index_granularity_rows)
         {
-            if (must_be_last && !settings.can_use_adaptive_granularity)
-                break;
+
+            if (must_be_last)
+            {
+                /// The only possible mark after bin.eof() is final mark. When we
+                /// cannot use adaptive granularity we cannot have last mark.
+                /// So finish validation.
+                if (!settings.can_use_adaptive_granularity)
+                    break;
+
+                /// If we don't compute granularity then we are not responsible
+                /// for last mark (for example we mutating some column from part
+                /// with fixed granularity where last mark is not adjusted)
+                if (!compute_granularity)
+                    continue;
+            }
 
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), actually in bin file {}, in mrk file {}",
-                mark_num, offset_in_compressed_file, offset_in_decompressed_block, column->size(), index_granularity.getMarkRows(mark_num));
+                ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for mark #{} (compressed offset {}, decompressed offset {}), actually in bin file {}, in mrk file {}, total marks {}",
+                mark_num, offset_in_compressed_file, offset_in_decompressed_block, column->size(), index_granularity.getMarkRows(mark_num), index_granularity.getMarksCount());
         }
     }
 
@@ -483,7 +502,14 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
     WrittenOffsetColumns offset_columns;
     if (rows_written_in_last_mark > 0)
+    {
+        if (settings.blocks_are_granules_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete granule is not allowed while blocks are granules size even for last granule. "
+                "Mark number {} (rows {}), rows written for last mark {}, total marks {}",
+                getCurrentMark(), index_granularity.getMarkRows(getCurrentMark()), rows_written_in_last_mark, index_granularity.getMarksCount());
+
         adjustLastMarkIfNeedAndFlushToDisk(rows_written_in_last_mark);
+    }
 
     bool write_final_mark = (with_final_mark && data_written);
 
@@ -514,7 +540,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
 
 #ifndef NDEBUG
     /// Heavy weight validation of written data. Checks that we are able to read
-    /// data according to marks. Otherwise throws LOGICAL_ERROR (equal to about in debug mode)
+    /// data according to marks. Otherwise throws LOGICAL_ERROR (equal to abort in debug mode)
     for (const auto & column : columns_list)
     {
         if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
