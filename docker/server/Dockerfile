@@ -4,7 +4,10 @@ ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
 ARG version=21.1.0
 ARG gosu_ver=1.10
 
-RUN apt-get update \
+# user/group precreated explicitly with fixed uid/gid on purpose (see commit)
+RUN groupadd -r clickhouse --gid=101 \
+    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \

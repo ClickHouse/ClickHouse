@@ -8,9 +8,9 @@ ENV LANG=en_US.UTF-8 \
 
 COPY alpine-root/ /
 
-# from https://github.com/ClickHouse/ClickHouse/blob/master/debian/clickhouse-server.postinst
-RUN addgroup clickhouse \
-    && adduser -S -H -h /nonexistent -s /bin/false -G clickhouse -g "ClickHouse server" clickhouse \
+# user/group precreated explicitly with fixed uid/gid on purpose (see commit)
+RUN addgroup -S -g 101 clickhouse \
+    && adduser -S -h /var/lib/clickhouse -s /bin/bash -G clickhouse -g "ClickHouse server" -u 101 clickhouse \
     && chown clickhouse:clickhouse /var/lib/clickhouse \
     && chmod 700 /var/lib/clickhouse \
     && chown root:clickhouse /var/log/clickhouse-server \
