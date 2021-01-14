@@ -165,11 +165,6 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
 
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Permutation * permutation)
 {
-    /// TODO: remove me
-    const auto storage_settings = storage.getSettings();
-    if (settings.blocks_are_granules_size && block.rows() > storage_settings->index_granularity)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "When blocks are granules size block size ({} rows) cannot be bigger than fixed granularity ({} rows)",
-                        block.rows(), storage_settings->index_granularity);
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical part of vertical merge)
