@@ -19,7 +19,7 @@ bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     if (const auto * f = node->as<ASTFunction>())
     {
-        /// "lambda" visit children itself.
+        /// "lambda" visits children itself.
         if (f->name == "lambda")
             return false;
     }
