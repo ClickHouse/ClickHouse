@@ -144,12 +144,13 @@ HashJoin::HashJoin(
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
     const auto & key_names_left = table_join->keyNamesLeft();
-    bool can_cast_key_columns = JoinCommon::canCastJoinColumns(left_sample_block, *table_join);
+
+    bool can_cast_key_columns = JoinCommon::isCastJoinKeysAllowed(left_sample_block, right_sample_block, *table_join);
     if (can_cast_key_columns)
     {
         cast_keys_info = JoinCommon::getJoinColumnsNeedCast(
-            left_sample_block, key_names_left,
-            right_sample_block, key_names_right);
+            right_sample_block, key_names_right,
+            left_sample_block, key_names_left);
     }
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
@@ -158,7 +159,11 @@ HashJoin::HashJoin(
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
 
-    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
+
+    /// We will join only keys, where all components are not NULL
+    bool remove_nullability = true;
+    Columns key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right, cast_keys_info, remove_nullability);
+    ColumnRawPtrs key_column_ptrs = JoinCommon::getRawPointers(key_columns);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
     if (nullable_right_side)
@@ -168,7 +173,7 @@ HashJoin::HashJoin(
     {
         data->type = Type::DICT;
         std::get<MapsOne>(data->maps).create(Type::DICT);
-        chooseMethod(key_columns, key_sizes); /// init key_sizes
+        chooseMethod(key_column_ptrs, key_sizes); /// init key_sizes
     }
     else if (strictness == ASTTableJoin::Strictness::Asof)
     {
@@ -177,27 +182,27 @@ HashJoin::HashJoin(
         if (!isLeft(kind) && !isInner(kind))
             throw Exception("Wrong ASOF JOIN type. Only ASOF and LEFT ASOF joins are supported", ErrorCodes::NOT_IMPLEMENTED);
 
-        if (key_columns.size() <= 1)
+        if (key_column_ptrs.size() <= 1)
             throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
 
         if (right_table_keys.getByName(key_names_right.back()).type->isNullable())
             throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 
         size_t asof_size;
-        asof_type = AsofRowRefs::getTypeSize(*key_columns.back(), asof_size);
-        key_columns.pop_back();
+        asof_type = AsofRowRefs::getTypeSize(*key_column_ptrs.back(), asof_size);
+        key_column_ptrs.pop_back();
 
         /// this is going to set up the appropriate hash table for the direct lookup part of the join
         /// However, this does not depend on the size of the asof join key (as that goes into the BST)
         /// Therefore, add it back in such that it can be extracted appropriately from the full stored
         /// key_columns and key_sizes
-        init(chooseMethod(key_columns, key_sizes));
+        init(chooseMethod(key_column_ptrs, key_sizes));
         key_sizes.push_back(asof_size);
     }
     else
     {
         /// Choose data structure to use for JOIN.
-        init(chooseMethod(key_columns, key_sizes));
+        init(chooseMethod(key_column_ptrs, key_sizes));
     }
 }
 
@@ -590,13 +595,14 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     /// There's no optimization for right side const columns. Remove constness if any.
     Block block = materializeBlock(source_block);
-    size_t rows = block.rows();
+    JoinCommon::removeLowCardinalityInplace(block, key_names_right, false);
 
-    ColumnRawPtrs key_columns = JoinCommon::materializeColumnsInplace(block, key_names_right);
+    Columns key_columns = JoinCommon::extractKeysForJoin(block, key_names_right, cast_keys_info, false);
+    ColumnRawPtrs key_column_ptrs = JoinCommon::getRawPointers(key_columns);
 
     /// We will insert to the map only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_column_ptrs, null_map);
 
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
     UInt8 save_nullmap = 0;
@@ -616,6 +622,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &data->blocks.back();
 
+        size_t rows = block.rows();
         if (rows)
             data->empty = false;
 
@@ -623,7 +630,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         {
             joinDispatch(kind, strictness, data->maps, [&](auto, auto strictness_, auto & map)
             {
-                insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, data->pool);
+                insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_column_ptrs, key_sizes, stored_block, null_map, data->pool);
             });
         }
 
@@ -978,18 +985,7 @@ void HashJoin::joinBlockImpl(
     constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-    Columns materialized_keys;
-    if (!cast_keys_info.empty())
-    {
-        /// Also need to convert left columns
-        Columns casted_keys = JoinCommon::castJoinColumns(block, cast_keys_info);
-        materialized_keys = JoinCommon::materializeColumns(casted_keys);
-    }
-    else
-    {
-        materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
-    }
-
+    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
     ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.

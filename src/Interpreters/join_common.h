@@ -15,6 +15,8 @@ using ColumnRawPtrs = std::vector<const IColumn *>;
 namespace JoinCommon
 {
 
+using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
+
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability = false);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
 void removeColumnNullability(ColumnPtr & column);
@@ -23,13 +25,12 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 Columns materializeColumns(const Columns & columns);
 Columns materializeColumns(const Block & block, const Names & names);
-ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
 void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
 void restoreLowCardinalityInplace(Block & block);
 
-ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
+Columns extractKeysForJoin(const Block & block, const Names & key_names, const NameToTypeMap & cast_columns, bool remove_nullability);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
@@ -37,13 +38,10 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
 
 
-NamesAndTypes getJoinColumnsNeedCast(const Block & block_left, const Names & key_names_left,
-                                     const Block & block_right, const Names & key_names_right);
+NameToTypeMap getJoinColumnsNeedCast(const Block & block_converted, const Names & key_names_converted,
+                                     const Block & block_unchanged, const Names & key_names_unchanged);
 
-/// Check that it possible to perform type conversion for join key columns.
-/// Left key columns will be casted to right column types.
-bool canCastJoinColumns(const Block & left_block, const TableJoin & table_join);
-Columns castJoinColumns(const Block & block, const NamesAndTypes & names_and_types);
+bool isCastJoinKeysAllowed(const Block & left_block, const Block & right_block, const TableJoin & table_join);
 void addCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);
 
 void restoreCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);

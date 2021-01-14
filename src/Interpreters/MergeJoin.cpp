@@ -437,18 +437,18 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & left_
     const auto & key_names_left = table_join->keyNamesLeft();
     const auto & key_names_right = table_join->keyNamesRight();
 
-    bool can_cast_key_columns = JoinCommon::canCastJoinColumns(left_sample_block, *table_join);
-    if (can_cast_key_columns)
+    bool cast_allowed = JoinCommon::isCastJoinKeysAllowed(left_sample_block, right_sample_block, *table_join);
+    if (cast_allowed)
     {
         auto cols_to_convert = JoinCommon::getJoinColumnsNeedCast(
             left_sample_block, table_join->keyNamesLeft(), right_sample_block, key_names_right);
 
         /// Casted columns will be stored in separate columns with unique generated names
         String uuid_string = UUIDHelpers::generateV4().toUnderType().toHexString();
-        for (const auto & e : cols_to_convert)
+        for (const auto & [name, type] : cols_to_convert)
         {
-            std::string new_name = "--" + uuid_string + "-" + e.name;
-            left_key_names_mapping[e.name] = NameAndTypePair(new_name, e.type);
+            std::string new_name = "--" + uuid_string + "-" + name;
+            left_key_names_mapping[name] = NameAndTypePair(new_name, type);
 
             if (unlikely(left_sample_block.has(new_name)))
                 throw DB::Exception("Randomly generated column name is not unique", ErrorCodes::LOGICAL_ERROR);

@@ -8,7 +8,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/castColumn.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -145,21 +144,6 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
-{
-    ColumnRawPtrs ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
-        ptrs.push_back(column.get());
-    }
-
-    return ptrs;
-}
-
 Columns materializeColumns(const Columns & columns)
 {
     Columns materialized;
@@ -188,20 +172,34 @@ Columns materializeColumns(const Block & block, const Names & names)
     return materialized;
 }
 
-bool canCastJoinColumns(const Block & left_block, const TableJoin & table_join)
+/// Join keys not casted in some cases:
+/// - for tables with `engine = Join` (in this case left_block hasn't rows)
+/// - if some keys are not nullable (this limitation comes from accurateCastOrNull)
+/// - (RIGHT/FULL JOIN ... USING)
+bool isCastJoinKeysAllowed(const Block & left_block, const Block & right_block, const TableJoin & table_join)
 {
-    bool is_left_or_inner = isLeft(table_join.kind()) || isInner(table_join.kind());
     bool key_names_match = table_join.keyNamesLeft().size() == table_join.keyNamesRight().size();
-    return left_block && key_names_match && (!table_join.hasUsing() || is_left_or_inner);
-}
 
-Columns castJoinColumns(const Block & block, const NamesAndTypes & names_and_types)
-{
-    Columns casted;
-    casted.reserve(names_and_types.size());
-    for (const auto & nt : names_and_types)
-        casted.emplace_back(castColumnAccurateOrNull(block.getByName(nt.name), nt.type));
-    return casted;
+    bool is_left_or_inner = isLeft(table_join.kind()) || isInner(table_join.kind());
+    bool using_forbidden = table_join.hasUsing() && !is_left_or_inner;
+    if (!left_block || !right_block || !key_names_match || using_forbidden)
+        return false;
+
+    auto check_type_of_keys = [](const Names & names, const Block & block)
+    {
+        for (const auto & name : names)
+        {
+            const auto typ = block.getByName(name).type;
+            if (!typ->isNullable() && !typ->canBeInsideNullable())
+                return false;
+        }
+        return true;
+    };
+
+    bool types_is_nullable = check_type_of_keys(table_join.keyNamesLeft(), left_block)
+        && check_type_of_keys(table_join.keyNamesRight(), right_block);
+
+    return types_is_nullable;
 }
 
 void addCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping)
@@ -269,19 +267,24 @@ void restoreLowCardinalityInplace(Block & block)
     }
 }
 
-ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names)
+Columns extractKeysForJoin(const Block & block, const Names & key_names, const NameToTypeMap & cast_columns, bool remove_nullability)
 {
     size_t keys_size = key_names.size();
-    ColumnRawPtrs key_columns(keys_size);
+    Columns key_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
         const String & column_name = key_names[i];
-        key_columns[i] = block_keys.getByName(column_name).column.get();
+        const auto & col = block.getByName(column_name);
 
-        /// We will join only keys, where all components are not NULL.
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
-            key_columns[i] = &nullable->getNestedColumn();
+        if (const auto type_map = cast_columns.find(column_name); type_map != cast_columns.end())
+            key_columns[i] = castColumnAccurateOrNull(col, type_map->second);
+        else
+            key_columns[i] = col.column;
+
+        const ColumnNullable * nullable;
+        if (remove_nullability && (nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i])))
+            key_columns[i] = nullable->getNestedColumnPtr();
     }
 
     return key_columns;
@@ -311,32 +314,32 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
     }
 }
 
-NamesAndTypes getJoinColumnsNeedCast(const Block & block_left, const Names & key_names_left,
-                                     const Block & block_right, const Names & key_names_right)
+NameToTypeMap getJoinColumnsNeedCast(const Block & block_converted, const Names & key_names_converted,
+                                     const Block & block_unchanged, const Names & key_names_unchanged)
 {
-    if (key_names_left.size() != key_names_right.size())
+    if (key_names_converted.size() != key_names_unchanged.size())
     {
         throw DB::Exception("Number of keys don't match", ErrorCodes::LOGICAL_ERROR);
     }
 
-    NamesAndTypes need_conversion;
-    for (size_t i = 0; i < key_names_left.size(); ++i)
+    NameToTypeMap need_conversion;
+    for (size_t i = 0; i < key_names_converted.size(); ++i)
     {
-        const auto & left_col = block_left.getByName(key_names_left[i]);
-        const auto & right_col = block_right.getByName(key_names_right[i]);
-        if (typesEqualUpToNullability(left_col.type, right_col.type))
+        const auto & converted_col = block_converted.getByName(key_names_converted[i]);
+        const auto & unchanged_col = block_unchanged.getByName(key_names_unchanged[i]);
+        if (typesEqualUpToNullability(converted_col.type, unchanged_col.type))
             continue;
 
-        need_conversion.emplace_back(left_col.name, right_col.type);
+        need_conversion.emplace(converted_col.name, unchanged_col.type);
         try
         {
-            castColumnAccurateOrNull(left_col, right_col.type);
+            castColumnAccurateOrNull(converted_col, unchanged_col.type);
         }
         catch (DB::Exception &)
         {
             throw Exception("Type mismatch of columns to JOIN by: "
-                            + key_names_left[i] + " " + left_col.type->getName() + " at left, "
-                            + key_names_right[i] + " " + right_col.type->getName() + " at right",
+                            + key_names_converted[i] + " " + converted_col.type->getName() + " at left, "
+                            + key_names_unchanged[i] + " " + unchanged_col.type->getName() + " at right",
                             ErrorCodes::TYPE_MISMATCH);
         }
     }

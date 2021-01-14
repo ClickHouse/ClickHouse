@@ -115,7 +115,7 @@ DROP TABLE IF EXISTS t2;
 
 SELECT '--- non-convertable values ---';
 
-CREATE TABLE t1 (a Nullable(Int32), b LowCardinality(String)) ENGINE = Memory;
+CREATE TABLE t1 (a Nullable(Int32), b String) ENGINE = Memory;
 CREATE TABLE t2 (a UInt8, b String) ENGINE = Memory;
 
 INSERT INTO t1 VALUES (-1, 'a');
@@ -166,9 +166,98 @@ SELECT COUNT(*) FROM t1 JOIN t2 ON t1.b == t2.a;
 select '-';
 SELECT * FROM t1 JOIN t2 ON t1.b == t2.b;
 
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+select '--- multiple keys ---';
+
+CREATE TABLE t1 (a Nullable(String), b String, c String) ENGINE = TinyLog;
+CREATE TABLE t2 (a UInt64, b Nullable(UInt8), c String) ENGINE = TinyLog;
+INSERT INTO t1 VALUES ('-1', '-1', '-1'), ('0', '0', '0'), ('1', '1', '1'), ('2', '2', '2');
+INSERT INTO t2 VALUES (1, 1, '1'), (2, 2, '2'), (10, 10, 10);
+
+SET join_algorithm = 'hash';
+
+SELECT '--- hash ---';
+
+SELECT '-';
+SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c); -- { serverError 53 }
+SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
+
+SELECT '-';
+SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c); -- { serverError 53 }
+SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
+
+SELECT '-';
+SELECT * FROM t1 INNER JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 FULL JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+
+SELECT '-';
+SELECT * FROM t2 INNER JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 LEFT JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 RIGHT JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 FULL JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+
+SET join_algorithm = 'partial_merge';
+
+SELECT '--- partial_merge ---';
+
+SELECT '-';
+SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c); -- { serverError 53 }
+SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
+
+SELECT '-';
+SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c); -- { serverError 53 }
+SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
+
+SELECT '-';
+SELECT * FROM t1 INNER JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 RIGHT JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t1 FULL JOIN t2 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+
+SELECT '-';
+SELECT * FROM t2 INNER JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 LEFT JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 RIGHT JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT '-';
+SELECT * FROM t2 FULL JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+
 SET join_algorithm = 'auto';
 
 SELECT * FROM ( SELECT [1] as a ) AS t1 JOIN ( SELECT ['1'] as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
+SELECT * FROM ( SELECT [1] as a ) AS t1 JOIN ( SELECT 1 as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
+SELECT * FROM ( SELECT 1 as a ) AS t1 JOIN ( SELECT [1] as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
+SELECT * FROM ( SELECT toLowCardinality('1') as a ) AS t1 JOIN ( SELECT 1 as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
+SELECT * FROM ( SELECT 1 as a ) AS t1 JOIN ( SELECT toLowCardinality('1') as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
+
+
+
