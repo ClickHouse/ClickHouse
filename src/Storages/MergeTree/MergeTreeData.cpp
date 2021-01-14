@@ -1215,8 +1215,8 @@ void MergeTreeData::clearOldWriteAheadLogs()
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
             if (min_max_block_number && is_range_on_disk(min_max_block_number->first, min_max_block_number->second))
             {
-                LOG_DEBUG(log, "Removing from filesystem outdated WAL file " + it->name());
-                disk_ptr->remove(relative_data_path + it->name());
+                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file " + it->name());
+                disk_ptr->removeFile(relative_data_path + it->name());
             }
         }
     }
@@ -1316,9 +1316,9 @@ void MergeTreeData::dropIfEmpty()
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         /// Non recursive, exception is thrown if there are more files.
-        disk->remove(path + "format_version.txt");
-        disk->remove(path + "detached");
-        disk->remove(path);
+        disk->removeFile(path + "format_version.txt");
+        disk->removeDirectory(path + "detached");
+        disk->removeDirectory(path);
     }
 }
 
@@ -3545,7 +3545,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
-    disk->removeIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    disk->removeFileIfExists(dst_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);
@@ -3636,7 +3636,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         else
             localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);
 
-        part->volume->getDisk()->removeIfExists(backup_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+        part->volume->getDisk()->removeFileIfExists(backup_part_path + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
