@@ -114,23 +114,13 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 - inside the column list
 
 ``` sql
-CREATE TABLE db.table_name 
-( 
-    name1 type1, name2 type2, ..., 
-    PRIMARY KEY(expr1[, expr2,...])]
-) 
-ENGINE = engine;
+CREATE TABLE db.table_name (name1 type1, name2 type2, ..., PRIMARY KEY (expr1[, expr2,...])]) ENGINE = engine;
 ```
 
 - outside the column list
 
 ``` sql
-CREATE TABLE db.table_name
-( 
-    name1 type1, name2 type2, ...
-) 
-ENGINE = engine
-PRIMARY KEY(expr1[, expr2,...]);
+CREATE TABLE db.table_name (name1 type1, name2 type2, ...) ENGINE = engine PRIMARY KEY(expr1[, expr2,...]);
 ```
 
 You can't combine both ways in one query.
