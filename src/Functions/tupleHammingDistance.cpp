@@ -75,16 +75,16 @@ public:
         if (arguments[1].column)
             right_elements = getTupleElements(*arguments[1].column);
 
-        if (left_elements.size() != right_elements.size())
+        if (left_types.size() != right_types.size())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expected tuples of the same size as arguments of function {}. Got {} and {}",
                             getName(), arguments[0].type->getName(), arguments[1].type->getName());
 
-        size_t tuple_size = left_elements.size();
+        size_t tuple_size = left_types.size();
         if (tuple_size == 0)
             return std::make_shared<DataTypeUInt8>();
 
-        auto compare = FunctionFactory::instance().get("equals", context);
+        auto compare = FunctionFactory::instance().get("notEquals", context);
         auto plus = FunctionFactory::instance().get("plus", context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
@@ -128,7 +128,7 @@ public:
         if (tuple_size == 0)
             return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
-        auto compare = FunctionFactory::instance().get("equals", context);
+        auto compare = FunctionFactory::instance().get("notEquals", context);
         auto plus = FunctionFactory::instance().get("plus", context);
         ColumnsWithTypeAndName columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
