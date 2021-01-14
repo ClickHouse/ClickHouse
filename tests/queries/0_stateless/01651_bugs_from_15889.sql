@@ -39,7 +39,7 @@ set allow_introspection_functions = 1;
 
 WITH concat(addressToLine(arrayJoin(trace) AS addr), '#') AS symbol
 SELECT count() > 7
-FROM system.trace_log AS t
+FROM trace_log AS t
 WHERE (query_id = 
 (
     SELECT
@@ -54,7 +54,7 @@ WHERE (query_id =
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
 SELECT count() > 0
-FROM system.trace_log AS t
+FROM trace_log AS t
 WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterday()) AND (trace_type = 'Memory') AND (query_id = 
 (
     SELECT
