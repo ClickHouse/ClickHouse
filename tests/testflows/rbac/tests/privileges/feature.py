@@ -92,9 +92,10 @@ def feature(self):
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.sends", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.sync_replica", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.fetches", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.shutdown", "feature"), flags=TE), {})
 
         finally:
             join(tasks)
     finally:
         pool.close()
+
+    Feature(test=load("rbac.tests.privileges.system.shutdown", "feature"), flags=TE)
