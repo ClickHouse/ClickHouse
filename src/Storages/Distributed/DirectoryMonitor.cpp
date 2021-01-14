@@ -126,7 +126,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
 
     std::unique_lock lock{mutex};
 
-    const auto & files = getFiles();
+    const auto files = getFiles();
     if (!files.empty())
     {
         processFiles(files);
@@ -161,7 +161,7 @@ void StorageDistributedDirectoryMonitor::run()
     {
         do_sleep = true;
 
-        const auto & files = getFiles();
+        const auto files = getFiles();
         if (files.empty())
             break;
 

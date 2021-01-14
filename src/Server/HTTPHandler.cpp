@@ -564,7 +564,7 @@ void HTTPHandler::processQuery(
     context.checkSettingsConstraints(settings_changes);
     context.applySettingsChanges(settings_changes);
 
-    const auto & query = getQuery(request, params, context);
+    const auto query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
