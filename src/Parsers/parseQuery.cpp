@@ -249,21 +249,13 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    fmt::print(stderr, "before parsing: '{}'\n",
-        std::string_view(pos, end - pos));
-
     Expected expected;
 
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
     const Token last_token = token_iterator.max();
 
-    const auto * query_begin = pos;
-
     pos = last_token.end;
-
-    fmt::print(stderr, "parse res {}, ast {}\n", parse_res,
-        static_cast<void *>(res.get()));
 
     // If parsed query ends at data for insertion. Data for insertion could be
     // in any format and not necessary be lexical correct, so we can't perform
@@ -320,9 +312,6 @@ ASTPtr tryParseQuery(
     // The query was parsed correctly, but now we have to do some extra work to
     // determine where the next query begins, preserving its leading comments.
 
-    fmt::print(stderr, "before adding newline: '{}'\n",
-        std::string_view(query_begin, pos - query_begin));
-
     // The query may also contain a test hint comment in the same line, e.g.
     // select nonexistent_column; -- { serverError 12345 }.
     // We must add this comment to the query text, so that it is handled by the
@@ -341,9 +330,6 @@ ASTPtr tryParseQuery(
     {
         pos = newline;
     }
-
-    fmt::print(stderr, "final: '{}'\n",
-        std::string_view(query_begin, pos - query_begin));
 
     return res;
 }
