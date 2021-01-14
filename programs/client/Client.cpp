@@ -895,6 +895,17 @@ private:
                 }
             }
 
+            // Also remove leading empty newlines because they are annoying to
+            // filter in query log. This is mostly relevant for the tests.
+            while (this_query_begin < all_queries_end
+                 && isWhitespaceASCII(*this_query_begin))
+            {
+                ++this_query_begin;
+            }
+            if (this_query_begin >= all_queries_end)
+            {
+                break;
+            }
 
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
