@@ -29,7 +29,7 @@ $(document).ready(function () {
                 dataType: 'json',
                 data: data,
                 success: function () {
-                    meetup_form.html('<div class="alert alert-success"><h2>Thanks!</h2><p class="lead">We\'ll be in touch soon.</p></div>');
+                    meetup_form.html('<div class="alert alert-success mt-3"><h2>Thanks!</h2><p class="lead">We\'ll be in touch soon.</p></div>');
                     $('#meetup-form-error').html('');
                 },
                 error: function () {

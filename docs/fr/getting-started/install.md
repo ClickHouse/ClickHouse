@@ -9,9 +9,9 @@ toc_title: Installation
 
 ## Configuration Système Requise {#system-requirements}
 
-ClickHouse peut fonctionner sur N'importe quel Linux, FreeBSD ou Mac OS X avec une architecture CPU x86\_64, AArch64 ou PowerPC64LE.
+ClickHouse peut fonctionner sur N'importe quel Linux, FreeBSD ou Mac OS X avec une architecture CPU x86_64, AArch64 ou PowerPC64LE.
 
-Les binaires pré-construits officiels sont généralement compilés pour le jeu d'instructions x86\_64 et leverage SSE 4.2, donc sauf indication contraire, l'utilisation du processeur qui le prend en charge devient une exigence système supplémentaire. Voici la commande pour vérifier si le processeur actuel prend en charge SSE 4.2:
+Les binaires pré-construits officiels sont généralement compilés pour le jeu d'instructions x86_64 et leverage SSE 4.2, donc sauf indication contraire, l'utilisation du processeur qui le prend en charge devient une exigence système supplémentaire. Voici la commande pour vérifier si le processeur actuel prend en charge SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -66,7 +66,7 @@ Vous pouvez également télécharger et installer des paquets manuellement à pa
 
 Il est recommandé d'utiliser officiel pré-compilé `tgz` archives pour toutes les distributions Linux, où l'installation de `deb` ou `rpm` les emballages n'est pas possible.
 
-La version requise peut être téléchargée avec `curl` ou `wget` depuis le référentiel https://repo.yandex.ru/clickhouse/tgz/.
+La version requise peut être téléchargée avec `curl` ou `wget` depuis le référentiel https://repo.clickhouse.tech/tgz/.
 Après cela, les archives téléchargées doivent être décompressées et installées avec des scripts d'installation. Exemple pour la dernière version:
 
 ``` bash

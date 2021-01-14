@@ -12,6 +12,7 @@ namespace DB
 
 class Block;
 struct ExtraBlock;
+using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class IJoin
 {
@@ -35,7 +36,6 @@ public:
     virtual bool alwaysReturnsEmptySet() const { return false; }
 
     virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
-    virtual bool hasStreamWithNonJoinedRows() const { return false; }
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

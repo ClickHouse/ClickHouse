@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic> // for std::atomic<size_t>
+
 #include "ProxyConfiguration.h"
 
 namespace DB::S3

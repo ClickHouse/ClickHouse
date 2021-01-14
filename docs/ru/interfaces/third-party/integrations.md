@@ -1,3 +1,8 @@
+---
+toc_priority: 27
+toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u0434\u043b\u044f\u0020\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+---
+
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
 
 !!! warning "Disclaimer"
@@ -7,19 +12,20 @@
 
 -   Реляционные системы управления базами данных
     -   [MySQL](https://www.mysql.com)
+        -   [mysql2ch](https://github.com/long2ice/mysql2ch)
         -   [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         -   [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
         -   [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     -   [PostgreSQL](https://www.postgresql.org)
-        -   [clickhousedb\_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
-        -   [infi.clickhouse\_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (использует [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+        -   [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (использует [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         -   [pg2ch](https://github.com/mkabilov/pg2ch)
-        -   [clickhouse\_fdw](https://github.com/adjust/clickhouse_fdw)
+        -   [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     -   [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         -   [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Очереди сообщений
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Потоковая обработка
     -   [Flink](https://flink.apache.org)
@@ -43,12 +49,12 @@
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
-        -   [clickhouse\_exporter](https://github.com/f1yegor/clickhouse_exporter)
+        -   [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
-        -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
-        -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
-        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+        -   [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+        -   [check_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
         -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
@@ -68,7 +74,7 @@
 
 -   Python
     -   [SQLAlchemy](https://www.sqlalchemy.org)
-        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (использует [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (использует [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
@@ -83,7 +89,7 @@
 -   Scala
     -   [Akka](https://akka.io)
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
--   C\#
+-   C#
     -   [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
@@ -91,6 +97,12 @@
     -   [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 -   Elixir
     -   [Ecto](https://github.com/elixir-ecto/ecto)
-    -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
-
+    -   [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
+-   Ruby
+    -   [Ruby on Rails](https://rubyonrails.org/)
+        -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
+    -   [GraphQL](https://github.com/graphql)
+        -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+        
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

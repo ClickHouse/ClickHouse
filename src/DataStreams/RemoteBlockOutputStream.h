@@ -4,6 +4,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/Throttler.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/ClientInfo.h>
 
 
 namespace DB

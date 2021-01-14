@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
+std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const ASTFunction & node)
 {
     if (node.arguments->children.size() != 2)
         throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -34,7 +34,7 @@ static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
         if (!identifier)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-        names.push_back(identifier->name);
+        names.push_back(identifier->name());
     }
 
     return names;
@@ -132,10 +132,11 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
 {
-    if (node.name.empty())
+    // FIXME(ilezhankin): shouldn't ever encounter
+    if (node.name().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name))
+    if (!data.private_aliases.count(node.name()))
         data.addColumnIdentifier(node);
 }
 

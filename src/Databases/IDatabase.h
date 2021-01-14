@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -22,9 +22,8 @@ class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
-struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
-using Dictionaries = std::vector<String>;
+using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
 namespace ErrorCodes
 {
@@ -40,11 +39,20 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
+
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
+
+protected:
+    String database_name;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -62,12 +70,21 @@ protected:
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
+        database_name = std::move(other.database_name);
     }
 
 public:
-    DatabaseTablesSnapshotIterator(Tables & tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_)
+    : tables(tables_), it(tables.begin())
+    {
+        database_name = database_name_;
+    }
 
-    DatabaseTablesSnapshotIterator(Tables && tables_) : tables(tables_), it(tables.begin()) {}
+    DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_)
+    : tables(std::move(tables_)), it(tables.begin())
+    {
+        database_name = std::move(database_name_);
+    }
 
     void next() override { ++it; }
 
@@ -82,25 +99,30 @@ public:
 class DatabaseDictionariesSnapshotIterator
 {
 private:
-    Dictionaries dictionaries;
-    Dictionaries::iterator it;
+    DictionariesWithID dictionaries;
+    DictionariesWithID::iterator it;
+    String database_name;
 
 public:
     DatabaseDictionariesSnapshotIterator() = default;
-    DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-    DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
-    DatabaseDictionariesSnapshotIterator(const std::unordered_map<String, DictionaryAttachInfo> & dictionaries_)
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID & dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
     {
-        boost::range::copy(dictionaries_ | boost::adaptors::map_keys, std::back_inserter(dictionaries));
-        it = dictionaries.begin();
+    }
+    DatabaseDictionariesSnapshotIterator(DictionariesWithID && dictionaries_, const String & database_name_)
+    : dictionaries(dictionaries_), it(dictionaries.begin()), database_name(database_name_)
+    {
     }
 
     void next() { ++it; }
 
     bool isValid() const { return !dictionaries.empty() && it != dictionaries.end(); }
 
-    const String & name() const { return *it; }
+    const String & name() const { return it->first; }
+
+    const UUID & uuid() const { return it->second; }
+
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -125,12 +147,16 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
+    virtual bool canContainMergeTreeTables() const { return true; }
+
+    virtual bool canContainDistributedTables() const { return true; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
+    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(const String & name) const = 0;
+    virtual bool isTableExist(const String & name, const Context & context) const = 0;
 
     /// Check the existence of the dictionary
     virtual bool isDictionaryExist(const String & /*name*/) const
@@ -139,7 +165,7 @@ public:
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(const String & name) const = 0;
+    virtual StoragePtr tryGetTable(const String & name, const Context & context) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -147,7 +173,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
     virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
@@ -195,6 +221,8 @@ public:
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
+    ///
+    /// Note: ATTACH TABLE statement actually uses createTable method.
     virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -219,13 +247,21 @@ public:
         throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
+    /// with next restart. The database may not support this method.
+    virtual void detachTablePermanently(const String & /*name*/)
+    {
+        throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
         const Context & /*context*/,
         const String & /*name*/,
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
-        bool /*exchange*/)
+        bool /*exchange*/,
+        bool /*dictionary*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -233,7 +269,7 @@ public:
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
-    /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
+    /// You must call under the alter_lock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
         const Context & /*context*/,
         const StorageID & /*table_id*/,
@@ -249,14 +285,14 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name, const Context & context) const noexcept
     {
-        return getCreateTableQueryImpl(name, false);
+        return getCreateTableQueryImpl(name, context, false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name) const
+    ASTPtr getCreateTableQuery(const String & name, const Context & context) const
     {
-        return getCreateTableQueryImpl(name, true);
+        return getCreateTableQueryImpl(name, context, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
@@ -279,7 +315,19 @@ public:
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     /// Get name of database.
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const
+    {
+        std::lock_guard lock{mutex};
+        return database_name;
+    }
+    /// Get UUID of database.
+    virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+
+    virtual void renameDatabase(const String & /*new_name*/)
+    {
+        throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
@@ -295,6 +343,10 @@ public:
     /// All tables and dictionaries should be detached before detaching the database.
     virtual bool shouldBeEmptyOnDetach() const { return true; }
 
+    virtual void assertCanBeDetached(bool /*cleanup*/) {}
+
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { assert(false); }
+
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
@@ -304,7 +356,7 @@ public:
     virtual ~IDatabase() {}
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
@@ -318,6 +370,7 @@ protected:
         return nullptr;
     }
 
+    mutable std::mutex mutex;
     String database_name;
 };
 

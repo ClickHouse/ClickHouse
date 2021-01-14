@@ -119,6 +119,9 @@ public:
      /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
+    /** List of column names and positions from index */
+    std::string dumpIndex() const;
+
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
@@ -152,6 +155,12 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
+
+    /// This is needed to allow function execution over data.
+    /// It is safe because functions does not change column names, so index is unaffected.
+    /// It is temporary.
+    friend class ExpressionActions;
+    friend class ActionsDAG;
 };
 
 using Blocks = std::vector<Block>;
@@ -163,6 +172,8 @@ using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 struct ExtraBlock
 {
     Block block;
+
+    bool empty() const { return !block; }
 };
 
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;

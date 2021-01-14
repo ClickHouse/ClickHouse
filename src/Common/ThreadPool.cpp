@@ -1,14 +1,19 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
+#include <cassert>
 #include <type_traits>
 
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
     namespace ErrorCodes
     {
         extern const int CANNOT_SCHEDULE_TASK;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -18,6 +23,13 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadActive;
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+}
+
+
+template <typename Thread>
+ThreadPoolImpl<Thread>::ThreadPoolImpl()
+    : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
+{
 }
 
 
@@ -41,6 +53,13 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     std::lock_guard lock(mutex);
     max_threads = value;
+}
+
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_threads;
 }
 
 template <typename Thread>
@@ -189,6 +208,7 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
@@ -204,7 +224,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = jobs.top().job;
+                /// std::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+                job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
             }
             else
@@ -218,13 +240,21 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             try
             {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
+                job = {};
             }
             catch (...)
             {
+                /// job should be reset before decrementing scheduled_jobs to
+                /// ensure that the Job destroyed before wait() returns.
+                job = {};
+
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
@@ -233,14 +263,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                         shutdown = true;
                     --scheduled_jobs;
                 }
-
-                DB::tryLogCurrentException("ThreadPool",
-                    std::string("Exception in ThreadPool(") +
-                    "max_threads: " + std::to_string(max_threads)
-                    + ", max_free_threads: " + std::to_string(max_free_threads)
-                    + ", queue_size: " + std::to_string(queue_size)
-                    + ", shutdown_on_exception: " + std::to_string(shutdown_on_exception)
-                    + ").");
 
                 job_finished.notify_all();
                 new_job_or_shutdown.notify_all();
@@ -269,9 +291,29 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
+std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+
+void GlobalThreadPool::initialize(size_t max_threads)
+{
+    if (the_instance)
+    {
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+            "The global thread pool is initialized twice");
+    }
+
+    the_instance.reset(new GlobalThreadPool(max_threads,
+        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
+        false /*shutdown_on_exception*/));
+}
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    static GlobalThreadPool ret;
-    return ret;
+    if (!the_instance)
+    {
+        // Allow implicit initialization. This is needed for old code that is
+        // impractical to redo now, especially Arcadia users and unit tests.
+        initialize();
+    }
+
+    return *the_instance;
 }

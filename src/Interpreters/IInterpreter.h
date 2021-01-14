@@ -1,15 +1,13 @@
 #pragma once
 
 #include <DataStreams/BlockIO.h>
-
-#include <Processors/QueryPipeline.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
+
+struct QueryLogElement;
+class Context;
 
 /** Interpreters interface for different queries.
   */
@@ -22,14 +20,20 @@ public:
       */
     virtual BlockIO execute() = 0;
 
-    virtual QueryPipeline executeWithProcessors() { throw Exception("executeWithProcessors not implemented", ErrorCodes::NOT_IMPLEMENTED); }
-
-    virtual bool canExecuteWithProcessors() const { return false; }
-
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 
-    virtual ~IInterpreter() {}
+    // Fill query log element with query kind, query databases, query tables and query columns.
+    void extendQueryLogElem(
+        QueryLogElement & elem,
+        const ASTPtr & ast,
+        const Context & context,
+        const String & query_database,
+        const String & query_table) const;
+
+    virtual void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, const Context &) const {}
+
+    virtual ~IInterpreter() = default;
 };
 
 }

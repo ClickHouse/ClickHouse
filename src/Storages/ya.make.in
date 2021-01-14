@@ -1,0 +1,16 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/sparsehash
+    contrib/libs/poco/MongoDB
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'Kafka|RabbitMQ|S3|HDFS|Licenses|TimeZones|RocksDB' | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

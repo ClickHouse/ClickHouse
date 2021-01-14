@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/StorageDistributed.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Client/ConnectionPool.h>
 
 #include <atomic>
 #include <mutex>
@@ -9,8 +9,17 @@
 #include <IO/ReadBufferFromFile.h>
 
 
+namespace CurrentMetrics { class Increment; }
+
 namespace DB
 {
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+class StorageDistributed;
+class ActionBlocker;
+class BackgroundSchedulePool;
 
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
@@ -19,13 +28,18 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_);
+        StorageDistributed & storage_,
+        const DiskPtr & disk_,
+        const std::string & relative_path_,
+        ConnectionPoolPtr pool_,
+        ActionBlocker & monitor_blocker_,
+        BackgroundSchedulePool & bg_pool);
 
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
-    void updatePath(const std::string & new_path);
+    void updatePath(const std::string & new_relative_path);
 
     void flushAllData();
 
@@ -35,9 +49,24 @@ public:
 
     /// For scheduling via DistributedBlockOutputStream
     bool scheduleAfter(size_t ms);
+
+    /// system.distribution_queue interface
+    struct Status
+    {
+        std::string path;
+        std::exception_ptr last_exception;
+        size_t error_count;
+        size_t files_count;
+        size_t bytes_count;
+        bool is_blocked;
+    };
+    Status getStatus() const;
+
 private:
     void run();
-    bool processFiles();
+
+    std::map<UInt64, std::string> getFiles();
+    bool processFiles(const std::map<UInt64, std::string> & files);
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
@@ -49,9 +78,13 @@ private:
 
     StorageDistributed & storage;
     const ConnectionPoolPtr pool;
+
+    DiskPtr disk;
+    std::string relative_path;
     std::string path;
 
     const bool should_batch_inserts = false;
+    const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
@@ -59,21 +92,27 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    size_t error_count{};
+    mutable std::mutex metrics_mutex;
+    size_t error_count = 0;
+    size_t files_count = 0;
+    size_t bytes_count = 0;
+    std::exception_ptr last_exception;
+
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
-    Logger * log;
+    Poco::Logger * log;
     ActionBlocker & monitor_blocker;
 
-    BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder task_handle;
 
+    CurrentMetrics::Increment metric_pending_files;
+
     /// Read insert query and insert settings for backward compatible.
-    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log);
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

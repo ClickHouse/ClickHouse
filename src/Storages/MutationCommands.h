@@ -17,7 +17,7 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// Represents set of actions which should be applied
-/// to values from set of columns which statisfy predicate.
+/// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
     ASTPtr ast; /// The AST of the whole command
@@ -28,7 +28,7 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        READ_COLUMN,
+        READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
         MATERIALIZE_TTL,
@@ -43,8 +43,10 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
-    /// For MATERIALIZE INDEX
+    /// For MATERIALIZE INDEX.
     String index_name;
+
+    /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition;
 
     /// For reads, drops and etc.
@@ -65,7 +67,7 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTAlterCommandList> ast() const;
+    std::shared_ptr<ASTExpressionList> ast() const;
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);

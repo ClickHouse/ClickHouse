@@ -1,9 +1,7 @@
 #pragma once
 
-#include <sstream>
 #include <optional>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
@@ -15,14 +13,13 @@
 namespace DB
 {
 
-
+class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** A field, that can be stored in two reperesenations:
+/** A field, that can be stored in two representations:
   * - A standalone field.
   * - A field with reference to its position in a block.
   *   It's needed for execution of functions on ranges during
@@ -38,13 +35,13 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {}
 
     /// Create as reference to field in block.
-    FieldRef(Block * block_, size_t row_idx_, size_t column_idx_)
-        : Field((*block_->getByPosition(column_idx_).column)[row_idx_]),
-        block(block_), row_idx(row_idx_), column_idx(column_idx_) {}
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
+          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
 
-    bool isExplicit() const { return block == nullptr; }
+    bool isExplicit() const { return columns == nullptr; }
 
-    Block * block = nullptr;
+    ColumnsWithTypeAndName * columns = nullptr;
     size_t row_idx = 0;
     size_t column_idx = 0;
 };
@@ -234,7 +231,9 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr);
+        const ExpressionActionsPtr & key_expr,
+        bool single_point_ = false,
+        bool strict_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -276,8 +275,12 @@ public:
         const FieldRef * left_key,
         const DataTypes & data_types) const;
 
-    /// Checks that the index can not be used.
+    /// Checks that the index can not be used
+    /// FUNCTION_UNKNOWN will be AND'ed (if any).
     bool alwaysUnknownOrTrue() const;
+    /// Checks that the index can not be used
+    /// Does not allow any FUNCTION_UNKNOWN (will instantly return true).
+    bool anyUnknownOrAlwaysTrue() const;
 
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
@@ -304,12 +307,15 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
+        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        MonotonicFunctionsChain & functions,
-        DataTypePtr current_type);
+        const MonotonicFunctionsChain & functions,
+        DataTypePtr current_type,
+        bool single_point = false);
+
+    bool matchesExactContinuousRange() const;
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -346,10 +352,10 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
+        using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
+        MonotonicFunctionsChain monotonic_functions_chain;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -399,6 +405,9 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    bool canConstantBeWrappedByFunctions(
+        const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
@@ -408,11 +417,40 @@ private:
         RPNElement & out,
         size_t & out_key_column_num);
 
+    /// Checks that the index can not be used.
+    ///
+    /// If unknown_any is false (used by alwaysUnknownOrTrue()), then FUNCTION_UNKNOWN can be AND'ed,
+    /// otherwise (anyUnknownOrAlwaysTrue()) first FUNCTION_UNKNOWN will return true (index cannot be used).
+    ///
+    /// Consider the following example:
+    ///
+    ///     CREATE TABLE test(p DateTime, k int) ENGINE MergeTree PARTITION BY toDate(p) ORDER BY k;
+    ///     INSERT INTO test VALUES ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
+    ///
+    /// - SELECT count() FROM test WHERE toDate(p) >= '2020-09-01' AND p <= '2020-09-01 00:00:00'
+    ///   In this case rpn will be (FUNCTION_IN_RANGE, FUNCTION_UNKNOWN (due to strict), FUNCTION_AND)
+    ///   and for optimize_trivial_count_query we cannot use index if there is at least one FUNCTION_UNKNOWN.
+    ///   since there is no post processing and return count() based on only the first predicate is wrong.
+    ///
+    /// - SELECT * FROM test WHERE toDate(p) >= '2020-09-01' AND p <= '2020-09-01 00:00:00'
+    ///   In this case will be (FUNCTION_IN_RANGE, FUNCTION_IN_RANGE (due to non-strict), FUNCTION_AND)
+    ///   so it will prune everything out and nothing will be read.
+    ///
+    /// - SELECT * FROM test WHERE toDate(p) >= '2020-09-01' AND toUnixTimestamp(p)%5==0
+    ///   In this case will be (FUNCTION_IN_RANGE, FUNCTION_UNKNOWN, FUNCTION_AND)
+    ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
+    bool unknownOrAlwaysTrue(bool unknown_any) const;
+
     RPN rpn;
 
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
+
+    // If true, always allow key_expr to be wrapped by function
+    bool single_point;
+    // If true, do not use always_monotonic information to transform constants
+    bool strict;
 };
 
 }

@@ -6,7 +6,7 @@ namespace DB::S3
 {
 /**
  * Proxy configuration where proxy host is obtained each time from specified endpoint.
- * For each request to S3 it makes GET request to specified endpoint and reads proxy host from a response body.
+ * For each request to S3 it makes GET request to specified endpoint URL and reads proxy host from a response body.
  * Specified scheme and port added to obtained proxy host to form completed proxy URL.
  */
 class ProxyResolverConfiguration : public ProxyConfiguration

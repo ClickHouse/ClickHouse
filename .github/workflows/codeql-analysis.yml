@@ -1,0 +1,32 @@
+# See the example here: https://github.com/github/codeql-action
+
+name: "CodeQL Scanning"
+
+on:
+  schedule:
+    - cron: '0 19 * * *'
+jobs:
+  CodeQL-Build:
+
+    runs-on: self-hosted
+    timeout-minutes: 1440
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 2
+        submodules: 'recursive'
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+
+      with:
+        languages: cpp
+
+    - run: sudo apt-get update && sudo apt-get install -y git cmake python ninja-build gcc-10 g++-10 && mkdir build
+    - run: cd build && CC=gcc-10 CXX=g++-10 cmake ..
+    - run: cd build && ninja
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1

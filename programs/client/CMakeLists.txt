@@ -1,19 +1,23 @@
-set(CLICKHOUSE_CLIENT_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/Client.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionParameters.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Suggest.cpp
+set (CLICKHOUSE_CLIENT_SOURCES
+    Client.cpp
+    ConnectionParameters.cpp
+    QueryFuzzer.cpp
+    Suggest.cpp
 )
 
-set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io clickhouse_parsers string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})
+set (CLICKHOUSE_CLIENT_LINK
+    PRIVATE
+        boost::program_options
+        clickhouse_aggregate_functions
+        clickhouse_common_config
+        clickhouse_common_io
+        clickhouse_functions
+        clickhouse_parsers
+        string_utils
+)
 
-include(CheckSymbolExists)
-check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)
-configure_file(config_client.h.in ${ConfigIncludePath}/config_client.h)
-
-if(NOT HAVE_READPASSPHRASE)
-    add_subdirectory(readpassphrase)
-    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
-endif()
+# Always use internal readpassphrase
+list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 clickhouse_program_add(client)
 

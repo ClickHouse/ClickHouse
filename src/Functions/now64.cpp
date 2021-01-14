@@ -11,14 +11,16 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CLOCK_GETTIME;
 }
 
-static Field nowSubsecond(UInt32 scale)
+namespace
+{
+
+Field nowSubsecond(UInt32 scale)
 {
     static constexpr Int32 fractional_scale = 9;
 
@@ -80,14 +82,14 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto & result_col = block.getByPosition(result);
-        const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_col.type.get())->getScale();
-
-        result_col.column = result_col.type->createColumnConst(input_rows_count, nowSubsecond(scale));
+        const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_type.get())->getScale();
+        return result_type->createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
+
+}
 
 void registerFunctionNow64(FunctionFactory & factory)
 {

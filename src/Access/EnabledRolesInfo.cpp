@@ -28,8 +28,7 @@ bool operator==(const EnabledRolesInfo & lhs, const EnabledRolesInfo & rhs)
 {
     return (lhs.current_roles == rhs.current_roles) && (lhs.enabled_roles == rhs.enabled_roles)
         && (lhs.enabled_roles_with_admin_option == rhs.enabled_roles_with_admin_option) && (lhs.names_of_roles == rhs.names_of_roles)
-        && (lhs.access == rhs.access) && (lhs.access_with_grant_option == rhs.access_with_grant_option)
-        && (lhs.settings_from_enabled_roles == rhs.settings_from_enabled_roles);
+        && (lhs.access == rhs.access) && (lhs.settings_from_enabled_roles == rhs.settings_from_enabled_roles);
 }
 
 }

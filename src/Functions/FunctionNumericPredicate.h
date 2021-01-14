@@ -1,3 +1,4 @@
+#pragma once
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -45,25 +46,28 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const auto in = block.getByPosition(arguments.front()).column.get();
+        const auto * in = arguments.front().column.get();
 
-        if (   !execute<UInt8>(block, in, result)
-            && !execute<UInt16>(block, in, result)
-            && !execute<UInt32>(block, in, result)
-            && !execute<UInt64>(block, in, result)
-            && !execute<Int8>(block, in, result)
-            && !execute<Int16>(block, in, result)
-            && !execute<Int32>(block, in, result)
-            && !execute<Int64>(block, in, result)
-            && !execute<Float32>(block, in, result)
-            && !execute<Float64>(block, in, result))
+        ColumnPtr res;
+        if (!((res = execute<UInt8>(in))
+            || (res = execute<UInt16>(in))
+            || (res = execute<UInt32>(in))
+            || (res = execute<UInt64>(in))
+            || (res = execute<Int8>(in))
+            || (res = execute<Int16>(in))
+            || (res = execute<Int32>(in))
+            || (res = execute<Int64>(in))
+            || (res = execute<Float32>(in))
+            || (res = execute<Float64>(in))))
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+
+        return res;
     }
 
     template <typename T>
-    bool execute(Block & block, const IColumn * in_untyped, const size_t result)
+    ColumnPtr execute(const IColumn * in_untyped) const
     {
         if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
@@ -77,11 +81,10 @@ public:
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
-            block.getByPosition(result).column = std::move(out);
-            return true;
+            return out;
         }
 
-        return false;
+        return nullptr;
     }
 };
 

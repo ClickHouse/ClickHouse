@@ -7,7 +7,7 @@ namespace DB
 {
 
 /** Implements modifier WITH FILL of ORDER BY clause.
- *  It fills gaps in data stream by rows with missing values in columns with set WITH FILL and deafult values in other columns.
+ *  It fills gaps in data stream by rows with missing values in columns with set WITH FILL and default values in other columns.
  *  Optionally FROM, TO and STEP values can be specified.
  */
 class FillingTransform : public ISimpleTransform
@@ -18,6 +18,8 @@ public:
     String getName() const override { return "FillingTransform"; }
 
     Status prepare() override;
+
+    static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
     void transform(Chunk & Chunk) override;

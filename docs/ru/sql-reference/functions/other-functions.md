@@ -1,4 +1,9 @@
-# Прочие функции {#prochie-funktsii}
+---
+toc_priority: 66
+toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+---
+
+# Прочие функции {#other-functions}
 
 ## hostName() {#hostname}
 
@@ -410,7 +415,7 @@ ORDER BY h ASC
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
 
 `x` - что преобразовывать.
 
@@ -430,7 +435,7 @@ ORDER BY h ASC
 При этом, где обозначена одна и та же буква (T или U), могут быть, в случае числовых типов, не совпадающие типы, а типы, для которых есть общий тип.
 Например, первый аргумент может иметь тип Int64, а второй - Array(UInt16).
 
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array\_from, то возвращает какой-нибудь из соответствующих.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array_from, то возвращает какой-нибудь из соответствующих.
 
 Пример:
 
@@ -452,10 +457,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
+### transform(x, array_from, array_to) {#transformx-array-from-array-to}
 
 Отличается от первого варианта отсутствующим аргументом default.
-Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает x.
+Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
 
 Типы:
 
@@ -506,6 +511,29 @@ SELECT
 │        1048576 │ 1.00 MiB   │
 │      192851925 │ 183.92 MiB │
 └────────────────┴────────────┘
+```
+
+## formatReadableQuantity(x) {#formatreadablequantityx}
+
+Принимает число. Возвращает округленное число с суффиксом (thousand, million, billion и т.д.) в виде строки.
+
+Облегчает визуальное восприятие больших чисел живым человеком.
+
+Пример:
+
+``` sql
+SELECT
+    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
+    formatReadableQuantity(number) AS number_for_humans
+```
+
+``` text
+┌─────────number─┬─number_for_humans─┐
+│           1024 │ 1.02 thousand     │
+│        1234000 │ 1.23 million      │
+│     4567000000 │ 4.57 billion      │
+│ 98765432101234 │ 98.77 trillion    │
+└────────────────┴───────────────────┘
 ```
 
 ## least(a, b) {#leasta-b}
@@ -714,7 +742,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и \[runningDifference\] (./other\_functions.md \# other\_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -750,6 +778,38 @@ getSizeOfEnumType(value)
 ``` sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 ```
+
+``` text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+## blockSerializedSize {#blockserializedsize}
+
+Возвращает размер на диске (без учета сжатия).
+
+``` sql
+blockSerializedSize(value[, value[, ...]])
+```
+
+**Параметры**
+
+-   `value` — Значение произвольного типа.
+
+**Возвращаемые значения**
+
+-   Количество байтов, которые будут записаны на диск для блока значений (без сжатия).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT blockSerializedSize(maxState(1)) as x
+```
+
+Ответ:
 
 ``` text
 ┌─x─┐
@@ -865,6 +925,48 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
+```
+
+## defaultValueOfTypeName {#defaultvalueoftypename}
+
+Выводит значение по умолчанию для указанного типа данных.
+
+Не включает значения по умолчанию для настраиваемых столбцов, установленных пользователем.
+
+``` sql
+defaultValueOfTypeName(type)
+```
+
+**Параметры:**
+
+-   `type` — тип данных.
+
+**Возвращаемое значение**
+
+-   `0` для чисел;
+-   Пустая строка для строк;
+-   `ᴺᵁᴸᴸ` для [Nullable](../../sql-reference/data-types/nullable.md).
+
+**Пример**
+
+``` sql
+SELECT defaultValueOfTypeName('Int8')
+```
+
+``` text
+┌─defaultValueOfTypeName('Int8')─┐
+│                              0 │
+└────────────────────────────────┘
+```
+
+``` sql
+SELECT defaultValueOfTypeName('Nullable(Int8)')
+```
+
+``` text
+┌─defaultValueOfTypeName('Nullable(Int8)')─┐
+│                                     ᴺᵁᴸᴸ │
+└──────────────────────────────────────────┘
 ```
 
 ## replicate {#other-functions-replicate}
@@ -1002,11 +1104,209 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+Принимает состояние агрегатной функции. Возвращает результат агрегирования (или конечное состояние при использовании комбинатора [-State](../../sql-reference/aggregate-functions/combinators.md#state)).
 
-## runningAccumulate {#function-runningaccumulate}
+**Синтаксис** 
 
-Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например, `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
+``` sql
+finalizeAggregation(state)
+```
+
+**Параметры**
+
+-   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+
+**Возвращаемые значения**
+
+-   Значения, которые были агрегированы.
+
+Тип: соответствует типу агрегируемых значений.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery16)─┐
+│                               10 │
+└──────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery20)─┐
+│                               45 │
+└──────────────────────────────────┘
+```
+
+Обратите внимание, что значения `NULL` игнорируются. 
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
+│                                                          2 │
+└────────────────────────────────────────────────────────────┘
+```
+
+Комбинированный пример:
+
+Запрос:
+
+```sql
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+│      5 │           5 │             15 │
+│      6 │           6 │             21 │
+│      7 │           7 │             28 │
+│      8 │           8 │             36 │
+│      9 │           9 │             45 │
+└────────┴─────────────┴────────────────┘
+```
+
+**Смотрите также**
+
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+
+## runningAccumulate {#runningaccumulate}
+
+Накапливает состояния агрегатной функции для каждой строки блока данных.
+
+!!! warning "Warning"
+    Функция обнуляет состояние для каждого нового блока.
+
+**Синтаксис**
+
+```sql
+runningAccumulate(agg_state[, grouping]);
+```
+
+**Параметры**
+
+- `agg_state` — Состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `grouping` — Ключ группировки. Опциональный параметр. Состояние функции обнуляется, если значение `grouping` меняется. Параметр может быть любого [поддерживаемого типа данных](../../sql-reference/data-types/index.md), для которого определен оператор равенства.
+
+**Возвращаемое значение**
+
+- Каждая результирующая строка содержит результат агрегатной функции, накопленный для всех входных строк от 0 до текущей позиции. `runningAccumulate` обнуляет состояния для каждого нового блока данных или при изменении значения `grouping`.
+
+Тип зависит от используемой агрегатной функции.
+
+**Примеры**
+
+Рассмотрим примеры использования `runningAccumulate` для нахождения кумулятивной суммы чисел без и с группировкой.
+
+Запрос:
+
+```sql
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+```
+
+Результат:
+
+```text
+┌─k─┬─res─┐
+│ 0 │   0 │
+│ 1 │   1 │
+│ 2 │   3 │
+│ 3 │   6 │
+│ 4 │  10 │
+│ 5 │  15 │
+│ 6 │  21 │
+│ 7 │  28 │
+│ 8 │  36 │
+│ 9 │  45 │
+└───┴─────┘
+```
+
+Подзапрос формирует `sumState` для каждого числа от `0` до `9`. `sumState` возвращает состояние функции [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), содержащее сумму одного числа.
+
+Весь запрос делает следующее:
+
+1. Для первой строки `runningAccumulate` берет `sumState(0)` и возвращает `0`.
+2. Для второй строки функция объединяет `sumState (0)` и `sumState (1)`, что приводит к `sumState (0 + 1)`, и возвращает в результате `1`.
+3. Для третьей строки функция объединяет `sumState (0 + 1)` и `sumState (2)`, что приводит к `sumState (0 + 1 + 2)`, и в результате возвращает `3`.
+4. Действия повторяются до тех пор, пока не закончится блок.
+
+В следующем примере показано использование параметра `grouping`:
+
+Запрос:
+
+```sql
+SELECT 
+    grouping,
+    item,
+    runningAccumulate(state, grouping) AS res
+FROM 
+(
+    SELECT 
+        toInt8(number / 4) AS grouping,
+        number AS item,
+        sumState(number) AS state
+    FROM numbers(15)
+    GROUP BY item
+    ORDER BY item ASC
+);
+```
+
+Результат:
+
+```text
+┌─grouping─┬─item─┬─res─┐
+│        0 │    0 │   0 │
+│        0 │    1 │   1 │
+│        0 │    2 │   3 │
+│        0 │    3 │   6 │
+│        1 │    4 │   4 │
+│        1 │    5 │   9 │
+│        1 │    6 │  15 │
+│        1 │    7 │  22 │
+│        2 │    8 │   8 │
+│        2 │    9 │  17 │
+│        2 │   10 │  27 │
+│        2 │   11 │  38 │
+│        3 │   12 │  12 │
+│        3 │   13 │  25 │
+│        3 │   14 │  39 │
+└──────────┴──────┴─────┘
+```
+
+Как вы можете видеть, `runningAccumulate` объединяет состояния для каждой группы строк отдельно.
 
 ## joinGet {#joinget}
 
@@ -1032,7 +1332,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
 
 Подробнее о настройке `join_use_nulls` в [операциях Join](../../sql-reference/functions/other-functions.md).
 
@@ -1071,16 +1371,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model\_name, …) {#function-modelevaluate}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
 Оценивает внешнюю модель.
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom\_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1152,5 +1452,298 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 │      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
+
+## randomString {#randomstring}
+
+Генерирует бинарную строку заданной длины, заполненную случайными байтами (в том числе нулевыми).
+
+**Синтаксис**
+
+``` sql
+randomString(length)
+```
+
+**Параметры** 
+
+-   `length` — длина строки. Положительное целое число.
+
+**Возвращаемое значение**
+
+-   Строка, заполненная случайными байтами.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT randomString(30) AS str, length(str) AS len FROM numbers(2) FORMAT Vertical;
+```
+
+Ответ:
+
+``` text
+Row 1:
+──────
+str: 3 G  :   pT ?w тi  k aV f6
+len: 30
+
+Row 2:
+──────
+str: 9 ,]    ^   )  ]??  8
+len: 30
+```
+
+**Смотрите также**
+
+-   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+-   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+
+
+## randomFixedString {#randomfixedstring}
+
+Генерирует бинарную строку заданной длины, заполненную случайными байтами, включая нулевые.
+
+**Синтаксис**
+
+``` sql
+randomFixedString(length);
+```
+
+**Параметры**
+
+-   `length` — Длина строки в байтах. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Returned value(s)**
+
+-   Строка, заполненная случайными байтами.
+
+Тип: [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT randomFixedString(13) as rnd, toTypeName(rnd)
+```
+
+Результат:
+
+```text
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+
+```
+
+## randomStringUTF8 {#randomstringutf8}
+
+Генерирует строку заданной длины со случайными символами в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+randomStringUTF8(length);
+```
+
+**Параметры**
+
+-   `length` — Длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Случайная строка в кодировке UTF-8.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+```sql 
+SELECT randomStringUTF8(13)
+```
+
+Результат:
+
+```text 
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛   │
+└──────────────────────┘
+
+```
+
+## getSetting {#getSetting}
+
+Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
+
+**Синтаксис** 
+
+```sql
+getSetting('custom_setting');    
+```
+
+**Параметр** 
+
+-   `custom_setting` — название настройки. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Текущее значение пользовательской настройки.
+
+**Пример**
+
+```sql
+SET custom_a = 123;
+SELECT getSetting('custom_a');    
+```
+
+**Результат**
+
+```
+123
+```
+
+**См. также** 
+
+-   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+
+## isDecimalOverflow {#is-decimal-overflow}
+
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md) вне собственной (или заданной) области значений.
+
+**Синтаксис**
+
+``` sql
+isDecimalOverflow(d, [p])
+```
+
+**Параметры** 
+
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
+
+**Возвращаемое значение**
+
+-   `1` — число имеет больше цифр, чем позволяет точность.
+-   `0` — число удовлетворяет заданной точности.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(1000000000, 0)),
+       isDecimalOverflow(toDecimal32(-1000000000, 0), 9),
+       isDecimalOverflow(toDecimal32(-1000000000, 0));
+```
+
+Результат:
+
+``` text
+1	1	1	1
+```
+
+## countDigits {#count-digits}
+
+Возвращает количество десятичных цифр, необходимых для представления значения.
+
+**Синтаксис**
+
+``` sql
+countDigits(x)
+```
+
+**Параметры** 
+
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md) число.
+
+**Возвращаемое значение**
+
+Количество цифр.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+ !!! note "Примечание"
+    Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+```
+
+Результат:
+
+``` text
+10	10	19	19	39	39
+```
+
+## errorCodeToName {#error-code-to-name}
+
+**Возвращаемое значение**
+
+-   Название переменной для кода ошибки.
+
+Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Синтаксис**
+
+``` sql
+errorCodeToName(1)
+```
+
+Результат:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
+## tcpPort {#tcpPort}
+
+Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
+
+**Синтаксис**
+
+``` sql
+tcpPort()
+```
+
+**Параметры**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Номер TCP порта.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tcpPort();
+```
+
+Результат:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**Смотрите также**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

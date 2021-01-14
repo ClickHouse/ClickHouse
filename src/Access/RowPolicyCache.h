@@ -27,7 +27,7 @@ private:
         void setPolicy(const RowPolicyPtr & policy_);
 
         RowPolicyPtr policy;
-        const ExtendedRoleSet * roles = nullptr;
+        const RolesOrUsersSet * roles = nullptr;
         std::shared_ptr<const std::pair<String, String>> database_and_table_name;
         ASTPtr parsed_conditions[RowPolicy::MAX_CONDITION_TYPE];
     };

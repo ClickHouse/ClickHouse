@@ -7,7 +7,7 @@ toc_title: TinyLog
 
 # TinyLog {#tinylog}
 
-El motor pertenece a la familia de motores de registro. Ver [Familia del motor de registro](log-family.md) para las propiedades comunes de los motores de registro y sus diferencias.
+El motor pertenece a la familia de motores de registro. Ver [Familia del motor de registro](index.md) para las propiedades comunes de los motores de registro y sus diferencias.
 
 Este motor de tablas se usa normalmente con el método write-once: escribir datos una vez, luego leerlos tantas veces como sea necesario. Por ejemplo, puede usar `TinyLog`-type tablas para datos intermedios que se procesan en pequeños lotes. Tenga en cuenta que el almacenamiento de datos en un gran número de tablas pequeñas es ineficiente.
 

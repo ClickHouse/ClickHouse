@@ -28,6 +28,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 /** dateDiff('unit', t1, t2, [timezone])
   * t1 and t2 can be Date or DateTime
   *
@@ -80,22 +83,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * unit_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        const auto * unit_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!unit_column)
             throw Exception("First argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
 
         String unit = Poco::toLower(unit_column->getValue<String>());
 
-        const IColumn & x = *block.getByPosition(arguments[1]).column;
-        const IColumn & y = *block.getByPosition(arguments[2]).column;
+        const IColumn & x = *arguments[1].column;
+        const IColumn & y = *arguments[2].column;
 
         size_t rows = input_rows_count;
         auto res = ColumnInt64::create(rows);
 
-        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(block, arguments, 3, 1);
-        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(block, arguments, 3, 2);
+        const DateLUTImpl & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
+        const DateLUTImpl & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
 
         if (unit == "year" || unit == "yy" || unit == "yyyy")
             dispatchForColumns<ToRelativeYearNumImpl>(x, y, timezone_x, timezone_y, res->getData());
@@ -116,7 +119,7 @@ public:
         else
             throw Exception("Function " + getName() + " does not support '" + unit + "' unit", ErrorCodes::BAD_ARGUMENTS);
 
-        block.getByPosition(result).column = std::move(res);
+        return res;
     }
 
 private:
@@ -124,7 +127,7 @@ private:
     void dispatchForColumns(
         const IColumn & x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         if (const auto * x_vec_16 = checkAndGetColumn<ColumnUInt16>(&x))
             dispatchForSecondColumn<Transform>(*x_vec_16, y, timezone_x, timezone_y, result);
@@ -142,7 +145,7 @@ private:
     void dispatchForSecondColumn(
         const ColumnVector<T1> & x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
             vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
@@ -160,7 +163,7 @@ private:
     void dispatchConstForSecondColumn(
         T1 x, const IColumn & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         if (const auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
             constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
@@ -174,7 +177,7 @@ private:
     void vectorVector(
         const ColumnVector<T1> & x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
         const auto & y_data = y.getData();
@@ -186,7 +189,7 @@ private:
     void vectorConstant(
         const ColumnVector<T1> & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         const auto & x_data = x.getData();
         for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -197,7 +200,7 @@ private:
     void constantVector(
         T1 x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
-        ColumnInt64::Container & result)
+        ColumnInt64::Container & result) const
     {
         const auto & y_data = y.getData();
         for (size_t i = 0, size = y.size(); i < size; ++i)
@@ -205,12 +208,14 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    Int64 calculate(T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y)
+    Int64 calculate(T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
         return Int64(Transform::execute(y, timezone_y))
              - Int64(Transform::execute(x, timezone_x));
     }
 };
+
+}
 
 void registerFunctionDateDiff(FunctionFactory & factory)
 {

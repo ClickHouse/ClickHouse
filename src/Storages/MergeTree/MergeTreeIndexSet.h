@@ -16,8 +16,16 @@ class MergeTreeIndexSet;
 
 struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_);
-    MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_, MutableColumns && columns_);
+    explicit MergeTreeIndexGranuleSet(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        size_t max_rows_);
+
+    MergeTreeIndexGranuleSet(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        size_t max_rows_,
+        MutableColumns && columns_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
@@ -27,14 +35,20 @@ struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 
     ~MergeTreeIndexGranuleSet() override = default;
 
-    const MergeTreeIndexSet & index;
+    String index_name;
+    size_t max_rows;
+    Block index_sample_block;
     Block block;
 };
 
 
 struct MergeTreeIndexAggregatorSet : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index);
+    explicit MergeTreeIndexAggregatorSet(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        size_t max_rows_);
+
     ~MergeTreeIndexAggregatorSet() override = default;
 
     size_t size() const { return data.getTotalRowCount(); }
@@ -55,7 +69,10 @@ private:
             size_t limit,
             ClearableSetVariants & variants) const;
 
-    const MergeTreeIndexSet & index;
+    String index_name;
+    size_t max_rows;
+    Block index_sample_block;
+
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
@@ -66,9 +83,11 @@ class MergeTreeIndexConditionSet : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
-            const SelectQueryInfo & query,
-            const Context & context,
-            const MergeTreeIndexSet & index);
+        const String & index_name_,
+        const Block & index_sample_block_,
+        size_t max_rows_,
+        const SelectQueryInfo & query,
+        const Context & context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -82,7 +101,10 @@ private:
 
     bool checkASTUseless(const ASTPtr & node, bool atomic = false) const;
 
-    const MergeTreeIndexSet & index;
+
+    String index_name;
+    size_t max_rows;
+    Block index_sample_block;
 
     bool useless;
     std::set<String> key_columns;
@@ -95,14 +117,11 @@ class MergeTreeIndexSet : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
-        String name_,
-        ExpressionActionsPtr expr_,
-        const Names & columns_,
-        const DataTypes & data_types_,
-        const Block & header_,
-        size_t granularity_,
+        const IndexDescription & index_,
         size_t max_rows_)
-        : IMergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
+        : IMergeTreeIndex(index_)
+        , max_rows(max_rows_)
+    {}
 
     ~MergeTreeIndexSet() override = default;
 

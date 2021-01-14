@@ -1,0 +1,15 @@
+<yandex>
+    <remote_servers>
+        <secure_disagree>
+            <secret>bar_n2</secret>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+            </node>
+        </secure_disagree>
+    </remote_servers>
+</yandex>

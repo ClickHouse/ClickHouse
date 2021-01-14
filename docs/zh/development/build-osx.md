@@ -6,13 +6,13 @@ ClickHouse 支持在 Mac OS X 10.12 版本中编译。若您在用更早的操�
 ## 安装 Homebrew {#an-zhuang-homebrew}
 
 ``` bash
-/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+$ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
 ## 安装编译器，工具库 {#an-zhuang-bian-yi-qi-gong-ju-ku}
 
 ``` bash
-brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext
+$ brew install cmake ninja libtool gettext
 ```
 
 ## 拉取 ClickHouse 源码 {#la-qu-clickhouse-yuan-ma}
@@ -27,11 +27,11 @@ cd ClickHouse
 ## 编译 ClickHouse {#bian-yi-clickhouse}
 
 ``` bash
-mkdir build
-cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
-ninja
-cd ..
+$ mkdir build
+$ cd build
+$ cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang`
+$ ninja
+$ cd ..
 ```
 
 ## 注意事项 {#zhu-yi-shi-xiang}
@@ -43,7 +43,7 @@ cd ..
 
 为此，请创建以下文件：
 
-/图书馆/LaunchDaemons/限制.maxfilesplist:
+/资源库/LaunchDaemons/limit.maxfiles.plist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>

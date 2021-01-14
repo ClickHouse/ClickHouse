@@ -24,7 +24,7 @@
 该实用程序应手动运行:
 
 ``` bash
-clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 参数:

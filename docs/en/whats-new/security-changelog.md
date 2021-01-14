@@ -51,7 +51,7 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-“remote” table function allowed arbitrary symbols in “user”, “password” and “default\_database” fields which led to Cross Protocol Request Forgery Attacks.
+“remote” table function allowed arbitrary symbols in “user”, “password” and “default_database” fields which led to Cross Protocol Request Forgery Attacks.
 
 Credits: Andrey Krasichkov of Yandex Information Security Team
 

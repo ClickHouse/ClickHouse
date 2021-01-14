@@ -134,7 +134,7 @@ Exemple:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Pour améliorer les performances, les messages reçus sont regroupées en blocs de la taille de [max\_insert\_block\_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). Si le bloc n'a pas été formé à l'intérieur [stream\_flush\_interval\_ms](../../../operations/server-configuration-parameters/settings.md) millisecondes, les données seront vidées dans le tableau, indépendamment de l'intégralité du bloc.
+Pour améliorer les performances, les messages reçus sont regroupées en blocs de la taille de [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). Si le bloc n'a pas été formé à l'intérieur [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) millisecondes, les données seront vidées dans le tableau, indépendamment de l'intégralité du bloc.
 
 Pour arrêter de recevoir des données de rubrique ou pour modifier la logique de conversion, détachez la vue matérialisée:
 

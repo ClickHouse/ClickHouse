@@ -26,6 +26,8 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
+                    "" /* cluster */,
+                    "" /* cluster_secret */,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
@@ -78,13 +80,13 @@ Suggest::Suggest()
              "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
              "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
              "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "FOR",     "RANDOMIZED",
-             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP"};
+             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
+             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
 {
-    std::stringstream query;
+    std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
         " UNION ALL "
@@ -113,6 +115,8 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
             "SELECT name FROM system.databases LIMIT " << limit_str
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
+            << " UNION ALL "
+            "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
     }
@@ -154,7 +158,8 @@ void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts
                 return;
 
             default:
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection.getDescription());
         }
     }
 }

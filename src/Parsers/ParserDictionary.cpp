@@ -49,7 +49,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair.second.get());
+        const ASTLiteral * literal = pair.second->as<ASTLiteral>();
         if (literal == nullptr)
             return false;
 
@@ -90,14 +90,14 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(pair.second.get());
+        const ASTIdentifier * identifier = pair.second->as<ASTIdentifier>();
         if (identifier == nullptr)
             return false;
 
         if (pair.first == "min")
-            res->min_attr_name = identifier->name;
+            res->min_attr_name = identifier->name();
         else if (pair.first == "max")
-            res->max_attr_name = identifier->name;
+            res->max_attr_name = identifier->name();
         else
             return false;
     }
@@ -126,26 +126,11 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     res->has_brackets = func.has_brackets;
     const ASTExpressionList & type_expr_list = func.elements->as<const ASTExpressionList &>();
 
-    /// there are no layout with more than 1 parameter
-    if (type_expr_list.children.size() > 1)
-        return false;
-
     /// if layout has params than brackets must be specified
     if (!type_expr_list.children.empty() && !res->has_brackets)
         return false;
 
-    if (type_expr_list.children.size() == 1)
-    {
-        const ASTPair * pair = dynamic_cast<const ASTPair *>(type_expr_list.children.at(0).get());
-        if (pair == nullptr)
-            return false;
-
-        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair->second.get());
-        if (literal == nullptr || literal->value.getType() != Field::Types::UInt64)
-            return false;
-        res->parameter.emplace(pair->first, nullptr);
-        res->set(res->parameter->second, literal->clone());
-    }
+    res->set(res->parameters, func.elements);
 
     node = res;
     return true;

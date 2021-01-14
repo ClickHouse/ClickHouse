@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace DB
 {
-/// Transforms the LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
+
+/// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(const String & pattern)
 {
     String res;

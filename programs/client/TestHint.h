@@ -19,11 +19,13 @@ namespace ErrorCodes
 
 /// Checks expected server and client error codes in testmode.
 /// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
+/// Also you can enable echoing all queries by writing "-- { echo }".
 class TestHint
 {
 public:
-    TestHint(bool enabled_, const String & query)
-    :   enabled(enabled_)
+    TestHint(bool enabled_, const String & query_)
+    : enabled(enabled_)
+    , query(query_)
     {
         if (!enabled_)
             return;
@@ -71,7 +73,7 @@ public:
 
         if (lostExpectedError(actual_server_error, actual_client_error))
         {
-            std::cerr << "Success when error expected. It expects server error "
+            std::cerr << "Success when error expected in query: " << query << "It expects server error "
                 << server_error << ", client error " << client_error << "." << std::endl;
             got_exception = true;
             last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::UNEXPECTED_ERROR_CODE); /// return error to OS
@@ -83,15 +85,18 @@ public:
 
     int serverError() const { return server_error; }
     int clientError() const { return client_error; }
+    bool echoQueries() const { return echo; }
 
 private:
     bool enabled = false;
+    const String & query;
     int server_error = 0;
     int client_error = 0;
+    bool echo = false;
 
     void parse(const String & hint)
     {
-        std::stringstream ss;
+        std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         ss << hint;
         String item;
 
@@ -105,6 +110,8 @@ private:
                 ss >> server_error;
             else if (item == "clientError")
                 ss >> client_error;
+            else if (item == "echo")
+                echo = true;
         }
     }
 

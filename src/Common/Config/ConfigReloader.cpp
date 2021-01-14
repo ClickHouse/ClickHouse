@@ -85,10 +85,11 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
+
+        LOG_DEBUG(log, "Loading config '{}'", path);
+
         try
         {
-            LOG_DEBUG(log, "Loading config '" << path << "'");
-
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
@@ -115,7 +116,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
-        /** We should remember last modification time if and only if config was sucessfully loaded
+        /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:
          *  File is contain raw (and non-valid) data, therefore config is not applied.
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
@@ -126,6 +127,8 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             need_reload_from_zk = false;
         }
 
+        LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", path);
+
         try
         {
             updater(loaded_config.configuration);
@@ -135,7 +138,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (throw_on_error)
                 throw;
             tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
+            return;
         }
+
+        LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", path);
     }
 }
 

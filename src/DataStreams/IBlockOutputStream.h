@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Storages/TableStructureLockHolder.h>
+#include <Storages/TableLockHolder.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -61,10 +61,10 @@ public:
 
     /** Don't let to alter table while instance of stream is alive.
       */
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
 
 private:
-    std::vector<TableStructureReadLockHolder> table_locks;
+    std::vector<TableLockHolder> table_locks;
 };
 
 }

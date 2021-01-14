@@ -8,5 +8,12 @@
                 </replica>
             </shard>
         </test_cluster>
+
+        <test_cluster_2>
+            <node>
+                <host>not_existing</host>
+                <port>9000</port>
+            </node>
+        </test_cluster_2>
     </remote_servers>
 </yandex>

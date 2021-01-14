@@ -1,9 +1,20 @@
 #include <Columns/Collator.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
+
+void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(direction);
+    hash_state.update(nulls_direction);
+    hash_state.update(nulls_direction_was_explicitly_specified);
+    hash_state.update(with_fill);
+    IAST::updateTreeHashImpl(hash_state);
+}
 
 void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

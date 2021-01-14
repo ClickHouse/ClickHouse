@@ -19,7 +19,7 @@ namespace DB
 class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_);
+    DatabaseMemory(const String & name_, const Context & context);
 
     String getEngineName() const override { return "Memory"; }
 
@@ -34,7 +34,7 @@ public:
         const String & table_name,
         bool no_delay) override;
 
-    ASTPtr getCreateTableQueryImpl(const String & name, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & name, const Context & context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
@@ -45,6 +45,8 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
     UUID tryGetTableUUID(const String & table_name) const override;
+
+    void drop(const Context & context) override;
 
 private:
     String data_path;

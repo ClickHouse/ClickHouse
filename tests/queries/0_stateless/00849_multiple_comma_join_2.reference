@@ -1,18 +1,197 @@
-SELECT a\nFROM t1\nCROSS JOIN t2
-SELECT a\nFROM t1\nALL INNER JOIN t2 ON a = t2.a\nWHERE a = t2.a
-SELECT a\nFROM t1\nALL INNER JOIN t2 ON b = t2.b\nWHERE b = t2.b
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        a AS `--t1.a`, \n        t2.a AS `--t2.a`\n    FROM t1\n    ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`\n) AS `--.s`\nALL INNER JOIN t3 ON `--t1.a` = a\nWHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = a)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        b AS `--t1.b`, \n        a AS `--t1.a`, \n        t2.b AS `--t2.b`\n    FROM t1\n    ALL INNER JOIN t2 ON `--t1.b` = `--t2.b`\n) AS `--.s`\nALL INNER JOIN t3 ON `--t1.b` = b\nWHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = b)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.a`, \n        `--t2.a`, \n        a AS `--t3.a`\n    FROM \n    (\n        SELECT \n            a AS `--t1.a`, \n            t2.a AS `--t2.a`\n        FROM t1\n        ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`\n    ) AS `--.s`\n    ALL INNER JOIN t3 ON `--t1.a` = `--t3.a`\n) AS `--.s`\nALL INNER JOIN t4 ON `--t1.a` = a\nWHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = `--t3.a`) AND (`--t1.a` = a)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.b`, \n        `--t1.a`, \n        `--t2.b`, \n        b AS `--t3.b`\n    FROM \n    (\n        SELECT \n            b AS `--t1.b`, \n            a AS `--t1.a`, \n            t2.b AS `--t2.b`\n        FROM t1\n        ALL INNER JOIN t2 ON `--t1.b` = `--t2.b`\n    ) AS `--.s`\n    ALL INNER JOIN t3 ON `--t1.b` = `--t3.b`\n) AS `--.s`\nALL INNER JOIN t4 ON `--t1.b` = b\nWHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = `--t3.b`) AND (`--t1.b` = b)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.a`, \n        `--t2.a`, \n        a AS `--t3.a`\n    FROM \n    (\n        SELECT \n            a AS `--t1.a`, \n            t2.a AS `--t2.a`\n        FROM t1\n        ALL INNER JOIN t2 ON `--t2.a` = `--t1.a`\n    ) AS `--.s`\n    ALL INNER JOIN t3 ON `--t2.a` = `--t3.a`\n) AS `--.s`\nALL INNER JOIN t4 ON `--t2.a` = a\nWHERE (`--t2.a` = `--t1.a`) AND (`--t2.a` = `--t3.a`) AND (`--t2.a` = a)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.a`, \n        `--t2.a`, \n        a AS `--t3.a`\n    FROM \n    (\n        SELECT \n            a AS `--t1.a`, \n            t2.a AS `--t2.a`\n        FROM t1\n        CROSS JOIN t2\n    ) AS `--.s`\n    ALL INNER JOIN t3 ON (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`)\n) AS `--.s`\nALL INNER JOIN t4 ON `--t3.a` = a\nWHERE (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`) AND (`--t3.a` = a)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.a`, \n        `--t2.a`, \n        a AS `--t3.a`\n    FROM \n    (\n        SELECT \n            a AS `--t1.a`, \n            t2.a AS `--t2.a`\n        FROM t1\n        CROSS JOIN t2\n    ) AS `--.s`\n    CROSS JOIN t3\n) AS `--.s`\nALL INNER JOIN t4 ON (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)\nWHERE (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        `--t1.a`, \n        `--t2.a`, \n        a AS `--t3.a`\n    FROM \n    (\n        SELECT \n            a AS `--t1.a`, \n            t2.a AS `--t2.a`\n        FROM t1\n        ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`\n    ) AS `--.s`\n    ALL INNER JOIN t3 ON `--t2.a` = `--t3.a`\n) AS `--.s`\nALL INNER JOIN t4 ON `--t3.a` = a\nWHERE (`--t1.a` = `--t2.a`) AND (`--t2.a` = `--t3.a`) AND (`--t3.a` = a)
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT `--t1.a`\n    FROM \n    (\n        SELECT a AS `--t1.a`\n        FROM t1\n        CROSS JOIN t2\n    ) AS `--.s`\n    CROSS JOIN t3\n) AS `--.s`\nCROSS JOIN t4
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT `--t1.a`\n    FROM \n    (\n        SELECT a AS `--t1.a`\n        FROM t1\n        CROSS JOIN t2\n    ) AS `--.s`\n    CROSS JOIN t3\n) AS `--.s`\nCROSS JOIN t4
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT a AS `--t1.a`\n    FROM t1\n    CROSS JOIN t2\n) AS `--.s`\nCROSS JOIN t3
-SELECT `--t1.a` AS `t1.a`\nFROM \n(\n    SELECT \n        a AS `--t1.a`, \n        t2.a AS `--t2.a`\n    FROM t1\n    ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`\n) AS `--.s`\nCROSS JOIN t3
+SELECT a
+FROM t1
+CROSS JOIN t2
+SELECT a
+FROM t1
+ALL INNER JOIN t2 ON a = t2.a
+WHERE a = t2.a
+SELECT a
+FROM t1
+ALL INNER JOIN t2 ON b = t2.b
+WHERE b = t2.b
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        a AS `--t1.a`,
+        t2.a AS `--t2.a`
+    FROM t1
+    ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`
+) AS `--.s`
+ALL INNER JOIN t3 ON `--t1.a` = a
+WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = a)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        b AS `--t1.b`,
+        a AS `--t1.a`,
+        t2.b AS `--t2.b`
+    FROM t1
+    ALL INNER JOIN t2 ON `--t1.b` = `--t2.b`
+) AS `--.s`
+ALL INNER JOIN t3 ON `--t1.b` = b
+WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = b)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.a`,
+        `--t2.a`,
+        a AS `--t3.a`
+    FROM 
+    (
+        SELECT
+            a AS `--t1.a`,
+            t2.a AS `--t2.a`
+        FROM t1
+        ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3 ON `--t1.a` = `--t3.a`
+) AS `--.s`
+ALL INNER JOIN t4 ON `--t1.a` = a
+WHERE (`--t1.a` = `--t2.a`) AND (`--t1.a` = `--t3.a`) AND (`--t1.a` = a)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.b`,
+        `--t1.a`,
+        `--t2.b`,
+        b AS `--t3.b`
+    FROM 
+    (
+        SELECT
+            b AS `--t1.b`,
+            a AS `--t1.a`,
+            t2.b AS `--t2.b`
+        FROM t1
+        ALL INNER JOIN t2 ON `--t1.b` = `--t2.b`
+    ) AS `--.s`
+    ALL INNER JOIN t3 ON `--t1.b` = `--t3.b`
+) AS `--.s`
+ALL INNER JOIN t4 ON `--t1.b` = b
+WHERE (`--t1.b` = `--t2.b`) AND (`--t1.b` = `--t3.b`) AND (`--t1.b` = b)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.a`,
+        `--t2.a`,
+        a AS `--t3.a`
+    FROM 
+    (
+        SELECT
+            a AS `--t1.a`,
+            t2.a AS `--t2.a`
+        FROM t1
+        ALL INNER JOIN t2 ON `--t2.a` = `--t1.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3 ON `--t2.a` = `--t3.a`
+) AS `--.s`
+ALL INNER JOIN t4 ON `--t2.a` = a
+WHERE (`--t2.a` = `--t1.a`) AND (`--t2.a` = `--t3.a`) AND (`--t2.a` = a)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.a`,
+        `--t2.a`,
+        a AS `--t3.a`
+    FROM 
+    (
+        SELECT
+            a AS `--t1.a`,
+            t2.a AS `--t2.a`
+        FROM t1
+        CROSS JOIN t2
+    ) AS `--.s`
+    ALL INNER JOIN t3 ON (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`)
+) AS `--.s`
+ALL INNER JOIN t4 ON `--t3.a` = a
+WHERE (`--t3.a` = `--t1.a`) AND (`--t3.a` = `--t2.a`) AND (`--t3.a` = a)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.a`,
+        `--t2.a`,
+        a AS `--t3.a`
+    FROM 
+    (
+        SELECT
+            a AS `--t1.a`,
+            t2.a AS `--t2.a`
+        FROM t1
+        CROSS JOIN t2
+    ) AS `--.s`
+    CROSS JOIN t3
+) AS `--.s`
+ALL INNER JOIN t4 ON (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
+WHERE (a = `--t1.a`) AND (a = `--t2.a`) AND (a = `--t3.a`)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        `--t1.a`,
+        `--t2.a`,
+        a AS `--t3.a`
+    FROM 
+    (
+        SELECT
+            a AS `--t1.a`,
+            t2.a AS `--t2.a`
+        FROM t1
+        ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`
+    ) AS `--.s`
+    ALL INNER JOIN t3 ON `--t2.a` = `--t3.a`
+) AS `--.s`
+ALL INNER JOIN t4 ON `--t3.a` = a
+WHERE (`--t1.a` = `--t2.a`) AND (`--t2.a` = `--t3.a`) AND (`--t3.a` = a)
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT `--t1.a`
+    FROM 
+    (
+        SELECT a AS `--t1.a`
+        FROM t1
+        CROSS JOIN t2
+    ) AS `--.s`
+    CROSS JOIN t3
+) AS `--.s`
+CROSS JOIN t4
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT `--t1.a`
+    FROM 
+    (
+        SELECT a AS `--t1.a`
+        FROM t1
+        CROSS JOIN t2
+    ) AS `--.s`
+    CROSS JOIN t3
+) AS `--.s`
+CROSS JOIN t4
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT a AS `--t1.a`
+    FROM t1
+    CROSS JOIN t2
+) AS `--.s`
+CROSS JOIN t3
+SELECT `--t1.a` AS `t1.a`
+FROM 
+(
+    SELECT
+        a AS `--t1.a`,
+        t2.a AS `--t2.a`
+    FROM t1
+    ALL INNER JOIN t2 ON `--t1.a` = `--t2.a`
+) AS `--.s`
+CROSS JOIN t3
 SELECT * FROM t1, t2
 1	1	1	1
 1	1	1	\N

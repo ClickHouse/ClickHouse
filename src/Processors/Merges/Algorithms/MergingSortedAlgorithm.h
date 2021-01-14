@@ -1,8 +1,10 @@
 #pragma once
+
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+
 
 namespace DB
 {
@@ -16,14 +18,14 @@ public:
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size,
-        UInt64 limit_,
-        WriteBuffer * out_row_sources_buf_,
-        bool use_average_block_sizes);
+        UInt64 limit_ = 0,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
+        bool use_average_block_sizes = false);
 
     void addInput();
 
-    void initialize(Chunks chunks) override;
-    void consume(Chunk & chunk, size_t source_num) override;
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
     const MergedData & getMergedData() const { return merged_data; }
@@ -41,7 +43,7 @@ private:
     WriteBuffer * out_row_sources_buf = nullptr;
 
     /// Chunks currently being merged.
-    std::vector<Chunk> source_chunks;
+    Inputs current_inputs;
 
     SortCursorImpls cursors;
 

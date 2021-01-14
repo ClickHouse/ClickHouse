@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <s3_max_redirects>0</s3_max_redirects>
+        </default>
+    </profiles>
+</yandex>

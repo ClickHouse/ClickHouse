@@ -18,6 +18,8 @@ struct PartLogElement
         MOVE_PART = 6,
     };
 
+    String query_id;
+
     Type event_type = NEW_PART;
 
     time_t event_time = 0;
@@ -50,7 +52,7 @@ struct PartLogElement
     static std::string name() { return "PartLog"; }
 
     static Block createBlock();
-    void appendToBlock(Block & block) const;
+    void appendToBlock(MutableColumns & columns) const;
 };
 
 class IMergeTreeDataPart;

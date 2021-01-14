@@ -16,11 +16,11 @@ Pour le bon fonctionnement des fonctions d'introspection:
 
 -   Installer le `clickhouse-common-static-dbg` paquet.
 
--   Définir le [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) réglage sur 1.
+-   Définir le [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) réglage sur 1.
 
         For security reasons introspection functions are disabled by default.
 
-Clickhouse enregistre les rapports du profileur [trace\_log](../../operations/system-tables.md#system_tables-trace_log) système de table. Assurez-vous que la table et le profileur sont correctement configurés.
+Clickhouse enregistre les rapports du profileur [trace_log](../../operations/system-tables.md#system_tables-trace_log) système de table. Assurez-vous que la table et le profileur sont correctement configurés.
 
 ## addressToLine {#addresstoline}
 

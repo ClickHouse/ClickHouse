@@ -5,7 +5,7 @@
 /// In order to implement a new function you can choose one of two options:
 ///  * Implement interface for IFunction (old function interface, which is planned to be removed sometimes)
 ///  * Implement three interfaces for IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl
-/// Generally saying, IFunction represents a union of tree new interfaces. However, it can't be used for all cases.
+/// Generally saying, IFunction represents a union of three new interfaces. However, it can't be used for all cases.
 /// Examples:
 ///  * Function properties may depend on arguments type (e.g. toUInt32(UInt8) is globally monotonic, toUInt32(UInt64) - only on intervals)
 ///  * In implementation of lambda functions DataTypeFunction needs an functional object with known arguments and return type
@@ -35,15 +35,15 @@ public:
 
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        execute(block, arguments, result, input_rows_count);
+        return execute(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for block,
+      *  if some of arguments are Nullable, then execute function as usual for columns,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -87,9 +87,9 @@ public:
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getReturnType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
-    virtual ExecutableFunctionImplPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
+    virtual ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -105,9 +105,9 @@ public:
     virtual bool isStateful() const { return false; }
 
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -125,11 +125,12 @@ using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
 class IFunctionOverloadResolverImpl
 {
 public:
+
     virtual ~IFunctionOverloadResolverImpl() = default;
 
     virtual String getName() const = 0;
 
-    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
+    virtual FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
 
     virtual DataTypePtr getReturnType(const DataTypes & /*arguments*/) const
     {
@@ -152,15 +153,9 @@ public:
     /// Properties from IFunctionOverloadResolver. See comments in IFunction.h
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isInjective(const Block &) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
-
-    /// Will be called if isVariadic returns true. You need to check if function can have specified number of arguments.
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {
@@ -194,22 +189,23 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 
 
 /// Previous function interface.
-class IFunction : public std::enable_shared_from_this<IFunction>
+class IFunction
 {
 public:
+
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
 
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        executeImpl(block, arguments, result, input_rows_count);
+        return executeImpl(arguments, result_type, input_rows_count);
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for block,
+      *  if some of arguments are Nullable, then execute function as usual for columns,
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
@@ -256,8 +252,8 @@ public:
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
@@ -288,11 +284,6 @@ public:
     }
 
     virtual bool isVariadic() const { return false; }
-
-    virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
-    {
-        throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {

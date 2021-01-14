@@ -1,5 +1,5 @@
 ---
-toc_priority: 16
+toc_priority: 20
 toc_title: New York Taxi Data
 ---
 
@@ -195,7 +195,7 @@ The data in this table uses 142 GB.
 
 (Importing data directly from Postgres is also possible using `COPY ... TO PROGRAM`.)
 
-Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
+Unfortunately, all the fields associated with the weather (precipitation…average_wind_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
 To start, we’ll create a table on a single server. Later we will make the table distributed.
 
@@ -283,7 +283,7 @@ Among other things, you can run the OPTIMIZE query on MergeTree. But it’s not 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

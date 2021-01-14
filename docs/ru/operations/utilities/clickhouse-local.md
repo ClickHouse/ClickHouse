@@ -1,3 +1,8 @@
+---
+toc_priority: 60
+toc_title: clickhouse-local
+---
+
 # clickhouse-local {#clickhouse-local}
 
 Принимает на вход данные, которые можно представить в табличном виде и выполняет над ними операции, заданные на [языке запросов](../../operations/utilities/clickhouse-local.md) ClickHouse.
@@ -8,6 +13,8 @@
 
 !!! warning "Warning"
     Мы не рекомендуем подключать серверную конфигурацию к `clickhouse-local`, поскольку данные можно легко повредить неосторожными действиями.
+
+Для временных данных по умолчанию создается специальный каталог. Если вы хотите обойти это действие, каталог данных можно указать с помощью опции `-- --path`.
 
 ## Вызов программы {#vyzov-programmy}
 
@@ -34,25 +41,51 @@ $ clickhouse-local --structure "table_structure" --input-format "format_of_incom
 ## Примеры вызова {#primery-vyzova}
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" -if "CSV" -q "SELECT * FROM table"
+$ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
+    --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
-1 2
-3 4
+1   2
+3   4
 ```
 
 Вызов выше эквивалентен следующему:
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+$ echo -e "1,2\n3,4" | clickhouse-local --query "
+    CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
+    SELECT a, b FROM table;
+    DROP TABLE table"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
-1 2
-3 4
+1   2
+3   4
+```
+
+
+Необязательно использовать ключи `stdin` или `--file`. Вы можете открывать любое количество файлов с помощью [табличной функции `file`](../../sql-reference/table-functions/file.md):
+
+``` bash
+$ echo 1 | tee 1.tsv
+1
+
+$ echo 2 | tee 2.tsv
+2
+
+$ clickhouse-local --query "
+    select * from file('1.tsv', TSV, 'a int') t1
+    cross join file('2.tsv', TSV, 'b int') t2"
+1	2
 ```
 
 А теперь давайте выведем на экран объём оперативной памяти, занимаемой пользователями (Unix):
 
 ``` bash
-$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' | clickhouse-local -S "user String, mem Float64" -q "SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
+$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
+    | clickhouse-local --structure "user String, mem Float64" \
+        --query "SELECT user, round(sum(mem), 2) as memTotal
+            FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
+```
+
+``` text
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ┏━━━━━━━━━━┳━━━━━━━━━━┓
 ┃ user     ┃ memTotal ┃

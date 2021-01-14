@@ -7,7 +7,7 @@ toc_title: Interface MySQL
 
 # Interface MySQL {#mysql-interface}
 
-ClickHouse prend en charge le protocole de fil MySQL. Il peut être activé par [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) paramètre dans le fichier de configuration:
+ClickHouse prend en charge le protocole de fil MySQL. Il peut être activé par [mysql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) paramètre dans le fichier de configuration:
 
 ``` xml
 <mysql_port>9004</mysql_port>

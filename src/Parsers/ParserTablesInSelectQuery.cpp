@@ -23,7 +23,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true).parse(pos, res->table_function, expected)
-        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true).parse(pos, res->database_and_table_name, expected))
+        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(false, true), true).parse(pos, res->database_and_table_name, expected))
         return false;
 
     /// FINAL
@@ -103,6 +103,20 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+void ParserTablesInSelectQueryElement::parseJoinStrictness(Pos & pos, ASTTableJoin & table_join)
+{
+    if (ParserKeyword("ANY").ignore(pos))
+        table_join.strictness = ASTTableJoin::Strictness::Any;
+    else if (ParserKeyword("ALL").ignore(pos))
+        table_join.strictness = ASTTableJoin::Strictness::All;
+    else if (ParserKeyword("ASOF").ignore(pos))
+        table_join.strictness = ASTTableJoin::Strictness::Asof;
+    else if (ParserKeyword("SEMI").ignore(pos))
+        table_join.strictness = ASTTableJoin::Strictness::Semi;
+    else if (ParserKeyword("ANTI").ignore(pos) || ParserKeyword("ONLY").ignore(pos))
+        table_join.strictness = ASTTableJoin::Strictness::Anti;
+}
+
 bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto res = std::make_shared<ASTTablesInSelectQueryElement>();
@@ -131,19 +145,12 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else if (ParserKeyword("LOCAL").ignore(pos))
                 table_join->locality = ASTTableJoin::Locality::Local;
 
-            if (ParserKeyword("ANY").ignore(pos))
-                table_join->strictness = ASTTableJoin::Strictness::Any;
-            else if (ParserKeyword("ALL").ignore(pos))
-                table_join->strictness = ASTTableJoin::Strictness::All;
-            else if (ParserKeyword("ASOF").ignore(pos))
-                table_join->strictness = ASTTableJoin::Strictness::Asof;
-            else if (ParserKeyword("SEMI").ignore(pos))
-                table_join->strictness = ASTTableJoin::Strictness::Semi;
-            else if (ParserKeyword("ANTI").ignore(pos) || ParserKeyword("ONLY").ignore(pos))
-                table_join->strictness = ASTTableJoin::Strictness::Anti;
-            else
-                table_join->strictness = ASTTableJoin::Strictness::Unspecified;
+            table_join->strictness = ASTTableJoin::Strictness::Unspecified;
 
+            /// Legacy: allow JOIN type before JOIN kind
+            parseJoinStrictness(pos, *table_join);
+
+            bool no_kind = false;
             if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;
             else if (ParserKeyword("LEFT").ignore(pos))
@@ -155,6 +162,20 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else if (ParserKeyword("CROSS").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Cross;
             else
+                no_kind = true;
+
+            /// Standard position: JOIN type after JOIN kind
+            parseJoinStrictness(pos, *table_join);
+
+            /// Optional OUTER keyword for outer joins.
+            if (table_join->kind == ASTTableJoin::Kind::Left
+                || table_join->kind == ASTTableJoin::Kind::Right
+                || table_join->kind == ASTTableJoin::Kind::Full)
+            {
+                ParserKeyword("OUTER").ignore(pos);
+            }
+
+            if (no_kind)
             {
                 /// Use INNER by default as in another DBMS.
                 if (table_join->strictness == ASTTableJoin::Strictness::Semi ||
@@ -171,14 +192,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             if ((table_join->strictness == ASTTableJoin::Strictness::Semi || table_join->strictness == ASTTableJoin::Strictness::Anti) &&
                 (table_join->kind != ASTTableJoin::Kind::Left && table_join->kind != ASTTableJoin::Kind::Right))
                 throw Exception("SEMI|ANTI JOIN should be LEFT or RIGHT.", ErrorCodes::SYNTAX_ERROR);
-
-            /// Optional OUTER keyword for outer joins.
-            if (table_join->kind == ASTTableJoin::Kind::Left
-                || table_join->kind == ASTTableJoin::Kind::Right
-                || table_join->kind == ASTTableJoin::Kind::Full)
-            {
-                ParserKeyword("OUTER").ignore(pos);
-            }
 
             if (!ParserKeyword("JOIN").ignore(pos, expected))
                 return false;

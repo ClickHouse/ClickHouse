@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
+#include <common/getPageSize.h>
 
 #include <cstdlib>
 #include <iomanip>
@@ -46,7 +47,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
     using namespace DB;
 
-    Memory<> direct_buf(block_size, sysconf(_SC_PAGESIZE));
+    Memory<> direct_buf(block_size, ::getPageSize());
     std::vector<char> simple_buf(block_size);
 
     char * buf;
@@ -59,9 +60,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     for (size_t i = 0; i < count; ++i)
     {
-        long rand_result1 = rng();
-        long rand_result2 = rng();
-        long rand_result3 = rng();
+        uint64_t rand_result1 = rng();
+        uint64_t rand_result2 = rng();
+        uint64_t rand_result3 = rng();
 
         size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
         size_t offset;
@@ -152,7 +153,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads; ++i)
-        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
+        pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, count); });
     pool.wait();
 
     fsync(fd);

@@ -1,9 +1,10 @@
-# 规划 {#gui-hua}
+---
+toc_priority: 74
+toc_title: Roadmap
+---
 
-## Q1 2020 {#q1-2020}
+# Roadmap {#roadmap}
 
--   更精确的用户资源池，可以在用户之间合理分配集群资源
--   细粒度的授权管理
--   与外部认证服务集成
+`2021年Roadmap`已公布供公开讨论查看[这里](https://github.com/ClickHouse/ClickHouse/issues/17623).
 
-[来源文章](https://clickhouse.tech/docs/en/roadmap/) <!--hide-->
+{## [源文章](https://clickhouse.tech/docs/en/roadmap/) ##}

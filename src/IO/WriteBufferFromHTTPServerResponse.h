@@ -97,7 +97,7 @@ public:
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
-    /// Writes progess in repeating HTTP headers.
+    /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress);
 
     /// Send at least HTTP headers if no data has been sent yet.

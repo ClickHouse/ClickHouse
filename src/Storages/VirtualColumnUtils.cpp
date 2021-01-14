@@ -1,7 +1,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -14,6 +14,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
 
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
@@ -117,7 +118,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_ast, block.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 
@@ -127,12 +128,21 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
     ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
-    const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+    ConstantFilterDescription constant_filter(*filter_column);
+
+    if (constant_filter.always_true)
+        return;
+
+    if (constant_filter.always_false)
+        block = block.cloneEmpty();
+
+    FilterDescription filter(*filter_column);
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(filter, -1);
+        column = column->filter(*filter.data, -1);
     }
 }
 

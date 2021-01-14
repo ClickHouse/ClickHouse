@@ -1,3 +1,8 @@
+---
+toc_priority: 43
+toc_title: "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438\u0020\u0432\u043d\u0435\u0448\u043d\u0438\u0445\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439"
+---
+
 # Источники внешних словарей {#dicts-external-dicts-dict-sources}
 
 Внешний словарь можно подключить из множества источников.
@@ -19,7 +24,7 @@
 </yandex>
 ```
 
-Аналогичный [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Аналогичный [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -150,7 +155,7 @@ SOURCE(HTTP(
 ))
 ```
 
-Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) в конфигурации сервера.
+Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) в конфигурации сервера.
 
 Поля настройки:
 
@@ -194,7 +199,7 @@ SOURCE(ODBC(
 
 ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
-Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../../faq/general.md#oracle-odbc-encodings).
+Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../../faq/integration/oracle-odbc.md).
 
 ### Выявленная уязвимость в функционировании ODBC словарей {#vyiavlennaia-uiazvimost-v-funktsionirovanii-odbc-slovarei}
 
@@ -531,7 +536,7 @@ SOURCE(CLICKHOUSE(
 
 Поля настройки:
 
--   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) и прописать её в дальнейших настройках.
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../../engines/table-engines/special/distributed.md) и прописать её в дальнейших настройках.
 -   `port` — порт сервера ClickHouse.
 -   `user` — имя пользователя ClickHouse.
 -   `password` — пароль пользователя ClickHouse.

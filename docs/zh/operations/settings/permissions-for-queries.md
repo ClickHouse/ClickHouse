@@ -18,7 +18,7 @@ ClickHouse中的查询可以分为几种类型:
 以下设置按查询类型规范用户权限:
 
 -   [只读](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` 可以与任何设置进行。
 
@@ -43,7 +43,7 @@ ClickHouse中的查询可以分为几种类型:
 
 默认值：0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow_ddl {#settings_allow_ddl}
 
 允许或拒绝 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
 

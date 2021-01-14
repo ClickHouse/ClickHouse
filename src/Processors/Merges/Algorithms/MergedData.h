@@ -51,7 +51,7 @@ public:
         total_merged_rows += num_rows;
         merged_rows = num_rows;
 
-        /// We don't cate about granularity here. Because, for fast-forward optimization, chunk will be moved as-is.
+        /// We don't care about granularity here. Because, for fast-forward optimization, chunk will be moved as-is.
         /// sum_blocks_granularity += block_size * num_rows;
     }
 
@@ -82,7 +82,7 @@ public:
         if (need_flush)
             return true;
 
-        /// Never return more then max_block_size.
+        /// Never return more than max_block_size.
         if (merged_rows >= max_block_size)
             return true;
 

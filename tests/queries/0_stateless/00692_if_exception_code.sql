@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 SELECT if(); -- { serverError 42 }
 SELECT if(1); -- { serverError 42 }

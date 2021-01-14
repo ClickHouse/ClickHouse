@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Formats/JSONEachRowUtils.h>
@@ -29,12 +30,13 @@ enum
 
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    ReadBuffer & in_,
+    const Block & header_,
+    Params params_,
+    const FormatSettings & format_settings_,
+    bool yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(in);
-
     size_t num_columns = getPort().getHeader().columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -42,10 +44,10 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
         name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings_.import_nested_json)
         {
-            const auto splitted = Nested::splitName(column_name);
-            if (!splitted.second.empty())
+            const auto split = Nested::splitName(column_name);
+            if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data(), splitted.first.size());
+                const StringRef table_name(column_name.data(), split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
@@ -94,7 +96,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
-    if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
+    if (nested_prefix_length == 0 && !buf.eof() && buf.position() + 1 < buf.buffer().end())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
@@ -138,14 +140,30 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     {
         seen_columns[index] = read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
-        if (format_settings.null_as_default && !type->isNullable())
-            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+
+        if (yield_strings)
+        {
+            String str;
+            readJSONString(str, in);
+
+            ReadBufferFromString buf(str);
+
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeWholeText(*columns[index], buf, format_settings, type);
+            else
+                type->deserializeAsWholeText(*columns[index], buf, format_settings);
+        }
         else
-            type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        {
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+            else
+                type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " + columnName(index) + ")");
+        e.addMessage("(while reading the value of key " + columnName(index) + ")");
         throw;
     }
 }
@@ -155,7 +173,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(in);
 
     if (in.eof())
-        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
     else if (*in.position() == '}')
     {
         ++in.position();
@@ -285,6 +303,9 @@ void JSONEachRowRowInputFormat::resetParser()
 
 void JSONEachRowRowInputFormat::readPrefix()
 {
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(in);
+
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == '[')
     {
@@ -318,13 +339,23 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
+    });
+
+    factory.registerInputFormatProcessor("JSONStringsEachRow", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings & settings)
+    {
+        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
     });
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

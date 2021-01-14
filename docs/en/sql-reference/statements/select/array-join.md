@@ -6,7 +6,7 @@ toc_title: ARRAY JOIN
 
 It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
-Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](../../functions/array-join.md#functions_arrayjoin) function, but the clause functionality is broader.
+Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) function, but the clause functionality is broader.
 
 Syntax:
 
@@ -25,7 +25,7 @@ Supported types of `ARRAY JOIN` are listed below:
 -   `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
 -   `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
-## Basic ARRAY JOIN Examples
+## Basic ARRAY JOIN Examples {#basic-array-join-examples}
 
 The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
@@ -276,6 +276,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
-The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](where.md)/[PREWHERE](prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
+The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.

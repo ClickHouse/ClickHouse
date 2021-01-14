@@ -1,24 +1,26 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include <memory>
-#include <DataStreams/copyData.h>
-#include <DataTypes/DataTypeFactory.h>
 #include "ODBCBlockInputStream.h"
 #include "ODBCBlockOutputStream.h"
+#include "getIdentifierQuote.h"
+#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
-#include <common/logger_useful.h>
-#include <mutex>
 #include <Poco/ThreadPool.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <Columns/ColumnsNumber.h>
-#include "getIdentifierQuote.h"
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <common/logger_useful.h>
+
+#include <mutex>
+#include <memory>
+
 
 #if USE_ODBC
 #include <Poco/Data/ODBC/SessionImpl.h>
@@ -84,7 +86,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     Poco::Net::HTMLForm params(request);
     if (mode == "read")
         params.read(request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
     {
@@ -132,7 +134,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     std::string format = params.get("format", "RowBinary");
 
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "Connection string: '" << connection_string << "'");
+    LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
 
@@ -152,7 +154,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             }
             std::string db_name = params.get("db_name");
             std::string table_name = params.get("table_name");
-            LOG_TRACE(log, "DB name: '" << db_name << "', table name: '" << table_name << "'");
+            LOG_TRACE(log, "DB name: '{}', table name: '{}'", db_name, table_name);
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
@@ -162,8 +164,9 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());
-            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block,
-                                                                                  context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
+                                                                   context, max_block_size);
+            auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
@@ -171,9 +174,9 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         else
         {
             std::string query = params.get("query");
-            LOG_TRACE(log, "Query: " << query);
+            LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStream(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);

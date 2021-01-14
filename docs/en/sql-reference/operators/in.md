@@ -1,4 +1,4 @@
-### IN Operators {#select-in-operators}
+# IN Operators {#select-in-operators}
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -62,9 +62,9 @@ ORDER BY EventDate ASC
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
-## NULL Processing {#null-processing-1}
+## NULL Processing {#in-null-processing}
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the `IN` operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
 
 Here is an example with the `t_null` table:
 
@@ -112,9 +112,9 @@ For a non-distributed query, use the regular `IN` / `JOIN`.
 
 Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
 
-Let’s look at some examples. Assume that each server in the cluster has a normal **local\_table**. Each server also has a **distributed\_table** table with the **Distributed** type, which looks at all the servers in the cluster.
+Let’s look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
 
-For a query to the **distributed\_table**, the query will be sent to all the remote servers and run on them using the **local\_table**.
+For a query to the **distributed_table**, the query will be sent to all the remote servers and run on them using the **local_table**.
 
 For example, the query
 
@@ -148,7 +148,7 @@ In other words, the data set in the IN clause will be collected on each server i
 
 This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as “local IN”.
 
-To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed\_table** inside a subquery. The query would look like this:
+To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
@@ -197,3 +197,25 @@ This is more optimal than using the normal IN. However, keep the following point
 5.  If you need to use GLOBAL IN often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
+
+### Distributed Subqueries and max_parallel_replicas {#max_parallel_replica-subqueries}
+
+When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
+
+```sql
+SEELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+is transformed on each server into
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+where M is between 1 and 3 depending on which replica the local query is executing on. These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
+
+Therefore adding the max_parallel_replicas setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
+
+One workaround if local_table_2 doesn't meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.

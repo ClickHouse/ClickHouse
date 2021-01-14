@@ -78,7 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 列の説明では、次のいずれかの方法で既定値の式を指定できます:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 例: `URLDomain String DEFAULT domain(URL)`.
 
-既定値の式が定義されていない場合、既定値は数値の場合はゼロ、文字列の場合は空の文字列、配列の場合は空の配列、および `0000-00-00` 日付または `0000-00-00 00:00:00` 時間と日付のために。 Nullはサポートされていません。
+既定値の式が定義されていない場合、既定値は数値の場合はゼロ、文字列の場合は空の文字列、配列の場合は空の配列、および `1970-01-01` 日付または zero unix timestamp 時間と日付のために。 Nullはサポートされていません。
 
 既定の式が定義されている場合、列の型は省略可能です。 明示的に定義された型がない場合は、既定の式の型が使用されます。 例: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ タイプは ‘EventDate’ 列。
 
@@ -155,7 +155,7 @@ ENGINE = <Engine>
 圧縮は、次の表エンジンでサポートされます:
 
 -   [メルゲツリー](../../engines/table-engines/mergetree-family/mergetree.md) 家族だ 支柱の圧縮コーデックとの選択のデフォルトの圧縮メソッドによる [圧縮](../../operations/server-configuration-parameters/settings.md#server-settings-compression) 設定。
--   [ログ](../../engines/table-engines/log-family/log-family.md) 家族だ を使用して `lz4` 圧縮メソッドはデフォルト対応カラムの圧縮コーデック.
+-   [ログ](../../engines/table-engines/log-family/index.md) 家族だ を使用して `lz4` 圧縮メソッドはデフォルト対応カラムの圧縮コーデック.
 -   [セット](../../engines/table-engines/special/set.md). 既定の圧縮のみをサポートしました。
 -   [参加](../../engines/table-engines/special/join.md). 既定の圧縮のみをサポートしました。
 
@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 作成 [外部辞書](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) 与えられたと [構造](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [ソース](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [レイアウト](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) と [生涯](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
@@ -466,7 +466,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

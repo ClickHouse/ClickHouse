@@ -8,7 +8,7 @@ toc_title: Quotas
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually ‘users.xml’.
 
-The system also has a feature for limiting the complexity of a single query. See the section “Restrictions on query complexity”).
+The system also has a feature for limiting the complexity of a single query. See the section [Restrictions on query complexity](../operations/settings/query-complexity.md).
 
 In contrast to query complexity restrictions, quotas:
 

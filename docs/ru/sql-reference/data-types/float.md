@@ -1,3 +1,8 @@
+---
+toc_priority: 41
+toc_title: Float32, Float64
+---
+
 # Float32, Float64 {#float32-float64}
 
 [Числа с плавающей запятой](https://en.wikipedia.org/wiki/IEEE_754).

@@ -1,3 +1,8 @@
+---
+toc_priority: 31
+toc_title: "\u0421\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441"
+---
+
 # Синтаксис {#sintaksis}
 
 В системе есть два вида парсеров: полноценный парсер SQL (recursive descent parser) и парсер форматов данных (быстрый потоковый парсер).
@@ -33,7 +38,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 -   Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
 -   Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
 
-Зависимость от регистра для имён типов данных можно проверить в таблице `system.data_type_families`.
+Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families).
 
 В отличие от стандарта SQL, все остальные ключевые слова, включая названия функций зависят от регистра.
 

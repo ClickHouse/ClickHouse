@@ -51,10 +51,10 @@ IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
             return IntervalKind::Year;
         if (!(num_seconds % 7889238))
             return IntervalKind::Quarter;
-        if (!(num_seconds % 604800))
-            return IntervalKind::Week;
         if (!(num_seconds % 2629746))
             return IntervalKind::Month;
+        if (!(num_seconds % 604800))
+            return IntervalKind::Week;
         if (!(num_seconds % 86400))
             return IntervalKind::Day;
         if (!(num_seconds % 3600))
@@ -78,6 +78,23 @@ const char * IntervalKind::toKeyword() const
         case IntervalKind::Month: return "MONTH";
         case IntervalKind::Quarter: return "QUARTER";
         case IntervalKind::Year: return "YEAR";
+    }
+    __builtin_unreachable();
+}
+
+
+const char * IntervalKind::toLowercasedKeyword() const
+{
+    switch (kind)
+    {
+        case IntervalKind::Second: return "second";
+        case IntervalKind::Minute: return "minute";
+        case IntervalKind::Hour: return "hour";
+        case IntervalKind::Day: return "day";
+        case IntervalKind::Week: return "week";
+        case IntervalKind::Month: return "month";
+        case IntervalKind::Quarter: return "quarter";
+        case IntervalKind::Year: return "year";
     }
     __builtin_unreachable();
 }
@@ -158,5 +175,51 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             return "toYear";
     }
     __builtin_unreachable();
+}
+
+
+bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
+{
+    if ("second" == kind)
+    {
+        result = IntervalKind::Second;
+        return true;
+    }
+    if ("minute" == kind)
+    {
+        result = IntervalKind::Minute;
+        return true;
+    }
+    if ("hour" == kind)
+    {
+        result = IntervalKind::Hour;
+        return true;
+    }
+    if ("day" == kind)
+    {
+        result = IntervalKind::Day;
+        return true;
+    }
+    if ("week" == kind)
+    {
+        result = IntervalKind::Week;
+        return true;
+    }
+    if ("month" == kind)
+    {
+        result = IntervalKind::Month;
+        return true;
+    }
+    if ("quarter" == kind)
+    {
+        result = IntervalKind::Quarter;
+        return true;
+    }
+    if ("year" == kind)
+    {
+        result = IntervalKind::Year;
+        return true;
+    }
+    return false;
 }
 }

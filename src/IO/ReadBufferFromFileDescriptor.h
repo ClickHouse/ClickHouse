@@ -14,7 +14,7 @@ class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
     int fd;
-    off_t pos_in_file; /// What offset in file corresponds to working_buffer.end().
+    size_t file_offset_of_buffer_end; /// What offset in file corresponds to working_buffer.end().
 
     bool nextImpl() override;
 
@@ -23,9 +23,7 @@ protected:
 
 public:
     ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_), pos_in_file(0) {}
-
-    ReadBufferFromFileDescriptor(ReadBufferFromFileDescriptor &&) = default;
+        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_), file_offset_of_buffer_end(0) {}
 
     int getFD() const
     {
@@ -34,7 +32,7 @@ public:
 
     off_t getPosition() override
     {
-        return pos_in_file - (working_buffer.end() - pos);
+        return file_offset_of_buffer_end - (working_buffer.end() - pos);
     }
 
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.

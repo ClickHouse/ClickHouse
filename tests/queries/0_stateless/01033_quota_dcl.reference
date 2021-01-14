@@ -1,2 +1,2 @@
 default
-CREATE QUOTA default KEYED BY \'user name\' FOR INTERVAL 1 HOUR TRACKING ONLY TO default, readonly
+CREATE QUOTA default KEYED BY user_name FOR INTERVAL 1 hour TRACKING ONLY TO default, readonly

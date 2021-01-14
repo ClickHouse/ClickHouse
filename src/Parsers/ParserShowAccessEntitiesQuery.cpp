@@ -2,6 +2,8 @@
 #include <Parsers/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -9,14 +11,29 @@ namespace DB
 namespace
 {
     using EntityType = IAccessEntity::Type;
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
 
-    bool parseONDatabaseAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table_name)
+    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type)
+    {
+        for (auto i : ext::range(EntityType::MAX))
+        {
+            const auto & type_info = EntityTypeInfo::get(i);
+            if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
+            {
+                type = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            database.clear();
-            table_name.clear();
-            return ParserKeyword{"ON"}.ignore(pos, expected) && parseDatabaseAndTableName(pos, expected, database, table_name);
+            return ParserKeyword{"ON"}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
         });
     }
 }
@@ -27,18 +44,15 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!ParserKeyword{"SHOW"}.ignore(pos, expected))
         return false;
 
-    std::optional<EntityType> type;
+    EntityType type;
+    bool all = false;
     bool current_quota = false;
     bool current_roles = false;
     bool enabled_roles = false;
 
-    if (ParserKeyword{"USERS"}.ignore(pos, expected))
+    if (parseEntityType(pos, expected, type))
     {
-        type = EntityType::USER;
-    }
-    else if (ParserKeyword{"ROLES"}.ignore(pos, expected))
-    {
-        type = EntityType::ROLE;
+        all = true;
     }
     else if (ParserKeyword{"CURRENT ROLES"}.ignore(pos, expected))
     {
@@ -50,39 +64,44 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
         type = EntityType::ROLE;
         enabled_roles = true;
     }
-    else if (ParserKeyword{"POLICIES"}.ignore(pos, expected) || ParserKeyword{"ROW POLICIES"}.ignore(pos, expected))
-    {
-        type = EntityType::ROW_POLICY;
-    }
-    else if (ParserKeyword{"QUOTAS"}.ignore(pos, expected))
-    {
-        type = EntityType::QUOTA;
-    }
-    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected) || ParserKeyword{"CURRENT QUOTA"}.ignore(pos, expected))
+    else if (ParserKeyword{"CURRENT QUOTA"}.ignore(pos, expected) || ParserKeyword{"QUOTA"}.ignore(pos, expected))
     {
         type = EntityType::QUOTA;
         current_quota = true;
     }
-    else if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"SETTINGS PROFILES"}.ignore(pos, expected))
-    {
-        type = EntityType::SETTINGS_PROFILE;
-    }
     else
         return false;
 
-    String database, table_name;
+    String short_name;
+    std::optional<std::pair<String, String>> database_and_table_name;
     if (type == EntityType::ROW_POLICY)
-        parseONDatabaseAndTableName(pos, expected, database, table_name);
+    {
+        String database, table_name;
+        bool any_database, any_table;
+        if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+        {
+            if (any_database)
+                all = true;
+            else
+                database_and_table_name.emplace(database, table_name);
+        }
+        else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
+        {
+        }
+        else
+            all = true;
+    }
 
     auto query = std::make_shared<ASTShowAccessEntitiesQuery>();
     node = query;
 
-    query->type = *type;
+    query->type = type;
+    query->all = all;
     query->current_quota = current_quota;
     query->current_roles = current_roles;
     query->enabled_roles = enabled_roles;
-    query->database = std::move(database);
-    query->table_name = std::move(table_name);
+    query->short_name = std::move(short_name);
+    query->database_and_table_name = std::move(database_and_table_name);
 
     return true;
 }

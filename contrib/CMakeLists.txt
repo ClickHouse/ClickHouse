@@ -14,33 +14,46 @@ unset (_current_dir_name)
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
+if (WITH_COVERAGE)
+  set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
+  separate_arguments(WITHOUT_COVERAGE_LIST)
+  # disable coverage for contib files and build with optimisations
+  if (COMPILER_CLANG)
+      add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
+  endif()
+endif()
+
+if (SANITIZE STREQUAL "undefined")
+    # 3rd-party libraries usually not intended to work with UBSan.
+    add_compile_options(-fno-sanitize=undefined)
+endif()
+
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (antlr4-runtime-cmake)
+add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
-add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
-add_subdirectory (croaring)
+add_subdirectory (dragonbox-cmake)
 add_subdirectory (FastMemcpy)
-add_subdirectory (grpc-cmake)
+add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
+add_subdirectory (libdivide)
+add_subdirectory (libmetrohash)
+add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
-add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
+add_subdirectory (croaring-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_BOOST_LIBRARY)
-    add_subdirectory (boost-cmake)
-endif ()
-
-if (USE_INTERNAL_LZ4_LIBRARY)
-    add_subdirectory (lz4-cmake)
-endif ()
 
 if (USE_INTERNAL_ZSTD_LIBRARY)
     add_subdirectory (zstd-cmake)
@@ -62,14 +75,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_METROHASH_LIBRARY)
-    add_subdirectory (libmetrohash)
-endif ()
-
-if (USE_INTERNAL_BTRIE_LIBRARY)
-    add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -104,15 +109,21 @@ if (USE_INTERNAL_H3_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_SSL_LIBRARY)
-    add_subdirectory (openssl-cmake)
+    add_subdirectory (boringssl-cmake)
 
-    add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
-    add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
+    add_library(OpenSSL::Crypto ALIAS crypto)
+    add_library(OpenSSL::SSL ALIAS ssl)
 endif ()
 
-if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
+
+# Should go before:
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+add_subdirectory (curl-cmake)
 
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
@@ -159,57 +170,24 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
     add_subdirectory(snappy)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-    if(SANITIZE STREQUAL "undefined")
-        target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
-    endif()
 endif()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
-if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
-    # But this mode can be used for updating auto-generated parquet files:
-    # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
-    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
+    # But you can update auto-generated parquet files manually:
+    # cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
+    # cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
+    #          -DARROW_BUILD_SHARED=1 -DARROW_BUILD_UTILITIES=OFF -DARROW_BUILD_INTEGRATION=OFF
+    #          -DBoost_FOUND=1 -DARROW_TEST_LINKAGE="shared"
+    # make -j8
+    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> {BUILD_DIR}/contrib/arrow-cmake/cpp/src/parquet/
 
     # Also useful parquet reader:
-    # cd contrib/arrow/cpp/build && mkdir -p build && cmake .. -DPARQUET_BUILD_EXECUTABLES=1 && make -j8
-    # contrib/arrow/cpp/build/debug/parquet-reader some_file.parquet
+    # cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
+    # cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
+    # make -j8
+    # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
-    set (ARROW_COMPUTE ON CACHE INTERNAL "")
-    set (ARROW_PARQUET ON CACHE INTERNAL "")
-    set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
-    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
-    set (ARROW_BUILD_UTILITIES OFF CACHE INTERNAL "")
-    set (ARROW_BUILD_INTEGRATION OFF CACHE INTERNAL "")
-    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
-    set (Boost_FOUND 1 CACHE INTERNAL "")
-    if (MAKE_STATIC_LIBRARIES)
-        set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
-        set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
-        set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
-    else ()
-        set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
-        set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
-    endif ()
-
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-        set (_save_build_type ${CMAKE_BUILD_TYPE})
-        set (CMAKE_BUILD_TYPE Release)
-        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-    endif ()
-
-    # Because Arrow uses CMAKE_SOURCE_DIR as a project path
-    # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
-    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
-    add_subdirectory (arrow/cpp)
-
-    if (_save_build_type)
-        set (CMAKE_BUILD_TYPE ${_save_build_type})
-        unset (_save_build_type)
-        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-    endif ()
-
-else()
     add_subdirectory(arrow-cmake)
 
     # The library is large - avoid bloat.
@@ -217,13 +195,13 @@ else()
     target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
     target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
-endif()
 
 if (USE_INTERNAL_AVRO_LIBRARY)
     add_subdirectory(avro-cmake)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
+    set(GOOGLETEST_VERSION 1.10.0) # master
     # Google Test from sources
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
@@ -242,6 +220,14 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
+    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
+    # And c++2a cannot be used, due to ambiguous operator !=
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        set (_CXX_STANDARD "gnu++17")
+    else()
+        set (_CXX_STANDARD "c++17")
+    endif()
+    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
     target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
@@ -260,54 +246,28 @@ if (USE_INTERNAL_BROTLI_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    if (MAKE_STATIC_LIBRARIES)
-        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
-    else ()
-        set(protobuf_BUILD_SHARED_LIBS ON CACHE INTERNAL "" FORCE)
-    endif ()
-    set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
-    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
-    add_subdirectory(protobuf/cmake)
+    add_subdirectory(protobuf-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
+if (USE_INTERNAL_GRPC_LIBRARY)
+    add_subdirectory(grpc-cmake)
+endif ()
+
 if (USE_INTERNAL_AWS_S3_LIBRARY)
-    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
-    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
-    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
-    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
-    add_subdirectory(curl-cmake)
-    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
-    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
-    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
-    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
     add_subdirectory(aws-s3-cmake)
 
     # The library is large - avoid bloat.
     target_compile_options (aws_s3 PRIVATE -g0)
     target_compile_options (aws_s3_checksums PRIVATE -g0)
-    target_compile_options (curl PRIVATE -g0)
+
 endif ()
 
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
-endif()
-
-if (USE_INTERNAL_HYPERSCAN_LIBRARY)
-    # The library is large - avoid bloat.
-    if (USE_STATIC_LIBRARIES)
-        add_subdirectory (hyperscan)
-        target_compile_options (hs PRIVATE -g0)
-    else ()
-        set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
-        add_subdirectory (hyperscan)
-        target_compile_options (hs_shared PRIVATE -g0)
-    endif ()
 endif()
 
 if (USE_SIMDJSON)
@@ -317,3 +277,42 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
+
+if (USE_AMQPCPP OR USE_CASSANDRA)
+    add_subdirectory (libuv)
+endif()
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+if (USE_CASSANDRA)
+    add_subdirectory (cassandra)
+endif()
+
+if (USE_SENTRY)
+    add_subdirectory (sentry-native)
+endif()
+
+add_subdirectory (fmtlib-cmake)
+
+if (USE_STATS)
+    add_subdirectory (stats-cmake)
+    add_subdirectory (gcem)
+endif()
+
+if (USE_KRB5)
+    add_subdirectory (krb5-cmake)
+    if (USE_CYRUS_SASL)
+        add_subdirectory (cyrus-sasl-cmake)
+    endif()
+endif()
+
+if (USE_INTERNAL_ROCKSDB_LIBRARY)
+    add_subdirectory(rocksdb-cmake)
+endif()
+
+if (USE_NURAFT)
+  add_subdirectory(nuraft-cmake)
+endif()
+
+add_subdirectory(fast_float)
+

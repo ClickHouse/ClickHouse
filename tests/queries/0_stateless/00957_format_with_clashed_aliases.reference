@@ -1,5 +1,5 @@
-SELECT 
-    1 AS x, 
+SELECT
+    1 AS x,
     x.y
 FROM 
 (

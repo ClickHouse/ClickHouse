@@ -13,7 +13,8 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part);
+        const MergeTreeDataPartPtr & data_part,
+        const StorageMetadataPtr & metadata_snapshot_);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -36,11 +37,10 @@ protected:
 
 protected:
     const MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
 
     VolumePtr volume;
     String part_path;
-
-    static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };

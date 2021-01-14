@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <numeric>
@@ -42,7 +43,8 @@ namespace
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{
+    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
+    {
         {"UInt8", AttributeUnderlyingType::utUInt8},
         {"UInt16", AttributeUnderlyingType::utUInt16},
         {"UInt32", AttributeUnderlyingType::utUInt32},
@@ -56,12 +58,19 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         {"Float64", AttributeUnderlyingType::utFloat64},
         {"String", AttributeUnderlyingType::utString},
         {"Date", AttributeUnderlyingType::utUInt16},
-        {"DateTime", AttributeUnderlyingType::utUInt32},
     };
 
     const auto it = dictionary.find(type);
     if (it != std::end(dictionary))
         return it->second;
+
+    /// Can contain arbitrary scale and timezone parameters.
+    if (type.find("DateTime64") == 0)
+        return AttributeUnderlyingType::utUInt64;
+
+    /// Can contain arbitrary timezone as parameter.
+    if (type.find("DateTime") == 0)
+        return AttributeUnderlyingType::utUInt32;
 
     if (type.find("Decimal") == 0)
     {
@@ -193,6 +202,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
     }
 
     attributes = getAttributes(config, config_prefix);
+
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 }
@@ -221,7 +231,7 @@ std::string DictionaryStructure::getKeyDescription() const
     if (id)
         return "UInt64";
 
-    std::ostringstream out;
+    WriteBufferFromOwnString out;
 
     out << '(';
 
@@ -302,6 +312,12 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         checkAttributeKeys(attribute_keys);
 
         const auto name = config.getString(prefix + "name");
+
+        /// Don't include range_min and range_max in attributes list, otherwise
+        /// columns will be duplicated
+        if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
+            continue;
+
         const auto type_string = config.getString(prefix + "type");
         const auto type = DataTypeFactory::instance().get(type_string);
         const auto underlying_type = getAttributeUnderlyingType(type_string);

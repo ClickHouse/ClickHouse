@@ -20,6 +20,7 @@ public:
         UNKNOWN,
         SHUTDOWN,
         KILL,
+        SUSPEND,
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
@@ -30,11 +31,13 @@ public:
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
+        DROP_REPLICA,
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
+        RELOAD_SYMBOLS,
         STOP_MERGES,
         START_MERGES,
         STOP_TTL_MERGES,
@@ -61,6 +64,12 @@ public:
     String target_dictionary;
     String database;
     String table;
+    String replica;
+    String replica_zk_path;
+    bool is_drop_whole_replica{};
+    String storage_policy;
+    String volume;
+    UInt64 seconds{};
 
     String getID(char) const override { return "SYSTEM query"; }
 

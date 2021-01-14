@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
+
+class Context;
 
 /// Returns single row with explain results
 class InterpreterExplainQuery : public IInterpreter

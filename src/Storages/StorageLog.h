@@ -24,22 +24,24 @@ class StorageLog final : public ext::shared_ptr_helper<StorageLog>, public IStor
 public:
     String getName() const override { return "Log"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
-        const SelectQueryInfo & query_info,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
 protected:
@@ -53,6 +55,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        bool attach,
         size_t max_compress_block_size_);
 
 private:
@@ -81,7 +84,7 @@ private:
     DiskPtr disk;
     String table_path;
 
-    mutable std::shared_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Files files;
 
@@ -102,7 +105,7 @@ private:
     /// Read marks files if they are not already read.
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     /// You can not call with a write locked `rwlock`.
-    void loadMarks();
+    void loadMarks(std::chrono::seconds lock_timeout);
 
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
@@ -111,7 +114,7 @@ private:
       *
       * Return the first group of marks that contain the number of rows, but not the internals of the arrays.
       */
-    const Marks & getMarksWithRealRowCount() const;
+    const Marks & getMarksWithRealRowCount(const StorageMetadataPtr & metadata_snapshot) const;
 };
 
 }

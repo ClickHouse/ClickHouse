@@ -14,6 +14,8 @@
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
@@ -36,25 +38,25 @@ namespace ErrorCodes
 
 std::string DataTypeAggregateFunction::doGetName() const
 {
-    std::stringstream stream;
+    WriteBufferFromOwnString stream;
     stream << "AggregateFunction(" << function->getName();
 
     if (!parameters.empty())
     {
-        stream << "(";
+        stream << '(';
         for (size_t i = 0; i < parameters.size(); ++i)
         {
             if (i)
                 stream << ", ";
             stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
         }
-        stream << ")";
+        stream << ')';
     }
 
     for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
-    stream << ")";
+    stream << ')';
     return stream.str();
 }
 
@@ -241,7 +243,7 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 
 void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLString(serializeToString(function, column, row_num), ostr);
+    writeXMLStringForTextElement(serializeToString(function, column, row_num), ostr);
 }
 
 
@@ -355,17 +357,23 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        const ASTs & parameters = parametric->arguments->children;
-        params_row.resize(parameters.size());
-
-        for (size_t i = 0; i < parameters.size(); ++i)
+        if (parametric->arguments)
         {
-            const auto * literal = parameters[i]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception("Parameters to aggregate functions must be literals",
-                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+            const ASTs & parameters = parametric->arguments->children;
+            params_row.resize(parameters.size());
 
-            params_row[i] = literal->value;
+            for (size_t i = 0; i < parameters.size(); ++i)
+            {
+                const auto * literal = parameters[i]->as<ASTLiteral>();
+                if (!literal)
+                    throw Exception(
+                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                        "Parameters to aggregate functions must be literals. "
+                        "Got parameter '{}' for function '{}'",
+                        parameters[i]->formatForErrorMessage(), function_name);
+
+                params_row[i] = literal->value;
+            }
         }
     }
     else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
@@ -387,7 +395,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
+    AggregateFunctionProperties properties;
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
 }
 

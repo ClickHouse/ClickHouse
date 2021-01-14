@@ -16,7 +16,7 @@ namespace DB
 class ParserCreateSettingsProfileQuery : public IParserBase
 {
 public:
-    ParserCreateSettingsProfileQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
+    void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
 
 protected:
     const char * getName() const override { return "CREATE SETTINGS PROFILE or ALTER SETTINGS PROFILE query"; }

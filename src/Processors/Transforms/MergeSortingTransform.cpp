@@ -25,18 +25,17 @@ namespace ErrorCodes
 {
     extern const int NOT_ENOUGH_SPACE;
 }
-class MergeSorter;
 
 
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, Logger * log_, std::string path_)
+    BufferingToFileTransform(const Block & header, Poco::Logger * log_, std::string path_)
         : IAccumulatingTransform(header, header), log(log_)
         , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
         , out_stream(std::make_shared<NativeBlockOutputStream>(compressed_buf_out, 0, header))
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", path);
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
         out_stream->writePrefix();
     }
@@ -55,7 +54,7 @@ public:
             out_stream->writeSuffix();
             compressed_buf_out.next();
             file_buf_out.next();
-            LOG_INFO(log, "Done writing part of data into temporary file " + path);
+            LOG_INFO(log, "Done writing part of data into temporary file {}", path);
 
             out_stream.reset();
 
@@ -80,7 +79,7 @@ public:
     }
 
 private:
-    Logger * log;
+    Poco::Logger * log;
     std::string path;
     WriteBufferFromFile file_buf_out;
     CompressedWriteBuffer compressed_buf_out;
@@ -96,10 +95,12 @@ MergeSortingTransform::MergeSortingTransform(
     const SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
+    double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
+    , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_) {}
 
@@ -229,11 +230,10 @@ void MergeSortingTransform::generate()
         else
         {
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
-            LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
+            LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
-            if (!chunks.empty())
-                processors.emplace_back(std::make_shared<MergeSorterSource>(
-                        header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
+            processors.emplace_back(std::make_shared<MergeSorterSource>(
+                    header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
         }
 
         generated_prefix = true;
@@ -251,8 +251,7 @@ void MergeSortingTransform::generate()
 
 void MergeSortingTransform::remerge()
 {
-    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << chunks.size()
-                    << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeSorter remerge_sorter(std::move(chunks), description, max_merged_block_size, limit);
@@ -268,13 +267,14 @@ void MergeSortingTransform::remerge()
         new_chunks.emplace_back(std::move(chunk));
     }
 
-    LOG_DEBUG(log, "Memory usage is lowered from "
-            << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "
-            << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+    LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
-    /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
-    if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)
+    /// If the memory consumption was not lowered enough - we will not perform remerge anymore.
+    if (remerge_lowered_memory_bytes_ratio && (new_sum_bytes_in_blocks * remerge_lowered_memory_bytes_ratio > sum_bytes_in_blocks))
+    {
         remerge_is_useful = false;
+        LOG_DEBUG(log, "Re-merging is not useful (memory usage was not lowered by remerge_sort_lowered_memory_bytes_ratio={})", remerge_lowered_memory_bytes_ratio);
+    }
 
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;

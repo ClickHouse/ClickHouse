@@ -1,3 +1,8 @@
+---
+toc_priority: 54
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u0020\u0055\u0052\u004c"
+---
+
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
 
 Все функции работают не по RFC - то есть, максимально упрощены ради производительности.
@@ -116,11 +121,11 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### pathFull {#pathfull}
 
-То же самое, но включая query string и fragment. Пример: /top/news.html?page=2\#comments
+То же самое, но включая query string и fragment. Пример: /top/news.html?page=2#comments
 
 ### queryString {#querystring}
 
-Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также \# и всё, что после \#.
+Возвращает query-string. Пример: page=1&lr=213. query-string не включает в себя начальный знак вопроса, а также # и всё, что после #.
 
 ### fragment {#fragment}
 
@@ -128,7 +133,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### queryStringAndFragment {#querystringandfragment}
 
-Возвращает query string и fragment identifier. Пример: страница=1\#29390.
+Возвращает query string и fragment identifier. Пример: страница=1#29390.
 
 ### extractURLParameter(URL, name) {#extracturlparameterurl-name}
 
@@ -172,6 +177,42 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
+```
+
+### netloc {#netloc}
+
+Извлекает сетевую локальность (`username:password@host:port`) из URL.
+
+**Синтаксис**
+
+```sql
+netloc(URL)
+```
+
+**Параметры**
+
+-   `url` — URL. Тип — [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `username:password@host:port`.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT netloc('http://paul@www.example.com:80/');
+```
+
+Результат:
+
+``` text
+┌─netloc('http://paul@www.example.com:80/')─┐
+│ paul@www.example.com:80                   │
+└───────────────────────────────────────────┘
 ```
 
 ## Функции, удаляющие часть из URL-а {#funktsii-udaliaiushchie-chast-iz-url-a}

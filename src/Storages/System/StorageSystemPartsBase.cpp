@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
@@ -14,6 +13,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
 {
     bool has_state_column = false;
     Names real_column_names;
@@ -40,7 +40,7 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
 
     /// Do not check if only _state column is requested
     if (!(has_state_column && real_column_names.empty()))
-        check(real_column_names);
+        metadata_snapshot->check(real_column_names, {}, getStorageID());
 
     return has_state_column;
 }
@@ -83,9 +83,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Lazy database can not contain MergeTree tables
-            /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
-            if (database.second->getEngineName() != "Lazy")
+            /// Checck if database can contain MergeTree tables,
+            /// if not it's unnecessary to load all tables of database just to filter all of them.
+            if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -110,10 +110,13 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
-                for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
+                    if (!storage)
+                        continue;
+
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
@@ -192,7 +195,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
+            info.table_lock = info.storage->lockForShare(query_id, settings.lock_acquire_timeout);
         }
         catch (const Exception & e)
         {
@@ -219,21 +222,22 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipes StorageSystemPartsBase::read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+Pipe StorageSystemPartsBase::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
-    bool has_state_column = hasStateColumn(column_names);
+    bool has_state_column = hasStateColumn(column_names, metadata_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 
@@ -242,22 +246,19 @@ Pipes StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block header = getSampleBlock();
+    Block header = metadata_snapshot->getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
-
-    return pipes;
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage(StorageID{"system", name_})
+StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
+    : IStorage(table_id_)
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
@@ -273,7 +274,9 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(tmp_columns);
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(tmp_columns);
+    setInMemoryMetadata(storage_metadata);
 }
 
 NamesAndTypesList StorageSystemPartsBase::getVirtuals() const

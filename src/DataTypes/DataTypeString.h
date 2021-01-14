@@ -13,13 +13,14 @@ class DataTypeString final : public IDataType
 public:
     using FieldType = String;
     static constexpr bool is_parametric = false;
+    static constexpr auto type_id = TypeIndex::String;
 
     const char * getFamilyName() const override
     {
         return "String";
     }
 
-    TypeIndex getTypeId() const override { return TypeIndex::String; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;

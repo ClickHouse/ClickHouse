@@ -246,7 +246,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-例外として、uint32、Int32、UInt64、またはInt64の数値型からDateに変換する場合、数値が65536以上の場合、数値はUnixタイムスタンプとして解釈され(日数ではなく)、日付 この支援のための共通の発生を書く ‘toDate(unix\_timestamp)’ それ以外の場合はエラーになり、より面倒な書き込みが必要になります ‘toDate(toDateTime(unix\_timestamp))’.
+例外として、uint32、Int32、UInt64、またはInt64の数値型からDateに変換する場合、数値が65536以上の場合、数値はUnixタイムスタンプとして解釈され(日数ではなく)、日付 この支援のための共通の発生を書く ‘toDate(unix_timestamp)’ それ以外の場合はエラーになり、より面倒な書き込みが必要になります ‘toDate(toDateTime(unix_timestamp))’.
 
 日付と時刻の間の変換は、null時間を追加するか、時間を削除することによって、自然な方法で実行されます。
 

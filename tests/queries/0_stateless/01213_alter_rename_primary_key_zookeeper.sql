@@ -9,7 +9,7 @@ CREATE TABLE table_for_rename_pk
   value1 String,
   value2 String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_rename_pk', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_pk1', '1')
 PARTITION BY date
 ORDER BY (key1, pow(key2, 2), key3);
 
@@ -23,8 +23,7 @@ ALTER TABLE table_for_rename_pk RENAME COLUMN key3 TO renamed_key3; --{serverErr
 
 ALTER TABLE table_for_rename_pk RENAME COLUMN key2 TO renamed_key2; --{serverError 524}
 
-DROP TABLE IF EXISTS table_for_rename_pk NO DELAY;
-SELECT sleep(1) FORMAT Null;
+DROP TABLE IF EXISTS table_for_rename_pk;
 
 DROP TABLE IF EXISTS table_for_rename_with_primary_key;
 
@@ -38,7 +37,7 @@ CREATE TABLE table_for_rename_with_primary_key
   value2 String,
   INDEX idx (value1) TYPE set(1) GRANULARITY 1
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_rename_pk', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_pk2', '1')
 PARTITION BY date
 ORDER BY (key1, key2, key3)
 PRIMARY KEY (key1, key2);

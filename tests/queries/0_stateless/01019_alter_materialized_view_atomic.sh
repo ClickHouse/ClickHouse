@@ -3,7 +3,8 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --multiquery <<EOF
 DROP TABLE IF EXISTS src;
@@ -35,19 +36,22 @@ function alter_thread()
 
     while true; do
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-        sleep `echo 0.$RANDOM`;
+        sleep "$(echo 0.$RANDOM)";
     done
 }
 
 export -f alter_thread;
 timeout 10 bash -c alter_thread &
 
-for i in {1..100}; do
+for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
     while true; do
-      $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
+        $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
 wait
+
+$CLICKHOUSE_CLIENT -q "DROP VIEW mv"
+$CLICKHOUSE_CLIENT -q "DROP TABLE src"

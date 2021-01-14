@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
@@ -30,26 +31,21 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context);
 
-    if (query.type == EntityType::ROW_POLICY)
-    {
-        Strings names;
-        for (auto & name_parts : query.row_policies_name_parts)
-        {
-            if (name_parts.database.empty())
-                name_parts.database = context.getCurrentDatabase();
-            names.emplace_back(name_parts.getName());
-        }
-        if (query.if_exists)
-            access_control.tryRemove(access_control.find<RowPolicy>(names));
-        else
-            access_control.remove(access_control.getIDs<RowPolicy>(names));
-        return {};
-    }
+    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
 
-    if (query.if_exists)
-        access_control.tryRemove(access_control.find(query.type, query.names));
+    auto do_drop = [&](const Strings & names)
+    {
+        if (query.if_exists)
+            access_control.tryRemove(access_control.find(query.type, names));
+        else
+            access_control.remove(access_control.getIDs(query.type, names));
+    };
+
+    if (query.type == EntityType::ROW_POLICY)
+        do_drop(query.row_policy_names->toStrings());
     else
-        access_control.remove(access_control.getIDs(query.type, query.names));
+        do_drop(query.names);
+
     return {};
 }
 

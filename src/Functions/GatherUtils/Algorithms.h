@@ -1,20 +1,26 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/FieldVisitors.h>
 #include "Sources.h"
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
 #include <ext/range.h>
+#include "GatherUtils.h"
 
 
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils
 {
+
+inline constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
+
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
@@ -29,10 +35,28 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
+    using NativeU = typename NativeType<U>::Type;
+
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
+        const auto & src = slice.data[i];
+        auto & dst = sink.elements[sink.current_offset];
+
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
+        {
+            if constexpr (std::is_same_v<U, UInt128>)
+            {
+                throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if constexpr (IsDecimalNumber<T>)
+                dst = bigint_cast<NativeU>(src.value);
+            else
+                dst = bigint_cast<NativeU>(src);
+        }
+        else
+            dst = static_cast<NativeU>(src);
+
         ++sink.current_offset;
     }
 }
@@ -394,11 +418,12 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 
 
 /// Methods to check if first array has elements from second array, overloaded for various combinations of types.
-
-template <bool all, typename FirstSliceType, typename SecondSliceType,
+template <
+    ArraySearchType search_type,
+    typename FirstSliceType,
+    typename SecondSliceType,
           bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
-bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
-                  const UInt8 * first_null_map, const UInt8 * second_null_map)
+bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
@@ -418,16 +443,112 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
                 has = true;
         }
 
-        if (has && !all)
+        if (has && search_type == ArraySearchType::Any)
             return true;
 
-        if (!has && all)
+        if (!has && search_type == ArraySearchType::All)
             return false;
+    }
+    return search_type == ArraySearchType::All;
+}
 
+
+/// For details of Knuth-Morris-Pratt string matching algorithm see
+/// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
+/// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
+template <typename SliceType, typename EqualityFunc>
+std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
+{
+    std::vector<size_t> result(pattern.size);
+    result[0] = 0;
+
+    for (size_t i = 1; i < pattern.size; ++i)
+    {
+        result[i] = 0;
+        for (auto length = i; length > 0;)
+        {
+            length = result[length - 1];
+            if (isEqualFunc(pattern, i, length))
+            {
+                result[i] = length + 1;
+                break;
+            }
+        }
     }
 
-    return all;
+    return result;
 }
+
+
+template < typename FirstSliceType,
+           typename SecondSliceType,
+           bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
+           bool (*isEqualUnary)(const SecondSliceType &, size_t, size_t)>
+bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+{
+    if (second.size == 0)
+        return true;
+
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    std::vector<size_t> prefix_function;
+    if (has_second_null_map)
+    {
+        prefix_function = buildKMPPrefixFunction(second,
+                [null_map = second_null_map](const SecondSliceType & pattern, size_t i, size_t j)
+                {
+                    return !!null_map[i] == !!null_map[j] && (!!null_map[i] || isEqualUnary(pattern, i, j));
+                });
+    }
+    else
+    {
+        prefix_function = buildKMPPrefixFunction(second,
+                [](const SecondSliceType & pattern, size_t i, size_t j) { return isEqualUnary(pattern, i, j); });
+    }
+
+    size_t firstCur = 0;
+    size_t secondCur = 0;
+    while (firstCur < first.size && secondCur < second.size)
+    {
+        const bool is_first_null = has_first_null_map && first_null_map[firstCur];
+        const bool is_second_null = has_second_null_map && second_null_map[secondCur];
+
+        const bool cond_both_null_match = is_first_null && is_second_null;
+        const bool cond_both_not_null = !is_first_null && !is_second_null;
+        if (cond_both_null_match || (cond_both_not_null && isEqual(first, second, firstCur, secondCur)))
+        {
+            ++firstCur;
+            ++secondCur;
+        }
+        else if (secondCur > 0)
+        {
+            secondCur = prefix_function[secondCur - 1];
+        }
+        else
+        {
+            ++firstCur;
+        }
+    }
+
+    return secondCur == second.size;
+}
+
+
+template <
+    ArraySearchType search_type,
+    typename FirstSliceType,
+    typename SecondSliceType,
+    bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t),
+    bool (*isEqualSecond)(const SecondSliceType &, size_t, size_t)>
+bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
+{
+    if constexpr (search_type == ArraySearchType::Substr)
+        return sliceHasImplSubstr<FirstSliceType, SecondSliceType, isEqual, isEqualSecond>(first, second, first_null_map, second_null_map);
+    else
+        return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
+}
+
 
 template <typename T, typename U>
 bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
@@ -437,7 +558,7 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
-        return accurate::equalsOp(typename T::NativeType(first.data[first_ind]), typename U::NativeType(second.data[second_ind]));
+        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
     else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
     else
@@ -461,65 +582,95 @@ inline ALWAYS_INLINE bool sliceEqualElements(const GenericArraySlice & first, co
     return first.elements->compareAt(first_ind + first.begin, second_ind + second.begin, *second.elements, -1) == 0;
 }
 
-template <bool all, typename T, typename U>
+template <typename T>
+bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+                          size_t first_ind [[maybe_unused]],
+                          size_t second_ind [[maybe_unused]])
+{
+    if constexpr (IsDecimalNumber<T>)
+        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
+    else
+        return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
+}
+inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, size_t first_ind, size_t second_ind)
+{
+    return first.elements->compareAt(first_ind + first.begin, second_ind + first.begin, *first.elements, -1) == 0;
+}
+
+template <ArraySearchType search_type, typename T, typename U>
 bool sliceHas(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second)
 {
-    auto impl = sliceHasImpl<all, NumericArraySlice<T>, NumericArraySlice<U>, sliceEqualElements<T, U>>;
+    auto impl = sliceHasImpl<search_type, NumericArraySlice<T>, NumericArraySlice<U>, sliceEqualElements<T, U>, insliceEqualElements<U>>;
     return impl(first, second, nullptr, nullptr);
 }
 
-template <bool all>
+template <ArraySearchType search_type>
 bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
         return false;
 
-    auto impl = sliceHasImpl<all, GenericArraySlice, GenericArraySlice, sliceEqualElements>;
+    auto impl = sliceHasImpl<search_type, GenericArraySlice, GenericArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, nullptr);
 }
 
-template <bool all, typename U>
+template <ArraySearchType search_type, typename U>
 bool sliceHas(const GenericArraySlice & /*first*/, const NumericArraySlice<U> & /*second*/)
 {
     return false;
 }
 
-template <bool all, typename T>
+template <ArraySearchType search_type, typename T>
 bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & /*second*/)
 {
     return false;
 }
 
-template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
 bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    auto impl = sliceHasImpl<
+        search_type,
+        FirstArraySlice,
+        SecondArraySlice,
+        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
+        insliceEqualElements<SecondArraySlice>>;
     return impl(first, second, nullptr, second.null_map);
 }
 
-template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
 bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
 {
-    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    auto impl = sliceHasImpl<
+        search_type,
+        FirstArraySlice,
+        SecondArraySlice,
+        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
+        insliceEqualElements<SecondArraySlice>>;
     return impl(first, second, first.null_map, nullptr);
 }
 
-template <bool all, typename FirstArraySlice, typename SecondArraySlice>
+template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
 bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<all, FirstArraySlice, SecondArraySlice, sliceEqualElements<FirstArraySlice, SecondArraySlice>>;
+    auto impl = sliceHasImpl<
+        search_type,
+        FirstArraySlice,
+        SecondArraySlice,
+        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
+        insliceEqualElements<SecondArraySlice>>;
     return impl(first, second, first.null_map, second.null_map);
 }
 
-template <bool all, typename FirstSource, typename SecondSource>
+template <ArraySearchType search_type, typename FirstSource, typename SecondSource>
 void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
 {
     auto size = result.size();
     auto & data = result.getData();
     for (auto row : ext::range(0, size))
     {
-        data[row] = static_cast<UInt8>(sliceHas<all>(first.getWhole(), second.getWhole()) ? 1 : 0);
+        data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()) ? 1 : 0);
         first.next();
         second.next();
     }
@@ -545,6 +696,10 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             if (size >= 0)
             {
                 auto length = static_cast<size_t>(size);
+                if (length > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
+                        length, MAX_ARRAY_SIZE);
+
                 if (array_size <= length)
                 {
                     writeSlice(array_source.getWhole(), sink);
@@ -557,6 +712,10 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             else
             {
                 auto length = static_cast<size_t>(-size);
+                if (length > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
+                        length, MAX_ARRAY_SIZE);
+
                 if (array_size <= length)
                 {
                     for (size_t i = array_size; i < length; ++i)
@@ -586,6 +745,10 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         if (size >= 0)
         {
             auto length = static_cast<size_t>(size);
+            if (length > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
+                    length, MAX_ARRAY_SIZE);
+
             if (array_size <= length)
             {
                 writeSlice(array_source.getWhole(), sink);
@@ -598,6 +761,10 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         else
         {
             auto length = static_cast<size_t>(-size);
+            if (length > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
+                    length, MAX_ARRAY_SIZE);
+
             if (array_size <= length)
             {
                 for (size_t i = array_size; i < length; ++i)
@@ -615,3 +782,4 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 }
 
 }
+

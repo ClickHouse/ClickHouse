@@ -1,4 +1,5 @@
 #pragma once
+#if defined(OS_LINUX)
 #include <cstdint>
 
 
@@ -38,3 +39,5 @@ private:
 };
 
 }
+
+#endif

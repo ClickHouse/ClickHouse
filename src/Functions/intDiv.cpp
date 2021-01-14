@@ -15,23 +15,25 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
+namespace
+{
+
 /// Optimizations for integer division by a constant.
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
-    : BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
+    : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
     using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
     static const constexpr bool allow_fixed_string = false;
 
     static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
-        if (unlikely(b == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
+        /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
+        /// And signed integer overflow is well defined in C++20.
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
@@ -39,7 +41,19 @@ struct DivideIntegralByConstantImpl
             return;
         }
 
+        /// Division with too large divisor.
+        if (unlikely(b > std::numeric_limits<A>::max()
+            || (std::is_signed_v<A> && std::is_signed_v<B> && b < std::numeric_limits<A>::lowest())))
+        {
+            for (size_t i = 0; i < size; ++i)
+                c_pos[i] = 0;
+            return;
+        }
+
 #pragma GCC diagnostic pop
+
+        if (unlikely(static_cast<A>(b) == 0))
+            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         libdivide::divider<A> divider(b);
 
@@ -72,6 +86,10 @@ struct DivideIntegralByConstantImpl
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
+}
+
+namespace impl_
+{
 template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
 template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
 template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
@@ -91,10 +109,10 @@ template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralImpl<Int32, In
 template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralImpl<Int32, Int16>> : DivideIntegralByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, Int32>> : DivideIntegralByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
-
+}
 
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
-using FunctionIntDiv = FunctionBinaryArithmetic<DivideIntegralImpl, NameIntDiv, false>;
+using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
 void registerFunctionIntDiv(FunctionFactory & factory)
 {

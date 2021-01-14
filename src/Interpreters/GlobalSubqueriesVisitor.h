@@ -7,7 +7,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -17,12 +16,13 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int WRONG_GLOBAL_SUBQUERY;
 }
 
 
@@ -73,8 +73,7 @@ public:
                 is_table = true;
 
             if (!subquery_or_table_name)
-                throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
 
             if (is_table)
             {
@@ -103,7 +102,9 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns});
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+                    context, ColumnsDescription{columns}, ConstraintsDescription{}, nullptr,
+                    /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
@@ -134,8 +135,28 @@ public:
                 ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = interpreter->execute().in;
-            subqueries_for_sets[external_table_name].table = external_storage;
+
+            if (context.getSettingsRef().use_index_for_in_with_subqueries)
+            {
+                auto external_table = external_storage_holder->getTable();
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), context);
+                auto stream = interpreter->execute().getInputStream();
+
+                table_out->writePrefix();
+                stream->readPrefix();
+                while (Block block = stream->read())
+                {
+                    table_out->write(block);
+                }
+                table_out->writeSuffix();
+                stream->readSuffix();
+            }
+            else
+            {
+                subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
+                interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
+                subqueries_for_sets[external_table_name].table = external_storage;
+            }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
             *  then a new temporary table will be created (for example, _data1),

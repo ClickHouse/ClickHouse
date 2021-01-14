@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t num_arguments = arguments.size();
 
@@ -65,7 +65,7 @@ public:
         for (size_t i = 0; i < num_arguments; ++i)
         {
             /// Constant columns cannot be inside tuple. It's only possible to have constant tuple as a whole.
-            ColumnPtr holder = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            ColumnPtr holder = arguments[i].column->convertToFullColumnIfConst();
 
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
 
@@ -86,7 +86,7 @@ public:
             tuple_columns[i] = column_array->getDataPtr();
         }
 
-        block.getByPosition(result).column = ColumnArray::create(
+        return ColumnArray::create(
             ColumnTuple::create(tuple_columns), static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
     }
 };

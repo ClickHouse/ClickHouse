@@ -66,12 +66,16 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
 void ParquetBlockOutputFormat::finalize()
 {
-    if (file_writer)
+    if (!file_writer)
     {
-        auto status = file_writer->Close();
-        if (!status.ok())
-            throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        const Block & header = getPort(PortKind::Main).getHeader();
+
+        consume(Chunk(header.getColumns(), 0));
     }
+
+    auto status = file_writer->Close();
+    if (!status.ok())
+        throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void registerOutputFormatProcessorParquet(FormatFactory & factory)
@@ -80,7 +84,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           FormatFactory::WriteCallback,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);

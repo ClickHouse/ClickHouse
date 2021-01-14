@@ -1,12 +1,12 @@
-#!/usr/bin/env python
-from __future__ import print_function
+#!/usr/bin/env python3
+
 import sys
 import os
 import time
 import subprocess
 import threading
 from io import StringIO, SEEK_END
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
@@ -72,7 +72,7 @@ def start_server(requests_amount, test_data="Hello,2,-2,7.7\nWorld,2,-5,8.8"):
     httpd = HTTPServer(HTTP_SERVER_ADDRESS, EchoCSVHTTPServer)
 
     def real_func():
-        for i in xrange(requests_amount):
+        for i in range(requests_amount):
             httpd.handle_request()
 
     t = threading.Thread(target=real_func)

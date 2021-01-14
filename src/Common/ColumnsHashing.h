@@ -64,6 +64,8 @@ struct HashMethodOneNumber
 
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
+
+    const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
 
 

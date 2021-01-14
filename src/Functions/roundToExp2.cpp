@@ -5,19 +5,38 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
 
 template <typename T>
-inline std::enable_if_t<is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
 }
 
 template <typename T>
-inline std::enable_if_t<is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
+inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
 roundDownToPowerOfTwo(T x)
 {
     return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
+}
+
+template <typename T>
+inline std::enable_if_t<std::is_same_v<T, Int128>, T>
+roundDownToPowerOfTwo(T x)
+{
+    if (x <= 0)
+        return 0;
+
+    if (Int64 x64 = Int64(x >> 64))
+        return Int128(roundDownToPowerOfTwo(x64)) << 64;
+    return roundDownToPowerOfTwo(Int64(x));
 }
 
 template <typename T>
@@ -32,6 +51,13 @@ inline std::enable_if_t<std::is_same_v<T, Float64>, T>
 roundDownToPowerOfTwo(T x)
 {
     return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
+}
+
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, T>
+roundDownToPowerOfTwo(T)
+{
+    throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 /** For integer data types:
@@ -63,6 +89,8 @@ struct RoundToExp2Impl
 
 struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
+
+}
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
 

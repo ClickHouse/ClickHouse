@@ -746,7 +746,7 @@ public:
         return Data::allocatesMemoryInArena();
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to);
     }

@@ -1,9 +1,9 @@
 ---
 toc_priority: 63
-toc_title: Working with Nullable arguments
+toc_title: Nullable
 ---
 
-# Functions for Working with Nullable Aggregates {#functions-for-working-with-nullable-aggregates}
+# Functions for Working with Nullable Values {#functions-for-working-with-nullable-aggregates}
 
 ## isNull {#isnull}
 

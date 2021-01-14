@@ -63,7 +63,7 @@ public:
         if (file_doesnt_exists && !create_if_need)
         {
             throw Poco::Exception("File " + path + " does not exist. "
-            "You must create it manulally with appropriate value or 0 for first start.");
+            "You must create it manually with appropriate value or 0 for first start.");
         }
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
@@ -87,7 +87,7 @@ public:
                 {
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                        throw DB::Exception("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
+                        throw DB::ParsingException("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
                     else
                         throw;
                 }

@@ -1,8 +1,8 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-CREATE DATABASE database_for_dict Engine = Ordinary;
+CREATE DATABASE database_for_dict;
 
 DROP TABLE IF EXISTS database_for_dict.table_for_dict;
 
@@ -19,7 +19,7 @@ INSERT INTO database_for_dict.table_for_dict VALUES (1, 100, 'Hello world');
 
 DROP DATABASE IF EXISTS ordinary_db;
 
-CREATE DATABASE ordinary_db ENGINE = Ordinary;
+CREATE DATABASE ordinary_db;
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;
 
@@ -30,7 +30,7 @@ CREATE DICTIONARY ordinary_db.dict1
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 

@@ -6,13 +6,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
 
 #include <iterator>
-#include <memory>
 
 
 namespace DB
@@ -24,7 +22,6 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
 }
 
 
@@ -43,7 +40,7 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name[data[i].name] = i;
+        index_by_name.emplace(data[i].name, i);
 }
 
 
@@ -298,6 +295,20 @@ std::string Block::dumpStructure() const
     return out.str();
 }
 
+std::string Block::dumpIndex() const
+{
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & [name, pos] : index_by_name)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+
+        out << name << ' ' << pos;
+    }
+    return out.str();
+}
 
 Block Block::cloneEmpty() const
 {
@@ -477,7 +488,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
         return on_error("Block structure mismatch in " + context_description + " stream: different number of columns:\n"
-            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < columns; ++i)
     {
@@ -486,18 +497,18 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
         if (actual.name != expected.name)
             return on_error("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (!actual.type->equals(*expected.type))
             return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (!actual.column || !expected.column)
             continue;
 
         if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
-                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
         {
@@ -507,7 +518,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             if (actual_value != expected_value)
                 return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "
                     + applyVisitor(FieldVisitorToString(), actual_value) + ", expected: " + applyVisitor(FieldVisitorToString(), expected_value),
-                    ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
+                    ErrorCodes::LOGICAL_ERROR);
         }
     }
 

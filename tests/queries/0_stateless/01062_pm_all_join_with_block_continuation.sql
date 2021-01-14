@@ -1,5 +1,5 @@
 SET max_memory_usage = 50000000;
-SET partial_merge_join = 1;
+SET join_algorithm = 'partial_merge';
 
 SELECT 'defaults';
     

@@ -9,7 +9,7 @@ toc_title: "Stockage des dictionnaires en m\xE9moire"
 
 Il existe une variété de façons de stocker les dictionnaires en mémoire.
 
-Nous vous recommandons [plat](#flat), [haché](#dicts-external_dicts_dict_layout-hashed) et [complex\_key\_hashed](#complex-key-hashed). qui fournissent la vitesse de traitement optimale.
+Nous vous recommandons [plat](#flat), [haché](#dicts-external_dicts_dict_layout-hashed) et [complex_key_hashed](#complex-key-hashed). qui fournissent la vitesse de traitement optimale.
 
 La mise en cache n'est pas recommandée en raison de performances potentiellement médiocres et de difficultés à sélectionner les paramètres optimaux. En savoir plus dans la section “[cache](#cache)”.
 
@@ -54,14 +54,14 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [plat](#flat)
 -   [haché](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
 -   [direct](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [complex\_key\_direct](#complex-key-direct)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [complex_key_direct](#complex-key-direct)
+-   [ip_trie](#ip-trie)
 
 ### plat {#flat}
 
@@ -107,7 +107,7 @@ ou
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Semblable à `hashed`, mais utilise moins de mémoire en faveur de plus D'utilisation du processeur.
 
@@ -123,7 +123,7 @@ Exemple de Configuration:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
 Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `hashed`.
 
@@ -139,7 +139,7 @@ Exemple de Configuration:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 Le dictionnaire est stocké en mémoire sous la forme d'une table de hachage avec un tableau ordonné de gammes et leurs valeurs correspondantes.
 
@@ -294,7 +294,7 @@ Définissez une taille de cache suffisamment grande. Vous devez expérimenter po
 !!! warning "Avertissement"
     N'utilisez pas ClickHouse comme source, car le traitement des requêtes avec des lectures aléatoires est lent.
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
 Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `cache`.
 
@@ -320,12 +320,11 @@ ou
 LAYOUT(DIRECT())
 ```
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_direct {#complex-key-direct}
 
-Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `direct`.
+Ce type de stockage est destiné à être utilisé avec des [clés](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md) composites. Similaire à `direct`
 
-
-### ip\_trie {#ip-trie}
+### ip_trie {#ip-trie}
 
 Ce type de stockage permet de mapper des préfixes de réseau (adresses IP) à des métadonnées telles que ASN.
 
@@ -368,6 +367,12 @@ Exemple:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 ou
@@ -397,6 +402,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Les autres types ne sont pas encore pris en charge. La fonction renvoie l'attribut du préfixe correspondant à cette adresse IP. S'il y a chevauchement des préfixes, le plus spécifique est retourné.
 
-Les données sont stockées dans une `trie`. Il doit complètement s'intégrer dans la RAM.
+Les données doit complètement s'intégrer dans la RAM.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

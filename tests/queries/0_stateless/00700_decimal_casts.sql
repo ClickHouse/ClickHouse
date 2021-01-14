@@ -1,5 +1,5 @@
 SELECT toDecimal32('1.1', 1), toDecimal32('1.1', 2), toDecimal32('1.1', 8);
-SELECT toDecimal32('1.1', 0); -- { serverError 69 }
+SELECT toDecimal32('1.1', 0);
 SELECT toDecimal32(1.1, 0), toDecimal32(1.1, 1), toDecimal32(1.1, 2), toDecimal32(1.1, 8);
 
 SELECT '1000000000' AS x, toDecimal32(x, 0); -- { serverError 69 }
@@ -15,18 +15,18 @@ SELECT '-1' AS x, toDecimal64(x, 18); -- { serverError 69 }
 SELECT '1' AS x, toDecimal128(x, 38); -- { serverError 69 }
 SELECT '-1' AS x, toDecimal128(x, 38); -- { serverError 69 }
 
-SELECT '0.1' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '-0.1' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '0.1' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '-0.1' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '0.1' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '-0.1' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '0.0000000001' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '-0.0000000001' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '0.0000000000000000001' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '-0.0000000000000000001' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38); -- { serverError 69 }
-SELECT '-0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38); -- { serverError 69 }
+SELECT '0.1' AS x, toDecimal32(x, 0);
+SELECT '-0.1' AS x, toDecimal32(x, 0);
+SELECT '0.1' AS x, toDecimal64(x, 0);
+SELECT '-0.1' AS x, toDecimal64(x, 0);
+SELECT '0.1' AS x, toDecimal128(x, 0);
+SELECT '-0.1' AS x, toDecimal128(x, 0);
+SELECT '0.0000000001' AS x, toDecimal32(x, 9);
+SELECT '-0.0000000001' AS x, toDecimal32(x, 9);
+SELECT '0.0000000000000000001' AS x, toDecimal64(x, 18);
+SELECT '-0.0000000000000000001' AS x, toDecimal64(x, 18);
+SELECT '0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38);
+SELECT '-0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38);
 
 SELECT '1e9' AS x, toDecimal32(x, 0); -- { serverError 69 }
 SELECT '-1E9' AS x, toDecimal32(x, 0); -- { serverError 69 }
@@ -41,18 +41,18 @@ SELECT '-1e-0' AS x, toDecimal64(x, 18); -- { serverError 69 }
 SELECT '1e-0' AS x, toDecimal128(x, 38); -- { serverError 69 }
 SELECT '-1e0' AS x, toDecimal128(x, 38); -- { serverError 69 }
 
-SELECT '1e-1' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '-1e-1' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '1e-1' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '-1e-1' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '1e-1' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '-1e-1' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '1e-10' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '-1e-10' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '1e-19' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '-1e-19' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '1e-39' AS x, toDecimal128(x, 38); -- { serverError 69 }
-SELECT '-1e-39' AS x, toDecimal128(x, 38); -- { serverError 69 }
+SELECT '1e-1' AS x, toDecimal32(x, 0);
+SELECT '-1e-1' AS x, toDecimal32(x, 0);
+SELECT '1e-1' AS x, toDecimal64(x, 0);
+SELECT '-1e-1' AS x, toDecimal64(x, 0);
+SELECT '1e-1' AS x, toDecimal128(x, 0);
+SELECT '-1e-1' AS x, toDecimal128(x, 0);
+SELECT '1e-10' AS x, toDecimal32(x, 9);
+SELECT '-1e-10' AS x, toDecimal32(x, 9);
+SELECT '1e-19' AS x, toDecimal64(x, 18);
+SELECT '-1e-19' AS x, toDecimal64(x, 18);
+SELECT '1e-39' AS x, toDecimal128(x, 38);
+SELECT '-1e-39' AS x, toDecimal128(x, 38);
 
 SELECT toFloat32(9999999)   as x, toDecimal32(x, 0), toDecimal32(-x, 0), toDecimal64(x, 0), toDecimal64(-x, 0);
 SELECT toFloat32(999999.9)  as x, toDecimal32(x, 1), toDecimal32(-x, 1), toDecimal64(x, 1), toDecimal64(-x, 1);
@@ -143,9 +143,9 @@ SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,1)'); -- { ser
 
 SELECT CAST('0.123456789', 'Decimal(9,9)'), CAST('0.123456789123456789', 'Decimal(18,18)');
 SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,38)');
-SELECT CAST('0.123456789', 'Decimal(9,8)'); -- { serverError 69 }
-SELECT CAST('0.123456789123456789', 'Decimal(18,17)'); -- { serverError 69 }
-SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,37)'); -- { serverError 69 }
+SELECT CAST('0.123456789', 'Decimal(9,8)');
+SELECT CAST('0.123456789123456789', 'Decimal(18,17)');
+SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,37)');
 
 SELECT toDecimal128('1234567890', 28) AS x, toDecimal128(x, 29), toDecimal128(toDecimal128('1234567890', 28), 29);
 SELECT toDecimal128(toDecimal128('1234567890', 28), 30); -- { serverError 407 }

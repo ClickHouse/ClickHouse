@@ -5,6 +5,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Common/IntervalKind.h>
 
 namespace DB
 {
@@ -26,6 +28,43 @@ public:
         , result_separator(result_separator_)
     {
     }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, IParser & separator_parser_, bool allow_empty_ = true)
+    {
+        Pos begin = pos;
+        if (!parse_element())
+        {
+            pos = begin;
+            return allow_empty_;
+        }
+
+        while (true)
+        {
+            begin = pos;
+            if (!separator_parser_.ignore(pos, expected) || !parse_element())
+            {
+                pos = begin;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, TokenType separator, bool allow_empty_ = true)
+    {
+        ParserToken sep_parser{separator};
+        return parseUtil(pos, expected, parse_element, sep_parser, allow_empty_);
+    }
+
+    template <typename F>
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, bool allow_empty_ = true)
+    {
+        return parseUtil(pos, expected, parse_element, TokenType::Comma, allow_empty_);
+    }
+
 protected:
     const char * getName() const override { return "list of elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -36,6 +75,52 @@ private:
     char result_separator;
 };
 
+class ParserUnionList : public IParserBase
+{
+public:
+    ParserUnionList(ParserPtr && elem_parser_, ParserPtr && s_union_parser_, ParserPtr && s_all_parser_, ParserPtr && s_distinct_parser_)
+        : elem_parser(std::move(elem_parser_))
+        , s_union_parser(std::move(s_union_parser_))
+        , s_all_parser(std::move(s_all_parser_))
+        , s_distinct_parser(std::move(s_distinct_parser_))
+    {
+    }
+
+    template <typename ElemFunc, typename SepFunc>
+    static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
+    {
+        Pos begin = pos;
+        if (!parse_element())
+        {
+            pos = begin;
+            return false;
+        }
+
+        while (true)
+        {
+            begin = pos;
+            if (!parse_separator() || !parse_element())
+            {
+                pos = begin;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    auto getUnionModes() const { return union_modes; }
+
+protected:
+    const char * getName() const override { return "list of union elements"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    ParserPtr elem_parser;
+    ParserPtr s_union_parser;
+    ParserPtr s_all_parser;
+    ParserPtr s_distinct_parser;
+    ASTSelectWithUnionQuery::UnionModes union_modes;
+};
 
 /** An expression with an infix binary left-associative operator.
   * For example, a + b - c + d.
@@ -44,6 +129,7 @@ class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
     Operators_t operators;
+    Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
 
@@ -52,6 +138,11 @@ public:
       */
     ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_)
         : operators(operators_), first_elem_parser(std::move(first_elem_parser_))
+    {
+    }
+
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_)
+        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_), first_elem_parser(std::move(first_elem_parser_))
     {
     }
 
@@ -195,6 +286,9 @@ protected:
 
     const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    static bool parseArgumentAndIntervalKind(Pos & pos, ASTPtr & expr, IntervalKind & interval_kind, Expected & expected);
 };
 
 class ParserAdditiveExpression : public IParserBase
@@ -243,7 +337,8 @@ class ParserComparisonExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserBetweenExpression>()};
+    static const char * overlapping_operators_to_skip[];
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>()};
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }

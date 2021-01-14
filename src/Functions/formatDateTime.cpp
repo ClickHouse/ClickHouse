@@ -4,10 +4,12 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 
-#include <Functions/IFunctionImpl.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsConversion.h>
+#include <Functions/IFunctionImpl.h>
+#include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/WriteHelpers.h>
@@ -21,7 +23,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -33,14 +34,22 @@ namespace ErrorCodes
 
 namespace
 {
-// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
-template <typename DataType> struct ActionaValueTypeMap {};
-template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
-template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
+
+template <typename DataType> struct ActionValueTypeMap {};
+template <> struct ActionValueTypeMap<DataTypeInt8>       { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt8>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt16>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt16>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt32>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt32>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
 // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
-}
+template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -51,7 +60,7 @@ template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueTy
   * It is implemented in two steps.
   * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
   *  and quickly fills resulting character array (string column) with this pattern.
-  * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
+  * At second step, it walks across the resulting character array and modifies/replaces specific characters,
   *  by calling some functions by pointers and shifting cursor by specified amount.
   *
   * Advantages:
@@ -80,10 +89,25 @@ template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueTy
   *
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
-class FunctionFormatDateTime : public IFunction
+template <typename Name, bool support_integer>
+class FunctionFormatDateTimeImpl : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeInt8,
+            DataTypeUInt8,
+            DataTypeInt16,
+            DataTypeUInt16,
+            DataTypeInt32,
+            DataTypeUInt32,
+            DataTypeInt64,
+            DataTypeUInt64>(type, std::forward<F>(f));
+    }
+
     template <typename Time>
     class Action
     {
@@ -188,6 +212,16 @@ private:
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
         }
 
+        static void ISO8601Year2(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        {
+            writeNumber2(target, ToISOYearImpl::execute(source, timezone) % 100);
+        }
+
+        static void ISO8601Year4(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
+        {
+            writeNumber4(target, ToISOYearImpl::execute(source, timezone));
+        }
+
         static void year2(char * target, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
@@ -241,9 +275,9 @@ private:
     };
 
 public:
-    static constexpr auto name = "formatDateTime";
+    static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -259,63 +293,138 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
-                            ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!WhichDataType(arguments[1].type).isString())
-            throw Exception("Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3)
+        if constexpr (support_integer)
         {
-            if (!WhichDataType(arguments[2].type).isString())
-                throw Exception("Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
+                throw Exception(
+                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                        + ", should be 1, 2 or 3",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            if (arguments.size() == 1 && !isInteger(arguments[0].type))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + " when arguments size is 1. Should be integer",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + " when arguments size is 2 or 3. Should be a integer or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        else
+        {
+            if (arguments.size() != 2 && arguments.size() != 3)
+                throw Exception(
+                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                        + ", should be 2 or 3",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
+        if (arguments.size() == 2 && !WhichDataType(arguments[1].type).isString())
+            throw Exception(
+                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+            throw Exception(
+                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 1)
+            return std::make_shared<DataTypeDateTime>();
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
     {
-        if (!executeType<DataTypeDate>(block, arguments, result)
-            && !executeType<DataTypeDateTime>(block, arguments, result)
-            && !executeType<DataTypeDateTime64>(block, arguments, result))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                            + " of function " + getName() + ", must be Date or DateTime",
+        ColumnPtr res;
+        if constexpr (support_integer)
+        {
+            if (arguments.size() == 1)
+            {
+                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                    {
+                        using FromDataType = std::decay_t<decltype(type)>;
+                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
+                        return true;
+                    }))
+                {
+                    throw Exception(
+                        "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                            + ", must be Integer or DateTime when arguments size is 1.",
+                        ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
+            else
+            {
+                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                    {
+                        using FromDataType = std::decay_t<decltype(type)>;
+                        if (!(res = executeType<FromDataType>(arguments, result_type)))
+                            throw Exception(
+                                "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                                    + ", must be Integer or DateTime.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+                        return true;
+                    }))
+                {
+                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+                        throw Exception(
+                            "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                                + ", must be Integer or DateTime.",
                             ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
+        }
+        else
+        {
+            if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+                throw Exception(
+                    "Illegal column " + arguments[0].column->getName() + " of function " + getName()
+                        + ", must be Date or DateTime.",
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
+
+        return res;
     }
 
     template <typename DataType>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
         if (!times)
-            return false;
+            return nullptr;
 
-        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!pattern_column)
-            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal column " + arguments[1].column->getName()
                             + " of second ('format') argument of function " + getName()
                             + ". Must be constant string.",
                             ErrorCodes::ILLEGAL_COLUMN);
 
         String pattern = pattern_column->getValue<String>();
 
-        using T = typename ActionaValueTypeMap<DataType>::ActionValueType;
+        using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
         String pattern_to_fill = parsePattern(pattern, instructions);
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
+        {
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        }
+        else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
 
@@ -381,8 +490,7 @@ public:
         }
 
         dst_data.resize(pos - begin);
-        block.getByPosition(result).column = std::move(col_res);
-        return true;
+        return col_res;
     }
 
     template <typename T>
@@ -458,6 +566,18 @@ public:
                         instructions.emplace_back(&Action<T>::ISO8601Date, 10);
                         result.append("0000-00-00");
                         break;
+
+                    // Last two digits of year of ISO 8601 week number (see %G)
+                    case 'g':
+                      instructions.emplace_back(&Action<T>::ISO8601Year2, 2);
+                      result.append("00");
+                      break;
+
+                    // Year of ISO 8601 week number (see %V)
+                    case 'G':
+                      instructions.emplace_back(&Action<T>::ISO8601Year4, 4);
+                      result.append("0000");
+                      break;
 
                     // Day of the year (001-366)   235
                     case 'j':
@@ -584,9 +704,26 @@ public:
     }
 };
 
+struct NameFormatDateTime
+{
+    static constexpr auto name = "formatDateTime";
+};
+
+struct NameFromUnixTime
+{
+    static constexpr auto name = "FROM_UNIXTIME";
+};
+
+using FunctionFormatDateTime = FunctionFormatDateTimeImpl<NameFormatDateTime, false>;
+using FunctionFROM_UNIXTIME = FunctionFormatDateTimeImpl<NameFromUnixTime, true>;
+
+}
+
 void registerFunctionFormatDateTime(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatDateTime>();
+    factory.registerFunction<FunctionFROM_UNIXTIME>();
+    factory.registerAlias("fromUnixTimestamp", "FROM_UNIXTIME");
 }
 
 }

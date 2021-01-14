@@ -230,7 +230,7 @@ SOFTWARE.
             range = _mm_or_si128(range, _mm_alignr_epi8(tmp1, tmp2, 13));
 
             /*
-             * Now we have below range indices caluclated
+             * Now we have below range indices calculated
              * Correct cases:
              * - 8 for C0~FF
              * - 3 for 1st byte after F0~FF

@@ -129,7 +129,7 @@ public:
         buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         Int64 current_intersections = 0;
         Int64 max_intersections = 0;

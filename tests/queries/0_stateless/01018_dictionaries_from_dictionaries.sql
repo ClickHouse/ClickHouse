@@ -1,8 +1,8 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-CREATE DATABASE database_for_dict Engine = Ordinary;
+CREATE DATABASE database_for_dict;
 
 CREATE TABLE database_for_dict.table_for_dict
 (
@@ -26,7 +26,7 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
@@ -40,7 +40,7 @@ CREATE DICTIONARY database_for_dict.dict2
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict1' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict1' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
@@ -61,7 +61,7 @@ CREATE DICTIONARY database_for_dict.dict3
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict2' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict2' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
@@ -84,7 +84,7 @@ CREATE DICTIONARY database_for_dict.dict4
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'non_existing_table' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'non_existing_table' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 

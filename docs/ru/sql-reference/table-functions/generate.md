@@ -1,4 +1,9 @@
-# generateRandom {#generateRandom}
+---
+toc_priority: 47
+toc_title: generateRandom
+---
+
+# generateRandom {#generaterandom}
 
 Генерирует случайные данные с заданной схемой.
 Позволяет заполнять тестовые таблицы данными.

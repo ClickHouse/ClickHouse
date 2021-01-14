@@ -4,12 +4,13 @@
 
 #include <math.h>
 
+#include <new>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/WriteBuffer.h>
@@ -74,6 +75,25 @@ template <typename T>
 void set(T & x) { x = 0; }
 
 }
+
+
+/** Numbers are compared bitwise.
+  * Complex types are compared by operator== as usual (this is important if there are gaps).
+  *
+  * This is needed if you use floats as keys. They are compared by bit equality.
+  * Otherwise the invariants in hash table probing do not met when NaNs are present.
+  */
+template <typename T>
+inline bool bitEquals(T && a, T && b)
+{
+    using RealT = std::decay_t<T>;
+
+    if constexpr (std::is_floating_point_v<RealT>)
+        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
+    else
+        return a == b;
+}
+
 
 /**
   * getKey/Mapped -- methods to get key/"mapped" values from the LookupResult returned by find() and
@@ -150,9 +170,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Are the keys at the cells equal?
-    bool keyEquals(const Key & key_) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -173,9 +193,6 @@ struct HashTableCell
 
     /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
-
-    /// Whether the cell is deleted.
-    bool isDeleted() const { return false; }
 
     /// Set the mapped value, if any (for HashMap), to the corresponding `value`.
     void setMapped(const value_type & /*value*/) {}
@@ -208,6 +225,10 @@ struct HashTableGrower
     /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
+    static constexpr auto initial_count = 1ULL << initial_size_degree;
+
+    /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
+    static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -255,6 +276,10 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
+    static constexpr auto initial_count = 1ULL << key_bits;
+
+    static constexpr auto performs_linear_probing_with_single_step = true;
+
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -293,8 +318,8 @@ public:
         zeroValue()->~Cell();
     }
 
-    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
 
 template <typename Cell>
@@ -309,6 +334,7 @@ struct ZeroValueStorage<false, Cell>
 };
 
 
+// The HashTable
 template
 <
     typename Key,
@@ -324,6 +350,14 @@ class HashTable :
     protected Cell::State,
     protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
 {
+public:
+    // If we use an allocator with inline memory, check that the initial
+    // size of the hash table is in sync with the amount of this memory.
+    static constexpr size_t initial_buffer_bytes
+        = Grower::initial_count * sizeof(Cell);
+    static_assert(allocatorInitialBytes<Allocator> == 0
+        || allocatorInitialBytes<Allocator> == initial_buffer_bytes);
+
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -435,7 +469,7 @@ protected:
           */
         size_t i = 0;
         for (; i < old_size; ++i)
-            if (!buf[i].isZero(*this) && !buf[i].isDeleted())
+            if (!buf[i].isZero(*this))
                 reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
@@ -446,7 +480,7 @@ protected:
           *    after transferring all the elements from the old halves you need to     [         o   x    ]
           *    process tail from the collision resolution chain immediately after it   [        o    x    ]
           */
-        for (; !buf[i].isZero(*this) && !buf[i].isDeleted(); ++i)
+        for (; !buf[i].isZero(*this); ++i)
             reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
@@ -798,6 +832,7 @@ protected:
                   */
                 --m_size;
                 buf[place_value].setZero();
+                inserted = false;
                 throw;
             }
 
@@ -820,6 +855,11 @@ protected:
 
 
 public:
+    void reserve(size_t num_elements)
+    {
+        resize(num_elements);
+    }
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
@@ -916,6 +956,112 @@ public:
     ConstLookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
+    }
+
+    std::enable_if_t<Grower::performs_linear_probing_with_single_step, void>
+    ALWAYS_INLINE erase(const Key & x)
+    {
+        /** Deletion from open addressing hash table without tombstones
+          *
+          * https://en.wikipedia.org/wiki/Linear_probing
+          * https://en.wikipedia.org/wiki/Open_addressing
+          * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
+          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          *
+          * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
+          */
+
+        if (Cell::isZero(x, *this))
+        {
+            if (this->hasZero())
+            {
+                --m_size;
+                this->clearHasZero();
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        size_t hash_value = hash(x);
+        size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
+
+        /// Key is not found
+        if (buf[erased_key_position].isZero(*this))
+        {
+            return;
+        }
+
+        /// We need to guarantee loop termination because there will be empty position
+        assert(m_size < grower.bufSize());
+
+        size_t next_position = erased_key_position;
+
+        /**
+         * During element deletion there is a possibility that the search will be broken for one
+         * of the following elements, because this place erased_key_position is empty. We will check
+         * next_element. Consider a sequence from (erased_key_position, next_element], if the
+         * optimal_position of next_element falls into it, then removing erased_key_position
+         * will not break search for next_element.
+         * If optimal_position of the element does not fall into the sequence (erased_key_position, next_element]
+         * then deleting a erased_key_position will break search for it, so we need to move next_element
+         * to erased_key_position. Now we have empty place at next_element, so we apply the identical
+         * procedure for it.
+         * If an empty element is encountered then means that there is no more next elements for which we can
+         * break the search so we can exit.
+        */
+
+        /// Walk to the right through collision resolution chain and move elements to better positions
+        while (true)
+        {
+            next_position = grower.next(next_position);
+
+            /// If there's no more elements in the chain
+            if (buf[next_position].isZero(*this))
+                break;
+
+            /// The optimal position of the element in the cell at next_position
+            size_t optimal_position = grower.place(buf[next_position].getHash(*this));
+
+            /// If position of this element is already optimal - proceed to the next element.
+            if (optimal_position == next_position)
+                continue;
+
+            /// Cannot move this element because optimal position is after the freed place
+            /// The second condition is tricky - if the chain was overlapped before erased_key_position,
+            ///  and the optimal position is actually before in collision resolution chain:
+            ///
+            /// [*xn***----------------***]
+            ///   ^^-next elem          ^
+            ///   |                     |
+            ///   erased elem           the optimal position of the next elem
+            ///
+            /// so, the next elem should be moved to position of erased elem
+
+            /// The case of non overlapping part of chain
+            if (next_position > erased_key_position
+               && (optimal_position > erased_key_position) && (optimal_position < next_position))
+            {
+                continue;
+            }
+
+            /// The case of overlapping chain
+            if (next_position < erased_key_position
+                /// Cannot move this element because optimal position is after the freed place
+                && ((optimal_position > erased_key_position) || (optimal_position < next_position)))
+            {
+                continue;
+            }
+
+            /// Move the element to the freed place
+            memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
+            /// Now we have another freed place
+            erased_key_position = next_position;
+        }
+
+        buf[erased_key_position].setZero();
+        --m_size;
     }
 
     bool ALWAYS_INLINE has(const Key & x) const

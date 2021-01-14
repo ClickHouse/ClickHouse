@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/ExtendedRoleSet.h>
+#include <Access/RolesOrUsersSet.h>
 #include <array>
 
 
@@ -23,7 +23,9 @@ struct RowPolicy : public IAccessEntity
         String database;
         String table_name;
 
+        bool empty() const { return short_name.empty(); }
         String getName() const;
+        String toString() const { return getName(); }
         auto toTuple() const { return std::tie(short_name, database, table_name); }
         friend bool operator ==(const NameParts & left, const NameParts & right) { return left.toTuple() == right.toTuple(); }
         friend bool operator !=(const NameParts & left, const NameParts & right) { return left.toTuple() != right.toTuple(); }
@@ -89,7 +91,7 @@ struct RowPolicy : public IAccessEntity
     Type getType() const override { return TYPE; }
 
     /// Which roles or users should use this row policy.
-    ExtendedRoleSet to_roles;
+    RolesOrUsersSet to_roles;
 
 private:
     void setName(const String & name_) override;
@@ -151,6 +153,22 @@ inline const RowPolicy::ConditionTypeInfo & RowPolicy::ConditionTypeInfo::get(Co
 inline String toString(RowPolicy::ConditionType type)
 {
     return RowPolicy::ConditionTypeInfo::get(type).raw_name;
+}
+
+
+inline String RowPolicy::NameParts::getName() const
+{
+    String name;
+    name.reserve(database.length() + table_name.length() + short_name.length() + 6);
+    name += backQuoteIfNeed(short_name);
+    name += " ON ";
+    if (!database.empty())
+    {
+        name += backQuoteIfNeed(database);
+        name += '.';
+    }
+    name += backQuoteIfNeed(table_name);
+    return name;
 }
 
 }

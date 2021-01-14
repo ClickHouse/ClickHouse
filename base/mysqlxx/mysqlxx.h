@@ -53,8 +53,6 @@
   * These assumptions are specific for Yandex.Metrica. Your mileage may vary.
   *
   * mysqlxx could not be considered as separate full-featured library,
-  *  because it is developed from the principle - "everything that we don't need is not implemented",
-  *  and also the library depends on some other libraries from Yandex.Metrica code.
-  *  (dependencied could be easily removed if necessary).
+  *  because it is developed from the principle - "everything that we don't need is not implemented".
   * It is assumed that the user will add all missing functionality that is needed.
   */

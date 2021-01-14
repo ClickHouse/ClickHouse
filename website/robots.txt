@@ -1,15 +1,5 @@
 User-agent: *
-Disallow: /docs/en/single/
-Disallow: /docs/zh/single/
-Disallow: /docs/es/single/
-Disallow: /docs/fr/single/
-Disallow: /docs/ru/single/
-Disallow: /docs/ja/single/
-Disallow: /docs/fa/single/
-Disallow: /docs/v1*
-Disallow: /docs/v2*
-Disallow: /docs/v3*
 Disallow: /cdn-cgi/
 Allow: /
 Host: https://clickhouse.tech
-Sitemap: https://clickhouse.tech/sitemap.xml
+Sitemap: https://clickhouse.tech/sitemap-index.xml

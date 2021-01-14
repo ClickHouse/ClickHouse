@@ -20,7 +20,7 @@ Approximated query processing can be useful in the following cases:
 The features of data sampling are listed below:
 
 -   Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
--   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](../../operators/in.md) clause. Also, you can join samples using the [JOIN](join.md) clause.
+-   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](../../../sql-reference/operators/in.md) clause. Also, you can join samples using the [JOIN](../../../sql-reference/statements/select/join.md) clause.
 -   Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
 
 For the `SAMPLE` clause the following syntax is supported:

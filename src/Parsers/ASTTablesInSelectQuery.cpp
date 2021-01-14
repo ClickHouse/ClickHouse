@@ -1,6 +1,8 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Common/SipHash.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -18,6 +20,13 @@ do \
 while (false)
 
 
+void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(final);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
+
 ASTPtr ASTTableExpression::clone() const
 {
     auto res = std::make_shared<ASTTableExpression>(*this);
@@ -32,6 +41,14 @@ ASTPtr ASTTableExpression::clone() const
     return res;
 }
 
+void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(locality);
+    hash_state.update(strictness);
+    hash_state.update(kind);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
 ASTPtr ASTTableJoin::clone() const
 {
     auto res = std::make_shared<ASTTableJoin>(*this);
@@ -41,6 +58,12 @@ ASTPtr ASTTableJoin::clone() const
     CLONE(on_expression);
 
     return res;
+}
+
+void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(kind);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 ASTPtr ASTArrayJoin::clone() const
@@ -188,6 +211,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
 void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
+    frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
     {
@@ -214,8 +238,10 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.expression_list_prepend_whitespace = true;
+
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN " << (settings.hilite ? hilite_none : "");
+        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)

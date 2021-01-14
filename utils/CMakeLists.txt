@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 if(MAKE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
@@ -8,6 +12,7 @@ include(../cmake/limit_jobs.cmake)
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)
+add_subdirectory (syntax-analyzer)
 
 # Not used in package
 if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
@@ -15,6 +20,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (iotest)
     add_subdirectory (corrector_utf8)
     add_subdirectory (zookeeper-cli)
+    add_subdirectory (zookeeper-test)
     add_subdirectory (zookeeper-dump-tree)
     add_subdirectory (zookeeper-remove-by-list)
     add_subdirectory (zookeeper-create-entry-to-download-part)
@@ -24,6 +30,9 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (test-data-generator)
     add_subdirectory (convert-month-partitioned-parts)
     add_subdirectory (checksum-for-compressed-block)
+    add_subdirectory (db-generator)
+    add_subdirectory (wal-dump)
+    add_subdirectory (check-mysql-binlog)
 endif ()
 
 if (ENABLE_CODE_QUALITY)

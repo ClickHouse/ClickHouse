@@ -4,9 +4,15 @@ DROP TABLE IF EXISTS t3;
 DROP TABLE IF EXISTS v;
 DROP TABLE IF EXISTS lv;
 
-CREATE TABLE t1 (key Int) Engine=Memory();
+CREATE TABLE t1 (key Int) Engine=Memory;
 CREATE TABLE t2 AS t1;
 DROP TABLE t2;
+CREATE TABLE t2 Engine=Memory AS t1;
+DROP TABLE t2;
+CREATE TABLE t2 AS t1 Engine=Memory;
+DROP TABLE t2;
+CREATE TABLE t3 AS numbers(10);
+DROP TABLE t3;
 
 -- live view
 SET allow_experimental_live_view=1;
@@ -31,7 +37,7 @@ CREATE DICTIONARY dict
 )
 PRIMARY KEY key
 SOURCE(CLICKHOUSE(
-    HOST '127.0.0.1' PORT 9000
+    HOST '127.0.0.1' PORT tcpPort()
     TABLE 'dict_data' DB 'test_01056_dict_data' USER 'default' PASSWORD ''))
 LIFETIME(MIN 0 MAX 0)
 LAYOUT(SPARSE_HASHED());
@@ -39,3 +45,11 @@ CREATE TABLE t3 AS dict; -- { serverError 80; }
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t3;
+DROP DICTIONARY dict;
+DROP TABLE test_01056_dict_data.dict_data;
+
+DROP DATABASE test_01056_dict_data;
+
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+DROP TABLE t1;

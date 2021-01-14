@@ -8,7 +8,7 @@ CREATE TABLE t2 (x UInt32, y UInt64) engine = MergeTree ORDER BY (x,y);
 
 INSERT INTO t1 (x, y) VALUES (0, 0);
 
-SET partial_merge_join = 1;
+SET join_algorithm = 'prefer_partial_merge';
 SET any_join_distinct_right_table_keys = 1;
 
 SELECT 't join none using';

@@ -27,7 +27,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -44,7 +45,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     String cluster_description;
     String remote_database;
     String remote_table;
-    ASTPtr remote_table_function_ptr;
     String username;
     String password;
 
@@ -136,7 +136,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     for (auto ast : args)
         setIdentifierSpecial(ast);
 
-    ClusterPtr cluster;
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
@@ -186,41 +185,67 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             secure);
     }
 
-    auto remote_table_id = StorageID::createEmpty();
+    if (!remote_table_function_ptr && remote_table.empty())
+        throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
     remote_table_id.database_name = remote_database;
     remote_table_id.table_name = remote_table;
-    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+}
 
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const
+{
+    /// StorageDistributed supports mismatching structure of remote table, so we can use outdated structure for CREATE ... AS remote(...)
+    /// without additional conversion in StorageTableFunctionProxy
+    if (cached_columns.empty())
+        cached_columns = getActualTableStructure(context);
+
+    assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? StorageDistributed::createWithOwnCluster(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            structure_remote_table,
+            cached_columns,
+            ConstraintsDescription{},
             remote_table_function_ptr,
-            cluster,
-            context)
-        : StorageDistributed::createWithOwnCluster(
+            String{},
+            context,
+            ASTPtr{},
+            String{},
+            String{},
+            DistributedSettings{},
+            false,
+            cluster)
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
-            structure_remote_table,
-            remote_database,
-            remote_table,
-            cluster,
-            context);
+            cached_columns,
+            ConstraintsDescription{},
+            remote_table_id.database_name,
+            remote_table_id.table_name,
+            String{},
+            context,
+            ASTPtr{},
+            String{},
+            String{},
+            DistributedSettings{},
+            false,
+            cluster);
 
     res->startup();
     return res;
 }
 
+ColumnsDescription TableFunctionRemote::getActualTableStructure(const Context & context) const
+{
+    assert(cluster);
+    return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
+}
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-
-    std::stringstream ss;
-    ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
-       << ": <addresses pattern or cluster name>, <name of remote database>, <name of remote table>"
-       << (is_cluster_function ? "" : ", [username, [password]].");
-    help_message = ss.str();
+    help_message = fmt::format("Table function '{}' requires from 2 to {} parameters: "
+                               "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
+                               name, is_cluster_function ? 3 : 5, is_cluster_function ? "" : ", [username, [password]].");
 }
 
 

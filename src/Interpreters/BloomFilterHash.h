@@ -38,7 +38,7 @@ struct BloomFilterHash
     static UInt64 getNumberTypeHash(const Field & field)
     {
         /// For negative, we should convert the type to make sure the symbol is in right place
-        return field.isNull() ? intHash64(0) : intHash64(ext::bit_cast<UInt64>(FieldType(field.safeGet<FieldGetType>())));
+        return field.isNull() ? intHash64(0) : DefaultHash64<FieldType>(FieldType(field.safeGet<FieldGetType>()));
     }
 
     static UInt64 getStringTypeHash(const Field & field)
@@ -79,16 +79,21 @@ struct BloomFilterHash
         else if (which.isUInt16()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
         else if (which.isUInt32()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         else if (which.isUInt64()) return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
+        else if (which.isUInt128()) return build_hash_column(getNumberTypeHash<UInt128, UInt256>(field));
+        else if (which.isUInt256()) return build_hash_column(getNumberTypeHash<UInt256, UInt256>(field));
         else if (which.isInt8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
         else if (which.isInt16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
         else if (which.isInt32()) return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
         else if (which.isInt64()) return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
+        else if (which.isInt128()) return build_hash_column(getNumberTypeHash<Int128, Int128>(field));
+        else if (which.isInt256()) return build_hash_column(getNumberTypeHash<Int256, Int256>(field));
         else if (which.isEnum8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
         else if (which.isEnum16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
         else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
         else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UInt128, UInt128>(field));
         else if (which.isString()) return build_hash_column(getStringTypeHash(field));
         else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
         else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
@@ -135,16 +140,21 @@ struct BloomFilterHash
         else if (which.isUInt16()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isUInt32()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isUInt64()) getNumberTypeHash<UInt64, is_first>(column, vec, pos);
+        else if (which.isUInt128()) getNumberTypeHash<UInt128, is_first>(column, vec, pos);
+        else if (which.isUInt256()) getNumberTypeHash<UInt256, is_first>(column, vec, pos);
         else if (which.isInt8()) getNumberTypeHash<Int8, is_first>(column, vec, pos);
         else if (which.isInt16()) getNumberTypeHash<Int16, is_first>(column, vec, pos);
         else if (which.isInt32()) getNumberTypeHash<Int32, is_first>(column, vec, pos);
         else if (which.isInt64()) getNumberTypeHash<Int64, is_first>(column, vec, pos);
+        else if (which.isInt128()) getNumberTypeHash<Int128, is_first>(column, vec, pos);
+        else if (which.isInt256()) getNumberTypeHash<Int256, is_first>(column, vec, pos);
         else if (which.isEnum8()) getNumberTypeHash<Int8, is_first>(column, vec, pos);
         else if (which.isEnum16()) getNumberTypeHash<Int16, is_first>(column, vec, pos);
         else if (which.isDate()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isDateTime()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
+        else if (which.isUUID()) getNumberTypeHash<UInt128, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
         else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
@@ -166,7 +176,7 @@ struct BloomFilterHash
         {
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
-                UInt64 hash = intHash64(ext::bit_cast<UInt64>(Float64(vec_from[index + pos])));
+                UInt64 hash = DefaultHash64<Float64>(Float64(vec_from[index + pos]));
 
                 if constexpr (is_first)
                     vec[index] = hash;
@@ -178,7 +188,7 @@ struct BloomFilterHash
         {
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
-                UInt64 hash = intHash64(ext::bit_cast<UInt64>(vec_from[index + pos]));
+                UInt64 hash = DefaultHash64<Type>(vec_from[index + pos]);
 
                 if constexpr (is_first)
                     vec[index] = hash;
@@ -196,18 +206,17 @@ struct BloomFilterHash
             const ColumnString::Chars & data = index_column->getChars();
             const ColumnString::Offsets & offsets = index_column->getOffsets();
 
-            ColumnString::Offset current_offset = pos;
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
+                ColumnString::Offset current_offset = offsets[index + pos - 1];
+                size_t length = offsets[index + pos] - current_offset - 1 /* terminating zero */;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
-                    reinterpret_cast<const char *>(&data[current_offset]), offsets[index + pos] - current_offset - 1);
+                    reinterpret_cast<const char *>(&data[current_offset]), length);
 
                 if constexpr (is_first)
                     vec[index] = city_hash;
                 else
                     vec[index] = CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(vec[index], city_hash));
-
-                current_offset = offsets[index + pos];
             }
         }
         else if (const auto * fixed_string_index_column = typeid_cast<const ColumnFixedString *>(column))

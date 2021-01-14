@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/extended_types.h>
+
 namespace common
 {
     template <typename T>
@@ -29,10 +31,25 @@ namespace common
     template <>
     inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+        static constexpr __int128 min_int128 = minInt128();
+        static constexpr __int128 max_int128 = maxInt128();
         res = x + y;
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
+    }
+
+    template <>
+    inline bool addOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    {
+        res = x + y;
+        return (y > 0 && x > std::numeric_limits<wInt256>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<wInt256>::min() - y);
+    }
+
+    template <>
+    inline bool addOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    {
+        res = x + y;
+        return x > std::numeric_limits<wUInt256>::max() - y;
     }
 
     template <typename T>
@@ -62,10 +79,25 @@ namespace common
     template <>
     inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+        static constexpr __int128 min_int128 = minInt128();
+        static constexpr __int128 max_int128 = maxInt128();
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+    }
+
+    template <>
+    inline bool subOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    {
+        res = x - y;
+        return (y < 0 && x > std::numeric_limits<wInt256>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<wInt256>::min() + y);
+    }
+
+    template <>
+    inline bool subOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    {
+        res = x - y;
+        return x < y;
     }
 
     template <typename T>
@@ -102,5 +134,26 @@ namespace common
         unsigned __int128 a = (x > 0) ? x : -x;
         unsigned __int128 b = (y > 0) ? y : -y;
         return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(wInt256 x, wInt256 y, wInt256 & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+
+        wInt256 a = (x > 0) ? x : -x;
+        wInt256 b = (y > 0) ? y : -y;
+        return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(wUInt256 x, wUInt256 y, wUInt256 & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+        return (x * y) / y != x;
     }
 }

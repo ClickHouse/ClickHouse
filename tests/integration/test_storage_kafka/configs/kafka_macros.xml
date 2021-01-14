@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<yandex>
+	<macros>
+        <kafka_broker>kafka1</kafka_broker>
+        <kafka_topic_old>old</kafka_topic_old>
+        <kafka_group_name_old>old</kafka_group_name_old>
+
+        <kafka_topic_new>new</kafka_topic_new>
+        <kafka_group_name_new>new</kafka_group_name_new>
+        <kafka_client_id>instance</kafka_client_id>
+        <kafka_format_json_each_row>JSONEachRow</kafka_format_json_each_row>
+	</macros>
+</yandex>

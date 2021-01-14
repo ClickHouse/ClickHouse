@@ -27,9 +27,9 @@ public:
             sign_column,
             only_positive_sign,
             max_block_size,
+            &Poco::Logger::get("CollapsingSortedTransform"),
             out_row_sources_buf_,
-            use_average_block_sizes,
-            &Logger::get("CollapsingSortedTransform"))
+            use_average_block_sizes)
     {
     }
 

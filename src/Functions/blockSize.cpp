@@ -6,8 +6,10 @@
 
 namespace DB
 {
+namespace
+{
 
-/** blockSize() - get the block size in number of rows.
+/** columnsSize() - get the columns size in number of rows.
   */
 class FunctionBlockSize : public IFunction
 {
@@ -41,12 +43,13 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, input_rows_count);
+        return ColumnUInt64::create(input_rows_count, input_rows_count);
     }
 };
 
+}
 
 void registerFunctionBlockSize(FunctionFactory & factory)
 {

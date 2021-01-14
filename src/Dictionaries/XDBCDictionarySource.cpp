@@ -4,8 +4,10 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -27,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -45,8 +48,8 @@ namespace
             : name(name_)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
-            reader
-                = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
+            auto format = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
+            reader = std::make_shared<InputStreamFromInputFormat>(format);
         }
 
         Block getHeader() const override { return reader->getHeader(); }
@@ -60,6 +63,39 @@ namespace
         std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
         BlockInputStreamPtr reader;
     };
+
+
+    ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct_,
+                                                  const std::string & db_,
+                                                  const std::string & schema_,
+                                                  const std::string & table_,
+                                                  const std::string & where_,
+                                                  IXDBCBridgeHelper & bridge_)
+    {
+        std::string schema = schema_;
+        std::string table = table_;
+
+        if (bridge_.isSchemaAllowed())
+        {
+            if (schema.empty())
+            {
+                if (auto pos = table.find('.'); pos != std::string::npos)
+                {
+                    schema = table.substr(0, pos);
+                    table = table.substr(pos + 1);
+                }
+            }
+        }
+        else
+        {
+            if (!schema.empty())
+                throw Exception{"Dictionary source of type " + bridge_.getName() + " specifies a schema but schema is not supported by "
+                                    + bridge_.getName() + "-driver",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        return {dict_struct_, db_, schema, table, where_, bridge_.getIdentifierQuotingStyle()};
+    }
 }
 
 static const UInt64 max_block_size = 8192;
@@ -72,20 +108,21 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Block & sample_block_,
     const Context & context_,
     const BridgeHelperPtr bridge_)
-    : log(&Logger::get(bridge_->getName() + "DictionarySource"))
+    : log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config_.getString(config_prefix_ + ".db", "")}
+    , schema{config_.getString(config_prefix_ + ".schema", "")}
     , table{config_.getString(config_prefix_ + ".table")}
     , where{config_.getString(config_prefix_ + ".where", "")}
     , update_field{config_.getString(config_prefix_ + ".update_field", "")}
     , sample_block{sample_block_}
-    , query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()}
+    , query_builder{makeExternalQueryBuilder(dict_struct, db, schema, table, where, *bridge_)}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
     , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
 {
     bridge_url = bridge_helper->getMainURI();
 
@@ -96,7 +133,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : log(&Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    : log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
@@ -104,7 +141,7 @@ XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     , where{other.where}
     , update_field{other.update_field}
     , sample_block{other.sample_block}
-    , query_builder{dict_struct, db, table, where, other.bridge_helper->getIdentifierQuotingStyle()}
+    , query_builder{other.query_builder}
     , load_all_query{other.load_all_query}
     , invalidate_query{other.invalidate_query}
     , invalidate_query_response{other.invalidate_query_response}
@@ -240,6 +277,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    const std::string & config_prefix,
                                    Block & sample_block,
                                    const Context & context,
+                                   const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
@@ -265,6 +303,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
                                  const Context & /* context */,
+                                 const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};

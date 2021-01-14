@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -11,11 +10,14 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -31,7 +33,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, false, 1048576);
 
     table->startup();
 
@@ -68,16 +70,17 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     std::string data;
 
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
+        const auto & storage_columns = metadata_snapshot->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
         column.type = storage_columns.getPhysical("a").type;
@@ -97,23 +100,29 @@ std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, context);
+    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
     out->write(block);
+    out->writeSuffix();
 
     return data;
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, DB::Context & context)
+std::string readData(DB::StoragePtr & table, const DB::Context & context)
 {
     using namespace DB;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
+    SelectQueryInfo query_info;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
+        context, QueryProcessingStage::Complete, query_info);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
+    QueryPipeline pipeline;
+    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;
     {
@@ -122,21 +131,22 @@ std::string readData(DB::StoragePtr & table, DB::Context & context)
         sample.insert(std::move(col));
     }
 
-    std::ostringstream ss;
-    WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, context);
+    tryRegisterFormats();
+
+    WriteBufferFromOwnString out_buf;
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
 
     copyData(*in, *output);
 
     output->flush();
 
-    return ss.str();
+    return out_buf.str();
 }
 
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
-    auto context_holder = getContext();
+    const auto & context_holder = getContext();
 
     std::string data;
 

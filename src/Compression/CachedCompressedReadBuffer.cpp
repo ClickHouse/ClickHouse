@@ -72,9 +72,10 @@ bool CachedCompressedReadBuffer::nextImpl()
 }
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_)
+    const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_, bool allow_different_codecs_)
     : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
 {
+    allow_different_codecs = allow_different_codecs_;
 }
 
 void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)

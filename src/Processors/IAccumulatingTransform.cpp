@@ -14,12 +14,22 @@ IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_
 {
 }
 
+InputPort * IAccumulatingTransform::addTotalsPort()
+{
+    if (inputs.size() > 1)
+        throw Exception("Totals port was already added to IAccumulatingTransform", ErrorCodes::LOGICAL_ERROR);
+
+    return &inputs.emplace_back(getInputPort().getHeader(), this);
+}
+
 IAccumulatingTransform::Status IAccumulatingTransform::prepare()
 {
     /// Check can output.
     if (output.isFinished())
     {
-        input.close();
+        for (auto & in : inputs)
+            in.close();
+
         return Status::Finished;
     }
 
@@ -39,17 +49,30 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
         return Status::Finished;
     }
 
-    /// Generate output block.
     if (input.isFinished())
-    {
         finished_input = true;
-        return Status::Ready;
-    }
 
-    /// Close input if flag was set manually.
     if (finished_input)
     {
+        /// Close input if flag was set manually.
         input.close();
+
+        /// Read from totals port if has it.
+        if (inputs.size() > 1)
+        {
+            auto & totals_input = inputs.back();
+            if (!totals_input.isFinished())
+            {
+                totals_input.setNeeded();
+                if (!totals_input.hasData())
+                    return Status::NeedData;
+
+                totals = totals_input.pull();
+                totals_input.close();
+            }
+        }
+
+        /// Generate output block.
         return Status::Ready;
     }
 

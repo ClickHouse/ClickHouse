@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
-#include <Core/Types.h>
+#include <common/types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -52,7 +52,7 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
-    /// For lifetime of object, add amout for specified metric. Then subtract.
+    /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
     private:
@@ -92,6 +92,12 @@ namespace CurrentMetrics
         {
             what->fetch_add(new_amount - amount, std::memory_order_relaxed);
             amount = new_amount;
+        }
+
+        void sub(Value value = 1)
+        {
+            what->fetch_sub(value, std::memory_order_relaxed);
+            amount -= value;
         }
 
         /// Subtract value before destructor.
