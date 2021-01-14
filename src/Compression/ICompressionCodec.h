@@ -73,6 +73,9 @@ public:
     /// Is it a generic compression algorithm like lz4, zstd. Usually it does not make sense to apply generic compression more than single time.
     virtual bool isGenericCompression() const = 0;
 
+    /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
+    virtual bool isPostProcessing() const { return false; }
+
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
