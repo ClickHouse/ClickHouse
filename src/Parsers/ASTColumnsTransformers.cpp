@@ -6,6 +6,7 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -14,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
@@ -86,6 +88,9 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
+    if (!original_pattern.empty())
+        settings.ostr << quoteString(original_pattern);
+
     if (children.size() > 1)
         settings.ostr << ")";
 }
@@ -93,24 +98,40 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    for (const auto & child : children)
-        expected_columns.insert(child->as<const ASTIdentifier &>().name());
-
-    for (auto it = nodes.begin(); it != nodes.end();)
+    if (original_pattern.empty())
     {
-        if (const auto * id = it->get()->as<ASTIdentifier>())
+        for (const auto & child : children)
+            expected_columns.insert(child->as<const ASTIdentifier &>().name());
+
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
-            auto expected_column = expected_columns.find(id->shortName());
-            if (expected_column != expected_columns.end())
+            if (const auto * id = it->get()->as<ASTIdentifier>())
             {
-                expected_columns.erase(expected_column);
-                it = nodes.erase(it);
+                auto expected_column = expected_columns.find(id->shortName());
+                if (expected_column != expected_columns.end())
+                {
+                    expected_columns.erase(expected_column);
+                    it = nodes.erase(it);
+                    continue;
+                }
             }
-            else
-                ++it;
-        }
-        else
             ++it;
+        }
+    }
+    else
+    {
+        for (auto it = nodes.begin(); it != nodes.end();)
+        {
+            if (const auto * id = it->get()->as<ASTIdentifier>())
+            {
+                if (isColumnMatching(id->shortName()))
+                {
+                    it = nodes.erase(it);
+                    continue;
+                }
+            }
+            ++it;
+        }
     }
 
     if (is_strict && !expected_columns.empty())
@@ -123,6 +144,21 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
             "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
+}
+
+void ASTColumnsExceptTransformer::setPattern(String pattern)
+{
+    original_pattern = std::move(pattern);
+    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
+    if (!column_matcher->ok())
+        throw DB::Exception(
+            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
+            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+}
+
+bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
+{
+    return RE2::PartialMatch(column_name, *column_matcher);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(

@@ -125,9 +125,9 @@ DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_s
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
+    return delegate->writeFile(path, buf_size, mode);
 }
 
 void DiskDecorator::remove(const String & path)
