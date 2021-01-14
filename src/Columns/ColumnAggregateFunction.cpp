@@ -669,36 +669,33 @@ ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction &
     func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
-//override method cloneResized
+
 MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 {
-    //create a new col to return
-    MutableColumnPtr cloned_col = cloneEmpty();
-    auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
     if (size == 0)
-        return cloned_col;
+        return cloneEmpty();
 
     size_t from_size = data.size();
-    auto & res_data = res->data;
-    //copy data to cloned column
+
     if (size <= from_size)
     {
-        res_data.resize(size);
-        res->insertRangeFrom(*this, 0, size);
+        auto res = createView();
+        auto & res_data = res->data;
+        res_data.assign(data.begin(), data.begin() + size);
+        return res;
     }
     else
     {
-        res_data.resize(from_size);
-        if (from_size > 0)
-        {
-            res->insertRangeFrom(*this, 0, from_size);
-        }
-        res->ensureOwnership();
-        for (size_t i = 0; i < size - from_size; ++i)
-        {
+        /// Create a new column to return.
+        MutableColumnPtr cloned_col = cloneEmpty();
+        auto * res = typeid_cast<ColumnAggregateFunction *>(cloned_col.get());
+
+        res->insertRangeFrom(*this, 0, from_size);
+        for (size_t i = from_size; i < size; ++i)
             res->insertDefault();
-        }
+
+        return cloned_col;
     }
-    return cloned_col;
 }
+
 }
