@@ -77,7 +77,7 @@
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
 
 /// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
-#define DBMS_TCP_PROTOCOL_VERSION 54443
+#define DBMS_TCP_PROTOCOL_VERSION 54444
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
