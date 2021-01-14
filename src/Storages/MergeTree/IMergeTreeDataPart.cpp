@@ -931,18 +931,18 @@ void IMergeTreeDataPart::remove() const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->remove(to + "/" + file);
+                volume->getDisk()->removeFile(to + "/" + file);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->remove(to + "/" + file);
+                volume->getDisk()->removeFile(to + "/" + file);
 
-            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+            volume->getDisk()->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            volume->getDisk()->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
-            volume->getDisk()->remove(to);
+            volume->getDisk()->removeDirectory(to);
         }
         catch (...)
         {
@@ -995,7 +995,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(volume->getDisk(), getFullRelativePath(), destination_path, 0);
-    volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeFileIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
@@ -1017,7 +1017,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
     disk->createDirectories(path_to_clone);
 
     volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
-    volume->getDisk()->removeIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
