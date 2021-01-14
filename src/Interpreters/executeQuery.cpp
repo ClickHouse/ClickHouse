@@ -695,7 +695,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto progress_callback = context.getProgressCallback();
 
                 if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes), info.elapsed_seconds * 1'000'000'000 /* seconds to nanoseconds */));
+                    progress_callback(Progress(
+                        WriteProgress(info.written_rows, info.written_bytes),
+                        info.elapsed_seconds * 1'000'000'000 /* seconds to nanoseconds */));
 
                 if (stream_in)
                 {
