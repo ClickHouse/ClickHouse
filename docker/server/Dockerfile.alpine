@@ -16,7 +16,7 @@ RUN addgroup clickhouse \
     && chown root:clickhouse /var/log/clickhouse-server \
     && chmod 775 /var/log/clickhouse-server \
     && chmod +x /entrypoint.sh \
-    && apk add --no-cache su-exec
+    && apk add --no-cache su-exec bash
 
 EXPOSE 9000 8123 9009
 
