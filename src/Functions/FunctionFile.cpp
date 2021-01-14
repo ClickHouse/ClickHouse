@@ -77,7 +77,7 @@ public:
 
             //To read directly into the String buf, avoiding one redundant copy
             ssize_t bytes_read = pread(fd, res_buf, file_length, 0);
-            if (bytes_read == -1)
+            if (-1 == bytes_read)
                 throwFromErrnoWithPath("Read failed for " + std::string(filename), std::string(filename),
                                    errno == EBADF ? ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR : ErrorCodes::ILLEGAL_COLUMN);
             if (static_cast<uint64_t>(bytes_read) != file_length)
