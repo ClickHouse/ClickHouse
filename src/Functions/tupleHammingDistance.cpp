@@ -49,7 +49,7 @@ public:
         }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} should be tuples, got {}",
-                        getName(), column.getName())
+                        getName(), column.getName());
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -64,6 +64,9 @@ public:
         if (!right_tuple)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
                             getName(), arguments[1].type->getName());
+
+        const auto & left_types = left_tuple->getElements();
+        const auto & right_types = right_tuple->getElements();
 
         Columns left_elements;
         Columns right_elements;
@@ -88,8 +91,8 @@ public:
         {
             try
             {
-                ColumnWithTypeAndName left{left_col ? left_col->getColumnPtr(i) : nullptr, left_elements[i], {}};
-                ColumnWithTypeAndName right{right_col ? right_col->getColumnPtr(i) : nullptr, right_elements[i], {}};
+                ColumnWithTypeAndName left{left_elements.empty() ? nullptr : left_elements[i], left_types[i], {}};
+                ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[i], right_types[i], {}};
                 auto elem_compare = compare->build(ColumnsWithTypeAndName{left, right});
                 types[i] = elem_compare->getResultType();
             }
@@ -116,6 +119,8 @@ public:
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
+        const auto & left_types = left_tuple->getElements();
+        const auto & right_types = right_tuple->getElements();
         auto left_elements = getTupleElements(*arguments[0].column);
         auto right_elements = getTupleElements(*arguments[1].column);
 
@@ -128,8 +133,8 @@ public:
         ColumnsWithTypeAndName columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            ColumnWithTypeAndName left{left_col->getColumnPtr(i), left_elements[i], {}};
-            ColumnWithTypeAndName right{right_col->getColumnPtr(i), right_elements[i], {}};
+            ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
+            ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
             auto elem_compare = compare->build(ColumnsWithTypeAndName{left, right});
             columns[i].type = elem_compare->getResultType();
             columns[i].column = elem_compare->execute({left, right}, columns[i].type, input_rows_count);
