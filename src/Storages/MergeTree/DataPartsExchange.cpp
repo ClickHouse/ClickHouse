@@ -267,7 +267,7 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
     if (disk->getType() != "s3")
         throw Exception("S3 disk is not S3 anymore", ErrorCodes::LOGICAL_ERROR);
 
-    part->lockSharedData(zookeeper_path, replica_name, zookeeper);
+    part->lockSharedData();
 
     String part_id = part->getUniqueId();
     writeStringBinary(part_id, out);
@@ -327,7 +327,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & interserver_scheme,
     bool to_detached,
     const String & tmp_prefix_,
-    bool try_use_s3_copy)
+    bool try_use_s3_copy,
+    const DiskPtr disk_s3)
 {
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -348,6 +349,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress",                "false"}
     });
 
+    if (try_use_s3_copy && disk_s3 && disk_s3->getType() != "s3")
+        throw Exception("Try to fetch shared s3 part on non-s3 disk", ErrorCodes::LOGICAL_ERROR);
+
     Disks disks_s3;
 
     if (!data_settings->allow_s3_zero_copy_replication)
@@ -355,9 +359,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     if (try_use_s3_copy)
     {
-        disks_s3 =  data.getDisksByType("s3");
-        if (disks_s3.empty())
-            try_use_s3_copy = false;
+        if (disk_s3)
+            disks_s3.push_back(disk_s3);
+        else
+        {
+            disks_s3 = data.getDisksByType("s3");
+
+            if (disks_s3.empty())
+                try_use_s3_copy = false;
+        }
     }
 
     if (try_use_s3_copy)
@@ -404,6 +414,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readStringBinary(part_type, in);
         if (part_type == "InMemory")
             throw Exception("Got 'send_s3_metadata' cookie for in-memory partition", ErrorCodes::LOGICAL_ERROR);
+
+        UUID part_uuid = UUIDHelpers::Nil;
+        if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+            readUUIDText(part_uuid, in);
 
         try
         {
@@ -680,7 +694,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
 
-    new_data_part->lockSharedData(zookeeper_path, replica_name, zookeeper);
+    new_data_part->lockSharedData();
 
     return new_data_part;
 }

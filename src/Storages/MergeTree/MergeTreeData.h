@@ -870,7 +870,8 @@ protected:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
-        DataPartsLock & data_parts_lock) const;
+        DataPartsLock & data_parts_lock,
+        bool allow_duplicate = false) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;

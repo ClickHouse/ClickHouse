@@ -81,7 +81,8 @@ public:
         const String & interserver_scheme,
         bool to_detached = false,
         const String & tmp_prefix_ = "",
-        bool try_use_s3_copy = true);
+        bool try_use_s3_copy = true,
+        const DiskPtr disk_s3 = nullptr);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;

@@ -1891,6 +1891,60 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 }
 
 
+bool StorageReplicatedMergeTree::executeFetchShared(ReplicatedMergeTreeLogEntry & entry)
+{
+    if (entry.type != LogEntry::FETCH_SHARED_PART)
+    {
+        throw Exception("Wrong entry.type in executeFetchShared", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (entry.source_replica.empty())
+    {
+        LOG_INFO(log, "No active replica has part {} on S3.", entry.new_part_name);
+        return false;
+    }
+
+    const auto storage_settings_ptr = getSettings();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    static std::atomic_uint total_fetches {0};
+    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
+    {
+        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
+            ErrorCodes::TOO_MANY_FETCHES);
+    }
+
+    ++total_fetches;
+    SCOPE_EXIT({--total_fetches;});
+
+    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
+        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
+    {
+        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
+            ErrorCodes::TOO_MANY_FETCHES);
+    }
+
+    ++current_table_fetches;
+    SCOPE_EXIT({--current_table_fetches;});
+
+    try
+    {
+        if (!fetchPart(entry.new_part_name, metadata_snapshot, zookeeper_path + "/replicas/" + entry.source_replica, false, entry.quorum, 
+                nullptr, true, entry.disk, entry.path))
+            return false;
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+            e.addMessage("Too busy replica. Will try later.");
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        throw;
+    }
+
+    return true;
+}
+
+
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -3133,6 +3187,29 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     return {};
 }
 
+String StorageReplicatedMergeTree::findReplicaHavingSharedPart(const String & part_name, bool active)
+{
+    auto zookeeper = getZooKeeper();
+    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+    /// Select replicas in uniformly random order.
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+
+    for (const String & replica : replicas)
+    {
+        /// We don't interested in ourself.
+        if (replica == replica_name)
+            continue;
+
+        if (checkReplicaHavePart(replica, part_name) &&
+            (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
+            return replica;
+
+        /// Obviously, replica could become inactive or even vanish after return from this method.
+    }
+
+    return {};
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
 {
@@ -3330,7 +3407,6 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_
     }
 }
 
-
 void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
@@ -3382,7 +3458,6 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
     }
 }
 
-
 bool StorageReplicatedMergeTree::partIsInsertingWithParallelQuorum(const MergeTreePartInfo & part_info) const
 {
     auto zookeeper = getZooKeeper();
@@ -3411,7 +3486,8 @@ bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & 
 }
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
-    const String & source_replica_path, bool to_detached, size_t quorum, zkutil::ZooKeeper::Ptr zookeeper_)
+    const String & source_replica_path, bool to_detached, size_t quorum, zkutil::ZooKeeper::Ptr zookeeper_, bool replace_exists,
+    DiskPtr replaced_disk, String replaced_part_path)
 {
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -3461,6 +3537,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     };
 
     DataPartPtr part_to_clone;
+
+    if (!replace_exists)
     {
         /// If the desired part is a result of a part mutation, try to find the source part and compare
         /// its checksums to the checksums of the desired part. If they match, we can just clone the local part.
@@ -3520,7 +3598,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             return fetcher.fetchPart(
                 metadata_snapshot, part_name, source_replica_path,
                 address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
+                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached, "", true,
+                replace_exists ? replaced_disk : nullptr);
         };
     }
 
@@ -3530,46 +3609,56 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
         if (!to_detached)
         {
-            Transaction transaction(*this);
-            renameTempPartAndReplace(part, nullptr, &transaction);
-
-            /** NOTE
-              * Here, an error occurs if ALTER occurred with a change in the column type or column deletion,
-              *  and the part on remote server has not yet been modified.
-              * After a while, one of the following attempts to make `fetchPart` succeed.
-              */
-            replaced_parts = checkPartChecksumsAndCommit(transaction, part);
-
-            /** If a quorum is tracked for this part, you must update it.
-              * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
-              */
-            if (quorum)
+            if (replace_exists)
             {
-                /// Check if this quorum insert is parallel or not
-                if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
-                    updateQuorum(part_name, true);
-                else if (zookeeper->exists(zookeeper_path + "/quorum/status"))
-                    updateQuorum(part_name, false);
+                if (part->volume->getDisk()->getName() != replaced_disk->getName())
+                    throw Exception("Part " + part->name + " fetched on wrong disk " + part->volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
+                replaced_disk->removeIfExists(replaced_part_path);
+                replaced_disk->moveDirectory(part->getFullRelativePath(), replaced_part_path);
             }
-
-            /// merged parts that are still inserted with quorum. if it only contains one block, it hasn't been merged before
-            if (part_info.level != 0 || part_info.mutation != 0)
+            else
             {
-                Strings quorum_parts = zookeeper->getChildren(zookeeper_path + "/quorum/parallel");
-                for (const String & quorum_part : quorum_parts)
+                Transaction transaction(*this);
+                renameTempPartAndReplace(part, nullptr, &transaction);
+
+                /** NOTE
+                 * Here, an error occurs if ALTER occurred with a change in the column type or column deletion,
+                 *  and the part on remote server has not yet been modified.
+                 * After a while, one of the following attempts to make `fetchPart` succeed.
+                 */
+                replaced_parts = checkPartChecksumsAndCommit(transaction, part);
+
+                /** If a quorum is tracked for this part, you must update it.
+                 * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
+                 */
+                if (quorum)
                 {
-                    auto quorum_part_info = MergeTreePartInfo::fromPartName(quorum_part, format_version);
-                    if (part_info.contains(quorum_part_info))
-                        updateQuorum(quorum_part, true);
+                    /// Check if this quorum insert is parallel or not
+                    if (zookeeper->exists(zookeeper_path + "/quorum/parallel/" + part_name))
+                        updateQuorum(part_name, true);
+                    else if (zookeeper->exists(zookeeper_path + "/quorum/status"))
+                        updateQuorum(part_name, false);
                 }
-            }
 
-            merge_selecting_task->schedule();
+                /// merged parts that are still inserted with quorum. if it only contains one block, it hasn't been merged before
+                if (part_info.level != 0 || part_info.mutation != 0)
+                {
+                    Strings quorum_parts = zookeeper->getChildren(zookeeper_path + "/quorum/parallel");
+                    for (const String & quorum_part : quorum_parts)
+                    {
+                        auto quorum_part_info = MergeTreePartInfo::fromPartName(quorum_part, format_version);
+                        if (part_info.contains(quorum_part_info))
+                            updateQuorum(quorum_part, true);
+                    }
+                }
 
-            for (const auto & replaced_part : replaced_parts)
-            {
-                LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
-                ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+                merge_selecting_task->schedule();
+
+                for (const auto & replaced_part : replaced_parts)
+                {
+                    LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
+                    ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+                }
             }
 
             write_part_log({});
@@ -5315,13 +5404,13 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     }
     parts.clear();
 
-    auto remove_parts_from_filesystem = [log=log,&zookeeper=zookeeper,&zookeeper_path=zookeeper_path,&replica_name=replica_name] (const DataPartsVector & parts_to_remove)
+    auto remove_parts_from_filesystem = [log=log] (const DataPartsVector & parts_to_remove)
     {
         for (const auto & part : parts_to_remove)
         {
             try
             {
-                bool keep_s3 = !part->unlockSharedData(zookeeper_path, replica_name, zookeeper);
+                bool keep_s3 = !part->unlockSharedData();
                 part->remove(keep_s3);
             }
             catch (...)
@@ -6269,6 +6358,15 @@ void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
         background_moves_executor.start();
+}
+
+StorageReplicatedMergeTree::ZooKeeperAccessData StorageReplicatedMergeTree::getZooKeeperAccessData() const
+{
+    ZooKeeperAccessData res;
+    res.zookeeper = tryGetZooKeeper();
+    res.zookeeper_path = zookeeper_path;
+    res.replica_name = replica_name;
+    return res;
 }
 
 }
