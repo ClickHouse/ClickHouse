@@ -78,6 +78,10 @@ void writeQueryWithHighlightedErrorPositions(
     for (size_t position_to_hilite_idx = 0; position_to_hilite_idx < num_positions_to_hilite; ++position_to_hilite_idx)
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
+
+        assert(current_position_to_hilite < end);
+        assert(current_position_to_hilite >= begin);
+
         out.write(pos, current_position_to_hilite - pos);
 
         if (current_position_to_hilite == end)
@@ -221,7 +225,7 @@ std::string getUnmatchedParenthesesErrorMessage(
 
 ASTPtr tryParseQuery(
     IParser & parser,
-    const char * & pos,
+    const char * & _out_query_end, /* also query begin as input parameter */
     const char * end,
     std::string & out_error_message,
     bool hilite,
@@ -230,7 +234,8 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    Tokens tokens(pos, end, max_query_size);
+    const char * query_begin = _out_query_end;
+    Tokens tokens(query_begin, end, max_query_size);
     IParser::Pos token_iterator(tokens, max_parser_depth);
 
     if (token_iterator->isEnd()
@@ -245,17 +250,14 @@ ASTPtr tryParseQuery(
         //"
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
-        pos = token_iterator->begin;
+        _out_query_end = token_iterator->begin;
         return nullptr;
     }
 
     Expected expected;
-
     ASTPtr res;
-    bool parse_res = parser.parse(token_iterator, res, expected);
-    const Token last_token = token_iterator.max();
-
-    pos = last_token.end;
+    const bool parse_res = parser.parse(token_iterator, res, expected);
+    const auto last_token = token_iterator.max();
 
     // If parsed query ends at data for insertion. Data for insertion could be
     // in any format and not necessary be lexical correct, so we can't perform
@@ -269,18 +271,57 @@ ASTPtr tryParseQuery(
         if (!parse_res)
         {
             // Generic parse error.
-            out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
+            out_error_message = getSyntaxErrorMessage(query_begin, end,
+                last_token, expected, hilite, query_description);
             return nullptr;
         }
 
+        _out_query_end = last_token.end;
+
         return res;
+    }
+
+    // We have to do some extra work to determine where the next query begins,
+    // preserving its leading comments.
+    // The query we just parsed may contain a test hint comment in the same line,
+    // e.g. select nonexistent_column; -- { serverError 12345 }.
+    // We must add this comment to the query text, so that it is handled by the
+    // test hint parser. It is important to do this before handling syntax errors,
+    // so that we can expect for syntax client errors in test hints.
+    // The token iterator skips comments and whitespace, so we have to find the
+    // newline in the string manually. If it's earlier than the next significant
+    // token, it means that the text before newline is some trailing whitespace
+    // or comment, and we should add it to our query.
+    const auto * newline = find_first_symbols<'\n'>(last_token.end, end);
+
+    Tokens next_query_tokens(last_token.end, end, max_query_size);
+    IParser::Pos next_query_iterator(next_query_tokens, max_parser_depth);
+
+    while (next_query_iterator.isValid()
+        && next_query_iterator->type == TokenType::Semicolon)
+    {
+        ++next_query_iterator;
+    }
+    const char * next_query_begin = next_query_iterator->begin;
+
+    // We must always include the entire line in case of parse errors, because
+    // we don't know where the query ends. OTOH, we can't always include it,
+    // because there might be several valid queries on one line.
+    if (parse_res || newline < next_query_begin)
+    {
+        _out_query_end = newline;
+    }
+    else
+    {
+        _out_query_end = last_token.end;
     }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
     if (last_token.isError())
     {
-        out_error_message = getLexicalErrorMessage(pos, end, last_token, hilite, query_description);
+        out_error_message = getLexicalErrorMessage(query_begin, end,
+            last_token, hilite, query_description);
         return nullptr;
     }
 
@@ -288,7 +329,26 @@ ASTPtr tryParseQuery(
     UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token);
     if (!unmatched_parens.empty())
     {
-        out_error_message = getUnmatchedParenthesesErrorMessage(pos, end, unmatched_parens, hilite, query_description);
+        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin, end,
+            unmatched_parens, hilite, query_description);
+        return nullptr;
+    }
+
+    if (!parse_res)
+    {
+        /// Generic parse error.
+        out_error_message = getSyntaxErrorMessage(query_begin, end,
+            last_token, expected, hilite, query_description);
+        return nullptr;
+    }
+
+    /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
+    if (!token_iterator->isEnd()
+        && token_iterator->type != TokenType::Semicolon)
+    {
+        expected.add(last_token.begin, "end of query");
+        out_error_message = getSyntaxErrorMessage(query_begin, end,
+            last_token, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -303,38 +363,11 @@ ASTPtr tryParseQuery(
     if (!allow_multi_statements
         && !token_iterator->isEnd())
     {
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, {}, hilite,
-            (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+        out_error_message = getSyntaxErrorMessage(query_begin, end,
+            last_token, {}, hilite,
+            (query_description.empty() ? std::string() : std::string(". "))
+                + "Multi-statements are not allowed");
         return nullptr;
-    }
-
-    if (!parse_res)
-    {
-        /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
-        return nullptr;
-    }
-
-    // The query was parsed correctly, but now we have to do some extra work to
-    // determine where the next query begins, preserving its leading comments.
-
-    // The query may also contain a test hint comment in the same line, e.g.
-    // select nonexistent_column; -- { serverError 12345 }.
-    // We must add this comment to the query text, so that it is handled by the
-    // test hint parser.
-    // The token iterator skips comments and whitespace, so we have to find the
-    // newline in the string manually. If it's earlier than the next significant
-    // token, it means that the text before newline is some trailing whitespace
-    // or comment, and we should add it to our query.
-    const auto * newline = find_first_symbols<'\n'>(pos, end);
-    TokenIterator next_token_iterator = token_iterator;
-    const auto * next_token_begin =
-        (next_token_iterator.isValid()
-            && (++next_token_iterator).isValid())
-            ? (*next_token_iterator).begin : end;
-    if (newline < next_token_begin)
-    {
-        pos = newline;
     }
 
     return res;

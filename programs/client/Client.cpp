@@ -907,12 +907,11 @@ private:
                 if (!test_mode)
                     throw;
 
-                /// Try find test hint for syntax error
-                const char * end_of_line =
-                    find_first_symbols<'\n'>(this_query_begin,all_queries_end);
+                // Try find test hint for syntax error. parseQuery() would add
+                // the relevant comment to the parsed query text for us, even if
+                // the parsing failed.
                 TestHint hint(true /* enabled */,
-                    String(this_query_begin, end_of_line - this_query_begin));
-
+                    String(this_query_begin, this_query_end - this_query_begin));
                 if (hint.serverError()) /// Syntax errors are considered as client errors
                     throw;
                 if (hint.clientError() != e.code())
@@ -923,7 +922,7 @@ private:
                 }
 
                 /// It's expected syntax error, skip the line
-                this_query_begin = end_of_line;
+                this_query_begin = this_query_end;
                 continue;
             }
 
