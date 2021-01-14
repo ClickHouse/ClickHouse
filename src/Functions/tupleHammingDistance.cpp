@@ -33,12 +33,29 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    Columns getTupleElements(const IColumn & column) const
+    {
+        if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+            return convertConstTupleToConstantElements(*const_column);
+
+        if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
+        {
+            Columns columns(column_tuple->tupleSize());
+            for (size_t i = 0; i < columns.size(); ++i)
+                columns[i] = column_tuple->getColumnPtr(i);
+            return columns;
+        }
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} should be tuples, got {}",
+                        getName(), column.getName())
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
-        const auto * left_col = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
-        const auto * right_col = checkAndGetColumn<ColumnTuple>(arguments[1].column.get());
 
         if (!left_tuple)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
@@ -48,8 +65,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuples, got {}",
                             getName(), arguments[1].type->getName());
 
-        const auto & left_elements = left_tuple->getElements();
-        const auto & right_elements = right_tuple->getElements();
+        Columns left_elements;
+        Columns right_elements;
+        if (arguments[0].column)
+            left_elements = getTupleElements(*arguments[0].column);
+        if (arguments[1].column)
+            right_elements = getTupleElements(*arguments[1].column);
 
         if (left_elements.size() != right_elements.size())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -95,10 +116,8 @@ public:
     {
         const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
-        const auto * left_col = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
-        const auto * right_col = checkAndGetColumn<ColumnTuple>(arguments[1].column.get());
-        const auto & left_elements = left_tuple->getElements();
-        const auto & right_elements = right_tuple->getElements();
+        auto left_elements = getTupleElements(*arguments[0].column);
+        auto right_elements = getTupleElements(*arguments[1].column);
 
         size_t tuple_size = left_elements.size();
         if (tuple_size == 0)
