@@ -48,6 +48,8 @@ try
         DB::PeekableReadBufferCheckpoint checkpoint{peekable};
         readAndAssert(peekable, "01234");
     }
+
+#ifndef ABORT_ON_LOGICAL_ERROR
     bool exception = false;
     try
     {
@@ -60,6 +62,7 @@ try
         exception = true;
     }
     ASSERT_TRUE(exception);
+#endif
     assertAvailable(peekable, "56789");
 
     readAndAssert(peekable, "56");
@@ -70,19 +73,10 @@ try
     peekable.dropCheckpoint();
     assertAvailable(peekable, "789");
 
-    exception = false;
-    try
     {
         DB::PeekableReadBufferCheckpoint checkpoint{peekable, true};
-        peekable.ignore(30);
+        peekable.ignore(20);
     }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            throw;
-        exception = true;
-    }
-    ASSERT_TRUE(exception);
     assertAvailable(peekable, "789qwertyuiop");
 
     readAndAssert(peekable, "789qwertyu");
