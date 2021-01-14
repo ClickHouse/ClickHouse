@@ -6099,6 +6099,11 @@ bool StorageReplicatedMergeTree::dropPart(
             LOG_TRACE(log, "A new log entry appeared while trying to commit DROP RANGE. Retry.");
             continue;
         }
+        else if (rc == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(log, "Other replica already removing same part {} or part deduplication node was removed by background thread. Retry.", part_name);
+            continue;
+        }
         else
             zkutil::KeeperMultiException::check(rc, ops, responses);
 
