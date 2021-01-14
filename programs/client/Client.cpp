@@ -898,8 +898,6 @@ private:
 
             // Try to parse the query.
             const char * this_query_end = this_query_begin;
-            fmt::print(stderr, "left to parse: '{}'\n", std::string_view(
-                this_query_end, all_queries_end - this_query_end));
             try
             {
                 parsed_query = parseQuery(this_query_end, all_queries_end, true);
@@ -928,9 +926,6 @@ private:
                 this_query_begin = end_of_line;
                 continue;
             }
-
-            fmt::print(stderr, "parsed query: '{}'\n", std::string_view(
-                this_query_begin, this_query_end - this_query_begin));
 
             if (!parsed_query)
             {
