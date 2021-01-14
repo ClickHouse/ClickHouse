@@ -5,6 +5,7 @@
 #include <Common/hex.h>
 #include <common/find_symbols.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -28,7 +29,11 @@ namespace
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets)
         {
+            /// The size of result is always not more than the size of source.
+            /// Because entities decodes to the shorter byte sequence.
+            /// Example: &#xx... &#xx... will decode to UTF-8 byte sequence not longer than 4 bytes.
             res_data.resize(data.size());
+
             size_t size = offsets.size();
             res_offsets.resize(size);
 
@@ -56,255 +61,169 @@ namespace
 
     private:
         static const int max_legal_unicode_value = 0x10FFFF;
-        static const int max_legal_unicode_bits = 7;
+        static const int max_decimal_length_of_unicode_point = 7; /// 1114111
+
         static size_t execute(const char * src, size_t src_size, char * dst)
         {
-            const char * src_prev_pos = src;
-            const char * src_curr_pos = src;
-            const char * src_next_pos = src;
+            const char * src_pos = src;
             const char * src_end = src + src_size;
             char * dst_pos = dst;
 
             while (true)
             {
-                src_curr_pos = find_first_symbols<'&'>(src_curr_pos, src_end);
+                const char * entity_pos = find_first_symbols<'&'>(src_pos, src_end);
 
-                if (src_curr_pos == src_end)
-                {
+                if (entity_pos + strlen("lt;") >= src_end)
                     break;
-                }
-                else if (*src_curr_pos == '&')
+
+                /// Copy text between entities.
+                size_t bytes_to_copy = entity_pos - src_pos;
+                memcpySmallAllowReadWriteOverflow15(dst_pos, src_pos, bytes_to_copy);
+                dst_pos += bytes_to_copy;
+                src_pos = entity_pos;
+
+                ++entity_pos;
+
+                const char * entity_end = find_first_symbols<';'>(entity_pos, src_end);
+                if (entity_end == src_end)
+                    break;
+
+                bool parsed = false;
+
+                /// &#NNNN; or &#xNNNN;
+                uint32_t code_point = 0;
+                if (isValidNumericEntity(entity_pos, entity_end, code_point))
                 {
-                    src_next_pos = find_first_symbols<';'>(src_curr_pos, src_end);
-                    if (src_next_pos == src_end)
+                    codePointToUTF8(code_point, dst_pos);
+                    parsed = true;
+                }
+                else if (entity_end - entity_pos == 2)
+                {
+                    if (memcmp(entity_pos, "lt", 2) == 0)
                     {
-                        src_curr_pos = src_end;
-                        break;
+                        *dst_pos = '<';
+                        ++dst_pos;
+                        parsed = true;
                     }
-                    else if (isValidNumeric(src_curr_pos, src_next_pos))
+                    else if (memcmp(entity_pos, "gt", 2) == 0)
                     {
-                        int numeric_entity;
-                        size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                        memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                        dst_pos += bytes_to_copy;
-                        if (*(src_curr_pos + 2) == 'x' || *(src_curr_pos + 2) == 'X')
-                        {
-                            numeric_entity = hexOrDecStrToInt(src_curr_pos + 3, src_next_pos, 0x10);
-                        }
-                        else
-                        {
-                            numeric_entity = hexOrDecStrToInt(src_curr_pos + 2, src_next_pos, 10);
-                        }
-                        if (numeric_entity > max_legal_unicode_value)
-                        {
-                            bytes_to_copy = src_next_pos - src_curr_pos + 1;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_curr_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                        }
-                        else
-                        {
-                            decodeNumericPart(numeric_entity, dst_pos);
-                        }
-                        src_prev_pos = src_next_pos + 1;
-                        src_curr_pos = src_next_pos + 1;
+                        *dst_pos = '>';
+                        ++dst_pos;
+                        parsed = true;
                     }
-                    else if (src_next_pos - src_curr_pos == 3)
+                }
+                else if (entity_end - entity_pos == 3)
+                {
+                    if (memcmp(entity_pos, "amp", 3) == 0)
                     {
-                        if (strncmp(src_curr_pos, "&lt", 3) == 0)
-                        {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            *dst_pos = '<';
-                            ++dst_pos;
-                            src_prev_pos = src_curr_pos + 4;
-                        }
-                        else if (strncmp(src_curr_pos, "&gt", 3) == 0)
-                        {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            *dst_pos = '>';
-                            ++dst_pos;
-                            src_prev_pos = src_curr_pos + 4;
-                        }
-                        else
-                        {
-                            ++src_curr_pos;
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            src_prev_pos = src_curr_pos;
-                            continue;
-                        }
-                        src_curr_pos += 4;
+                        *dst_pos = '&';
+                        ++dst_pos;
+                        parsed = true;
                     }
-                    else if (src_next_pos - src_curr_pos == 4)
+                }
+                else if (entity_end - entity_pos == 4)
+                {
+                    if (memcmp(entity_pos, "quot", 4) == 0)
                     {
-                        if (strncmp(src_curr_pos, "&amp", 4) == 0)
-                        {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            *dst_pos = '&';
-                            ++dst_pos;
-                            src_prev_pos = src_curr_pos + 5;
-                        }
-                        else
-                        {
-                            ++src_curr_pos;
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            src_prev_pos = src_curr_pos;
-                            continue;
-                        }
-                        src_curr_pos += 5;
+                        *dst_pos = '"';
+                        ++dst_pos;
+                        parsed = true;
                     }
-                    else if (src_next_pos - src_curr_pos == 5)
+                    else if (memcmp(entity_pos, "apos", 4) == 0)
                     {
-                        if (strncmp(src_curr_pos, "&quot", 5) == 0)
-                        {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            *dst_pos = '"';
-                            ++dst_pos;
-                            src_prev_pos = src_curr_pos + 6;
-                        }
-                        else if (strncmp(src_curr_pos, "&apos", 5) == 0)
-                        {
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            *dst_pos = '\'';
-                            ++dst_pos;
-                            src_prev_pos = src_curr_pos + 6;
-                        }
-                        else
-                        {
-                            ++src_curr_pos;
-                            size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                            memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                            dst_pos += bytes_to_copy;
-                            src_prev_pos = src_curr_pos;
-                            continue;
-                        }
-                        src_curr_pos += 6;
+                        *dst_pos = '\'';
+                        ++dst_pos;
+                        parsed = true;
                     }
-                    else
-                    {
-                        ++src_curr_pos;
-                        size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                        memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                        dst_pos += bytes_to_copy;
-                        src_prev_pos = src_curr_pos;
-                    }
+                }
+
+                if (parsed)
+                {
+                    /// Skip the parsed entity.
+                    src_pos = entity_end + 1;
+                }
+                else
+                {
+                    /// Copy one byte as is and skip it.
+                    *dst_pos = *src_pos;
+                    ++dst_pos;
+                    ++src_pos;
                 }
             }
 
-            if (src_prev_pos < src_curr_pos)
+            /// Copy the rest of the string.
+            if (src_pos < src_end)
             {
-                size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
+                size_t bytes_to_copy = src_end - src_pos;
+                memcpySmallAllowReadWriteOverflow15(dst_pos, src_pos, bytes_to_copy);
                 dst_pos += bytes_to_copy;
             }
 
             return dst_pos - dst;
         }
 
-        static void decodeNumericPart(int numeric_entity, char *& dst_pos)
+        static void codePointToUTF8(uint32_t code_point, char *& dst_pos)
         {
-            const auto num_bits = numBitsCount(numeric_entity);
-            if (num_bits <= 7)
+            if (code_point < (1 << 7))
             {
-                *(dst_pos++) = '\0' + (numeric_entity & 0x7F);
+                dst_pos[0] = (code_point & 0x7F);
+                ++dst_pos;
             }
-            else if (num_bits <= 11)
+            else if (code_point < (1 << 11))
             {
-                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x1F) + 0xC0;
-                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
+                dst_pos[0] = ((code_point >> 6) & 0x1F) + 0xC0;
+                dst_pos[1] = (code_point & 0x3F) + 0x80;
+                dst_pos += 2;
             }
-            else if (num_bits <= 16)
+            else if (code_point < (1 << 16))
             {
-                *(dst_pos++) = '\0' + ((numeric_entity >> 12) & 0x0F) + 0xE0;
-                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x3F) + 0x80;
-                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
+                dst_pos[0] = ((code_point >> 12) & 0x0F) + 0xE0;
+                dst_pos[1] = ((code_point >> 6) & 0x3F) + 0x80;
+                dst_pos[2] = (code_point & 0x3F) + 0x80;
+                dst_pos += 3;
             }
             else
             {
-                *(dst_pos++) = '\0' + ((numeric_entity >> 18) & 0x07) + 0xF0;
-                *(dst_pos++) = '\0' + ((numeric_entity >> 12) & 0x3F) + 0x80;
-                *(dst_pos++) = '\0' + ((numeric_entity >> 6) & 0x3F) + 0x80;
-                *(dst_pos++) = '\0' + (numeric_entity & 0x3F) + 0x80;
+                dst_pos[0] = ((code_point >> 18) & 0x07) + 0xF0;
+                dst_pos[1] = ((code_point >> 12) & 0x3F) + 0x80;
+                dst_pos[2] = ((code_point >> 6) & 0x3F) + 0x80;
+                dst_pos[3] = (code_point & 0x3F) + 0x80;
+                dst_pos += 4;
             }
         }
 
-        static int hexOrDecStrToInt(const char * src, const char * end, int base)
+        static bool isValidNumericEntity(const char * src, const char * end, uint32_t & code_point)
         {
-            int numeric_ans = 0;
-            int pos = 0;
-            if (base == 0x10)
-            {
-                while (src + pos != end)
-                {
-                    numeric_ans = numeric_ans * 0x10 + static_cast<UInt8>(unhex(*(src + pos)));
-                    ++pos;
-                }
-            }
-            else
-            {
-                while (src + pos != end)
-                {
-                    numeric_ans = numeric_ans * base + (*(src + pos) - '0');
-                    ++pos;
-                }
-            }
-            return numeric_ans;
-        }
-        static int numBitsCount(int integer)
-        {
-            size_t num_bits = 0;
-            while (integer > 0)
-            {
-                ++num_bits;
-                integer >>= 1;
-            }
-            return num_bits;
-        }
-        static bool isValidNumeric(const char * src, const char * end)
-        {
-            int pos;
-            if (*src != '&' || *(src + 1) != '#' || (end - (src + 2) > max_legal_unicode_bits))
-            {
+            if (src + strlen("#") >= end)
                 return false;
-            }
-            if (*(src + 2) == 'x' || *(src + 2) == 'X')
+
+            if (src[0] != '#' || (end - src > 1 + max_decimal_length_of_unicode_point))
+                return false;
+
+            if (src + 2 < end && (src[1] == 'x' || src[1] == 'X'))
             {
-                pos = 3;
-                while (src + pos != end)
+                src += 2;
+                for (; src < end; ++src)
                 {
-                    if (!isHexDigit(*(src + pos)))
-                    {
+                    if (!isHexDigit(*src))
                         return false;
-                    }
-                    ++pos;
+                    code_point *= 16;
+                    code_point += unhex(*src);
                 }
-                return true;
             }
             else
             {
-                pos = 2;
-                while (src + pos != end)
+                src += 1;
+                for (; src < end; ++src)
                 {
-                    if (!isNumericASCII(*(src + pos)))
-                    {
+                    if (!isNumericASCII(*src))
                         return false;
-                    }
-                    ++pos;
+                    code_point *= 10;
+                    code_point += *src - '0';
                 }
-                return true;
             }
+
+            return code_point <= max_legal_unicode_value;
         }
     };
 
