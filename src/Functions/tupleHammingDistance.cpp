@@ -94,9 +94,21 @@ public:
         if (!isTuple(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const auto * arg1_tuple = dynamic_cast<const DataTypeTuple *>((arguments[0].get()));
+        const auto & arg1_elems = arg1_tuple->getElements();
+        if (arg1_elems.size() != 2 || !isInteger(arg1_elems[0]) || !isInteger(arg1_elems[1]))
+            throw Exception("Illegal nested type of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         if (!isTuple(arguments[1]))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const auto * arg2_tuple = dynamic_cast<const DataTypeTuple *>((arguments[1].get()));
+        const auto & arg2_elems = arg2_tuple->getElements();
+        if (arg2_elems.size() != 2 || !isInteger(arg2_elems[0]) || !isInteger(arg2_elems[1]))
+            throw Exception("Illegal nested type of second argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -108,10 +120,6 @@ public:
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
         const auto & left_elems = type1.getElements();
         const auto & right_elems = type2.getElements();
-        if (left_elems.size() != 2 || right_elems.size() != 2)
-            throw Exception(
-                "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
-                ErrorCodes::ILLEGAL_COLUMN);
 
         ColumnPtr result_column;
 
