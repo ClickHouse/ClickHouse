@@ -44,7 +44,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING clause](../../../sql-reference/statements/select/having.md)
 -   [SELECT clause](#select-clause)
--   [ALL clause](../../../sql-reference/statements/select/all.md)
 -   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
