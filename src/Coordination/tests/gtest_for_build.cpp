@@ -3,6 +3,7 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/SummingStateMachine.h>
+#include <Coordination/LoggerWrapper.h>
 #include <Common/Exception.h>
 #include <libnuraft/nuraft.hxx>
 #include <thread>
@@ -45,7 +46,7 @@ struct SummingRaftServer
         params.return_method_ = nuraft::raft_params::blocking;
 
         raft_instance = launcher.init(
-            state_machine, state_manager, nuraft::cs_new<nuraft::logger>(), port,
+            state_machine, state_manager, nuraft::cs_new<LoggerWrapper>(), port,
             nuraft::asio_service::options{}, params);
 
         if (!raft_instance)
@@ -101,7 +102,31 @@ nuraft::ptr<nuraft::buffer> getLogEntry(int64_t number)
     return ret;
 }
 
-TEST(CoordinationTest, TestSummingRaft)
+
+TEST(CoordinationTest, TestSummingRaft1)
+{
+    SummingRaftServer s1(1, "localhost", 44444);
+
+    /// Single node is leader
+    EXPECT_EQ(s1.raft_instance->get_leader(), 1);
+
+    auto entry1 = getLogEntry(143);
+    auto ret = s1.raft_instance->append_entries({entry});
+    EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
+    EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
+
+    while (s1.state_machine->getValue() != 143)
+    {
+        std::cout << "Waiting s1 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    EXPECT_EQ(s1.state_machine->getValue(), 143);
+
+    s1.launcher.shutdown(5);
+}
+
+TEST(CoordinationTest, TestSummingRaft3)
 {
     SummingRaftServer s1(1, "localhost", 44444);
     SummingRaftServer s2(2, "localhost", 44445);
@@ -145,24 +170,8 @@ TEST(CoordinationTest, TestSummingRaft)
     std::cerr << "Starting to add entries\n";
     auto entry = getLogEntry(1);
     auto ret = s2.raft_instance->append_entries({entry});
-    if (!ret->get_accepted())
-    {
-        // Log append rejected, usually because this node is not a leader.
-        std::cout << "failed to replicate: entry 1" << ret->get_result_code() << std::endl;
-        EXPECT_TRUE(false);
-    }
-    if (ret->get_result_code() != nuraft::cmd_result_code::OK)
-    {
-        // Something went wrong.
-        // This means committing this log failed,
-        // but the log itself is still in the log store.
-        std::cout << "failed to replicate: entry 1" << ret->get_result_code() << std::endl;
-        EXPECT_TRUE(false);
-    }
-    else
-    {
-        std::cout << "Append ok\n";
-    }
+    EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
+    EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
 
     while (s1.state_machine->getValue() != 1)
     {
@@ -176,9 +185,51 @@ TEST(CoordinationTest, TestSummingRaft)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    while (s3.state_machine->getValue() != 1)
+    {
+        std::cout << "Waiting s3 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
     EXPECT_EQ(s1.state_machine->getValue(), 1);
     EXPECT_EQ(s2.state_machine->getValue(), 1);
     EXPECT_EQ(s3.state_machine->getValue(), 1);
+
+    auto non_leader_entry = getLogEntry(3);
+    auto ret_non_leader1 = s1.raft_instance->append_entries({non_leader_entry});
+
+    EXPECT_FALSE(ret_non_leader1->get_accepted());
+
+    auto ret_non_leader3 = s3.raft_instance->append_entries({non_leader_entry});
+
+    EXPECT_FALSE(ret_non_leader3->get_accepted());
+
+    auto leader_entry = getLogEntry(77);
+    auto ret_leader = s2.raft_instance->append_entries({leader_entry});
+    EXPECT_TRUE(ret_leader->get_accepted()) << "failed to replicate: entry 78" << ret_leader->get_result_code();
+    EXPECT_EQ(ret_leader->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 78" << ret_leader->get_result_code();
+
+    while (s1.state_machine->getValue() != 78)
+    {
+        std::cout << "Waiting s1 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    while (s2.state_machine->getValue() != 78)
+    {
+        std::cout << "Waiting s2 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    while (s3.state_machine->getValue() != 78)
+    {
+        std::cout << "Waiting s3 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    EXPECT_EQ(s1.state_machine->getValue(), 78);
+    EXPECT_EQ(s2.state_machine->getValue(), 78);
+    EXPECT_EQ(s3.state_machine->getValue(), 78);
 
     s1.launcher.shutdown(5);
     s2.launcher.shutdown(5);
