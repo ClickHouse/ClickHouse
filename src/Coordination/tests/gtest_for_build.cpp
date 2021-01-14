@@ -46,7 +46,7 @@ struct SummingRaftServer
         params.return_method_ = nuraft::raft_params::blocking;
 
         raft_instance = launcher.init(
-            state_machine, state_manager, nuraft::cs_new<LoggerWrapper>(), port,
+            state_machine, state_manager, nuraft::cs_new<DB::LoggerWrapper>("ToyRaftLogger"), port,
             nuraft::asio_service::options{}, params);
 
         if (!raft_instance)
@@ -111,7 +111,7 @@ TEST(CoordinationTest, TestSummingRaft1)
     EXPECT_EQ(s1.raft_instance->get_leader(), 1);
 
     auto entry1 = getLogEntry(143);
-    auto ret = s1.raft_instance->append_entries({entry});
+    auto ret = s1.raft_instance->append_entries({entry1});
     EXPECT_TRUE(ret->get_accepted()) << "failed to replicate: entry 1" << ret->get_result_code();
     EXPECT_EQ(ret->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate: entry 1" << ret->get_result_code();
 

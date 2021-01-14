@@ -8,6 +8,7 @@ namespace DB
 
 class LoggerWrapper : public nuraft::logger
 {
+public:
     LoggerWrapper(const std::string & name)
         : log(&Poco::Logger::get(name))
     {}
@@ -19,7 +20,7 @@ class LoggerWrapper : public nuraft::logger
         size_t /* line_number */,
         const std::string & msg) override
     {
-        LOG_IMPL(log, level, level, msg);
+        LOG_IMPL(log, static_cast<DB::LogsLevel>(level), static_cast<Poco::Message::Priority>(level), msg);
     }
 
     void set_level(int level) override
@@ -33,7 +34,7 @@ class LoggerWrapper : public nuraft::logger
         return log->getLevel();
     }
 
-pivate:
+private:
     Poco::Logger * log;
 };
 
