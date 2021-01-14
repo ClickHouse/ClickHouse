@@ -655,6 +655,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             writeVarUInt(block.rows(), header_buf);
             writeVarUInt(block.bytes(), header_buf);
+            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

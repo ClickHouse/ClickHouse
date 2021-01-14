@@ -88,6 +88,8 @@ namespace
         /// .bin file cannot have zero rows/bytes.
         size_t rows = 0;
         size_t bytes = 0;
+
+        std::string header;
     };
 
     DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
@@ -128,6 +130,7 @@ namespace
             {
                 readVarUInt(header.rows, header_buf);
                 readVarUInt(header.bytes, header_buf);
+                readStringBinary(header.header, header_buf);
             }
 
             /// Add handling new data here, for example:
@@ -437,20 +440,20 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
     Settings settings;
     String query;
     ClientInfo client_info;
-    Block sample_block;
+    String sample_block_structure;
 
-    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block sample_block_)
+    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, String sample_block_structure_)
         : settings(std::move(settings_))
         , query(std::move(query_))
         , client_info(std::move(client_info_))
-        , sample_block(std::move(sample_block_))
+        , sample_block_structure(std::move(sample_block_structure_))
     {
     }
 
     bool operator==(const BatchHeader & other) const
     {
-        return settings == other.settings && query == other.query && client_info.query_kind == other.client_info.query_kind
-            && blocksHaveEqualStructure(sample_block, other.sample_block);
+        return std::tie(settings, query, client_info.query_kind, sample_block_structure) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind, other.sample_block_structure);
     }
 
     struct Hash
@@ -459,14 +462,7 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
-
-            size_t num_columns = batch_header.sample_block.columns();
-            for (size_t i = 0; i < num_columns; ++i)
-            {
-                const String & type_name = batch_header.sample_block.getByPosition(i).type->getName();
-                hash_state.update(type_name.data(), type_name.size());
-            }
-
+            hash_state.update(batch_header.sample_block_structure.data(), batch_header.sample_block_structure.size());
             return hash_state.get64();
         }
     };
@@ -730,7 +726,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
         size_t total_rows = 0;
         size_t total_bytes = 0;
-        Block sample_block;
+        std::string sample_block_structure;
         DistributedHeader header;
         try
         {
@@ -742,17 +738,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             {
                 total_rows += header.rows;
                 total_bytes += header.bytes;
-
-                CompressedReadBuffer decompressing_in(in);
-                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-                block_in.readPrefix();
-
-                /// We still need to read one block for the header.
-                while (Block block = block_in.read())
-                {
-                    sample_block = block.cloneEmpty();
-                    break;
-                }
+                sample_block_structure = header.header;
             }
             else
             {
@@ -765,8 +751,8 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     total_rows += block.rows();
                     total_bytes += block.bytes();
 
-                    if (!sample_block)
-                        sample_block = block.cloneEmpty();
+                    if (sample_block_structure.empty())
+                        sample_block_structure = block.cloneEmpty().dumpStructure();
                 }
                 block_in.readSuffix();
             }
@@ -782,7 +768,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 throw;
         }
 
-        BatchHeader batch_header(std::move(header.insert_settings), std::move(header.insert_query), std::move(header.client_info), std::move(sample_block));
+        BatchHeader batch_header(std::move(header.insert_settings), std::move(header.insert_query), std::move(header.client_info), std::move(sample_block_structure));
         Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);
