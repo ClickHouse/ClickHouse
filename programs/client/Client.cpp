@@ -871,14 +871,26 @@ private:
 
         while (this_query_begin < all_queries_end)
         {
-            // The query parser doesn't skip all the trailing whitespace and
-            // comments, because they are also the leading comments for the
-            // next queries, and it makes more sense to treat them as such.
-            // There is one special case -- trailing whitespace + comments at
-            // end of file. The parser interface doesn't really allow it to work
-            // with an empty query, so we have to handle this case ourselves.
-            // If it's all whitespace and comments up to the end of file, we
-            // just stop.
+            // Remove leading empty newlines and other whitespace, because they
+            // are annoying to filter in query log. This is mostly relevant for
+            // the tests.
+            while (this_query_begin < all_queries_end
+                 && isWhitespaceASCII(*this_query_begin))
+            {
+                ++this_query_begin;
+            }
+            if (this_query_begin >= all_queries_end)
+            {
+                break;
+            }
+
+            // If there are only comments left until the end of file, we just
+            // stop. The parser can't handle this situation because it always
+            // expects that there is some query that it can parse.
+            // We can get into this situation because the parser also doesn't
+            // skip the trailing comments after parsing a query. This is because
+            // they may as well be the leading comments for the next query,
+            // and it makes more sense to treat them as such.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens,
@@ -893,18 +905,6 @@ private:
                 {
                     break;
                 }
-            }
-
-            // Also remove leading empty newlines because they are annoying to
-            // filter in query log. This is mostly relevant for the tests.
-            while (this_query_begin < all_queries_end
-                 && isWhitespaceASCII(*this_query_begin))
-            {
-                ++this_query_begin;
-            }
-            if (this_query_begin >= all_queries_end)
-            {
-                break;
             }
 
             // Try to parse the query.
@@ -998,15 +998,21 @@ private:
                 {
                     processParsedSingleQuery();
 
-                    if (insert_ast && insert_ast->data)
+                    if (insert_ast
+                        && insert_ast->data
+                        && insert_ast->end > this_query_end)
                     {
-                        // For VALUES format: use the end of inline data as reported
-                        // by the format parser (it is saved in sendData()). This
-                        // allows us to handle queries like:
+                        // For VALUES format: use the end of inline data as
+                        // reported by the format parser (it is saved in
+                        // sendData()). This allows us to handle queries like:
                         //   insert into t values (1); select 1
-                        //, where the inline data is delimited by semicolon and not
-                        // by a newline.
-                        this_query_end = parsed_query->as<ASTInsertQuery>()->end;
+                        //, where the inline data is delimited by semicolon and
+                        // not by a newline.
+                        // We must be careful not to move the query end backwards:
+                        // it may already be set (by parseQuery()) further than
+                        // the end of data, if there is a test hint after the
+                        // VALUES.
+                        this_query_end = insert_ast->end;
                         // We also have to skip the trailing semicolon that might
                         // be left after VALUES parsing.
                         Tokens after_insert_tokens(this_query_end,

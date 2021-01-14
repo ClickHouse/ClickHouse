@@ -1,0 +1,40 @@
+-- { echo }
+create table values_01564(
+    a int,
+    constraint c1 check a < 10) engine Memory;
+
+-- client error hint after broken insert values
+insert into values_01564 values ('f'); -- { clientError 6 }
+
+insert into values_01564 values ('f'); -- { clientError 6 }
+select 1;
+
+insert into values_01564 values ('f'); -- { clientError 6 }
+select nonexistent column; -- { serverError 47 }
+
+-- syntax error hint after broken insert values
+insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
+
+insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
+select 1;
+
+insert into values_01564 this is bad syntax values ('f'); -- { clientError 62 }
+select nonexistent column; -- { serverError 47 }
+
+-- server error hint after broken insert values (violated constraint)
+insert into values_01564 values (11); -- { serverError 469 }
+
+insert into values_01564 values (11); -- { serverError 469 }
+select 1;
+
+insert into values_01564 values (11); -- { serverError 469 }
+select nonexistent column; -- { serverError 47 }
+
+-- query after values on the same line
+insert into values_01564 values (1); select 1;
+
+-- syntax error, where the last token we can parse is long before the semicolon.
+select this is too many words for an alias; -- { clientError 62 }
+--OPTIMIZE TABLE values_01564 DEDUPLICATE BY; -- { clientError 62 }
+--OPTIMIZE TABLE values_01564 DEDUPLICATE BY a EXCEPT a; -- { clientError 62 }
+--select 'a' || distinct one || 'c' from system.one; -- { clientError 62 }
