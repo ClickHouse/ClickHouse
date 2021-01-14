@@ -3695,7 +3695,7 @@ void StorageReplicatedMergeTree::shutdown()
     {
         if (parts_info->state == DataPartState::Committed)
         {
-            committed_parts_count++;
+            ++committed_parts_count;
         }
     }
 

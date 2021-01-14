@@ -18,29 +18,30 @@ FROM system.metrics) as a INNER JOIN
 FROM system.parts
 ) as b USING (Parts,PartsActive,PartsInactive)"
 
-verify(){
-for _ in $(seq 1 10)
-do
-result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
-if [ "$result" = "1" ];then
+# The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.
+# So, there is inherent race condition. But it should get expected result eventually.
+# In case of test failure, this code will do infinite loop and timeout.
+verify()
+{
+    while true
+    do
+        result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
+        [ "$result" = "1" ] && break;
+    done
     echo 1
-    return
-fi 
-done
-echo 0  
 }
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_table" 2>/dev/null
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;" 2>/dev/null
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_table"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')" 2>/dev/null
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')"
 verify
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-02')" 2>/dev/null
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-02')"
 verify
 
-$CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE test_table FINAL" 2>/dev/null
+$CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE test_table FINAL"
 verify
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE test_table" 2>/dev/null
+$CLICKHOUSE_CLIENT --query="DROP TABLE test_table"
 verify
