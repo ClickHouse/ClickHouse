@@ -480,9 +480,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_table = IdentifierSemantic::getTableName(alias->ptr());
                     bool alias_equals_column_name = false;
-                    if (alias->ptr()->getColumnNameWithoutAlias()==ident->getColumnNameWithoutAlias()){
-                        alias_equals_column_name = true;
-                    } else if (alias_table == IdentifierSemantic::getTableName(ident->ptr()) && ident->shortName() == alias->as<ASTIdentifier>()->shortName())
+                    if ((!ident->isShort() && alias->ptr()->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias())
+                        || (alias_table == IdentifierSemantic::getTableName(ident->ptr())
+                            && ident->shortName() == alias->as<ASTIdentifier>()->shortName()))
                     {
                         alias_equals_column_name = true;
                     }
