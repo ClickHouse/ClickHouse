@@ -410,7 +410,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-    loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -483,7 +482,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
@@ -659,29 +657,6 @@ void IMergeTreeDataPart::loadRowsCount()
                         "Column {} has rows count {} according to size in memory "
                         "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
                 }
-
-                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
-                /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
-                /// We have more rows in column than in index granularity without last possibly incomplete mark
-                if (rows_in_column < index_granularity_without_last_mark)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} according to size in memory "
-                        "and size of single value, but index granularity in part {} without last mark has {} rows, which is more than in column",
-                        backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
-                }
-
-                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
-                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
-                {
-                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} in last mark according to size in memory "
-                        "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
-                        backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
-                }
             }
         }
 #endif
@@ -748,19 +723,6 @@ void IMergeTreeDataPart::loadTTLInfos()
         }
         else
             throw Exception("Unknown ttl format version: " + toString(format_version), ErrorCodes::BAD_TTL_FILE);
-    }
-}
-
-void IMergeTreeDataPart::loadUUID()
-{
-    String path = getFullRelativePath() + UUID_FILE_NAME;
-
-    if (volume->getDisk()->exists(path))
-    {
-        auto in = openForReading(volume->getDisk(), path);
-        readText(uuid, *in);
-        if (uuid == UUIDHelpers::Nil)
-            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
     }
 }
 

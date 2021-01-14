@@ -102,7 +102,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
     return read;

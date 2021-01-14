@@ -579,7 +579,7 @@ Bir işlev öbekte oluşturulan bir nesnenin sahipliğini yakalarsa, bağımsız
 
 **14.** Değerleri döndürür.
 
-Çoğu durumda, sadece kullanın `return`. Yaz domayın `return std::move(res)`.
+Çoğu durumda, sadece kullanın `return`. Yaz domayın `[return std::move(res)]{.strike}`.
 
 İşlev öbek üzerinde bir nesne ayırır ve döndürürse, şunları kullanın `shared_ptr` veya `unique_ptr`.
 
@@ -673,7 +673,7 @@ Her zaman kullanın `#pragma once` korumaları dahil etmek yerine.
 **24.** Kullanmayın `trailing return type` gerekli olmadıkça fonksiyonlar için.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Değişkenlerin bildirimi ve başlatılması.

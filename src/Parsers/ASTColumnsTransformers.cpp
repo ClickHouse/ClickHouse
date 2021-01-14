@@ -5,7 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB

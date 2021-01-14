@@ -793,7 +793,6 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_copy = metadata;
-
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(metadata_copy, context);
@@ -824,7 +823,6 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
-    metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
@@ -832,7 +830,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);

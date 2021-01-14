@@ -25,7 +25,6 @@ class Exception : public Poco::Exception
 public:
     Exception() = default;
     Exception(const std::string & msg, int code);
-    Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)

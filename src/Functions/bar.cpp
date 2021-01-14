@@ -67,7 +67,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         Int64 min = extractConstant<Int64>(arguments, 1, "Second"); /// The level at which the line has zero length.
         Int64 max = extractConstant<Int64>(arguments, 2, "Third"); /// The level at which the line has the maximum length.
@@ -106,7 +106,7 @@ public:
 
 private:
     template <typename T>
-    T extractConstant(const ColumnsWithTypeAndName & arguments, size_t argument_pos, const char * which_argument) const
+    T extractConstant(ColumnsWithTypeAndName & arguments, size_t argument_pos, const char * which_argument) const
     {
         const auto & column = *arguments[argument_pos].column;
 

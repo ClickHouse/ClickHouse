@@ -15,15 +15,11 @@ then
     source "${BASE_DIR}/venv/bin/activate"
     python3 "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
     rm -rf "${PUBLISH_DIR}" || true
+    git clone "${GIT_TEST_URI}" "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"
-
-    # Will make a repository with website content as the only commit.
-    git init
-    git remote add origin "${GIT_TEST_URI}"
     git config user.email "robot-clickhouse@yandex-team.ru"
     git config user.name "robot-clickhouse"
-
-    # Add files.
+    git rm -rf *
     cp -R "${BUILD_DIR}"/* .
     echo -n "${BASE_DOMAIN}" > CNAME
     echo -n "" > README.md
@@ -31,11 +27,13 @@ then
     cp "${BASE_DIR}/../../LICENSE" .
     git add *
     git add ".nojekyll"
-
-    # Push to GitHub rewriting the existing contents.
-    git commit -a -m "Add new release at $(date)"
-    git push --force origin master
-
+    git commit -a -m "add new release at $(date)"
+    NEW_ROOT_COMMIT=$(git rev-parse "HEAD~${HISTORY_SIZE}")
+    git checkout --orphan temp "${NEW_ROOT_COMMIT}"
+    git commit -m "root commit"
+    git rebase --onto temp "${NEW_ROOT_COMMIT}" master
+    git branch -D temp
+    git push -f origin master
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m

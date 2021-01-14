@@ -9,7 +9,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 
 Поддерживаемые форматы и возможность использовать их в запросах `INSERT` и `SELECT` перечислены в таблице ниже.
 
-=======
 | Формат                                                                                  | INSERT | SELECT |
 |-----------------------------------------------------------------------------------------|--------|--------|
 | [TabSeparated](#tabseparated)                                                           | ✔     | ✔      |
@@ -57,7 +56,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -436,10 +434,7 @@ JSON совместим с JavaScript. Для этого, дополнитель
 
 ClickHouse поддерживает [NULL](../sql-reference/syntax.md), который при выводе JSON будет отображен как `null`. Чтобы включить отображение в результате значений  `+nan`, `-nan`, `+inf`, `-inf`, установите параметр [output_format_json_quote_denormals](../operations/settings/settings.md#settings-output_format_json_quote_denormals) равным 1.
 
-**Смотрите также**
-
--   Формат [JSONEachRow](#jsoneachrow)
--   Настройка [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)
+Смотрите также формат [JSONEachRow](#jsoneachrow).
 
 ## JSONString {#jsonstring}
 
@@ -1248,47 +1243,6 @@ SELECT * FROM line_as_string;
 ┌─field─────────────────────────────────────────────┐
 │ "I love apple", "I love banana", "I love orange"; │
 └───────────────────────────────────────────────────┘
-```
-
-## RawBLOB {#rawblob}
-
-В этом формате все входные данные считываются в одно значение. Парсить можно только таблицу с одним полем типа [String](../sql-reference/data-types/string.md) или подобным ему. 
-Результат выводится в бинарном виде без разделителей и экранирования. При выводе более одного значения формат неоднозначен и будет невозможно прочитать данные снова.
-
-Ниже приведено сравнение форматов `RawBLOB` и [TabSeparatedRaw](#tabseparatedraw).
-`RawBLOB`:
--   данные выводятся в бинарном виде, без экранирования;
--   нет разделителей между значениями;
--   нет перевода строки в конце каждого значения.
-[TabSeparatedRaw](#tabseparatedraw):
--   данные выводятся без экранирования;
--   строка содержит значения, разделённые табуляцией;
--   после последнего значения в строке есть перевод строки.
-
-Далее рассмотрено сравнение форматов `RawBLOB` и [RowBinary](#rowbinary).
-`RawBLOB`:
--   строки выводятся без их длины в начале.
-`RowBinary`:
--   строки представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем байты строки.
-
-При передаче на вход `RawBLOB` пустых данных, ClickHouse бросает исключение:
- 
-``` text
-Code: 108. DB::Exception: No data to insert
-```
-
-**Пример**
-
-``` bash
-$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
-$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
-$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
-```
-
-Результат:
-
-``` text
-f9725a22f9191e064120d718e26862a9  -
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/formats/) <!--hide-->

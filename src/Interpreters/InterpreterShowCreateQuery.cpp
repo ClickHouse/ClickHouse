@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
@@ -76,9 +78,9 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         create.uuid = UUIDHelpers::Nil;
     }
 
-    WriteBufferFromOwnString buf;
-    formatAST(*create_query, buf, false, false);
-    String res = buf.str();
+    std::stringstream stream;
+    formatAST(*create_query, stream, false, false);
+    String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);

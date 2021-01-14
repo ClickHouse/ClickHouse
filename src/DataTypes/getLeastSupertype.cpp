@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -361,9 +360,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 64);
             else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 256);
-            else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
+            else if (typeid_cast<const DataTypeInt8 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 8);
-            else if (typeid_cast<const DataTypeInt16 *>(type.get()) || typeid_cast<const DataTypeEnum16 *>(type.get()))
+            else if (typeid_cast<const DataTypeInt16 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 16);
             else if (typeid_cast<const DataTypeInt32 *>(type.get()))
                 maximize(max_bits_of_signed_integer, 32);

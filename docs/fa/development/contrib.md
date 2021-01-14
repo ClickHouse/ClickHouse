@@ -21,6 +21,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
 | googletest      | [لیسانس 3 بند](https://github.com/google/googletest/blob/master/LICENSE)                                                                    |
 | اچ 3            | [نمایی مجوز 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                            |
 | hyperscan       | [لیسانس 3 بند](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                      |
+| لیبتری          | [لیسانس 2 بند](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                               |
 | شکنجه نوجوان    | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                         |
 | لیبیدوید        | [مجوز زلب](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                              |
 | نوشیدن شراب     | [الجی پی ال2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                        |

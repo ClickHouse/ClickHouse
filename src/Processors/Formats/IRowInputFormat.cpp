@@ -87,6 +87,9 @@ Chunk IRowInputFormat::generate()
                 if (!continue_reading)
                     break;
 
+                if (params.callback)
+                    params.callback();
+
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;

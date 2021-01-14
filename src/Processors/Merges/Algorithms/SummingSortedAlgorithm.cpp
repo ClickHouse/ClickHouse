@@ -688,10 +688,10 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
             }
 
-            merged_data.startGroup(current->all_columns, current->getRow());
+            merged_data.startGroup(current->all_columns, current->pos);
         }
         else
-            merged_data.addRow(current->all_columns, current->getRow());
+            merged_data.addRow(current->all_columns, current->pos);
 
         if (!current->isLast())
         {

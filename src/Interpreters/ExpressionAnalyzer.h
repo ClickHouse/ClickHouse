@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -15,7 +16,6 @@ namespace DB
 
 class Block;
 class Context;
-struct Settings;
 
 struct ExpressionActionsChain;
 class ExpressionActions;
@@ -49,7 +49,7 @@ struct ExpressionAnalyzerData
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
 
-    /// Columns after ARRAY JOIN. If there is no ARRAY JOIN, it's source_columns.
+    /// Columns after ARRAY JOIN. It there is no ARRAY JOIN, it's source_columns.
     NamesAndTypesList columns_after_array_join;
     /// Columns after Columns after ARRAY JOIN and JOIN. If there is no JOIN, it's columns_after_array_join.
     NamesAndTypesList columns_after_join;
@@ -80,7 +80,10 @@ private:
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
 
-        ExtractedSettings(const Settings & settings_);
+        ExtractedSettings(const Settings & settings_)
+        :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+        {}
     };
 
 public:
@@ -99,7 +102,6 @@ public:
     /// If add_aliases, only the calculated values in the desired order and add aliases.
     ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
@@ -182,24 +184,24 @@ struct ExpressionAnalysisResult
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
 
-    ActionsDAGPtr before_array_join;
+    ExpressionActionsPtr before_array_join;
     ArrayJoinActionPtr array_join;
-    ActionsDAGPtr before_join;
+    ExpressionActionsPtr before_join;
     JoinPtr join;
-    ActionsDAGPtr before_where;
-    ActionsDAGPtr before_aggregation;
-    ActionsDAGPtr before_having;
-    ActionsDAGPtr before_order_and_select;
-    ActionsDAGPtr before_limit_by;
-    ActionsDAGPtr final_projection;
+    ExpressionActionsPtr before_where;
+    ExpressionActionsPtr before_aggregation;
+    ExpressionActionsPtr before_having;
+    ExpressionActionsPtr before_order_and_select;
+    ExpressionActionsPtr before_limit_by;
+    ExpressionActionsPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases.
     Names selected_columns;
 
     /// Columns will be removed after prewhere actions execution.
-    NameSet columns_to_remove_after_prewhere;
+    Names columns_to_remove_after_prewhere;
 
-    PrewhereDAGInfoPtr prewhere_info;
+    PrewhereInfoPtr prewhere_info;
     FilterInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
@@ -229,7 +231,7 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num);
+    void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.
@@ -267,12 +269,12 @@ public:
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
-    ActionsDAGPtr simpleSelectActions();
+    ExpressionActionsPtr simpleSelectActions();
 
     /// These appends are public only for tests
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
+    ExpressionActionsPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -315,14 +317,14 @@ private:
       */
 
     /// Before aggregation:
-    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ExpressionActionsPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
-    void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
+    void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
+    ExpressionActionsPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -330,7 +332,7 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsDAGPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };

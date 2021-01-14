@@ -91,8 +91,6 @@ public:
 
             TupleElement,
 
-            MapElement,
-
             DictionaryKeys,
             DictionaryIndexes,
         };
@@ -451,7 +449,6 @@ public:
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 private:
     friend class DataTypeFactory;
-    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
@@ -520,7 +517,6 @@ struct WhichDataType
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
-    constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 
@@ -608,14 +604,6 @@ inline bool isColumnedAsDecimal(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isDecimal() || which.isDateTime64();
-}
-
-// Same as isColumnedAsDecimal but also checks value type of underlyig column.
-template <typename T, typename DataType>
-inline bool isColumnedAsDecimalT(const DataType & data_type)
-{
-    const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
 }
 
 template <typename T>

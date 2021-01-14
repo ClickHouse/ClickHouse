@@ -27,14 +27,8 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
 
         /// Skip lambda, tuple and other special functions
-        if (function)
-        {
-            if (function->isStateful())
-                data.is_stateful_function = true;
-
-            if (!function->isDeterministicInScopeOfQuery())
-                data.is_deterministic_function = false;
-        }
+        if (function && function->isStateful())
+            data.is_stateful_function = true;
     }
 }
 

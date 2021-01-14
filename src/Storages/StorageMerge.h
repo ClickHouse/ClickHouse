@@ -4,6 +4,7 @@
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -26,12 +27,12 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -48,9 +49,8 @@ public:
 
 private:
     String source_database;
-    std::optional<std::unordered_set<String>> source_tables;
-    std::optional<OptimizedRegularExpression> source_table_regexp;
-    const Context & global_context;
+    OptimizedRegularExpression table_name_regexp;
+    Context global_context;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -73,19 +73,12 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & source_database_,
-        const Strings & source_tables_,
-        const Context & context_);
-
-    StorageMerge(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const String & source_database_,
-        const String & source_table_regexp_,
+        const String & table_name_regexp_,
         const Context & context_);
 
     Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
         const UInt64 max_block_size,
         const Block & header,

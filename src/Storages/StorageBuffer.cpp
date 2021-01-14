@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Processors/QueryPlan/AddingMissedStep.h>
+#include <Processors/Transforms/AddingMissedTransform.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -22,13 +22,10 @@
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
 #include <ext/range.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/UnionStep.h>
 
 
 namespace ProfileEvents
@@ -65,14 +62,14 @@ StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    Context & context_,
     size_t num_shards_,
     const Thresholds & min_thresholds_,
     const Thresholds & max_thresholds_,
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
-    , global_context(context_.getGlobalContext())
+    , global_context(context_)
     , num_shards(num_shards_), buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
@@ -133,7 +130,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     if (destination_id)
     {
@@ -142,7 +139,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context, to_stage, query_info);
+        return destination->getQueryProcessingStage(context, to_stage, query_ptr);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -152,27 +149,14 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 Pipe StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
-}
-
-void StorageBuffer::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
+    Pipe pipe_from_dst;
+
     if (destination_id)
     {
         auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
@@ -198,8 +182,8 @@ void StorageBuffer::read(
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            destination->read(
-                query_plan, column_names, destination_metadata_snapshot, query_info,
+            pipe_from_dst = destination->read(
+                column_names, destination_metadata_snapshot, query_info,
                 context, processed_stage, max_block_size, num_streams);
         }
         else
@@ -233,52 +217,29 @@ void StorageBuffer::read(
             }
             else
             {
-                destination->read(
-                        query_plan, columns_intersection, destination_metadata_snapshot, query_info,
-                        context, processed_stage, max_block_size, num_streams);
+                pipe_from_dst = destination->read(
+                    columns_intersection, destination_metadata_snapshot, query_info,
+                    context, processed_stage, max_block_size, num_streams);
 
-                if (query_plan.isInitialized())
+                if (!pipe_from_dst.empty())
                 {
-
-                    auto adding_missed = std::make_unique<AddingMissedStep>(
-                            query_plan.getCurrentDataStream(),
-                            header_after_adding_defaults,
+                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                    {
+                        return std::make_shared<AddingMissedTransform>(stream_header, header_after_adding_defaults,
                             metadata_snapshot->getColumns(), context);
+                    });
 
-                    adding_missed->setStepDescription("Add columns missing in destination table");
-                    query_plan.addStep(std::move(adding_missed));
-
-                    auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
-
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), actions_dag);
-
-                    converting->setStepDescription("Convert destination table columns to Buffer table structure");
-                    query_plan.addStep(std::move(converting));
+                    pipe_from_dst.addSimpleTransform([&](const Block & stream_header)
+                    {
+                        return std::make_shared<ConvertingTransform>(
+                            stream_header, header, ConvertingTransform::MatchColumnsMode::Name);
+                    });
                 }
             }
         }
 
-        if (query_plan.isInitialized())
-        {
-            StreamLocalLimits limits;
-            SizeLimits leaf_limits;
-
-            /// Add table lock for destination table.
-            auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                    query_plan.getCurrentDataStream(),
-                    destination,
-                    std::move(destination_lock),
-                    limits,
-                    leaf_limits,
-                    nullptr,
-                    nullptr);
-
-            adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
-            query_plan.addStep(std::move(adding_limits_and_quota));
-        }
+        pipe_from_dst.addTableLock(destination_lock);
+        pipe_from_dst.addStorageHolder(destination);
     }
 
     Pipe pipe_from_buffers;
@@ -291,78 +252,49 @@ void StorageBuffer::read(
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
     }
 
-    if (pipe_from_buffers.empty())
-        return;
-
-    QueryPlan buffers_plan;
+    /// Convert pipes from table to structure from buffer.
+    if (!pipe_from_buffers.empty() && !pipe_from_dst.empty()
+        && !blocksHaveEqualStructure(pipe_from_buffers.getHeader(), pipe_from_dst.getHeader()))
+    {
+        pipe_from_dst.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(
+                   header,
+                   pipe_from_buffers.getHeader(),
+                   ConvertingTransform::MatchColumnsMode::Name);
+        });
+    }
 
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
+        pipe_from_buffers = QueryPipeline::getPipe(
+                InterpreterSelectQuery(query_info.query, context, std::move(pipe_from_buffers),
+                                               SelectQueryOptions(processed_stage)).execute().pipeline);
+
+    if (query_info.prewhere_info)
     {
-        auto interpreter = InterpreterSelectQuery(
-                query_info.query, context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage));
-        interpreter.buildQueryPlan(buffers_plan);
-    }
-    else
-    {
-        if (query_info.prewhere_info)
+        pipe_from_buffers.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(
+                    header, query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+        });
+
+        if (query_info.prewhere_info->alias_actions)
         {
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<FilterTransform>(
-                        header, query_info.prewhere_info->prewhere_actions,
-                        query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
             });
-
-            if (query_info.prewhere_info->alias_actions)
-            {
-                pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
-                });
-            }
         }
-
-        auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
-        read_from_buffers->setStepDescription("Read from buffers of Buffer table");
-        buffers_plan.addStep(std::move(read_from_buffers));
     }
 
-    if (!query_plan.isInitialized())
-    {
-        query_plan = std::move(buffers_plan);
-        return;
-    }
-
-    auto result_header = buffers_plan.getCurrentDataStream().header;
-
-    /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
-    {
-        auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-                result_header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
-
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
-        query_plan.addStep(std::move(converting));
-    }
-
-    DataStreams input_streams;
-    input_streams.emplace_back(query_plan.getCurrentDataStream());
-    input_streams.emplace_back(buffers_plan.getCurrentDataStream());
-
-    std::vector<std::unique_ptr<QueryPlan>> plans;
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
-    query_plan = QueryPlan();
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header);
-    union_step->setStepDescription("Unite sources from Buffer table");
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe_from_dst));
+    pipes.emplace_back(std::move(pipe_from_buffers));
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 
@@ -583,7 +515,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, global_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
     }
     catch (...)
     {
@@ -608,7 +540,6 @@ bool StorageBuffer::optimize(
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
-    const Names & /* deduplicate_by_columns */,
     const Context & /*context*/)
 {
     if (partition)
@@ -907,7 +838,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);

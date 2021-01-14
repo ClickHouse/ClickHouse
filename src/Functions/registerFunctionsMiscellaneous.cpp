@@ -65,7 +65,6 @@ void registerFunctionGlobalVariable(FunctionFactory &);
 void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
-void registerFunctionTcpPort(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -131,7 +130,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionHasThreadFuzzer(factory);
     registerFunctionInitializeAggregation(factory);
     registerFunctionErrorCodeToName(factory);
-    registerFunctionTcpPort(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
