@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Disks/IDisk.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -29,29 +30,31 @@ struct ReplicatedMergeTreeLogEntryData
 {
     enum Type
     {
-        EMPTY,          /// Not used.
-        GET_PART,       /// Get the part from another replica.
-        MERGE_PARTS,    /// Merge the parts.
-        DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
-        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
-        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
-        MUTATE_PART,    /// Apply one or several mutations to the part.
-        ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
+        EMPTY,             /// Not used.
+        GET_PART,          /// Get the part from another replica.
+        MERGE_PARTS,       /// Merge the parts.
+        DROP_RANGE,        /// Delete the parts in the specified partition in the specified number range.
+        CLEAR_COLUMN,      /// NOTE: Deprecated. Drop specific column from specified partition.
+        CLEAR_INDEX,       /// NOTE: Deprecated. Drop specific index from specified partition.
+        REPLACE_RANGE,     /// Drop certain range of partitions and replace them by new ones
+        MUTATE_PART,       /// Apply one or several mutations to the part.
+        ALTER_METADATA,    /// Apply alter modification according to global /metadata and /columns paths
+        FETCH_SHARED_PART, /// Get the part from other replica only if it on shared S3 storade
     };
 
     static String typeToString(Type type)
     {
         switch (type)
         {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
-            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
-            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
-            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
+            case ReplicatedMergeTreeLogEntryData::GET_PART:          return "GET_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:       return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:        return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:      return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:       return "CLEAR_INDEX";
+            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:     return "REPLACE_RANGE";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:       return "MUTATE_PART";
+            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:    return "ALTER_METADATA";
+            case ReplicatedMergeTreeLogEntryData::FETCH_SHARED_PART: return "FETCH_SHARED_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -191,6 +194,9 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Coordination::Stat & stat);
+
+    DiskPtr disk;
+    String path;
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;

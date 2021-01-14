@@ -211,6 +211,18 @@ public:
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
+    struct ZooKeeperAccessData
+    {
+        zkutil::ZooKeeperPtr zookeeper;
+        String zookeeper_path;
+        String replica_name;
+    };
+
+    ZooKeeperAccessData getZooKeeperAccessData() const;
+
+    /// Fetch part only when it stored on shared storage like S3
+    bool executeFetchShared(ReplicatedMergeTreeLogEntry & entry);
+
 private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
@@ -369,8 +381,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
-                                                               const DataPartPtr & part);
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -487,6 +498,10 @@ private:
       */
     String findReplicaHavingPart(const String & part_name, bool active);
 
+    /** Returns a replica with part on shared storage like S3.
+     */
+    String findReplicaHavingSharedPart(const String & part_name, bool active);
+
     bool checkReplicaHavePart(const String & replica, const String & part_name);
 
     /** Find replica having specified part or any part that covers it.
@@ -508,7 +523,10 @@ private:
         const String & replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
+        bool replace_exists = false,
+        DiskPtr replaced_disk = nullptr,
+        String replaced_part_path = "");
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;

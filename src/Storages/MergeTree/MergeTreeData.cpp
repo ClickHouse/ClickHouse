@@ -1833,7 +1833,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     const MergeTreePartInfo & new_part_info,
     const String & new_part_name,
     DataPartPtr & out_covering_part,
-    DataPartsLock & /* data_parts_lock */) const
+    DataPartsLock & /* data_parts_lock */,
+    bool allow_duplicate) const
 {
     /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place for the part itself.
     auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Committed, new_part_info});
@@ -1867,7 +1868,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     DataPartIteratorByStateAndInfo end = it_middle;
     while (end != committed_parts_range.end())
     {
-        if ((*end)->info == new_part_info)
+        if ((*end)->info == new_part_info && !allow_duplicate)
             throw Exception("Unexpected duplicate part " + (*end)->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         if (!new_part_info.contains((*end)->info))
