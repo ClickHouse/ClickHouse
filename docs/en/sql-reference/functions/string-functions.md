@@ -1,9 +1,12 @@
 ---
 toc_priority: 40
-toc_title: Working with strings
+toc_title: Strings
 ---
 
 # Functions for Working with Strings {#functions-for-working-with-strings}
+
+!!! note "Note"
+    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
 
 ## empty {#empty}
 
@@ -29,12 +32,12 @@ The function also works for arrays.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## char\_length, CHAR\_LENGTH {#char-length}
+## char_length, CHAR_LENGTH {#char-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## character\_length, CHARACTER\_LENGTH {#character-length}
+## character_length, CHARACTER_LENGTH {#character-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
@@ -75,7 +78,7 @@ toValidUTF8( input_string )
 
 Parameters:
 
--   input\_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+-   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
@@ -483,5 +486,118 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
+
+## normalizeQuery {#normalized-query}
+
+Replaces literals, sequences of literals and complex aliases with placeholders.
+
+**Syntax** 
+``` sql
+normalizeQuery(x)
+```
+
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Sequence of characters with placeholders.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Result:
+
+``` text
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizedQueryHash {#normalized-query-hash}
+
+Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
+
+**Syntax** 
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Parameters** 
+
+-   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Hash value.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Result:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## encodeXMLComponent {#encode-xml-component}
+
+Escapes characters to place string into XML text node or attribute.
+
+The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
+
+**Syntax** 
+
+``` sql
+encodeXMLComponent(x)
+```
+
+**Parameters** 
+
+-   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+-   The sequence of characters with escape characters.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT encodeXMLComponent('Hello, "world"!');
+SELECT encodeXMLComponent('<123>');
+SELECT encodeXMLComponent('&clickhouse');
+SELECT encodeXMLComponent('\'foo\'');
+```
+
+Result:
+
+``` text
+Hello, &quot;world&quot;!
+&lt;123&gt;
+&amp;clickhouse
+&apos;foo&apos;
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

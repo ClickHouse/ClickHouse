@@ -1,6 +1,4 @@
 <test>
-    
-
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -31,7 +29,7 @@
                 number
             FROM
                 system.numbers
-            LIMIT 10000000
+            LIMIT 100000000
     </fill_query>
     <query>
         SELECT
@@ -43,7 +41,7 @@
         SETTINGS
             compile_expressions = 0;
     </query>
-    <query>
+    <query short="1">
         SELECT
             COUNT()
         FROM

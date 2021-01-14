@@ -108,6 +108,9 @@ SELECT '--const/non-const mixed--';
 SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
 SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
 
+SELECT '--show error: type should be const string';
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }
 
 
 SELECT '--allow_simdjson=0--';
@@ -219,3 +222,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":
 SELECT '--const/non-const mixed--';
 SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);
 SELECT JSONExtractString(json, 's') FROM (SELECT arrayJoin(['{"s":"u"}', '{"s":"v"}']) AS json);
+
+SELECT '--show error: type should be const string';
+SELECT JSONExtractKeysAndValues([], JSONLength('^?V{LSwp')); -- { serverError 44 }
+WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, 'i')); -- { serverError 44 }

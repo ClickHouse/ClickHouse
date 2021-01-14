@@ -13,6 +13,7 @@ class ASTColumnDeclaration : public IAST
 public:
     String name;
     ASTPtr type;
+    std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
     ASTPtr comment;

@@ -1,7 +1,7 @@
 {% if not single_page %}
 <div class="alert alert-light my-3">
   <p class="float-right mb-0">{{ _('Rating') }}: RATING_VALUE - RATING_COUNT {{ _('votes') }}</p>
-  <h4 class="alert-heading">{% if is_amp %}{{ _('Article Rating') }}{% else %}{{ _('Was this content helpful?') }}{% endif %}</h4>
+  <span class="alert-heading display-6">{% if is_amp %}{{ _('Article Rating') }}{% else %}{{ _('Was this content helpful?') }}{% endif %}</span>
   <div id="rating-stars" class="display-6 mb-0"
      {% if not is_amp %}
      data-titles="['{{ _('Unusable') }}', '{{ _('Poor') }}', 'OK', '{{ _('Good') }}', '{{ _('Excellent') }}']"

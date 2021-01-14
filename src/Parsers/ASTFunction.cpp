@@ -1,11 +1,15 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTSubquery.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 
 namespace DB
 {
@@ -27,13 +31,24 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 
     writeChar('(', ostr);
-    for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
-    {
-        if (it != arguments->children.begin())
-            writeCString(", ", ostr);
-        (*it)->appendColumnName(ostr);
-    }
+    if (arguments)
+        for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        {
+            if (it != arguments->children.begin())
+                writeCString(", ", ostr);
+            (*it)->appendColumnName(ostr);
+        }
     writeChar(')', ostr);
+
+    if (is_window_function)
+    {
+        writeCString(" OVER (", ostr);
+        FormatSettings settings{ostr, true /* one_line */};
+        FormatState state;
+        FormatStateStacked frame;
+        appendWindowDescription(settings, state, frame);
+        writeCString(")", ostr);
+    }
 }
 
 /** Get the text that identifies this element. */
@@ -50,11 +65,66 @@ ASTPtr ASTFunction::clone() const
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
+    if (window_name)
+    {
+        res->window_name = window_name->clone();
+        res->children.push_back(res->window_name);
+    }
+
+    if (window_partition_by)
+    {
+        res->window_partition_by = window_partition_by->clone();
+        res->children.push_back(res->window_partition_by);
+    }
+
+    if (window_order_by)
+    {
+        res->window_order_by = window_order_by->clone();
+        res->children.push_back(res->window_order_by);
+    }
+
     return res;
 }
 
 
-/** A special hack. If it's LIKE or NOT LIKE expression and the right hand side is a string literal,
+void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
+
+ASTPtr ASTFunction::toLiteral() const
+{
+    if (!arguments) return {};
+
+    if (name == "array")
+    {
+        Array array;
+
+        for (const auto & arg : arguments->children)
+        {
+            if (auto * literal = arg->as<ASTLiteral>())
+                array.push_back(literal->value);
+            else if (auto * func = arg->as<ASTFunction>())
+            {
+                if (auto func_literal = func->toLiteral())
+                    array.push_back(func_literal->as<ASTLiteral>()->value);
+            }
+            else
+                /// Some of the Array arguments is not literal
+                return {};
+        }
+
+        return std::make_shared<ASTLiteral>(array);
+    }
+
+    return {};
+}
+
+
+/** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
   *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
@@ -102,13 +172,36 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
 }
 
 
+ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
+{
+    if (arguments && arguments->children.size() == 1)
+    {
+        return arguments->children[0]->as<ASTSelectWithUnionQuery>();
+    }
+    return nullptr;
+}
+
+
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.expression_list_prepend_whitespace = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
 
+    if (auto * query = tryGetQueryArgument())
+    {
+        std::string nl_or_nothing = settings.one_line ? "" : "\n";
+        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
+        FormatStateStacked frame_nested = frame;
+        frame_nested.need_parens = false;
+        ++frame_nested.indent;
+        query->formatImpl(settings, state, frame_nested);
+        settings.ostr << nl_or_nothing << indent_str << ")";
+        return;
+    }
     /// Should this function to be written as operator?
     bool written = false;
     if (arguments && !parameters)
@@ -168,7 +261,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 "greater",         " > ",
                 "equals",          " = ",
                 "like",            " LIKE ",
+                "ilike",           " ILIKE ",
                 "notLike",         " NOT LIKE ",
+                "notILike",        " NOT ILIKE ",
                 "in",              " IN ",
                 "notIn",           " NOT IN ",
                 "globalIn",        " GLOBAL IN ",
@@ -186,7 +281,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
 
                     bool special_hilite = settings.hilite
-                        && (name == "like" || name == "notLike")
+                        && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike")
                         && highlightStringLiteralWithMetacharacters(arguments->children[1], settings, "%_");
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
@@ -330,43 +425,106 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
-    }
 
-    if (!written)
-    {
-        settings.ostr << (settings.hilite ? hilite_function : "") << name;
-
-        if (parameters)
+        if (!written && 0 == strcmp(name.c_str(), "map"))
         {
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-            parameters->formatImpl(settings, state, nested_dont_need_parens);
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
-        }
-
-        if (arguments)
-        {
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-
-            bool special_hilite_regexp = settings.hilite
-                && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne" || name == "replaceRegexpAll");
-
-            for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
-
-                bool special_hilite = false;
-                if (i == 1 && special_hilite_regexp)
-                    special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
-
-                if (!special_hilite)
-                    arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            written = true;
         }
+    }
 
-        settings.ostr << (settings.hilite ? hilite_none : "");
+    if (written)
+    {
+        return;
+    }
+
+    settings.ostr << (settings.hilite ? hilite_function : "") << name;
+
+    if (parameters)
+    {
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+        parameters->formatImpl(settings, state, nested_dont_need_parens);
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+    }
+
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+
+    if (arguments)
+    {
+        bool special_hilite_regexp = settings.hilite
+            && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
+                || name == "replaceRegexpAll");
+
+        for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
+        {
+            if (i != 0)
+                settings.ostr << ", ";
+
+            bool special_hilite = false;
+            if (i == 1 && special_hilite_regexp)
+                special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
+
+            if (!special_hilite)
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+        }
+    }
+
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+
+    settings.ostr << (settings.hilite ? hilite_none : "");
+
+    if (!is_window_function)
+    {
+        return;
+    }
+
+    settings.ostr << " OVER (";
+    appendWindowDescription(settings, state, nested_dont_need_parens);
+    settings.ostr << ")";
+}
+
+std::string ASTFunction::getWindowDescription() const
+{
+    WriteBufferFromOwnString ostr;
+    FormatSettings settings{ostr, true /* one_line */};
+    FormatState state;
+    FormatStateStacked frame;
+    appendWindowDescription(settings, state, frame);
+    return ostr.str();
+}
+
+void ASTFunction::appendWindowDescription(const FormatSettings & settings,
+    FormatState & state, FormatStateStacked frame) const
+{
+    if (!is_window_function)
+    {
+        return;
+    }
+
+    if (window_partition_by)
+    {
+        settings.ostr << "PARTITION BY ";
+        window_partition_by->formatImpl(settings, state, frame);
+    }
+
+    if (window_partition_by && window_order_by)
+    {
+        settings.ostr << " ";
+    }
+
+    if (window_order_by)
+    {
+        settings.ostr << "ORDER BY ";
+        window_order_by->formatImpl(settings, state, frame);
     }
 }
 

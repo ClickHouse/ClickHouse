@@ -1,7 +1,7 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS db_01115;
-CREATE DATABASE db_01115 Engine = Ordinary;
+CREATE DATABASE db_01115;
 
 USE db_01115;
 
@@ -14,19 +14,19 @@ INSERT INTO t1 SELECT number, number, toString(number), number from numbers(4);
 
 CREATE DICTIONARY dict_flat (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 't1' PASSWORD '' DB 'db_01115'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' PASSWORD '' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
 CREATE DICTIONARY db_01115.dict_hashed (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 't1' DB 'db_01115'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
 CREATE DICTIONARY dict_complex_cache (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key, b
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 't1' DB 'db_01115'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1));
 

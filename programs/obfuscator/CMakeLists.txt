@@ -1,5 +1,9 @@
-set(CLICKHOUSE_OBFUSCATOR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/Obfuscator.cpp)
-set(CLICKHOUSE_OBFUSCATOR_LINK PRIVATE dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
-#set(CLICKHOUSE_OBFUSCATOR_INCLUDE SYSTEM PRIVATE ...)
+set (CLICKHOUSE_OBFUSCATOR_SOURCES Obfuscator.cpp)
+
+set (CLICKHOUSE_OBFUSCATOR_LINK
+    PRIVATE
+        boost::program_options
+        dbms
+)
 
 clickhouse_program_add(obfuscator)

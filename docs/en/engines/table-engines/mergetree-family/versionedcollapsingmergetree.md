@@ -12,7 +12,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table {#creating-a-table}
 
@@ -29,7 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see the [query description](../../../sql-reference/statements/create.md).
+For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
 **Engine Parameters**
 
@@ -47,7 +47,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 **Query Clauses**
 
-When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md) are required as when creating a `MergeTree` table.
+When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -121,7 +121,7 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 
 **Notes on Usage**
 
-1.  The program that writes the data should remember the state of an object in order to cancel it. The “cancel” string should be a copy of the “state” string with the opposite `Sign`. This increases the initial size of storage but allows to write the data quickly.
+1.  The program that writes the data should remember the state of an object to be able to cancel it. “Cancel” string should contain copies of the primary key fields and the version of the “state” string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 

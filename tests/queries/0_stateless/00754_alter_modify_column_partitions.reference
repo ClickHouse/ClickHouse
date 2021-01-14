@@ -1,5 +1,5 @@
 *** Check SHOW CREATE TABLE ***
-CREATE TABLE default.alter_column\n(\n    `x` UInt32, \n    `y` Int32\n)\nENGINE = MergeTree\nPARTITION BY x\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_column\n(\n    `x` UInt32,\n    `y` Int32\n)\nENGINE = MergeTree\nPARTITION BY x\nORDER BY x\nSETTINGS index_granularity = 8192
 *** Check parts ***
 0	0
 10	-10
@@ -52,7 +52,7 @@ CREATE TABLE default.alter_column\n(\n    `x` UInt32, \n    `y` Int32\n)\nENGINE
 8	-8
 9	-9
 *** Check SHOW CREATE TABLE after ALTER MODIFY ***
-CREATE TABLE default.alter_column\n(\n    `x` UInt32, \n    `y` Int64\n)\nENGINE = MergeTree\nPARTITION BY x\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_column\n(\n    `x` UInt32,\n    `y` Int64\n)\nENGINE = MergeTree\nPARTITION BY x\nORDER BY x\nSETTINGS index_granularity = 8192
 *** Check parts after ALTER MODIFY ***
 0	0
 10	-10

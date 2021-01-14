@@ -10,7 +10,9 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -31,6 +33,7 @@ Block PartLogElement::createBlock()
 
     return
     {
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "query_id"},
         {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
         {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
         {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
@@ -58,12 +61,11 @@ Block PartLogElement::createBlock()
     };
 }
 
-void PartLogElement::appendToBlock(Block & block) const
+void PartLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
+    columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
@@ -92,8 +94,6 @@ void PartLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
-
-    block.setColumns(std::move(columns));
 }
 
 
@@ -117,9 +117,14 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
         if (!part_log)
             return false;
 
+        auto query_id = CurrentThread::getQueryId();
+
         for (const auto & part : parts)
         {
             PartLogElement elem;
+
+            if (query_id.data && query_id.size)
+                elem.query_id.insert(0, query_id.data, query_id.size);
 
             elem.event_type = PartLogElement::NEW_PART;
             elem.event_time = time(nullptr);
@@ -142,7 +147,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
     }
     catch (...)
     {
-        tryLogCurrentException(part_log ? part_log->log : &Logger::get("PartLog"), __PRETTY_FUNCTION__);
+        tryLogCurrentException(part_log ? part_log->log : &Poco::Logger::get("PartLog"), __PRETTY_FUNCTION__);
         return false;
     }
 

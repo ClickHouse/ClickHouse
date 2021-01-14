@@ -7,7 +7,7 @@ toc_title: TinyLog
 
 # TinyLog {#tinylog}
 
-Le moteur appartient à la famille de moteurs en rondins. Voir [Famille De Moteurs En Rondins](log-family.md) pour les propriétés communes des moteurs en rondins et leurs différences.
+Le moteur appartient à la famille de moteurs en rondins. Voir [Famille De Moteurs En Rondins](index.md) pour les propriétés communes des moteurs en rondins et leurs différences.
 
 Ce moteur de table est généralement utilisé avec la méthode write-once: écrivez des données une fois, puis lisez-les autant de fois que nécessaire. Par exemple, vous pouvez utiliser `TinyLog`- tapez des tables pour les données intermédiaires qui sont traitées en petits lots. Notez que le stockage des données dans un grand nombre de petites tables est inefficace.
 

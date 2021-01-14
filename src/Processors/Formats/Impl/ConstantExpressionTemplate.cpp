@@ -1,13 +1,22 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -17,7 +26,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Interpreters/convertFieldToType.h>
 #include <boost/functional/hash.hpp>
 
 
@@ -40,6 +48,7 @@ struct SpecialParserType
     bool is_nullable = false;
     bool is_array = false;
     bool is_tuple = false;
+    bool is_map = false;
     /// Type and nullability
     std::vector<std::pair<Field::Types::Which, bool>> nested_types;
 
@@ -73,7 +82,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     size_t elements_num = nested_types.size();
     info.special_parser.nested_types.reserve(elements_num);
 
-    for (auto nested_type : nested_types)
+    for (auto & nested_type : nested_types)
     {
         /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
         bool is_nullable = false;
@@ -112,6 +121,10 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         else if (type_info.isTuple())
         {
             field_type = Field::Types::Tuple;
+        }
+        else if (type_info.isMap())
+        {
+            field_type = Field::Types::Map;
         }
         else
             throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
@@ -190,6 +203,13 @@ private:
                 if (not_null == array.end())
                     return true;
             }
+            else if (literal->value.getType() == Field::Types::Map)
+            {
+                const Map & map = literal->value.get<Map>();
+                if (map.size() % 2)
+                    return false;
+            }
+
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
@@ -200,7 +220,10 @@ private:
 
     static void setDataType(LiteralInfo & info)
     {
-        /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
+        /// Type (Field::Types:Which) of literal in AST can be:
+        /// 1. simple literal type: String, UInt64, Int64, Float64, Null
+        /// 2. complex literal type: Array or Tuple of simple literals
+        /// 3. Array or Tuple of complex literals
         /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
 
         Field::Types::Which field_type = info.literal->value.getType();
@@ -233,6 +256,15 @@ private:
             auto nested_types = assert_cast<const DataTypeTuple &>(*info.type).getElements();
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeTuple>(nested_types);
+        }
+        else if (field_type == Field::Types::Map)
+        {
+            info.special_parser.is_map = true;
+
+            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
+            fillLiteralInfo(nested_types, info);
+            info.type = std::make_shared<DataTypeMap>(nested_types);
         }
         else
             throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
@@ -294,7 +326,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
     addNodesToCastResult(result_type, expression, null_as_default);
 
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression, literals.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(expression, literals.getNamesAndTypesList());
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
 }
@@ -444,17 +476,19 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     /// If literal does not fit entirely in the buffer, parsing error will happen.
     /// However, it's possible to deduce new template (or use template from cache) after error like it was template mismatch.
 
-    if (type_info.is_array || type_info.is_tuple)
+    if (type_info.is_array || type_info.is_tuple || type_info.is_map)
     {
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
+        ParserMapOfLiterals parser_map;
 
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected)
+            && !parser_map.parse(iterator, ast, expected))
             return false;
 
         istr.position() = const_cast<char *>(iterator->begin);
@@ -465,8 +499,10 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         DataTypes nested_types;
         if (type_info.is_array)
             nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
-        else
+        else if (type_info.is_tuple)
             nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
+        else
+            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
@@ -590,7 +626,7 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
         expr = makeASTFunction("assumeNotNull", std::move(expr));
     }
 
-    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    expr = makeASTFunction("cast", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
 
     if (null_as_default)
     {

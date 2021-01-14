@@ -1,20 +1,18 @@
 #include "CompressedReadBufferBase.h"
 
-#include <vector>
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/hex.h>
-#include <common/unaligned.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -45,35 +43,49 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     if (expected_checksum == calculated_checksum)
         return;
 
-    std::stringstream message;
+    WriteBufferFromOwnString message;
 
-    /// TODO mess up of endianess in error message.
+    /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
         " Reference: " + getHexUIntLowercase(expected_checksum.first) + getHexUIntLowercase(expected_checksum.second)
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
         + ". Size of compressed block: " + toString(size);
 
-    const char * message_hardware_failure = "This is most likely due to hardware failure. If you receive broken data over network and the error does not repeat every time, this can be caused by bad RAM on network interface controller or bad controller itself or bad RAM on network switches or bad CPU on network switches (look at the logs on related network switches; note that TCP checksums don't help) or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail if the number of errors is huge) or bad CPU on host. If you read data from disk, this can be caused by disk bit rott. This exception protects ClickHouse from data corruption due to hardware failures.";
+    const char * message_hardware_failure = "This is most likely due to hardware failure. "
+                                            "If you receive broken data over network and the error does not repeat every time, "
+                                            "this can be caused by bad RAM on network interface controller or bad controller itself "
+                                            "or bad RAM on network switches or bad CPU on network switches "
+                                            "(look at the logs on related network switches; note that TCP checksums don't help) "
+                                            "or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, "
+                                            "ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail "
+                                            "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
+                                            "this can be caused by disk bit rott. This exception protects ClickHouse "
+                                            "from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
     {
         buf[pos / 8] ^= 1 << pos % 8;
     };
 
-    /// Check if the difference caused by single bit flip in data.
-    for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
+    /// If size is too huge, then this may be caused by corruption.
+    /// And anyway this is pretty heavy, so avoid burning too much CPU here.
+    if (size < (1ULL << 20))
     {
-        flip_bit(data, bit_pos);
-
-        auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
-        if (expected_checksum == checksum_of_data_with_flipped_bit)
+        /// Check if the difference caused by single bit flip in data.
+        for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
         {
-            message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
-                << message_hardware_failure;
-            throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
-        }
+            flip_bit(data, bit_pos);
 
-        flip_bit(data, bit_pos);    /// Restore
+            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+            if (expected_checksum == checksum_of_data_with_flipped_bit)
+            {
+                message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
+                    << message_hardware_failure;
+                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            }
+
+            flip_bit(data, bit_pos);    /// Restore
+        }
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
@@ -108,13 +120,24 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
+    {
         codec = CompressionCodecFactory::instance().get(method);
+    }
     else if (method != codec->getMethodByte())
-        throw Exception("Data compressed with different methods, given method byte 0x"
-                        + getHexUIntLowercase(method)
-                        + ", previous method byte 0x"
-                        + getHexUIntLowercase(codec->getMethodByte()),
-                        ErrorCodes::CANNOT_DECOMPRESS);
+    {
+        if (allow_different_codecs)
+        {
+            codec = CompressionCodecFactory::instance().get(method);
+        }
+        else
+        {
+            throw Exception("Data compressed with different methods, given method byte 0x"
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte 0x"
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
+        }
+    }
 
     size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
     size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
@@ -166,21 +189,32 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
+    {
         codec = CompressionCodecFactory::instance().get(method);
+    }
     else if (codec->getMethodByte() != method)
-        throw Exception("Data compressed with different methods, given method byte "
-                        + getHexUIntLowercase(method)
-                        + ", previous method byte "
-                        + getHexUIntLowercase(codec->getMethodByte()),
-                        ErrorCodes::CANNOT_DECOMPRESS);
+    {
+        if (allow_different_codecs)
+        {
+            codec = CompressionCodecFactory::instance().get(method);
+        }
+        else
+        {
+            throw Exception("Data compressed with different methods, given method byte 0x"
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte 0x"
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
+        }
+    }
 
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
 
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in)
-    : compressed_in(in), own_compressed_buffer(0)
+CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_)
+    : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_)
 {
 }
 

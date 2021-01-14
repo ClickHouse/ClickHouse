@@ -12,7 +12,7 @@ class ReadBuffer;
 class MarkdownRowOutputFormat : public IRowOutputFormat
 {
 public:
-    MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_);
+    MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
 
     /// Write higher part of markdown table like this:
     /// |columnName1|columnName2|...|columnNameN|

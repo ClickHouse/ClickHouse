@@ -16,12 +16,15 @@ By default `clickhouse-local` does not have access to data on the same host, but
 !!! warning "Warning"
     It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
 
+For temporary data, a unique temporary data directory is created by default. If you want to override this behavior, the data directory can be explicitly specified with the `-- --path` option.
+
 ## Usage {#usage}
 
 Basic usage:
 
 ``` bash
-$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" -q "query"
+$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" \
+    --query "query"
 ```
 
 Arguments:
@@ -29,7 +32,8 @@ Arguments:
 -   `-S`, `--structure` — table structure for input data.
 -   `-if`, `--input-format` — input format, `TSV` by default.
 -   `-f`, `--file` — path to data, `stdin` by default.
--   `-q` `--query` — queries to execute with `;` as delimeter.
+-   `-q` `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
+-   `-qf` `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `-N`, `--table` — table name where to put output data, `table` by default.
 -   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
 -   `--stacktrace` — whether to dump debug output in case of exception.
@@ -40,10 +44,12 @@ Arguments:
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
+
 ## Examples {#examples}
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" -if "CSV" -q "SELECT * FROM table"
+$ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
+    --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 1   2
 3   4
@@ -52,16 +58,37 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 Previous example is the same as:
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+$ echo -e "1,2\n3,4" | clickhouse-local --query "
+    CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
+    SELECT a, b FROM table;
+    DROP TABLE table"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 1   2
 3   4
 ```
 
+You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
+
+``` bash
+$ echo 1 | tee 1.tsv
+1
+
+$ echo 2 | tee 2.tsv
+2
+
+$ clickhouse-local --query "
+    select * from file('1.tsv', TSV, 'a int') t1
+    cross join file('2.tsv', TSV, 'b int') t2"
+1	2
+```
+
 Now let’s output memory user for each Unix user:
 
 ``` bash
-$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' | clickhouse-local -S "user String, mem Float64" -q "SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
+$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
+    | clickhouse-local --structure "user String, mem Float64" \
+        --query "SELECT user, round(sum(mem), 2) as memTotal
+            FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
 
 ``` text

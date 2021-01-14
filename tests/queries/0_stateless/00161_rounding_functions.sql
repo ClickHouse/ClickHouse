@@ -44,4 +44,4 @@ SELECT 12345.6789 AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), 
 SELECT roundToExp2(100), roundToExp2(64), roundToExp2(3), roundToExp2(0), roundToExp2(-1);
 SELECT roundToExp2(0.9), roundToExp2(0), roundToExp2(-0.5), roundToExp2(-0.6), roundToExp2(-0.2);
 
-SELECT ceil(29375422, -54212) --{serverError 36}
+SELECT ceil(29375422, -54212) --{serverError 69}

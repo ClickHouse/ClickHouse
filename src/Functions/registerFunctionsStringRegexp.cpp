@@ -4,7 +4,9 @@ namespace DB
 class FunctionFactory;
 
 void registerFunctionLike(FunctionFactory &);
+void registerFunctionILike(FunctionFactory &);
 void registerFunctionNotLike(FunctionFactory &);
+void registerFunctionNotILike(FunctionFactory &);
 void registerFunctionMatch(FunctionFactory &);
 void registerFunctionExtract(FunctionFactory &);
 void registerFunctionReplaceOne(FunctionFactory &);
@@ -18,12 +20,15 @@ void registerFunctionMultiFuzzyMatchAny(FunctionFactory &);
 void registerFunctionMultiFuzzyMatchAnyIndex(FunctionFactory &);
 void registerFunctionMultiFuzzyMatchAllIndices(FunctionFactory &);
 void registerFunctionExtractGroups(FunctionFactory &);
-void registerFunctionExtractAllGroups(FunctionFactory &);
+void registerFunctionExtractAllGroupsVertical(FunctionFactory &);
+void registerFunctionExtractAllGroupsHorizontal(FunctionFactory &);
 
 void registerFunctionsStringRegexp(FunctionFactory & factory)
 {
     registerFunctionLike(factory);
+    registerFunctionILike(factory);
     registerFunctionNotLike(factory);
+    registerFunctionNotILike(factory);
     registerFunctionMatch(factory);
     registerFunctionExtract(factory);
     registerFunctionReplaceOne(factory);
@@ -37,8 +42,7 @@ void registerFunctionsStringRegexp(FunctionFactory & factory)
     registerFunctionMultiFuzzyMatchAnyIndex(factory);
     registerFunctionMultiFuzzyMatchAllIndices(factory);
     registerFunctionExtractGroups(factory);
-    registerFunctionExtractAllGroups(factory);
+    registerFunctionExtractAllGroupsVertical(factory);
+    registerFunctionExtractAllGroupsHorizontal(factory);
 }
-
 }
-

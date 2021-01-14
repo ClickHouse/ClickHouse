@@ -5,6 +5,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -84,9 +85,37 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING(&Logger::get("ProcessList"), "Too many simultaneous queries, will wait " << queue_max_wait_ms << " ms.");
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+
+        {
+            /**
+             * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
+             * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
+             * hard limit is reached it is impossible to connect to the server to run queries for investigation.
+             *
+             * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
+             * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
+             * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
+             * the default profile (or 0 for unlimited).
+             *
+             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+             * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
+             * exporters).
+             *
+             * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
+             * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
+             * once is already processing 50+ concurrent queries (including analysts or any other users).
+             */
+
+            if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
+                && processes.size() >= settings.max_concurrent_queries_for_all_users)
+                throw Exception(
+                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
+                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
+                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
         /** Why we use current user?
@@ -173,6 +202,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             thread_group->query = process_it->query;
+            thread_group->normalized_query_hash = normalizedQueryHash(process_it->query);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
@@ -231,7 +261,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -250,7 +280,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
     parent.have_space.notify_all();
@@ -401,7 +431,7 @@ void ProcessList::killAllQueries()
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
-    QueryStatusInfo res;
+    QueryStatusInfo res{};
 
     res.query             = query;
     res.client_info       = client_info;
@@ -431,7 +461,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     }
 
     if (get_settings && query_context)
-        res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
+        res.query_settings = std::make_shared<Settings>(query_context->getSettings());
 
     return res;
 }

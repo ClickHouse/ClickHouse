@@ -1,6 +1,5 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -29,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -49,7 +49,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (table_expr.database_and_table_name)
     {
         const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
+        String expr = "(select * from " + table_id.name() + ") as " + table_id.shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
@@ -59,19 +59,6 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
             ParserTableExpression parser;
             table_expr = parseQuery(parser, expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
         }
-    }
-}
-
-template <typename T>
-void checkTablesWithColumns(const std::vector<T> & tables_with_columns, const Context & context)
-{
-    const auto & settings = context.getSettingsRef();
-    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
-    {
-        for (auto & t : tables_with_columns)
-            if (t.table.table.empty() && t.table.alias.empty())
-                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction).",
-                                ErrorCodes::ALIAS_REQUIRED);
     }
 }
 
@@ -112,7 +99,7 @@ private:
                 match == IdentifierSemantic::ColumnMatch::DbAndTable)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name + "'",
+                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name() + "'",
                                     ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 /// Table has an alias. So we set a new name qualified by table alias.
                 IdentifierSemantic::setColumnLongName(identifier, table);
@@ -127,10 +114,10 @@ private:
         bool rewritten = false;
         for (const auto & table : data)
         {
-            if (identifier.name == table.table)
+            if (identifier.name() == table.table)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.name + "'",
+                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.name() + "'",
                                     ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 identifier.setShortName(table.alias);
                 rewritten = true;
@@ -174,6 +161,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     if (isLeftTableFunction())
         return context.getQueryContext().executeTableFunction(left_table_expression);
 
+    StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
     {
         table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
@@ -195,22 +183,38 @@ StoragePtr JoinedTables::getLeftTableStorage()
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return DatabaseCatalog::instance().getTable(table_id);
+    return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
 bool JoinedTables::resolveTables()
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-    checkTablesWithColumns(tables_with_columns, context);
+    if (tables_with_columns.size() != table_expressions.size())
+        throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & settings = context.getSettingsRef();
+    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
+    {
+        for (size_t i = 0; i < tables_with_columns.size(); ++i)
+        {
+            const auto & t = tables_with_columns[i];
+            if (t.table.table.empty() && t.table.alias.empty())
+            {
+                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction). While processing '"
+                    + table_expressions[i]->formatForErrorMessage() + "'",
+                    ErrorCodes::ALIAS_REQUIRED);
+            }
+        }
+    }
 
     return !tables_with_columns.empty();
 }
 
-void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header)
+void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header)
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = storage->getColumns();
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
@@ -260,7 +264,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context.resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (table)
         {
             if (dynamic_cast<StorageJoin *>(table.get()) ||

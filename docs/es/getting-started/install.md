@@ -9,9 +9,9 @@ toc_title: "Instalaci\xF3n"
 
 ## Requisitos del sistema {#system-requirements}
 
-ClickHouse puede ejecutarse en cualquier Linux, FreeBSD o Mac OS X con arquitectura de CPU x86\_64, AArch64 o PowerPC64LE.
+ClickHouse puede ejecutarse en cualquier Linux, FreeBSD o Mac OS X con arquitectura de CPU x86_64, AArch64 o PowerPC64LE.
 
-Los binarios oficiales preconstruidos generalmente se compilan para x86\_64 y aprovechan el conjunto de instrucciones SSE 4.2, por lo que, a menos que se indique lo contrario, el uso de la CPU que lo admite se convierte en un requisito adicional del sistema. Aquí está el comando para verificar si la CPU actual tiene soporte para SSE 4.2:
+Los binarios oficiales preconstruidos generalmente se compilan para x86_64 y aprovechan el conjunto de instrucciones SSE 4.2, por lo que, a menos que se indique lo contrario, el uso de la CPU que lo admite se convierte en un requisito adicional del sistema. Aquí está el comando para verificar si la CPU actual tiene soporte para SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -66,7 +66,7 @@ También puede descargar e instalar paquetes manualmente desde [aqui](https://re
 
 Se recomienda utilizar pre-compilado oficial `tgz` para todas las distribuciones de Linux, donde la instalación de `deb` o `rpm` paquetes no es posible.
 
-La versión requerida se puede descargar con `curl` o `wget` desde el repositorio https://repo.yandex.ru/clickhouse/tgz/.
+La versión requerida se puede descargar con `curl` o `wget` desde el repositorio https://repo.clickhouse.tech/tgz/.
 Después de eso, los archivos descargados deben desempaquetarse e instalarse con scripts de instalación. Ejemplo para la última versión:
 
 ``` bash

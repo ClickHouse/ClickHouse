@@ -4,6 +4,8 @@
 #include <ctime>
 #include <vector>
 #include <functional>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -40,27 +42,30 @@ public:
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
         const void * data;
 
-        /// Minimal time, when we need to delete some data from this part.
-        time_t min_ttl;
+        /// Information about different TTLs for part. Can be used by
+        /// TTLSelector to assign merges with TTL.
+        const MergeTreeDataPartTTLInfos * ttl_infos = nullptr;
 
-        /// Maximum time, when we will need to drop this part altogether because all rows in it are expired.
-        time_t max_ttl;
+        /// Part compression codec definition.
+        ASTPtr compression_codec_desc;
+
+        bool shall_participate_in_merges = true;
     };
 
     /// Parts are belong to partitions. Only parts within same partition could be merged.
-    using PartsInPartition = std::vector<Part>;
+    using PartsRange = std::vector<Part>;
 
     /// Parts are in some specific order. Parts could be merged only in contiguous ranges.
-    using Partitions = std::vector<PartsInPartition>;
+    using PartsRanges = std::vector<PartsRange>;
 
     /** Function could be called at any frequency and it must decide, should you do any merge at all.
       * If better not to do any merge, it returns empty result.
       */
-    virtual PartsInPartition select(
-        const Partitions & partitions,
+    virtual PartsRange select(
+        const PartsRanges & parts_ranges,
         const size_t max_total_size_to_merge) = 0;
 
-    virtual ~IMergeSelector() {}
+    virtual ~IMergeSelector() = default;
 };
 
 }

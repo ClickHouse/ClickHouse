@@ -3,6 +3,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct ExpName { static constexpr auto name = "exp"; };
 
@@ -29,6 +31,8 @@ using FunctionExp = FunctionMathUnary<Impl>;
 #else
 using FunctionExp = FunctionMathUnary<UnaryFunctionVectorized<ExpName, exp>>;
 #endif
+
+}
 
 void registerFunctionExp(FunctionFactory & factory)
 {

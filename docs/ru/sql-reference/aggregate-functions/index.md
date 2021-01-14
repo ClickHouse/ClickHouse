@@ -44,8 +44,6 @@ SELECT sum(y) FROM t_null_big
 └────────┘
 ```
 
-Функция `sum` работает с `NULL` как с `0`. В частности, это означает, что если на вход в функцию подать выборку, где все значения `NULL`, то результат будет `0`, а не `NULL`.
-
 Теперь с помощью функции `groupArray` сформируем массив из столбца `y`:
 
 ``` sql
@@ -60,4 +58,4 @@ SELECT groupArray(y) FROM t_null_big
 
 `groupArray` не включает `NULL` в результирующий массив.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/) <!--hide-->

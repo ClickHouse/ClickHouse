@@ -2,27 +2,24 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <iostream>
 
 #include <Common/PODArray.h>
-#include <Columns/ColumnArray.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
-    namespace ErrorCodes
-    {
-        extern const int BAD_ARGUMENTS;
-        extern const int ILLEGAL_COLUMN;
-        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    }
-
+namespace
+{
 
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -65,12 +62,12 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto * model = block.getByPosition(arguments[0]).column.get();
+        const auto * model = arguments[0].column.get();
 
         if (const auto * column_with_states = typeid_cast<const ColumnConst *>(model))
             model = column_with_states->getDataColumnPtr().get();
@@ -78,14 +75,16 @@ public:
         const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(model);
 
         if (!agg_function)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
+        return agg_function->predictValues(arguments, context);
     }
 
     const Context & context;
 };
+
+}
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {

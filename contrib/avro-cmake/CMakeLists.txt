@@ -45,13 +45,12 @@ set_target_properties (avrocpp PROPERTIES VERSION ${AVRO_VERSION_MAJOR}.${AVRO_V
 
 target_include_directories(avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
 
-target_include_directories(avrocpp SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
-target_link_libraries (avrocpp ${Boost_IOSTREAMS_LIBRARY})
+target_link_libraries (avrocpp PRIVATE boost::headers_only boost::iostreams)
 
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
     target_compile_definitions (avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
     target_include_directories (avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
-    target_link_libraries (avrocpp ${SNAPPY_LIBRARY})
+    target_link_libraries (avrocpp PRIVATE ${SNAPPY_LIBRARY})
 endif ()
 
 if (COMPILER_GCC)

@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <common/find_symbols.h>
+#include <common/logger_useful.h>
 
 #include <cassert>
 #include <sys/types.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
@@ -37,6 +39,20 @@ namespace
     throwFromErrno(
             "Cannot open file " + filename,
             errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+}
+
+inline void emitErrorMsgWithFailedToCloseFile(const std::string & filename)
+{
+    try
+    {
+        throwFromErrno(
+                "File descriptor for \"" + filename + "\" could not be closed. "
+                "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
+    }
+    catch (const ErrnoException &)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_size)
@@ -100,11 +116,11 @@ ProcfsMetricsProvider::ProcfsMetricsProvider(const pid_t /*tid*/)
 ProcfsMetricsProvider::~ProcfsMetricsProvider()
 {
     if (stats_version >= 3 && 0 != ::close(thread_io_fd))
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        emitErrorMsgWithFailedToCloseFile(thread_io);
     if (0 != ::close(thread_stat_fd))
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        emitErrorMsgWithFailedToCloseFile(thread_stat);
     if (0 != ::close(thread_schedstat_fd))
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        emitErrorMsgWithFailedToCloseFile(thread_schedstat);
 }
 
 

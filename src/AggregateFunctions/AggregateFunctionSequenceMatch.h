@@ -261,7 +261,7 @@ private:
                     if (actions.back().type != PatternActionType::SpecificEvent &&
                         actions.back().type != PatternActionType::AnyEvent &&
                         actions.back().type != PatternActionType::KleeneStar)
-                        throw Exception{"Temporal condition should be preceeded by an event condition", ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception{"Temporal condition should be preceded by an event condition", ErrorCodes::BAD_ARGUMENTS};
 
                     pattern_has_time = true;
                     actions.emplace_back(type, duration);
@@ -560,7 +560,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         this->data(place).sort();
 
@@ -588,9 +588,9 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        const_cast<Data &>(this->data(place)).sort();
+        this->data(place).sort();
         assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 

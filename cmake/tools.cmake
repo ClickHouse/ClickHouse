@@ -22,13 +22,13 @@ elseif (COMPILER_CLANG)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "AppleClang compiler version must be at least ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
         elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0)
-            # char8_t is available staring (upstream vanilla) Clang 7, but prior to Clang 8,
+            # char8_t is available starting (upstream vanilla) Clang 7, but prior to Clang 8,
             # it is not enabled by -std=c++20 and can be enabled with an explicit -fchar8_t.
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
         endif ()
     else ()
-        set (CLANG_MINIMUM_VERSION 8)
+        set (CLANG_MINIMUM_VERSION 9)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
         endif ()
@@ -40,26 +40,26 @@ endif ()
 STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
+# Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
-if (COMPILER_GCC)
+
+if (COMPILER_GCC AND NOT LINKER_NAME)
     find_program (LLD_PATH NAMES "ld.lld")
     find_program (GOLD_PATH NAMES "ld.gold")
-else ()
+elseif (NOT LINKER_NAME)
     find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
     find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif ()
 
-if (OS_LINUX)
+if (OS_LINUX AND NOT LINKER_NAME)
     # We prefer LLD linker over Gold or BFD on Linux.
-    if (NOT LINKER_NAME)
-        if (LLD_PATH)
-            if (COMPILER_GCC)
-                # GCC driver requires one of supported linker names like "lld".
-                set (LINKER_NAME "lld")
-            else ()
-                # Clang driver simply allows full linker path.
-                set (LINKER_NAME ${LLD_PATH})
-            endif ()
+    if (LLD_PATH)
+        if (COMPILER_GCC)
+            # GCC driver requires one of supported linker names like "lld".
+            set (LINKER_NAME "lld")
+        else ()
+            # Clang driver simply allows full linker path.
+            set (LINKER_NAME ${LLD_PATH})
         endif ()
     endif ()
 
@@ -79,4 +79,10 @@ if (LINKER_NAME)
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
+endif ()
+
+if (ARCH_PPC64LE)
+    if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
+        message(FATAL_ERROR "Only gcc-8 or higher is supported for powerpc architecture")
+    endif ()
 endif ()

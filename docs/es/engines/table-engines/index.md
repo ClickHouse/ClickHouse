@@ -62,7 +62,7 @@ Motores en la familia:
 -   [Distribuido](special/distributed.md#distributed)
 -   [Método de codificación de datos:](special/materializedview.md#materializedview)
 -   [Diccionario](special/dictionary.md#dictionary)
--   \[Fusión\](special/merge.md\#merge
+-   \[Fusión\](special/merge.md#merge
 -   [File](special/file.md#file)
 -   [Nulo](special/null.md#null)
 -   [Establecer](special/set.md#set)

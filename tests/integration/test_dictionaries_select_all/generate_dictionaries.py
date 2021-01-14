@@ -1,6 +1,6 @@
-import os
-import glob
 import difflib
+import os
+from functools import reduce
 
 files = ['key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv']
 
@@ -11,7 +11,6 @@ types = [
     'String',
     'Date', 'DateTime'
 ]
-
 
 implicit_defaults = [
     '1', '1', '1', '',
@@ -80,8 +79,9 @@ def generate_dictionaries(path, structure):
     '''
 
     dictionary_skeleton = \
-        dictionary_skeleton % reduce(lambda xml, (type, default): xml + attribute_skeleton % (type, type, default),
-                                     zip(types, implicit_defaults), '')
+        dictionary_skeleton % reduce(
+            lambda xml, type_default: xml + attribute_skeleton % (type_default[0], type_default[0], type_default[1]),
+            list(zip(types, implicit_defaults)), '')
 
     source_clickhouse = '''
     <clickhouse>
@@ -197,7 +197,7 @@ class DictionaryTestTable:
                     String_ String,
                     Date_ Date, DateTime_ DateTime, Parent UInt64'''
 
-        self.names_and_types = map(str.split, self.structure.split(','))
+        self.names_and_types = list(map(str.split, self.structure.split(',')))
         self.keys_names_and_types = self.names_and_types[:6]
         self.values_names_and_types = self.names_and_types[6:]
         self.source_file_name = source_file_name
@@ -225,10 +225,10 @@ class DictionaryTestTable:
         def make_tuple(line):
             row = tuple(line.split('\t'))
             self.rows.append(row)
-            return '(' + ','.join(map(wrap_value, zip(row, types))) + ')'
+            return '(' + ','.join(map(wrap_value, list(zip(row, types)))) + ')'
 
         values = ','.join(map(make_tuple, lines))
-        print query % (self.structure, values)
+        print(query % (self.structure, values))
         instance.query(query % (self.structure, values))
 
     def get_structure_for_keys(self, keys, enable_parent=True):
@@ -247,7 +247,7 @@ class DictionaryTestTable:
         for row in rows:
             key = '\t'.join(row[:len(keys)])
             value = '\t'.join(row[len(keys):])
-            if key in lines_map.keys():
+            if key in list(lines_map.keys()):
                 pattern_value = lines_map[key]
                 del lines_map[key]
                 if not value == pattern_value:
@@ -258,7 +258,7 @@ class DictionaryTestTable:
                 diff.append((key + '\t' + value, ''))
 
         if add_not_found_rows:
-            for key, value in lines_map.items():
+            for key, value in list(lines_map.items()):
                 diff.append(('', key + '\t' + value))
 
         if not diff:

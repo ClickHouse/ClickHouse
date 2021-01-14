@@ -1,0 +1,124 @@
+DROP TABLE IF EXISTS tMM;
+DROP TABLE IF EXISTS tDD;
+DROP TABLE IF EXISTS sDD;
+DROP TABLE IF EXISTS xMM;
+CREATE TABLE tMM(d DateTime,a Int64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY tuple() SETTINGS index_granularity = 8192;
+SYSTEM STOP MERGES tMM;
+INSERT INTO tMM SELECT toDateTime('2020-08-16 00:00:00') + number*60, number FROM numbers(5000);
+INSERT INTO tMM SELECT toDateTime('2020-08-16 00:00:00') + number*60, number FROM numbers(5000);
+INSERT INTO tMM SELECT toDateTime('2020-09-01 00:00:00') + number*60, number FROM numbers(5000);
+INSERT INTO tMM SELECT toDateTime('2020-09-01 00:00:00') + number*60, number FROM numbers(5000);
+INSERT INTO tMM SELECT toDateTime('2020-10-01 00:00:00') + number*60, number FROM numbers(5000);
+INSERT INTO tMM SELECT toDateTime('2020-10-15 00:00:00') + number*60, number FROM numbers(5000);
+
+CREATE TABLE tDD(d DateTime,a Int) ENGINE = MergeTree PARTITION BY toYYYYMMDD(d) ORDER BY tuple() SETTINGS index_granularity = 8192;
+SYSTEM STOP MERGES tDD;
+insert into tDD select toDateTime(toDate('2020-09-23')), number from numbers(10000) UNION ALL select toDateTime(toDateTime('2020-09-23 11:00:00')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-09-24')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-09-25')), number from numbers(10000) UNION ALL select toDateTime(toDate('2020-08-15')), number from numbers(10000);
+
+CREATE TABLE sDD(d UInt64,a Int) ENGINE = MergeTree PARTITION BY toYYYYMM(toDate(intDiv(d,1000))) ORDER BY tuple() SETTINGS index_granularity = 8192;
+SYSTEM STOP MERGES sDD;
+insert into sDD select (1597536000+number*60)*1000, number from numbers(5000);
+insert into sDD select (1597536000+number*60)*1000, number from numbers(5000);
+insert into sDD select (1598918400+number*60)*1000, number from numbers(5000);
+insert into sDD select (1598918400+number*60)*1000, number from numbers(5000);
+insert into sDD select (1601510400+number*60)*1000, number from numbers(5000);
+insert into sDD select (1602720000+number*60)*1000, number from numbers(5000);
+
+CREATE TABLE xMM(d DateTime,a Int64, f Int64) ENGINE = MergeTree PARTITION BY (toYYYYMM(d), a) ORDER BY tuple() SETTINGS index_granularity = 8192;
+SYSTEM STOP MERGES xMM;
+INSERT INTO xMM SELECT toDateTime('2020-08-16 00:00:00') + number*60, 1, number FROM numbers(5000);
+INSERT INTO xMM SELECT toDateTime('2020-08-16 00:00:00') + number*60, 2, number FROM numbers(5000);
+INSERT INTO xMM SELECT toDateTime('2020-09-01 00:00:00') + number*60, 3, number FROM numbers(5000);
+INSERT INTO xMM SELECT toDateTime('2020-09-01 00:00:00') + number*60, 2, number FROM numbers(5000);
+INSERT INTO xMM SELECT toDateTime('2020-10-01 00:00:00') + number*60, 1, number FROM numbers(5000);
+INSERT INTO xMM SELECT toDateTime('2020-10-15 00:00:00') + number*60, 1, number FROM numbers(5000);
+
+
+SELECT '--------- tMM ----------------------------';
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-09-15');
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-09-01');
+select uniqExact(_part), count() from tMM where toDate(d)=toDate('2020-10-15');
+select uniqExact(_part), count() from tMM where toDate(d)='2020-09-15';
+select uniqExact(_part), count() from tMM where toYYYYMM(d)=202009;
+select uniqExact(_part), count() from tMM where toYYYYMMDD(d)=20200816;
+select uniqExact(_part), count() from tMM where toYYYYMMDD(d)=20201015;
+select uniqExact(_part), count() from tMM where toDate(d)='2020-10-15';
+select uniqExact(_part), count() from tMM where d >= '2020-09-01 00:00:00' and d<'2020-10-15 00:00:00';
+select uniqExact(_part), count() from tMM where d >= '2020-01-16 00:00:00' and d < toDateTime('2021-08-17 00:00:00');
+select uniqExact(_part), count() from tMM where d >= '2020-09-16 00:00:00' and d < toDateTime('2020-10-01 00:00:00');
+select uniqExact(_part), count() from tMM where d >= '2020-09-12 00:00:00' and d < '2020-10-16 00:00:00';
+select uniqExact(_part), count() from tMM where toStartOfDay(d) >= '2020-09-12 00:00:00';
+select uniqExact(_part), count() from tMM where toStartOfDay(d) = '2020-09-01 00:00:00';
+select uniqExact(_part), count() from tMM where toStartOfDay(d) = '2020-10-01 00:00:00';
+select uniqExact(_part), count() from tMM where toStartOfDay(d) >= '2020-09-15 00:00:00' and d < '2020-10-16 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010;
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202009;
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010 and toStartOfDay(d) = '2020-10-01 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d) >= 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d) > 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202009 and toStartOfDay(d) < '2020-10-02 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010 and toStartOfDay(d) < '2020-10-02 00:00:00';
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010;
+select uniqExact(_part), count() from tMM where toYYYYMM(d-1)+1 = 202010;
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-15';
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-01';
+select uniqExact(_part), count() from tMM where toStartOfMonth(d) >= '2020-09-01' and toStartOfMonth(d) < '2020-10-01';
+
+SYSTEM START MERGES tMM;
+OPTIMIZE TABLE tMM FINAL;
+
+select uniqExact(_part), count() from tMM where toYYYYMM(d-1)+1 = 202010;
+select uniqExact(_part), count() from tMM where toYYYYMM(d)+1 > 202010;
+select uniqExact(_part), count() from tMM where toYYYYMM(d) between 202009 and 202010;
+
+
+SELECT '--------- tDD ----------------------------';
+SYSTEM START MERGES tDD;
+OPTIMIZE TABLE tDD FINAL;
+
+select uniqExact(_part), count() from tDD where toDate(d)=toDate('2020-09-24');
+select uniqExact(_part), count() FROM tDD WHERE toDate(d) = toDate('2020-09-24');
+select uniqExact(_part), count() FROM tDD WHERE toDate(d) = '2020-09-24';
+select uniqExact(_part), count() FROM tDD WHERE toDate(d) >= '2020-09-23' and toDate(d) <= '2020-09-26';
+select uniqExact(_part), count() FROM tDD WHERE toYYYYMMDD(d) >= 20200923 and toDate(d) <= '2020-09-26';
+
+
+SELECT '--------- sDD ----------------------------';
+select uniqExact(_part), count() from sDD;
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC')-1)+1 = 202010;
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC')-1) = 202010;
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC')-1) = 202110;
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toStartOfDay(toDateTime(intDiv(d,1000),'UTC')) < toDateTime('2020-10-02 00:00:00','UTC');
+select uniqExact(_part), count() from sDD where toYYYYMM(toDateTime(intDiv(d,1000),'UTC'))+1 > 202009 and toDateTime(intDiv(d,1000),'UTC') < toDateTime('2020-10-01 00:00:00','UTC');
+select uniqExact(_part), count() from sDD where d >= 1598918400000;
+select uniqExact(_part), count() from sDD where d >= 1598918400000 and toYYYYMM(toDateTime(intDiv(d,1000),'UTC')-1) < 202010;
+
+
+SELECT '--------- xMM ----------------------------';
+select uniqExact(_part), count() from xMM where toStartOfDay(d) >= '2020-10-01 00:00:00';
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d <= '2020-10-01 00:00:00';
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d < '2020-10-01 00:00:00';
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d <= '2020-10-01 00:00:00' and a=1;
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d <= '2020-10-01 00:00:00' and a<>3;
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d < '2020-10-01 00:00:00' and a<>3;
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d < '2020-11-01 00:00:00' and a = 1;
+select uniqExact(_part), count() from xMM where a = 1;
+select uniqExact(_part), count() from xMM where a = 66;
+select uniqExact(_part), count() from xMM where a <> 66;
+select uniqExact(_part), count() from xMM where a = 2;
+
+SYSTEM START MERGES xMM;
+optimize table xMM final;
+
+select uniqExact(_part), count() from xMM where a = 1;
+select uniqExact(_part), count() from xMM where toStartOfDay(d) >= '2020-10-01 00:00:00';
+select uniqExact(_part), count() from xMM where a <> 66;
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d <= '2020-10-01 00:00:00' and a<>3;
+select uniqExact(_part), count() from xMM where d >= '2020-09-01 00:00:00' and d < '2020-10-01 00:00:00' and a<>3;
+
+DROP TABLE tMM;
+DROP TABLE tDD;
+DROP TABLE sDD;
+DROP TABLE xMM;
+
+

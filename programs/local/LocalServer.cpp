@@ -8,7 +8,6 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -21,10 +20,11 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <Common/SettingsChanges.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
@@ -35,10 +35,14 @@
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+#include <Common/randomSeed.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -46,8 +50,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int CANNOT_LOAD_CONFIG;
+    extern const int FILE_ALREADY_EXISTS;
 }
 
 
@@ -55,8 +61,8 @@ LocalServer::LocalServer() = default;
 
 LocalServer::~LocalServer()
 {
-    if (context)
-        context->shutdown(); /// required for properly exception handling
+    if (global_context)
+        global_context->shutdown(); /// required for properly exception handling
 }
 
 
@@ -75,10 +81,12 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
+    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
     {
+        // force enable logging
+        config().setString("logger", "logger");
         // sensitive data rules are not used here
-        buildLoggers(config(), logger(), self.commandName());
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
     else
     {
@@ -91,41 +99,90 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings()
+void LocalServer::applyCmdSettings(Context & context)
 {
-    context->applySettingsChanges(cmd_settings.changes());
+    context.applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    std::string path = config().getString("path", "");
-    Poco::trimInPlace(path);
+    std::string path;
 
-    if (!path.empty())
+    if (config().has("path"))
     {
-        if (path.back() != '/')
-            path += '/';
+        // User-supplied path.
+        path = config().getString("path");
+        Poco::trimInPlace(path);
 
-        context->setPath(path);
-        return;
+        if (path.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot work with empty storage path that is explicitly specified"
+                " by the --path option. Please check the program options and"
+                " correct the --path.");
+        }
+    }
+    else
+    {
+        // The path is not provided explicitly - use a unique path in the system temporary directory
+        // (or in the current dir if temporary don't exist)
+        Poco::Logger * log = &logger();
+        std::filesystem::path parent_folder;
+        std::filesystem::path default_path;
+
+        try
+        {
+            // try to guess a tmp folder name, and check if it's a directory (throw exception otherwise)
+            parent_folder = std::filesystem::temp_directory_path();
+
+        }
+        catch (const std::filesystem::filesystem_error& e)
+        {
+            // tmp folder don't exists? misconfiguration? chroot?
+            LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
+            parent_folder = std::filesystem::current_path();
+
+            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
+            LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
+        }
+
+        /// we can have another clickhouse-local running simultaneously, even with the same PID (for ex. - several dockers mounting the same folder)
+        /// or it can be some leftovers from other clickhouse-local runs
+        /// as we can't accurately distinguish those situations we don't touch any existent folders
+        /// we just try to pick some free name for our working folder
+
+        default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
+
+        if (exists(default_path))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
+
+        create_directory(default_path);
+        temporary_directory_to_delete = default_path;
+
+        path = default_path.string();
+        LOG_DEBUG(log, "Working directory created: {}", path);
     }
 
-    /// In case of empty path set paths to helpful directories
-    std::string cd = Poco::Path::current();
-    context->setTemporaryStorage(cd + "tmp");
-    context->setFlagsPath(cd + "flags");
-    context->setUserFilesPath(""); // user's files are everywhere
+    if (path.back() != '/')
+        path += '/';
+
+    global_context->setPath(path);
+
+    global_context->setTemporaryStorage(path + "tmp");
+    global_context->setFlagsPath(path + "flags");
+
+    global_context->setUserFilesPath(""); // user's files are everywhere
 }
 
 
-static void attachSystemTables()
+static void attachSystemTables(const Context & context)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -136,11 +193,11 @@ static void attachSystemTables()
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
-    if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
+    if (!config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
     {
         if (config().hasOption("verbose"))
             std::cerr << "There are no queries to process." << '\n';
@@ -148,10 +205,15 @@ try
         return Application::EXIT_OK;
     }
 
+    if (config().has("query") && config().has("queries-file"))
+    {
+        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+    }
+
     shared_context = Context::createShared();
-    context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
-    context->makeGlobalContext();
-    context->setApplicationType(Context::ApplicationType::LOCAL);
+    global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
     std::optional<StatusFile> status;
@@ -170,32 +232,36 @@ try
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     /// Maybe useless
     if (config().has("macros"))
-        context->setMacros(std::make_unique<Macros>(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Skip networking
+
+    /// Sets external authenticators config (LDAP).
+    global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
     /// There is no need for concurrent queries, override max_concurrent_queries.
-    context->getProcessList().setMaxSize(0);
+    global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     /// Specify default value for mark_cache_size explicitly!
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size);
 
     /// Load global settings from default_profile and system_profile.
-    context->setDefaultProfiles(config());
+    global_context->setDefaultProfiles(config());
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
@@ -203,36 +269,52 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
-    context->setCurrentDatabase(default_database);
-    applyCmdOptions();
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *global_context));
+    global_context->setCurrentDatabase(default_database);
+    applyCmdOptions(*global_context);
 
-    if (!context->getPath().empty())
+    if (config().has("path"))
     {
-        /// Lock path directory before read
-        status.emplace(context->getPath() + "status");
+        String path = global_context->getPath();
 
-        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
-        loadMetadataSystem(*context);
-        attachSystemTables();
-        loadMetadata(*context);
+        /// Lock path directory before read
+        status.emplace(path + "status", StatusFile::write_full_info);
+
+        LOG_DEBUG(log, "Loading metadata from {}", path);
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
+        loadMetadataSystem(*global_context);
+        attachSystemTables(*global_context);
+        loadMetadata(*global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else
+    else if (!config().has("no-system-tables"))
     {
-        attachSystemTables();
+        attachSystemTables(*global_context);
     }
 
     processQueries();
 
-    context->shutdown();
-    context.reset();
+    global_context->shutdown();
+    global_context.reset();
+
+    status.reset();
+    cleanup();
 
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
 {
+    try
+    {
+        cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -266,9 +348,19 @@ std::string LocalServer::getInitialCreateTableQuery()
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query + config().getRawString("query");
+    String queries_str = initial_create_query;
 
-    const auto & settings = context->getSettingsRef();
+    if (config().has("query"))
+        queries_str += config().getRawString("query");
+    else
+    {
+        String queries_from_file;
+        ReadBufferFromFile in(config().getString("queries-file"));
+        readStringUntilEOF(queries_from_file, in);
+        queries_str += queries_from_file;
+    }
+
+    const auto & settings = global_context->getSettingsRef();
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
@@ -276,15 +368,19 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    context->makeSessionContext();
-    context->makeQueryContext();
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    auto context = Context(*global_context);
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
-    context->setCurrentQueryId("");
-    applyCmdSettings();
+    context.makeSessionContext();
+    context.makeQueryContext();
+
+    context.setUser("default", "", Poco::Net::SocketAddress{});
+    context.setCurrentQueryId("");
+    applyCmdSettings(context);
 
     /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(*context);
+    CurrentThread::QueryScope query_scope_holder(context);
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
@@ -303,7 +399,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
         }
         catch (...)
         {
@@ -344,7 +440,7 @@ static const char * minimal_default_user_xml =
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-    std::stringstream ss{std::string{xml_data}};
+    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
@@ -368,9 +464,21 @@ void LocalServer::setupUsers()
     }
 
     if (users_config)
-        context->setUsersConfig(users_config);
+        global_context->setUsersConfig(users_config);
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+}
+
+void LocalServer::cleanup()
+{
+    // Delete the temporary directory if needed.
+    if (temporary_directory_to_delete)
+    {
+        const auto dir = *temporary_directory_to_delete;
+        temporary_directory_to_delete.reset();
+        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+        remove_all(dir);
+    }
 }
 
 static void showClientVersion()
@@ -415,6 +523,7 @@ void LocalServer::init(int argc, char ** argv)
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
         ("query,q", po::value<std::string>(), "query")
+        ("queries-file, qf", po::value<std::string>(), "file path with queries to execute")
         ("database,d", po::value<std::string>(), "database")
 
         ("table,N", po::value<std::string>(), "name of the initial table")
@@ -428,9 +537,11 @@ void LocalServer::init(int argc, char ** argv)
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
+        ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ;
 
@@ -461,6 +572,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("query"))
         config().setString("query", options["query"].as<std::string>());
+    if (options.count("queries-file"))
+        config().setString("queries-file", options["queries-file"].as<std::string>());
     if (options.count("database"))
         config().setString("default_database", options["database"].as<std::string>());
 
@@ -483,12 +596,16 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("echo", true);
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("logger.console"))
+        config().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+    if (options.count("no-system-tables"))
+        config().setBool("no-system-tables", true);
 
     std::vector<std::string> arguments;
     for (int arg_num = 1; arg_num < argc; ++arg_num)
@@ -496,10 +613,10 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions()
+void LocalServer::applyCmdOptions(Context & context)
 {
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings();
+    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings(context);
 }
 
 }

@@ -15,9 +15,9 @@ Haga clic en Casa:
 -   Actualiza periódicamente los diccionarios y carga dinámicamente los valores que faltan. En otras palabras, los diccionarios se pueden cargar dinámicamente.
 -   Permite crear diccionarios externos con archivos xml o [Consultas DDL](../../statements/create.md#create-dictionary-query).
 
-La configuración de diccionarios externos se puede ubicar en uno o más archivos xml. La ruta de acceso a la configuración se especifica en el [Diccionarios\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parámetro.
+La configuración de diccionarios externos se puede ubicar en uno o más archivos xml. La ruta de acceso a la configuración se especifica en el [Diccionarios_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parámetro.
 
-Los diccionarios se pueden cargar en el inicio del servidor o en el primer uso, dependiendo de la [Diccionarios\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) configuración.
+Los diccionarios se pueden cargar en el inicio del servidor o en el primer uso, dependiendo de la [Diccionarios_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) configuración.
 
 El [diccionario](../../../operations/system-tables.md#system_tables-dictionaries) La tabla del sistema contiene información sobre los diccionarios configurados en el servidor. Para cada diccionario se puede encontrar allí:
 

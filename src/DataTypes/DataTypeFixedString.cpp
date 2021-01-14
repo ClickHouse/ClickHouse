@@ -1,5 +1,4 @@
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
@@ -199,7 +198,7 @@ void DataTypeFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 void DataTypeFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeXMLString(pos, pos + n, ostr);
+    writeXMLStringForTextElement(pos, pos + n, ostr);
 }
 
 

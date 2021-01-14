@@ -1,18 +1,23 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Disks/createVolume.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/DirectorySyncGuard.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
-    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -27,6 +32,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
+    extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DataPartsExchange
@@ -36,12 +43,39 @@ namespace
 {
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 
 
 std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
 }
+
+/// Simple functor for tracking fetch progress in system.replicated_fetches table.
+struct ReplicatedFetchReadCallback
+{
+    ReplicatedFetchList::Entry & replicated_fetch_entry;
+
+    explicit ReplicatedFetchReadCallback(ReplicatedFetchList::Entry & replicated_fetch_entry_)
+        : replicated_fetch_entry(replicated_fetch_entry_)
+    {}
+
+    void operator() (size_t bytes_count)
+    {
+        replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
+
+        /// It's possible when we fetch part from very old clickhouse version
+        /// which doesn't send total size.
+        if (replicated_fetch_entry->total_size_bytes_compressed != 0)
+        {
+            replicated_fetch_entry->progress.store(
+                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    std::memory_order_relaxed);
+        }
+    }
+};
 
 }
 
@@ -63,8 +97,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     static std::atomic_uint total_sends {0};
 
-    if ((data_settings->replicated_max_parallel_sends && total_sends >= data_settings->replicated_max_parallel_sends)
-        || (data_settings->replicated_max_parallel_sends_for_table && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
+    if ((data_settings->replicated_max_parallel_sends
+            && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table
+            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -74,7 +110,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID))});
 
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
@@ -82,27 +118,16 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    LOG_TRACE(log, "Sending part " << part_name);
+    LOG_TRACE(log, "Sending part {}", part_name);
 
     try
     {
-        auto storage_lock = data.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
-
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-        /// We'll take a list of files from the list of checksums.
-        MergeTreeData::DataPart::Checksums checksums = part->checksums;
-        /// Add files that are not in the checksum list.
-        checksums.files["checksums.txt"];
-        checksums.files["columns.txt"];
-
-        MergeTreeData::DataPart::Checksums data_checksums;
-
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
-            writeBinary(checksums.getTotalSizeOnDisk(), out);
+            writeBinary(part->checksums.getTotalSizeOnDisk(), out);
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -111,37 +136,18 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
             writeBinary(ttl_infos_buffer.str(), out);
         }
 
-        writeBinary(checksums.files.size(), out);
-        for (const auto & it : checksums.files)
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
+            writeStringBinary(part->getType().toString(), out);
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+            writeUUIDText(part->uuid, out);
+
+        if (isInMemoryPart(part))
+            sendPartFromMemory(part, out);
+        else
         {
-            String file_name = it.first;
-
-            auto disk = part->volume->getDisk();
-            String path = part->getFullRelativePath() + file_name;
-
-            UInt64 size = disk->getFileSize(path);
-
-            writeStringBinary(it.first, out);
-            writeBinary(size, out);
-
-            auto file_in = disk->readFile(path);
-            HashingWriteBuffer hashing_out(out);
-            copyData(*file_in, hashing_out, blocker.getCounter());
-
-            if (blocker.isCancelled())
-                throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
-
-            if (hashing_out.count() != size)
-                throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-
-            writePODBinary(hashing_out.getHash(), out);
-
-            if (file_name != "checksums.txt" &&
-                file_name != "columns.txt")
-                data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
+            sendPartFromDisk(part, out, client_protocol_version);
         }
-
-        part->checksums.checkEqual(data_checksums, false);
     }
     catch (const NetException &)
     {
@@ -161,6 +167,66 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 }
 
+void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out)
+{
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    auto part_in_memory = asInMemoryPart(part);
+    if (!part_in_memory)
+        throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
+
+    NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
+    part->checksums.write(out);
+    block_out.write(part_in_memory->block);
+}
+
+void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version)
+{
+    /// We'll take a list of files from the list of checksums.
+    MergeTreeData::DataPart::Checksums checksums = part->checksums;
+    /// Add files that are not in the checksum list.
+    auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
+    for (const auto & file_name : file_names_without_checksums)
+    {
+        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION && file_name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+            continue;
+
+        checksums.files[file_name] = {};
+    }
+
+    auto disk = part->volume->getDisk();
+    MergeTreeData::DataPart::Checksums data_checksums;
+
+    writeBinary(checksums.files.size(), out);
+    for (const auto & it : checksums.files)
+    {
+        String file_name = it.first;
+
+        String path = part->getFullRelativePath() + file_name;
+
+        UInt64 size = disk->getFileSize(path);
+
+        writeStringBinary(it.first, out);
+        writeBinary(size, out);
+
+        auto file_in = disk->readFile(path);
+        HashingWriteBuffer hashing_out(out);
+        copyData(*file_in, hashing_out, blocker.getCounter());
+
+        if (blocker.isCancelled())
+            throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+
+        if (hashing_out.count() != size)
+            throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+        writePODBinary(hashing_out.getHash(), out);
+
+        if (!file_names_without_checksums.count(file_name))
+            data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
+    }
+
+    part->checksums.checkEqual(data_checksums, false);
+}
+
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
@@ -174,6 +240,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
+    const StorageMetadataPtr & metadata_snapshot,
     const String & part_name,
     const String & replica_path,
     const String & host,
@@ -185,8 +252,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached,
     const String & tmp_prefix_)
 {
+    if (blocker.isCancelled())
+        throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+
     /// Validation of the input that may come from malicious replica.
-    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
 
     Poco::URI uri;
@@ -197,7 +267,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)},
         {"compress",                "false"}
     });
 
@@ -222,9 +292,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     int server_protocol_version = parse<int>(in.getResponseCookie("server_protocol_version", "0"));
 
     ReservationPtr reservation;
+    size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
-        size_t sum_files_size;
         readBinary(sum_files_size, in);
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -234,7 +304,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
-            reservation = data.reserveSpacePreferringTTLRules(sum_files_size, ttl_infos, std::time(nullptr));
+            reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
         }
         else
             reservation = data.reserveSpace(sum_files_size);
@@ -245,14 +315,70 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
-    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
+    bool sync = (data_settings->min_compressed_bytes_to_fsync_after_fetch
+                    && sum_files_size >= data_settings->min_compressed_bytes_to_fsync_after_fetch);
+
+    String part_type = "Wide";
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
+        readStringBinary(part_type, in);
+
+    UUID part_uuid = UUIDHelpers::Nil;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+        readUUIDText(part_uuid, in);
+
+    auto storage_id = data.getStorageID();
+    String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
+    auto entry = data.global_context.getReplicatedFetchList().insert(
+        storage_id.getDatabaseName(), storage_id.getTableName(),
+        part_info.partition_id, part_name, new_part_path,
+        replica_path, uri, to_detached, sum_files_size);
+
+    in.setNextCallback(ReplicatedFetchReadCallback(*entry));
+
+
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, std::move(reservation), in)
+                                   : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, std::move(reservation), in);
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
+    const String & part_name,
+    const UUID & part_uuid,
+    const StorageMetadataPtr & metadata_snapshot,
+    ReservationPtr reservation,
+    PooledReadWriteBufferFromHTTP & in)
+{
+    MergeTreeData::DataPart::Checksums checksums;
+    if (!checksums.read(in))
+        throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
+
+    NativeBlockInputStream block_in(in, 0);
+    auto block = block_in.read();
+
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, reservation->getDisk(), 0);
+    MergeTreeData::MutableDataPartPtr new_data_part =
+        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, volume);
+
+    new_data_part->uuid = part_uuid;
+    new_data_part->is_temp = true;
+    new_data_part->setColumns(block.getNamesAndTypesList());
+    new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
+    new_data_part->partition.create(metadata_snapshot, block, 0);
+
+    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+    part_out.writePrefix();
+    part_out.write(block);
+    part_out.writeSuffixAndFinalizePart(new_data_part);
+    new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
+
+    return new_data_part;
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
+    bool sync,
     const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
@@ -270,9 +396,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     if (disk->exists(part_download_path))
         throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
-
     disk->createDirectories(part_download_path);
+
+    std::optional<DirectorySyncGuard> sync_guard;
+    if (data.getSettings()->fsync_part_directory)
+        sync_guard.emplace(disk, part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
@@ -297,7 +425,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
         if (blocker.isCancelled())
         {
-            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network, performing a poll with a not very large timeout.
+            /// NOTE The is_cancelled flag also makes sense to check every time you read over the network,
+            /// performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
             disk->removeRecursive(part_download_path);
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
@@ -311,13 +440,17 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
                 ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+            file_name != "columns.txt" &&
+            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
+
+        if (sync)
+            hashing_out.sync();
     }
 
     assertEOF(in);
 
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, volume, part_relative_path);
     new_data_part->is_temp = true;
     new_data_part->modification_time = time(nullptr);

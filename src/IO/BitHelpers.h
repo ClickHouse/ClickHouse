@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
 
 #include <cstring>
 #include <cassert>
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__)
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined (__ANDROID__)
 #   include <sys/endian.h>
 #elif defined(__APPLE__)
 #   include <libkern/OSByteOrder.h>

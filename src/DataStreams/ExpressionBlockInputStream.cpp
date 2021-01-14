@@ -18,7 +18,7 @@ String ExpressionBlockInputStream::getName() const { return "Expression"; }
 Block ExpressionBlockInputStream::getTotals()
 {
     totals = children.back()->getTotals();
-    expression->executeOnTotals(totals);
+    expression->execute(totals);
 
     return totals;
 }
@@ -30,42 +30,9 @@ Block ExpressionBlockInputStream::getHeader() const
 
 Block ExpressionBlockInputStream::readImpl()
 {
-    if (!initialized)
-    {
-        if (expression->resultIsAlwaysEmpty())
-            return {};
-
-        initialized = true;
-    }
-
     Block res = children.back()->read();
     if (res)
         expression->execute(res);
-    return res;
-}
-
-Block InflatingExpressionBlockInputStream::readImpl()
-{
-    if (!initialized)
-    {
-        if (expression->resultIsAlwaysEmpty())
-            return {};
-
-        initialized = true;
-    }
-
-    Block res;
-    if (likely(!not_processed))
-    {
-        res = children.back()->read();
-        if (res)
-            expression->execute(res, not_processed, action_number);
-    }
-    else
-    {
-        res = std::move(not_processed->block);
-        expression->execute(res, not_processed, action_number);
-    }
     return res;
 }
 

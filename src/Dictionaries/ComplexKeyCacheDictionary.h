@@ -16,6 +16,8 @@
 #include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <ext/map.h>
+#include <ext/range.h>
+#include <ext/size.h>
 #include <ext/scope_guard.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -42,18 +44,13 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyCacheDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         const size_t size_);
 
     std::string getKeyDescription() const { return key_description; }
-
-    const std::string & getDatabase() const override { return database; }
-    const std::string & getName() const override { return name; }
-    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "ComplexKeyCache"; }
 
@@ -78,7 +75,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<ComplexKeyCacheDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -671,9 +668,6 @@ private:
 
     bool isEmptyCell(const UInt64 idx) const;
 
-    const std::string database;
-    const std::string name;
-    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
@@ -687,7 +681,7 @@ private:
     /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
     const size_t size_overlap_mask;
 
-    /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
+    /// Max tries to find cell, overlapped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
     static constexpr size_t max_collision_length = 10;
 
     const UInt64 zero_cell_idx{getCellIdx(StringRef{})};

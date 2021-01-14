@@ -1,2 +1,2 @@
 add_executable (decompress_perf decompress_perf.cpp)
-target_link_libraries(decompress_perf PRIVATE dbms ${LZ4_LIBRARY})
+target_link_libraries(decompress_perf PRIVATE dbms lz4)

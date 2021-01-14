@@ -31,7 +31,7 @@ Dans les deux cas le type de la valeur renvoyée est [UInt64](../../sql-referenc
 
 **Détail**
 
-Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l'opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
+Clickhouse soutient le `COUNT(DISTINCT ...)` syntaxe. Le comportement de cette construction dépend de la [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) paramètre. Il définit lequel des [uniq\*](#agg_function-uniq) fonctions est utilisée pour effectuer l'opération. La valeur par défaut est la [uniqExact](#agg_function-uniqexact) fonction.
 
 Le `SELECT count() FROM table` la requête n'est pas optimisé, car le nombre d'entrées dans la table n'est pas stockée séparément. Il choisit une petite colonne de la table et compte le nombre de valeurs qu'il contient.
 
@@ -464,69 +464,6 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid, horodatage, valeur) {#agg-function-timeseriesgroupsum}
-
-`timeSeriesGroupSum` peut agréger différentes séries temporelles qui échantillonnent l'horodatage et non l'alignement.
-Il utilisera une interpolation linéaire entre deux échantillons d'horodatage, puis additionnera les séries temporelles ensemble.
-
--   `uid` la série temporelle est elle unique, `UInt64`.
--   `timestamp` est de type Int64 afin de prendre en charge la milliseconde ou la microseconde.
--   `value` est la métrique.
-
-La fonction renvoie un tableau de tuples avec `(timestamp, aggregated_value)` pair.
-
-Avant d'utiliser cette fonction, assurez-vous `timestamp` est dans l'ordre croissant.
-
-Exemple:
-
-``` text
-┌─uid─┬─timestamp─┬─value─┐
-│ 1   │     2     │   0.2 │
-│ 1   │     7     │   0.7 │
-│ 1   │    12     │   1.2 │
-│ 1   │    17     │   1.7 │
-│ 1   │    25     │   2.5 │
-│ 2   │     3     │   0.6 │
-│ 2   │     8     │   1.6 │
-│ 2   │    12     │   2.4 │
-│ 2   │    18     │   3.6 │
-│ 2   │    24     │   4.8 │
-└─────┴───────────┴───────┘
-```
-
-``` sql
-CREATE TABLE time_series(
-    uid       UInt64,
-    timestamp Int64,
-    value     Float64
-) ENGINE = Memory;
-INSERT INTO time_series VALUES
-    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
-    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
-
-SELECT timeSeriesGroupSum(uid, timestamp, value)
-FROM (
-    SELECT * FROM time_series order by timestamp ASC
-);
-```
-
-Et le résultat sera:
-
-``` text
-[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
-```
-
-## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
-
-De la même manière à `timeSeriesGroupSum`, `timeSeriesGroupRateSum` calcule le taux de séries chronologiques, puis additionne les taux ensemble.
-En outre, l'horodatage doit être dans l'ordre croissant avant d'utiliser cette fonction.
-
-Application de cette fonction aux données du `timeSeriesGroupSum` exemple, vous obtenez le résultat suivant:
-
-``` text
-[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
-```
-
 ## avg (x) {#agg_function-avg}
 
 Calcule la moyenne.
@@ -721,7 +658,7 @@ La fonction prend un nombre variable de paramètres. Les paramètres peuvent êt
 -   [uniqcombiné](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray (max\_size) (x) {#agg_function-grouparray}
+## groupArray(x), groupArray (max_size) (x) {#agg_function-grouparray}
 
 Crée un tableau de valeurs de l'argument.
 Les valeurs peuvent être ajoutées au tableau dans une (indéterminée) de commande.
@@ -967,7 +904,7 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray (max\_size) (x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## groupUniqArray(x), groupUniqArray (max_size) (x) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
 Crée un tableau à partir de différentes valeurs d'argument. La consommation de mémoire est la même que pour la `uniqExact` fonction.
 

@@ -1,5 +1,5 @@
 WITH 'abb' AS b, 'abc' AS c, 'abd' AS d, toFixedString(b, 5) AS bf, toFixedString(c, 5) AS cf, toFixedString(d, 5) AS df
-SELECT 
+SELECT
     b = b, b > b, b < b,
     b = c, b > c, b < c,
     b = d, b > d, b < d,

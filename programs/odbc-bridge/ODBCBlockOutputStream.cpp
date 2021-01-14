@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
+}
+
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -24,15 +29,15 @@ namespace
         query.table_id.table_name = table_name;
         query.columns = std::make_shared<ASTExpressionList>(',');
         query.children.push_back(query.columns);
-        for (size_t i = 0; i < columns.size(); ++i)
-            query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(columns[i].name));
+        for (const auto & column : columns)
+            query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
-        std::stringstream ss;
-        IAST::FormatSettings settings(ss, true);
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings settings(buf, true);
         settings.always_quote_identifiers = true;
         settings.identifier_quoting_style = quoting;
         query.IAST::format(settings);
-        return ss.str();
+        return buf.str();
     }
 
     std::string getQuestionMarks(size_t n)
@@ -79,6 +84,9 @@ namespace
                 return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
+             default:
+                 throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
+
         }
         __builtin_unreachable();
     }
@@ -94,7 +102,7 @@ ODBCBlockOutputStream::ODBCBlockOutputStream(Poco::Data::Session && session_,
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
     , quoting(quoting_)
-    , log(&Logger::get("ODBCBlockOutputStream"))
+    , log(&Poco::Logger::get("ODBCBlockOutputStream"))
 {
     description.init(sample_block);
 }

@@ -1,101 +1,146 @@
-# 访问权限 {#access-rights}
+---
+toc_priority: 48
+toc_title: "访问权限和账户管理"
+---
 
-用户和访问权限在用户配置中设置。 这通常是 `users.xml`.
+# 访问权限和账户管理 {#access-rights}
+ClickHouse支持基于[RBAC](https://en.wikipedia.org/wiki/Role-based_access_control)的访问控制管理。
 
-用户被记录在 `users` 科。 这里是一个片段 `users.xml` 文件:
+ClickHouse权限实体包括：
+- [用户账户](#user-account-management)
+- [角色](#role-management)
+- [行策略](#row-policy-management)
+- [设置描述](#settings-profiles-management)
+- [配额](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+你可以通过如下方式配置权限实体：
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+- 通过SQL驱动的工作流方式.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    你需要[开启](#enabling-access-control)这个功能.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+- 服务端[配置文件](configuration-files.md) `users.xml` 和 `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.yandex\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.yandex\.ru$.
+我们建议你使用SQL工作流的方式。当然配置的方式也可以同时起作用, 所以如果你正在用服务端配置的方式来管理权限和账户，你可以平滑的切换到SQL驱动的工作流方式。
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "警告"
+    你无法同时使用两个配置的方式来管理同一个权限实体。
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+## 用法 {#access-control-usage}
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-    </web>
-```
+默认ClickHouse提供了一个 `default` 账号，这个账号有所有的权限，但是不能使用SQL驱动方式的访问权限和账户管理。`default`主要用在用户名还未设置的情况，比如从客户端登录或者执行分布式查询。在分布式查询中如果服务端或者集群没有指定[用户名密码](../engines/table-engines/special/distributed.md)那默认的账户就会被使用。
 
-您可以看到两个用户的声明: `default`和`web`. 我们添加了 `web` 用户分开。
+如果你刚开始使用ClickHouse，考虑如下场景：
 
-该 `default` 在用户名未通过的情况下选择用户。 该 `default` 如果服务器或群集的配置没有指定分布式查询处理，则user也用于分布式查询处理 `user` 和 `password` （见上的部分 [分布](../engines/table-engines/special/distributed.md) 发动机）。
+1. 为 `default` 用户[开启SQL驱动方式的访问权限和账户管理](#enabling-access-control) .
+2. 使用 `default` 用户登录并且创建所需要的所有用户。 不要忘记创建管理员账户 (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`)。
+3. [限制](settings/permissions-for-queries.md#permissions_for_queries) `default` 用户的权限并且禁用SQL驱动方式的访问权限和账户管理。
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+### 当前解决方案的特性 {#access-control-properties}
 
-密码以明文（不推荐）或SHA-256形式指定。 哈希没有腌制。 在这方面，您不应将这些密码视为提供了针对潜在恶意攻击的安全性。 相反，他们是必要的保护员工。
+- 你甚至可以在数据库和表不存在的时候授予权限。
+- 如果表被删除，和这张表关联的特权不会被删除。这意味着如果你创建一张同名的表，所有的特权仍旧有效。如果想删除这张表关联的特权，你可以执行 `REVOKE ALL PRIVILEGES ON db.table FROM ALL`  查询。
+- 特权没有生命周期。
 
-指定允许访问的网络列表。 在此示例中，将从单独的文件加载两个用户的网络列表 (`/etc/metrika.xml`）包含 `networks` 替代。 这里是它的一个片段:
+## 用户账户 {#user-account-management}
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+用户账户是权限实体，用来授权操作ClickHouse，用户账户包含：
 
-您可以直接在以下内容中定义此网络列表 `users.xml`，或在文件中 `users.d` directory (for more information, see the section «[配置文件](configuration-files.md#configuration_files)»).
+- 标识符信息。
+- [特权](../sql-reference/statements/grant.md#grant-privileges)用来定义用户可以执行的查询的范围。
+- 可以连接到ClickHouse的主机。
+- 指定或者默认的角色。
+- 用户登录的时候默认的限制设置。
+- 指定的设置描述。
 
-该配置包括解释如何从任何地方打开访问的注释。
+特权可以通过[GRANT](../sql-reference/statements/grant.md)查询授权给用户或者通过[角色](#role-management)授予。如果想撤销特权，可以使用[REVOKE](../sql-reference/statements/revoke.md)查询。查询用户所有的特权，使用[SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement)语句。
 
-对于在生产中使用，仅指定 `ip` 元素（IP地址及其掩码），因为使用 `host` 和 `hoost_regexp` 可能会导致额外的延迟。
+查询管理：
 
-Next the user settings profile is specified (see the section «[设置配置文件](settings/settings-profiles.md)»). You can specify the default profile, `default'`. 配置文件可以有任何名称。 您可以为不同的用户指定相同的配置文件。 您可以在设置配置文件中编写的最重要的事情是 `readonly=1`，这确保只读访问。
-Then specify the quota to be used (see the section «[配额](quotas.md#quotas)»). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+- [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+- [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+- [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+- [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-在可选 `<allow_databases>` 您还可以指定用户可以访问的数据库列表。 默认情况下，所有数据库都可供用户使用。 您可以指定 `default` 数据库。 在这种情况下，默认情况下，用户将接收对数据库的访问权限。
+### 设置应用规则 {#access-control-settings-applying}
 
-访问 `system` 始终允许数据库（因为此数据库用于处理查询）。
+对于一个用户账户来说，设置可以通过多种方式配置：通过角色扮演和设置描述。对于一个登陆的账号来说，如果一个设置对应了多个不同的权限实体，这些设置的应用规则如下（优先权从高到底）：
 
-用户可以通过以下方式获取其中所有数据库和表的列表 `SHOW` 查询或系统表，即使不允许访问单个数据库。
+1. 用户账户设置。
+2. 用户账号默认的角色设置。如果这个设置配置了多个角色，那设置的应用是没有规定的顺序。
+3. 从设置描述分批给用户或者角色的设置。如果这个设置配置了多个角色，那设置的应用是没有规定的顺序。
+4. 对所有服务器有效的默认或者[default profile](server-configuration-parameters/settings.md#default-profile)的设置。
 
-数据库访问是不相关的 [只读](settings/permissions-for-queries.md#settings_readonly) 设置。 您不能授予对一个数据库的完全访问权限，并 `readonly` 进入另一个。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
+## 角色 {#role-management}
+
+角色是权限实体的集合，可以被授予用户账号。
+
+角色包括：
+
+- [特权](../sql-reference/statements/grant.md#grant-privileges)
+- 设置和限制
+- 分配的角色列表
+
+查询管理:
+
+- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+- [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+- [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+- [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+- [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+- [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+使用[GRANT](../sql-reference/statements/grant.md) 查询可以把特权授予给角色。用[REVOKE](../sql-reference/statements/revoke.md)来撤回特权。
+
+## 行策略 {#row-policy-management}
+
+行策略是一个过滤器，用来定义哪些行数据可以被账户或者角色访问。对一个特定的表来说，行策略包括过滤器和使用这个策略的账户和角色。
+
+查询管理：
+
+- [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+- [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+- [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+- [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+
+## 设置描述 {#settings-profiles-management}
+
+设置描述是[设置](settings/index.md)的汇总。设置汇总包括设置和限制，当然也包括这些描述的对象：角色和账户。
+
+查询管理:
+
+- [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+- [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+- [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+- [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+
+## 配额 {#quotas-management}
+
+配额用来限制资源的使用情况。参考[配额](quotas.md).
+
+配额包括特定时间的限制条件和使用这个配额的账户和角色。
+
+Management queries:
+
+- [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+- [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+- [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+- [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+
+## 开启SQL驱动方式的访问权限和账户管理 {#enabling-access-control}
+
+- 为配置的存储设置一个目录.
+
+    ClickHouse把访问实体的相关配置存储在[访问控制目录](server-configuration-parameters/settings.md#access_control_path)，而这个目录可以通过服务端进行配置.
+
+- 为至少一个账户开启SQL驱动方式的访问权限和账户管理.
+
+     默认情况，SQL驱动方式的访问权限和账户管理对所有用户都是关闭的。你需要在 `users.xml` 中配置至少一个用户，并且把[权限管理](settings/settings-users.md#access_management-user-setting)的值设置为1。
+
+
+[Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

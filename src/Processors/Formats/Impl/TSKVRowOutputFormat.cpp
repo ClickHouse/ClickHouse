@@ -7,8 +7,8 @@
 namespace DB
 {
 
-TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
-    : TabSeparatedRowOutputFormat(out_, header, false, false, callback, format_settings_)
+TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : TabSeparatedRowOutputFormat(out_, header, false, false, params_, format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -44,11 +44,12 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory)
     factory.registerOutputFormatProcessor("TSKV", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<TSKVRowOutputFormat>(buf, sample, params, settings);
     });
+    factory.markOutputFormatSupportsParallelFormatting("TSKV");
 }
 
 }

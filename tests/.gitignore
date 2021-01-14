@@ -1,4 +1,5 @@
 *.result
 *.diff
 *.error
+*.dump
 test_data

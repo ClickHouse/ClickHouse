@@ -1,5 +1,3 @@
-#include <sstream>
-
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
@@ -22,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 BlockIO InterpreterShowCreateQuery::execute()
@@ -45,12 +44,19 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
     ASTQueryWithTableAndOutput * show_query;
-    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
+    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateViewQuery>()))
     {
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
         context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name);
+        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+        if (query_ptr->as<ASTShowCreateViewQuery>())
+        {
+            auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+            if (!ast_create_query.isView())
+                throw Exception(backQuote(ast_create_query.database) + "." + backQuote(ast_create_query.table) + " is not a VIEW", ErrorCodes::BAD_ARGUMENTS);
+        }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
@@ -69,7 +75,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(show_query->table);
     }
 
-    if (!create_query && show_query && show_query->temporary)
+    if (!create_query)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     if (!context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
@@ -78,9 +84,9 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         create.uuid = UUIDHelpers::Nil;
     }
 
-    std::stringstream stream;
-    formatAST(*create_query, stream, false, false);
-    String res = stream.str();
+    WriteBufferFromOwnString buf;
+    formatAST(*create_query, buf, false, false);
+    String res = buf.str();
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);

@@ -4,12 +4,19 @@
 
 #    include <IO/ReadBufferFromIStream.h>
 #    include <IO/ReadBufferFromS3.h>
+#    include <Common/Stopwatch.h>
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/GetObjectRequest.h>
 #    include <common/logger_useful.h>
 
 #    include <utility>
+
+namespace ProfileEvents
+{
+    extern const Event S3ReadMicroseconds;
+    extern const Event S3ReadBytes;
+}
 
 namespace DB
 {
@@ -27,6 +34,7 @@ ReadBufferFromS3::ReadBufferFromS3(
 {
 }
 
+
 bool ReadBufferFromS3::nextImpl()
 {
     if (!initialized)
@@ -35,9 +43,17 @@ bool ReadBufferFromS3::nextImpl()
         initialized = true;
     }
 
-    if (!impl->next())
+    Stopwatch watch;
+    auto res = impl->next();
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
+
+    if (!res)
         return false;
     internal_buffer = impl->buffer();
+
+    ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
+
     working_buffer = internal_buffer;
     return true;
 }
@@ -66,7 +82,7 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, std::to_string(offset));
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);

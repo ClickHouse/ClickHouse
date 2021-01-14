@@ -1,6 +1,6 @@
 ---
 toc_priority: 65
-toc_title: How to Build ClickHouse on Mac OS X
+toc_title: Build on Mac OS X
 ---
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
@@ -35,24 +35,24 @@ $ cd ClickHouse
 
 ## Build ClickHouse {#build-clickhouse}
 
+> Please note: ClickHouse doesn't support build with native Apple Clang compiler, we need use clang from LLVM.
+
 ``` bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang`
+$ cmake ..-DCMAKE_C_COMPILER=`brew --prefix llvm`/bin/clang -DCMAKE_CXX_COMPILER=`brew --prefix llvm`/bin/clang++ -DCMAKE_PREFIX_PATH=`brew --prefix llvm`
 $ ninja
 $ cd ..
 ```
 
 ## Caveats {#caveats}
 
-If you intend to run clickhouse-server, make sure to increase the system’s maxfiles variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
 
 !!! info "Note"
     You’ll need to use sudo.
 
-To do so, create the following file:
-
-/Library/LaunchDaemons/limit.maxfiles.plist:
+To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>

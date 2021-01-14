@@ -37,7 +37,7 @@ using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 class ProtobufReader : private boost::noncopyable
 {
 public:
-    ProtobufReader(ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
+    ProtobufReader(ReadBuffer & in_, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names, const bool use_length_delimiters_);
     ~ProtobufReader();
 
     /// Should be called when we start reading a new message.
@@ -60,7 +60,10 @@ public:
     bool readNumber(UInt32 & value) { return current_converter->readUInt32(value); }
     bool readNumber(Int64 & value) { return current_converter->readInt64(value); }
     bool readNumber(UInt64 & value) { return current_converter->readUInt64(value); }
+    bool readNumber(Int128 & value) { return current_converter->readInt128(value); }
     bool readNumber(UInt128 & value) { return current_converter->readUInt128(value); }
+    bool readNumber(Int256 & value) { return current_converter->readInt256(value); }
+    bool readNumber(UInt256 & value) { return current_converter->readUInt256(value); }
     bool readNumber(Float32 & value) { return current_converter->readFloat32(value); }
     bool readNumber(Float64 & value) { return current_converter->readFloat64(value); }
 
@@ -79,6 +82,7 @@ public:
     bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal32(decimal, precision, scale); }
     bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal64(decimal, precision, scale); }
     bool readDecimal(Decimal128 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal128(decimal, precision, scale); }
+    bool readDecimal(Decimal256 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal256(decimal, precision, scale); }
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) { return current_converter->readAggregateFunction(function, place, arena); }
 
@@ -89,7 +93,7 @@ private:
     class SimpleReader
     {
     public:
-        SimpleReader(ReadBuffer & in_);
+        SimpleReader(ReadBuffer & in_, const bool use_length_delimiters_);
         bool startMessage();
         void endMessage(bool ignore_errors);
         void startNestedMessage();
@@ -122,14 +126,16 @@ private:
         UInt64 continueReadingVarint(UInt64 first_byte);
         void ignoreVarint();
         void ignoreGroup();
+        [[noreturn]] void throwUnknownFormat() const;
 
         ReadBuffer & in;
-        UInt64 cursor;
+        Int64 cursor;
         size_t current_message_level;
-        UInt64 current_message_end;
-        std::vector<UInt64> parent_message_ends;
-        UInt64 field_end;
-        UInt64 last_string_pos;
+        Int64 current_message_end;
+        std::vector<Int64> parent_message_ends;
+        Int64 field_end;
+        Int64 last_string_pos;
+        const bool use_length_delimiters;
     };
 
     class IConverter
@@ -145,7 +151,12 @@ private:
        virtual bool readUInt32(UInt32 &) = 0;
        virtual bool readInt64(Int64 &) = 0;
        virtual bool readUInt64(UInt64 &) = 0;
+       virtual bool readInt128(Int128 &) = 0;
        virtual bool readUInt128(UInt128 &) = 0;
+
+       virtual bool readInt256(Int256 &) = 0;
+       virtual bool readUInt256(UInt256 &) = 0;
+
        virtual bool readFloat32(Float32 &) = 0;
        virtual bool readFloat64(Float64 &) = 0;
        virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) = 0;
@@ -159,6 +170,7 @@ private:
        virtual bool readDecimal32(Decimal32 &, UInt32, UInt32) = 0;
        virtual bool readDecimal64(Decimal64 &, UInt32, UInt32) = 0;
        virtual bool readDecimal128(Decimal128 &, UInt32, UInt32) = 0;
+       virtual bool readDecimal256(Decimal256 &, UInt32, UInt32) = 0;
        virtual bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) = 0;
     };
 
@@ -220,7 +232,10 @@ public:
     bool readNumber(UInt32 &) { return false; }
     bool readNumber(Int64 &) { return false; }
     bool readNumber(UInt64 &) { return false; }
+    bool readNumber(Int128 &) { return false; }
     bool readNumber(UInt128 &) { return false; }
+    bool readNumber(Int256 &) { return false; }
+    bool readNumber(UInt256 &) { return false; }
     bool readNumber(Float32 &) { return false; }
     bool readNumber(Float64 &) { return false; }
     bool readStringInto(PaddedPODArray<UInt8> &) { return false; }
@@ -235,6 +250,7 @@ public:
     bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }
+    bool readDecimal(Decimal256 &, UInt32, UInt32) { return false; }
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) { return false; }
     bool canReadMoreValues() const { return false; }
 };

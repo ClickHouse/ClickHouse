@@ -20,6 +20,7 @@ public:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "JSONAsStringRowInputFormat"; }
+    void resetParser() override;
 
 private:
     void readJSONObject(IColumn & column);

@@ -6,6 +6,8 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameHasTokenCaseInsensitive
 {
@@ -14,6 +16,8 @@ struct NameHasTokenCaseInsensitive
 
 using FunctionHasTokenCaseInsensitive
     = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseInsensitiveToken, false>, NameHasTokenCaseInsensitive>;
+
+}
 
 void registerFunctionHasTokenCaseInsensitive(FunctionFactory & factory)
 {

@@ -1,32 +1,26 @@
 #pragma once
 
-#include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/assert_cast.h>
 
-// TODO include this last because of a broken roaring header. See the comment
-// inside.
+// TODO include this last because of a broken roaring header. See the comment inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {
-
 /// Counts bitmap operation on numbers.
 template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
 {
 public:
-    AggregateFunctionBitmap(const DataTypePtr & type)
-            : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}) {}
+    AggregateFunctionBitmap(const DataTypePtr & type) : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}) { }
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<T>>();
-    }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -38,17 +32,11 @@ public:
         this->data(place).rbs.merge(this->data(rhs).rbs);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).rbs.write(buf);
-    }
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override { this->data(place).rbs.write(buf); }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).rbs.read(buf);
-    }
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override { this->data(place).rbs.read(buf); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
@@ -60,23 +48,22 @@ class AggregateFunctionBitmapL2 final : public IAggregateFunctionDataHelper<Data
 {
 public:
     AggregateFunctionBitmapL2(const DataTypePtr & type)
-            : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {}){}
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
+    {
+    }
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<T>>();
-    }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Data & data_lhs = this->data(place);
         const Data & data_rhs = this->data(assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num]);
-        if (!data_lhs.doneFirst)
+        if (!data_lhs.init)
         {
-            data_lhs.doneFirst = true;
-            data_lhs.rbs.rb_or(data_rhs.rbs);
+            data_lhs.init = true;
+            data_lhs.rbs.merge(data_rhs.rbs);
         }
         else
         {
@@ -89,13 +76,13 @@ public:
         Data & data_lhs = this->data(place);
         const Data & data_rhs = this->data(rhs);
 
-        if (!data_rhs.doneFirst)
+        if (!data_rhs.init)
             return;
 
-        if (!data_lhs.doneFirst)
+        if (!data_lhs.init)
         {
-            data_lhs.doneFirst = true;
-            data_lhs.rbs.rb_or(data_rhs.rbs);
+            data_lhs.init = true;
+            data_lhs.rbs.merge(data_rhs.rbs);
         }
         else
         {
@@ -103,17 +90,11 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        this->data(place).rbs.write(buf);
-    }
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override { this->data(place).rbs.write(buf); }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        this->data(place).rbs.read(buf);
-    }
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override { this->data(place).rbs.read(buf); }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
@@ -123,39 +104,30 @@ template <typename Data>
 class BitmapAndPolicy
 {
 public:
-    static void apply(Data& lhs, const Data& rhs)
-    {
-        lhs.rbs.rb_and(rhs.rbs);
-    }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_and(rhs.rbs); }
 };
 
 template <typename Data>
 class BitmapOrPolicy
 {
 public:
-    static void apply(Data& lhs, const Data& rhs)
-    {
-        lhs.rbs.rb_or(rhs.rbs);
-    }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_or(rhs.rbs); }
 };
 
 template <typename Data>
 class BitmapXorPolicy
 {
 public:
-    static void apply(Data& lhs, const Data& rhs)
-    {
-        lhs.rbs.rb_xor(rhs.rbs);
-    }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_xor(rhs.rbs); }
 };
 
 template <typename T, typename Data>
-using AggregateFunctionBitmapL2And = AggregateFunctionBitmapL2<T, Data, BitmapAndPolicy<Data> >;
+using AggregateFunctionBitmapL2And = AggregateFunctionBitmapL2<T, Data, BitmapAndPolicy<Data>>;
 
 template <typename T, typename Data>
-using AggregateFunctionBitmapL2Or = AggregateFunctionBitmapL2<T, Data, BitmapOrPolicy<Data> >;
+using AggregateFunctionBitmapL2Or = AggregateFunctionBitmapL2<T, Data, BitmapOrPolicy<Data>>;
 
 template <typename T, typename Data>
-using AggregateFunctionBitmapL2Xor = AggregateFunctionBitmapL2<T, Data, BitmapXorPolicy<Data> >;
+using AggregateFunctionBitmapL2Xor = AggregateFunctionBitmapL2<T, Data, BitmapXorPolicy<Data>>;
 
 }

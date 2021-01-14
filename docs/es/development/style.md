@@ -356,7 +356,7 @@ En todos los demás casos, use un nombre que describa el significado.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Nombres de `define`s y las constantes globales usan ALL\_CAPS con guiones bajos.
+**9.** Nombres de `define`s y las constantes globales usan ALL_CAPS con guiones bajos.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ El sufijo de subrayado se puede omitir si el argumento no se usa en el cuerpo de
 timer (not m_timer)
 ```
 
-**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL\_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
+**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -579,7 +579,7 @@ Si una función captura la propiedad de un objeto creado en el montón, cree el 
 
 **14.** Valores devueltos.
 
-En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `[return std::move(res)]{.strike}`.
+En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `return std::move(res)`.
 
 Si la función asigna un objeto en el montón y lo devuelve, use `shared_ptr` o `unique_ptr`.
 
@@ -673,7 +673,7 @@ Utilice siempre `#pragma once` en lugar de incluir guardias.
 **24.** No use `trailing return type` para funciones a menos que sea necesario.
 
 ``` cpp
-[auto f() -&gt; void;]{.strike}
+auto f() -> void
 ```
 
 **25.** Declaración e inicialización de variables.
@@ -701,15 +701,15 @@ auto s = std::string{"Hello"};
 
 Pero en igualdad de condiciones, se prefiere el código multiplataforma o portátil.
 
-**2.** Idioma: C ++ 17.
+**2.** Idioma: C++20.
 
-**3.** Compilación: `gcc`. En este momento (diciembre de 2017), el código se compila utilizando la versión 7.2. (También se puede compilar usando `clang 4`.)
+**3.** Compilación: `gcc`. En este momento (agosto 2020), el código se compila utilizando la versión 9.3. (También se puede compilar usando `clang 8`.)
 
-Se utiliza la biblioteca estándar (`libstdc++` o `libc++`).
+Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
-**5.**El código está escrito para la arquitectura de CPU x86\_64.
+**5.**El código está escrito para la arquitectura de CPU x86_64.
 
 El conjunto de instrucciones de CPU es el conjunto mínimo admitido entre nuestros servidores. Actualmente, es SSE 4.2.
 
@@ -749,7 +749,7 @@ Si su código en el `master` branch todavía no se puede construir, excluirlo de
 
 ## Biblioteca {#libraries}
 
-**1.** Se utiliza la biblioteca estándar de C ++ 14 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
+**1.** Se utiliza la biblioteca estándar de C++20 (se permiten extensiones experimentales), así como `boost` y `Poco` marco.
 
 **2.** Si es necesario, puede usar cualquier biblioteca conocida disponible en el paquete del sistema operativo.
 

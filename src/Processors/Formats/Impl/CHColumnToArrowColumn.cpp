@@ -12,6 +12,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <arrow/api.h>
 #include <arrow/util/decimal.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -220,7 +221,8 @@ namespace DB
         {
             // TODO: constructed every iteration
             ColumnWithTypeAndName column = header.safeGetByPosition(column_i);
-            column.column = chunk.getColumns()[column_i];
+            column.column = recursiveRemoveLowCardinality(chunk.getColumns()[column_i]);
+            column.type = recursiveRemoveLowCardinality(column.type);
 
             const bool is_column_nullable = column.type->isNullable();
             const auto & column_nested_type

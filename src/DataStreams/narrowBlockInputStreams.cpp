@@ -1,6 +1,5 @@
 #include <random>
 #include <Common/thread_local_rng.h>
-#include <DataStreams/ConcatBlockInputStream.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Pipe.h>
 #include "narrowBlockInputStreams.h"
@@ -24,49 +23,40 @@ namespace
     }
 }
 
-BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t width)
+void narrowPipe(Pipe & pipe, size_t width)
 {
-    size_t size = inputs.size();
+    size_t size = pipe.numOutputPorts();
     if (size <= width)
-        return inputs;
+        return;
 
-    std::vector<BlockInputStreams> partitions(width);
+    std::vector<std::vector<OutputPort *>> partitions(width);
 
     auto distribution = getDistribution(size, width);
 
-    for (size_t i = 0; i < size; ++i)
-        partitions[distribution[i]].push_back(inputs[i]);
-
-    BlockInputStreams res(width);
-    for (size_t i = 0; i < width; ++i)
-        res[i] = std::make_shared<ConcatBlockInputStream>(partitions[i]);
-
-    return res;
-}
-
-Pipes narrowPipes(Pipes pipes, size_t width)
-{
-    size_t size = pipes.size();
-    if (size <= width)
-        return pipes;
-
-    std::vector<Pipes> partitions(width);
-
-    auto distribution = getDistribution(size, width);
-
-    for (size_t i = 0; i < size; ++i)
-        partitions[distribution[i]].emplace_back(std::move(pipes[i]));
-
-    Pipes res;
-    res.reserve(width);
-
-    for (size_t i = 0; i < width; ++i)
+    pipe.transform([&](OutputPortRawPtrs ports)
     {
-        auto processor = std::make_shared<ConcatProcessor>(partitions[i].at(0).getHeader(), partitions[i].size());
-        res.emplace_back(std::move(partitions[i]), std::move(processor));
-    }
+        for (size_t i = 0; i < size; ++i)
+            partitions[distribution[i]].emplace_back(ports[i]);
 
-    return res;
+        Processors concats;
+        concats.reserve(width);
+
+        for (size_t i = 0; i < width; ++i)
+        {
+           auto concat = std::make_shared<ConcatProcessor>(partitions[i].at(0)->getHeader(),
+                                                           partitions[i].size());
+           size_t next_port = 0;
+           for (auto & port : concat->getInputs())
+           {
+               connect(*partitions[i][next_port], port);
+               ++next_port;
+           }
+
+           concats.emplace_back(std::move(concat));
+        }
+
+        return concats;
+    });
 }
 
 }

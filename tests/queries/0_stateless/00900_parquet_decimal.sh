@@ -3,7 +3,8 @@
 # set -x
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
 
@@ -16,12 +17,12 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j)
 #${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-100, -100, -100, -0.1, -0.1, -0.1, -100, -100, -100, -100);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c) VALUES (1, 1, 1);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c) VALUES (10, 10, 10);"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal0_1.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal0.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal0_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal0.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal0_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal0_2.dump
 echo diff0:
-diff ${CLICKHOUSE_TMP}/parquet_decimal0_1.dump ${CLICKHOUSE_TMP}/parquet_decimal0_2.dump
+diff "${CLICKHOUSE_TMP}"/parquet_decimal0_1.dump "${CLICKHOUSE_TMP}"/parquet_decimal0_2.dump
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
 
@@ -51,12 +52,12 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j)
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, g) VALUES ('42.00000', 42.0000000000000000000000000000000, '0.999990');"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f) VALUES ('0.9e9', '0.9e18', '0.9e38', '9e-9', '9e-18', '9e-38');"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f) VALUES ('-0.9e9', '-0.9e18', '-0.9e38', '-9e-9', '-9e-18', '-9e-38');"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal1_1.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal1.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal1_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal1.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal1_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal1_2.dump
 echo diff1:
-diff ${CLICKHOUSE_TMP}/parquet_decimal1_1.dump ${CLICKHOUSE_TMP}/parquet_decimal1_2.dump
+diff "${CLICKHOUSE_TMP}"/parquet_decimal1_1.dump "${CLICKHOUSE_TMP}"/parquet_decimal1_2.dump
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
 
@@ -64,12 +65,12 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS decimal  (a DECIMAL(9,0
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS decimal2 AS decimal ENGINE = Memory;"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42);"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal2_1.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal2.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal2_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal2.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d, e, f, g, h, i, j FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal2_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d, e, f, g, h, i, j;" > "${CLICKHOUSE_TMP}"/parquet_decimal2_2.dump
 echo diff2:
-diff ${CLICKHOUSE_TMP}/parquet_decimal2_1.dump ${CLICKHOUSE_TMP}/parquet_decimal2_2.dump
+diff "${CLICKHOUSE_TMP}"/parquet_decimal2_1.dump "${CLICKHOUSE_TMP}"/parquet_decimal2_2.dump
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
 
@@ -78,14 +79,14 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS decimal  (a Nullable(DE
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS decimal2 AS decimal ENGINE = Memory;"
 # Empty table test
 # throws No data to insert
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d  FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_1.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d  FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal3_1.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet" 2> /dev/null
 echo nothing:
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;"
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE decimal2;"
 
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal VALUES (Null, Null, Null, Null)"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_2.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal3_2.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet"
 echo nulls:
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;"
@@ -94,7 +95,7 @@ ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE decimal2;"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal VALUES (1, Null, Null, Null)"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal VALUES (Null, 1, Null, Null)"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal VALUES (Null, Null, 1, Null)"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_3.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" > "${CLICKHOUSE_TMP}"/parquet_decimal3_3.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO decimal2 FORMAT Parquet"
 
 echo full orig:
@@ -102,10 +103,10 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal ORDER BY a, b, c, d;"
 echo full inserted:
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;"
 
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;" > ${CLICKHOUSE_TMP}/parquet_decimal3_1.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;" > ${CLICKHOUSE_TMP}/parquet_decimal3_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;" > "${CLICKHOUSE_TMP}"/parquet_decimal3_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM decimal2 ORDER BY a, b, c, d;" > "${CLICKHOUSE_TMP}"/parquet_decimal3_2.dump
 
 echo diff3:
-diff ${CLICKHOUSE_TMP}/parquet_decimal3_1.dump ${CLICKHOUSE_TMP}/parquet_decimal3_2.dump
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"
+diff "${CLICKHOUSE_TMP}"/parquet_decimal3_1.dump "${CLICKHOUSE_TMP}"/parquet_decimal3_2.dump
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal;"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS decimal2;"

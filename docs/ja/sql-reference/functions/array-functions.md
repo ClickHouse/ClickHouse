@@ -702,13 +702,13 @@ arrayDifference(array)
 
 **パラメータ**
 
--   `array` – [配列](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [配列](https://clickhouse.tech/docs/en/data_types/array/).
 
 **戻り値**
 
 隣接する要素間の差分の配列を返します。
 
-タイプ: [UInt\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [フロート\*](https://clickhouse.yandex/docs/en/data_types/float/).
+タイプ: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [フロート\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **例**
 
@@ -754,7 +754,7 @@ arrayDistinct(array)
 
 **パラメータ**
 
--   `array` – [配列](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [配列](https://clickhouse.tech/docs/en/data_types/array/).
 
 **戻り値**
 
@@ -1028,7 +1028,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 
 ## アレイオーク {#arrayauc}
 
-計算AUC（機械学習の概念である曲線の下の面積、詳細を参照してください：https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve）。
+計算AUC（機械学習の概念である曲線の下の面積、詳細を参照してください：https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve）。
 
 **構文**
 

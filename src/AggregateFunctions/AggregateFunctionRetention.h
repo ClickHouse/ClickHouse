@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <sstream>
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -123,7 +121,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & data_to = assert_cast<ColumnUInt8 &>(assert_cast<ColumnArray &>(to).getData()).getData();
         auto & offsets_to = assert_cast<ColumnArray &>(to).getOffsets();

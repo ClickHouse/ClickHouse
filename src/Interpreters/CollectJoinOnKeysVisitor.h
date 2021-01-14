@@ -26,8 +26,8 @@ public:
     struct Data
     {
         TableJoin & analyzed_join;
-        const TableWithColumnNames & left_table;
-        const TableWithColumnNames & right_table;
+        const TableWithColumnNamesAndTypes & left_table;
+        const TableWithColumnNamesAndTypes & right_table;
         const Aliases & aliases;
         const bool is_asof{false};
         ASTPtr asof_left_key{};
@@ -49,8 +49,7 @@ public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
         if (auto * func = node->as<ASTFunction>())
-            if (func->name == "equals")
-                return false;
+            return func->name == "and";
         return true;
     }
 
@@ -61,8 +60,6 @@ private:
     static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
     static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
-
-    [[noreturn]] static void throwSyntaxException(const String & msg);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.

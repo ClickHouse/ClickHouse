@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/TabSeparatedRawRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -19,7 +20,7 @@ namespace ErrorCodes
 
 static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
 {
-    NullSink null_sink;
+    NullOutput null_sink;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -139,16 +140,24 @@ void TabSeparatedRowInputFormat::readPrefix()
         if (format_settings.with_names_use_header)
         {
             String column_name;
-            do
+            for (;;)
             {
                 readEscapedString(column_name, in);
-                addInputColumn(column_name);
+                if (!checkChar('\t', in))
+                {
+                    /// Check last column for \r before adding it, otherwise an error will be:
+                    ///     "Unknown field found in TSV header"
+                    checkForCarriageReturn(in);
+                    addInputColumn(column_name);
+                    break;
+                }
+                else
+                    addInputColumn(column_name);
             }
-            while (checkChar('\t', in));
+
 
             if (!in.eof())
             {
-                checkForCarriageReturn(in);
                 assertChar('\n', in);
             }
         }
@@ -187,7 +196,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         }
         else
         {
-            NullSink null_sink;
+            NullOutput null_sink;
             readEscapedStringInto(null_sink, in);
         }
 
@@ -322,12 +331,29 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
 {
     if (column_indexes_for_input_fields[file_column])
     {
+        // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
+        if (!type->isNullable() && !in.eof())
+        {
+            if (*in.position() == '\\' && in.available() >= 2)
+            {
+                ++in.position();
+                if (*in.position() == 'N')
+                {
+                    ++in.position();
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
+                }
+                else
+                {
+                    --in.position();
+                }
+            }
+        }
         const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
         readField(column, type, is_last_file_column);
     }
     else
     {
-        NullSink null_sink;
+        NullOutput null_sink;
         readEscapedStringInto(null_sink, in);
     }
 }
@@ -340,8 +366,9 @@ void TabSeparatedRowInputFormat::syncAfterError()
 void TabSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
+    const auto & sample = getPort().getHeader();
+    read_columns.assign(sample.columns(), false);
     column_indexes_for_input_fields.clear();
-    read_columns.clear();
     columns_to_fill_with_default_values.clear();
 }
 
@@ -356,6 +383,18 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, false, false, settings);
+        });
+    }
+
+    for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
+    {
+        factory.registerInputFormatProcessor(name, [](
+            ReadBuffer & buf,
+            const Block & sample,
+            IRowInputFormat::Params params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<TabSeparatedRawRowInputFormat>(sample, buf, params, false, false, settings);
         });
     }
 
@@ -384,10 +423,11 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();
+    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -404,6 +444,9 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
         }
         else if (*pos == '\n' || *pos == '\r')
         {
+            if (*pos == '\n')
+                ++number_of_rows;
+
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
             ++pos;
@@ -412,7 +455,7 @@ static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<>
 
     saveUpToPosition(in, memory, pos);
 
-    return loadAtPosition(in, memory, pos);
+    return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)

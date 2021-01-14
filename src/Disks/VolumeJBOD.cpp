@@ -17,10 +17,10 @@ VolumeJBOD::VolumeJBOD(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    DiskSelectorPtr disk_selector
-) : IVolume(name_, config, config_prefix, disk_selector)
+    DiskSelectorPtr disk_selector)
+    : IVolume(name_, config, config_prefix, disk_selector)
 {
-    Logger * logger = &Logger::get("StorageConfiguration");
+    Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
@@ -48,35 +48,44 @@ VolumeJBOD::VolumeJBOD(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(
-                    logger,
-                    "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) << " have not enough space ("
-                            << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size ("
-                            << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
+                LOG_WARNING(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})", backQuote(disks[i]->getName()), backQuote(config_prefix), ReadableSize(sizes[i]), ReadableSize(max_data_part_size));
     }
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(
-            logger,
-            "Volume " << backQuote(name) << " max_data_part_size is too low (" << formatReadableSizeWithBinarySuffix(max_data_part_size)
-                      << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
+        LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
+
+    /// Default value is 'true' due to backward compatibility.
+    perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
+
+    are_merges_avoided = config.getBool(config_prefix + ".prefer_not_to_merge", false);
 }
 
-DiskPtr VolumeJBOD::getNextDisk()
+VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        DiskSelectorPtr disk_selector)
+    : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
+}
+
+DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
+{
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t index = start_from % disks.size();
     return disks[index];
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 {
-    /// This volume can not store files which size greater than max_data_part_size
+    /// This volume can not store data which size is greater than `max_data_part_size`
+    /// to ensure that parts of size greater than that go to another volume(s).
 
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
+    size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
     size_t disks_num = disks.size();
     for (size_t i = 0; i < disks_num; ++i)
     {
@@ -89,5 +98,20 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     }
     return {};
 }
+
+bool VolumeJBOD::areMergesAvoided() const
+{
+    auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_acquire);
+    if (are_merges_avoided_user_override_value)
+        return *are_merges_avoided_user_override_value;
+    else
+        return are_merges_avoided;
+}
+
+void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)
+{
+    are_merges_avoided_user_override.store(avoid, std::memory_order_release);
+}
+
 
 }

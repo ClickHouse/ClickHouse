@@ -1,11 +1,22 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
+
+ADDINCL(
+    contrib/libs/zstd
+    contrib/restricted/fast_float
+)
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/brotli/dec
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
+    contrib/libs/zstd
+    contrib/restricted/fast_float
 )
+
 
 SRCS(
     AIO.cpp
@@ -14,19 +25,20 @@ SRCS(
     BrotliWriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
-    copyData.cpp
-    createReadBufferFromFileBase.cpp
-    createWriteBufferFromFileBase.cpp
     DoubleConverter.cpp
+    HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
-    HTTPCommon.cpp
+    LZMADeflatingWriteBuffer.cpp
+    LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
-    MemoryReadWriteBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
+    MemoryReadWriteBuffer.cpp
+    MySQLBinlogEventReadBuffer.cpp
+    MySQLPacketPayloadReadBuffer.cpp
+    MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
-    parseDateTimeBestEffort.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferAIO.cpp
@@ -36,11 +48,9 @@ SRCS(
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
-    readFloatText.cpp
     ReadHelpers.cpp
-    ReadWriteBufferFromHTTP.cpp
+    SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
-    WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
@@ -54,6 +64,13 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
+    ZstdDeflatingWriteBuffer.cpp
+    ZstdInflatingReadBuffer.cpp
+    copyData.cpp
+    createReadBufferFromFileBase.cpp
+    parseDateTimeBestEffort.cpp
+    readFloatText.cpp
+
 )
 
 END()

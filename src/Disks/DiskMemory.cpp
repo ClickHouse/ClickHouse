@@ -330,7 +330,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path
     return std::make_unique<ReadIndirectBuffer>(path, iter->second.data);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
+std::unique_ptr<WriteBufferFromFileBase> DiskMemory::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     std::lock_guard lock(mutex);
 
@@ -406,6 +406,32 @@ void DiskMemory::createFile(const String &)
 void DiskMemory::setReadOnly(const String &)
 {
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+int DiskMemory::open(const String & /*path*/, mode_t /*mode*/) const
+{
+    throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::close(int /*fd*/) const
+{
+    throw Exception("Method close is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::sync(int /*fd*/) const
+{
+    throw Exception("Method sync is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void DiskMemory::truncateFile(const String & path, size_t size)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    file_it->second.data.resize(size);
 }
 
 

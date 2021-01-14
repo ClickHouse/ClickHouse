@@ -42,3 +42,5 @@ select 'drop';
 insert into buffer_01256 select * from system.numbers limit 10;
 drop table if exists buffer_01256;
 select count() from data_01256;
+
+drop table data_01256;

@@ -20,7 +20,7 @@ ClickHouseは複数のファイル構成管理をサポートします。 主サ
 
 もし `remove` 指定されると、要素を削除します。
 
-この設定はまた、 “substitutions”. 要素が `incl` 属性は、ファイルからの対応する置換が値として使用されます。 デフォルトでは、ファイルへのパスとの置換を行う `/etc/metrika.xml`. これはで変えることができます [include\_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) サーバー設定の要素。 置換値は、次のように指定されます `/yandex/substitution_name` このファイル内の要素。 で指定された置換の場合 `incl` 存在しない場合は、ログに記録されます。 ClickHouseが不足している置換をログに記録しないようにするには、 `optional="true"` 属性(たとえば、 [マクロ](server-configuration-parameters/settings.md)).
+この設定はまた、 “substitutions”. 要素が `incl` 属性は、ファイルからの対応する置換が値として使用されます。 デフォルトでは、ファイルへのパスとの置換を行う `/etc/metrika.xml`. これはで変えることができます [include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from) サーバー設定の要素。 置換値は、次のように指定されます `/yandex/substitution_name` このファイル内の要素。 で指定された置換の場合 `incl` 存在しない場合は、ログに記録されます。 ClickHouseが不足している置換をログに記録しないようにするには、 `optional="true"` 属性(たとえば、 [マクロ](server-configuration-parameters/settings.md)).
 
 置換はZooKeeperからも実行できます。 これを行うには、属性を指定します `from_zk = "/path/to/node"`. 要素の値は、ノードの内容に置き換えられます。 `/path/to/node` 飼育係で。 また、ZooKeeperノードにXMLサブツリー全体を配置することもできます。
 

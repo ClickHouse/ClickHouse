@@ -317,7 +317,7 @@ Calcule JumpConsistentHash forme un UInt64.
 Accepte deux arguments: une clé de type UInt64 et le nombre de compartiments. Renvoie Int32.
 Pour plus d'informations, voir le lien: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
 
 Produit un [MurmurHash2](https://github.com/aappleby/smhasher) la valeur de hachage.
 
@@ -385,7 +385,7 @@ Résultat:
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
 
 Produit un [MurmurHash3](https://github.com/aappleby/smhasher) la valeur de hachage.
 
@@ -415,7 +415,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3\_128 {#murmurhash3-128}
+## murmurHash3_128 {#murmurhash3-128}
 
 Produit de 128 bits [MurmurHash3](https://github.com/aappleby/smhasher) la valeur de hachage.
 

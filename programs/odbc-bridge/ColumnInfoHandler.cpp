@@ -62,7 +62,7 @@ namespace
 void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
@@ -89,11 +89,11 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     if (params.has("schema"))
     {
         schema_name = params.get("schema");
-        LOG_TRACE(log, "Will fetch info for table '" << schema_name + "." + table_name << "'");
+        LOG_TRACE(log, "Will fetch info for table '{}'", schema_name + "." + table_name);
     }
     else
-        LOG_TRACE(log, "Will fetch info for table '" << table_name << "'");
-    LOG_TRACE(log, "Got connection str '" << connection_string << "'");
+        LOG_TRACE(log, "Will fetch info for table '{}'", table_name);
+    LOG_TRACE(log, "Got connection str '{}'", connection_string);
 
     try
     {
@@ -113,18 +113,18 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         /// TODO Why not do SQLColumns instead?
         std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
-        std::stringstream ss;
+        WriteBufferFromOwnString buf;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
-        ParserQueryWithOutput parser;
+        ParserQueryWithOutput parser(input.data() + input.size());
         ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", context_settings.max_query_size, context_settings.max_parser_depth);
 
-        IAST::FormatSettings settings(ss, true);
+        IAST::FormatSettings settings(buf, true);
         settings.always_quote_identifiers = true;
         settings.identifier_quoting_style = getQuotingStyle(hdbc);
         select->format(settings);
-        std::string query = ss.str();
+        std::string query = buf.str();
 
-        LOG_TRACE(log, "Inferring structure with query '" << query << "'");
+        LOG_TRACE(log, "Inferring structure with query '{}'", query);
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());

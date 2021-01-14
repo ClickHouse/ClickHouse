@@ -1,3 +1,4 @@
+#pragma once
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 

@@ -1,5 +1,5 @@
 ---
-toc_priority: 54
+toc_priority: 55
 toc_title: Nullable
 ---
 
@@ -7,7 +7,7 @@ toc_title: Nullable
 
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes “missing value” alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don’t have a value will store `NULL`.
 
-For a `TypeName`, you can’t use composite data types [Array](array.md) and [Tuple](tuple.md). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
+For a `TypeName`, you can’t use composite data types [Array](../../sql-reference/data-types/array.md) and [Tuple](../../sql-reference/data-types/tuple.md). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
 
 A `Nullable` type field can’t be included in table indexes.
 

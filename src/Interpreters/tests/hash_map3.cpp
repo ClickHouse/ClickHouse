@@ -10,7 +10,7 @@
 
 #include <utility>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
@@ -66,7 +66,8 @@ int main(int, char **)
         UInt64,
         SimpleHash,
         Grower,
-        HashTableAllocatorWithStackMemory<4 * 24>>;
+        HashTableAllocatorWithStackMemory<
+            4 * sizeof(HashMapCell<StringRef, UInt64, SimpleHash>)>>;
 
     Map map;
 

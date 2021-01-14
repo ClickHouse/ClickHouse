@@ -1,3 +1,4 @@
+#include <memory>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
 #include <AggregateFunctions/Helpers.h>
@@ -13,40 +14,37 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename T>
-struct Avg
+bool allowType(const DataTypePtr& type) noexcept
 {
-    using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
-    using Function = AggregateFunctionAvg<T, AggregateFunctionAvgData<FieldType, UInt64>>;
-};
-
-template <typename T>
-using AggregateFuncAvg = typename Avg<T>::Function;
+    const WhichDataType t(type);
+    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+}
 
 AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res;
-    DataTypePtr data_type = argument_types[0];
-    if (isDecimal(data_type))
-        res.reset(createWithDecimalType<AggregateFuncAvg>(*data_type, *data_type, argument_types));
-    else
-        res.reset(createWithNumericType<AggregateFuncAvg>(*data_type, argument_types));
+    const DataTypePtr& data_type = argument_types[0];
 
-    if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (!allowType(data_type))
+        throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    AggregateFunctionPtr res;
+
+    if (isDecimal(data_type))
+        res.reset(createWithDecimalType<AggregateFunctionAvg>(
+            *data_type, argument_types, getDecimalScale(*data_type)));
+    else
+        res.reset(createWithNumericType<AggregateFunctionAvg>(*data_type, argument_types));
+
     return res;
 }
-
 }
 
 void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::CaseInsensitive);
 }
-
 }

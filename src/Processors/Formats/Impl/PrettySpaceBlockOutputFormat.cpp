@@ -29,11 +29,17 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+    {
+        writeString(String(row_number_width, ' '), out);
+    }
     /// Names
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (i != 0)
             writeCString("   ", out);
+        else
+            writeChar(' ', out);
 
         const ColumnWithTypeAndName & col = header.getByPosition(i);
 
@@ -64,10 +70,20 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
+        if (format_settings.pretty.output_format_pretty_row_numbers)
+        {
+            // Write row number;
+            auto row_num_string = std::to_string(row + 1) + ". ";
+            for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
+            {
+                writeCString(" ", out);
+            }
+            writeString(row_num_string, out);
+        }
         for (size_t column = 0; column < num_columns; ++column)
         {
             if (column != 0)
-                writeCString("   ", out);
+                writeCString(" ", out);
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
@@ -97,7 +113,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
@@ -106,7 +122,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;

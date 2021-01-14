@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -31,10 +32,12 @@ public:
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_SAMPLE_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
+        REMOVE_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -68,7 +71,7 @@ public:
      */
     ASTPtr col_decl;
 
-    /** The ADD COLUMN query here optionally stores the name of the column following AFTER
+    /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
      * Also used for RENAME COLUMN.
      */
@@ -77,6 +80,10 @@ public:
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** For MODIFY SAMPLE BY
+     */
+    ASTPtr sample_by;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */
@@ -97,7 +104,7 @@ public:
     */
     ASTPtr constraint;
 
-    /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
     ASTPtr partition;
@@ -136,7 +143,9 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
+
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -160,26 +169,10 @@ public:
     /// Target column name
     ASTPtr rename_to;
 
+    /// Which property user want to remove
+    String remove_property;
+
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
-
-    ASTPtr clone() const override;
-
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
-class ASTAlterCommandList : public IAST
-{
-public:
-    std::vector<ASTAlterCommand *> commands;
-
-    void add(const ASTPtr & command)
-    {
-        commands.push_back(command->as<ASTAlterCommand>());
-        children.push_back(command);
-    }
-
-    String getID(char) const override { return "AlterCommandList"; }
 
     ASTPtr clone() const override;
 
@@ -192,7 +185,9 @@ class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCl
 public:
     bool is_live_view{false}; /// true for ALTER LIVE VIEW
 
-    ASTAlterCommandList * command_list = nullptr;
+    ASTExpressionList * command_list = nullptr;
+
+    bool isSettingsAlter() const;
 
     String getID(char) const override;
 

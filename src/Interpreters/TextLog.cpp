@@ -1,10 +1,14 @@
 #include <Interpreters/TextLog.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeString.h>
+
 #include <Common/ClickHouseRevision.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+
 #include <array>
 
 namespace DB
@@ -29,6 +33,7 @@ Block TextLogElement::createBlock()
     {
         {std::make_shared<DataTypeDate>(),                                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                                "event_time"},
+        {std::make_shared<DataTypeDateTime64>(6),                                             "event_time_microseconds"},
         {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
 
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
@@ -46,14 +51,13 @@ Block TextLogElement::createBlock()
     };
 }
 
-void TextLogElement::appendToBlock(Block & block) const
+void TextLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t i = 0;
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(microseconds);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
@@ -64,12 +68,10 @@ void TextLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(logger_name);
     columns[i++]->insert(message);
 
-    columns[i++]->insert(ClickHouseRevision::get());
+    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     columns[i++]->insert(source_file);
     columns[i++]->insert(source_line);
-
-    block.setColumns(std::move(columns));
 }
 
 TextLog::TextLog(Context & context_, const String & database_name_,

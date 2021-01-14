@@ -8,7 +8,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -36,7 +36,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
     String name = ast->getColumnName();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
+    auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
@@ -72,7 +72,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name);
+        return std::make_shared<ASTLiteral>(id->name());
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -113,7 +113,7 @@ namespace
             const auto & name = name_and_type.name;
             const auto & type = name_and_type.type;
 
-            if (name == identifier->name)
+            if (name == identifier->name())
             {
                 ColumnWithTypeAndName column;
                 Field converted = convertFieldToType(value, *type);

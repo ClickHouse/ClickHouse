@@ -4,9 +4,16 @@
 #include <vector>
 #include <memory>
 
+#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <Common/StackTrace.h>
+
+#include <fmt/format.h>
+
+#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#define ABORT_ON_LOGICAL_ERROR
+#endif
 
 namespace Poco { class Logger; }
 
@@ -19,9 +26,20 @@ class Exception : public Poco::Exception
 public:
     Exception() = default;
     Exception(const std::string & msg, int code);
+    Exception(const std::string & msg, const Exception & nested, int code);
 
-    enum CreateFromPocoTag { CreateFromPoco };
-    enum CreateFromSTDTag { CreateFromSTD };
+    Exception(int code, const std::string & message)
+        : Exception(message, code)
+    {}
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    Exception(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {}
+
+    struct CreateFromPocoTag {};
+    struct CreateFromSTDTag {};
 
     Exception(CreateFromPocoTag, const Poco::Exception & exc);
     Exception(CreateFromSTDTag, const std::exception & exc);
@@ -32,7 +50,16 @@ public:
     const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
-    void addMessage(const std::string & arg) { extendedMessage(arg); }
+    template <typename ...Args>
+    void addMessage(const std::string& format, Args&&... args)
+    {
+        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
+    }
+
+    void addMessage(const std::string& message)
+    {
+        extendedMessage(message);
+    }
 
     std::string getStackTraceString() const;
 
@@ -70,10 +97,45 @@ private:
 };
 
 
+/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
+/// more convenient calculation of problem line number.
+class ParsingException : public Exception
+{
+public:
+    ParsingException();
+    ParsingException(const std::string & msg, int code);
+    ParsingException(int code, const std::string & message);
+
+    // Format message with fmt::format, like the logging functions.
+    template <typename ...Args>
+    ParsingException(int code, const std::string & fmt, Args&&... args)
+        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {
+        Exception::message(Exception::message() + "{}");
+    }
+
+
+    std::string displayText() const
+#if defined(POCO_CLICKHOUSE_PATCH)
+    override
+#endif
+    ;
+
+    int getLineNumber() { return line_number_; }
+    void setLineNumber(int line_number) { line_number_ = line_number;}
+
+private:
+    ssize_t line_number_{-1};
+    mutable std::string formatted_message_;
+
+    const char * name() const throw() override { return "DB::ParsingException"; }
+    const char * className() const throw() override { return "DB::ParsingException"; }
+};
+
+
 using Exceptions = std::vector<std::exception_ptr>;
 
 
-std::string errnoToString(int code, int the_errno = errno);
 [[noreturn]] void throwFromErrno(const std::string & s, int code, int the_errno = errno);
 /// Useful to produce some extra information about available space and inodes on device
 [[noreturn]] void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code,

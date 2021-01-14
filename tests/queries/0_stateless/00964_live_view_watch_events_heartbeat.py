@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -38,7 +38,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect('Progress: 2.00 rows.*\)')
     client2.send('INSERT INTO test.mt VALUES (2),(3)')
     client2.expect(prompt)
-    client1.expect('Progress: 3.00 rows.*\)')
     # wait for heartbeat
     client1.expect('Progress: 3.00 rows.*\)')
     # send Ctrl-C
@@ -46,7 +45,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')

@@ -50,19 +50,19 @@ private:
 
 private:
     PeekableReadBuffer buf;
-    DataTypes data_types;
+    const DataTypes data_types;
 
     FormatSettings settings;
     const bool ignore_spaces;
-    ParsedTemplateFormatString format;
-    ParsedTemplateFormatString row_format;
+    const ParsedTemplateFormatString format;
+    const ParsedTemplateFormatString row_format;
 
     size_t format_data_idx;
     bool end_of_stream = false;
     std::vector<size_t> always_default_columns;
-    char default_csv_delimiter;
+    const char default_csv_delimiter;
 
-    std::string row_between_delimiter;
+    const std::string row_between_delimiter;
 };
 
 }

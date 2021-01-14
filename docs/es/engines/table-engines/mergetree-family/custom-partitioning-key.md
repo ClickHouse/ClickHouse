@@ -116,7 +116,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 ```
 
-Carpeta ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ y así sucesivamente son los directorios de las partes. Cada parte se relaciona con una partición correspondiente y contiene datos solo para un mes determinado (la tabla de este ejemplo tiene particiones por mes).
+Carpeta ‘201901_1_1_0’, ‘201901_1_7_1’ y así sucesivamente son los directorios de las partes. Cada parte se relaciona con una partición correspondiente y contiene datos solo para un mes determinado (la tabla de este ejemplo tiene particiones por mes).
 
 El `detached` el directorio contiene partes que se separaron de la tabla utilizando el [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) consulta. Las partes dañadas también se mueven a este directorio, en lugar de eliminarse. El servidor no utiliza las piezas del `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) consulta.
 

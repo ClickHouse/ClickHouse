@@ -21,14 +21,14 @@
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
   */
-#define DEFAULT_BLOCK_SIZE 65536
+#define DEFAULT_BLOCK_SIZE 65505    /// 65536 minus 16 + 15 bytes padding that we usually have in arrays
 
 /** Which blocks should be formed for insertion into the table, if we control the formation of blocks.
   * (Sometimes the blocks are inserted exactly such blocks that have been read / transmitted from the outside, and this parameter does not affect their size.)
   * More than DEFAULT_BLOCK_SIZE, because in some tables a block of data on the disk is created for each block (quite a big thing),
   *  and if the parts were small, then it would be costly then to combine them.
   */
-#define DEFAULT_INSERT_BLOCK_SIZE 1048576
+#define DEFAULT_INSERT_BLOCK_SIZE 1048545   /// 1048576 minus 16 + 15 bytes padding that we usually have in arrays
 
 /** The same, but for merge operations. Less DEFAULT_BLOCK_SIZE for saving RAM (since all the columns are read).
   * Significantly less, since there are 10-way mergers.
@@ -64,11 +64,19 @@
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
-/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+/// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
-#define DBMS_TCP_PROTOCOL_VERSION 54226
+/// Minimum revision supporting OpenTelemetry
+#define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
+
+/// Minimum revision supporting interserver secret.
+#define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
+
+#define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
+
+/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
+#define DBMS_TCP_PROTOCOL_VERSION 54443
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
@@ -87,7 +95,7 @@
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
 #define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
-#if !__has_include(<sanitizer/asan_interface.h>)
+#if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif

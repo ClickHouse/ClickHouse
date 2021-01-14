@@ -11,12 +11,17 @@ namespace DB
 
 struct FormatSettings;
 
-/** The stream for outputting data in the JSONCompact format.
+/** The stream for outputting data in the JSONCompact- formats.
   */
 class JSONCompactRowOutputFormat : public JSONRowOutputFormat
 {
 public:
-    JSONCompactRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    JSONCompactRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header,
+        const RowOutputFormatParams & params_,
+        const FormatSettings & settings_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONCompactRowOutputFormat"; }
 
@@ -37,7 +42,6 @@ protected:
     }
 
     void writeTotalsFieldDelimiter() override;
-
 };
 
 }

@@ -5,6 +5,7 @@
 #include <Common/Stopwatch.h>
 #include <common/types.h>
 #include <Common/ThreadPool.h>
+#include <common/phdr_cache.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <thread>
@@ -25,6 +26,13 @@ namespace DB
 
 TEST(Common, RWLock1)
 {
+    /// Tests with threads require this, because otherwise
+    ///  when tested under Memory Sanitizer,
+    ///  it tries to obtain stack trace on 'free' invocation at thread exit,
+    ///  but cannot do that due to infinite recursion.
+    /// Alternative solution: disable PHDR Cache under memory sanitizer.
+    updatePHDRCache();
+
     constexpr int cycles = 1000;
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
@@ -92,6 +100,8 @@ TEST(Common, RWLock1)
 
 TEST(Common, RWLockRecursive)
 {
+    updatePHDRCache();
+
     constexpr auto cycles = 10000;
 
     static auto fifo_lock = RWLockImpl::create();
@@ -121,7 +131,10 @@ TEST(Common, RWLockRecursive)
 
             auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
+#ifndef ABORT_ON_LOGICAL_ERROR
+            /// It throws LOGICAL_ERROR
             EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
+#endif
         }
 
         fifo_lock->getLock(RWLockImpl::Write, "q2");
@@ -134,6 +147,8 @@ TEST(Common, RWLockRecursive)
 
 TEST(Common, RWLockDeadlock)
 {
+    updatePHDRCache();
+
     static auto lock1 = RWLockImpl::create();
     static auto lock2 = RWLockImpl::create();
 
@@ -216,6 +231,8 @@ TEST(Common, RWLockDeadlock)
 
 TEST(Common, RWLockPerfTestReaders)
 {
+    updatePHDRCache();
+
     constexpr int cycles = 100000; // 100k
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 

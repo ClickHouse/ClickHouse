@@ -1,13 +1,8 @@
----
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
----
-
 # SimpleAggregateFunction {#data-type-simpleaggregatefunction}
 
-`SimpleAggregateFunction(name, types_of_arguments…)` tipo de datos almacena el valor actual de la función agregada, y no almacena su estado completo como [`AggregateFunction`](aggregatefunction.md) hacer. Esta optimización se puede aplicar a funciones para las que se contiene la siguiente propiedad: el resultado de aplicar una función `f` a un conjunto de filas `S1 UNION ALL S2` se puede obtener aplicando `f` a partes de la fila establecida por separado, y luego aplicar de nuevo `f` los resultados: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. Esta propiedad garantiza que los resultados de agregación parcial son suficientes para calcular el combinado, por lo que no tenemos que almacenar y procesar ningún dato adicional.
+El tipo de dato `SimpleAggregateFunction(name, types_of_arguments…)` almacena el valor actual de la función agregada, no almacena su estado completo como hace [`AggregateFunction`](aggregatefunction.md). Esta optimización se puede aplicar a las funciones con la siguiente propiedad: el resultado de aplicar una función `f` a un conjunto de filas `S1 UNION ALL S2` se puede obtener aplicando `f` a partes de la fila establecida por separado, y luego aplicar de nuevo `f` los resultados: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`. Un ejemplo de función con esta propiedad es la suma. Esta propiedad garantiza que los resultados de agregación parcial son suficientes para calcular el combinado, por lo que no tenemos que almacenar y procesar ningún dato adicional.
 
-Se admiten las siguientes funciones agregadas:
+La lista de functiones de agregación soportadas son:
 
 -   [`any`](../../sql-reference/aggregate-functions/reference.md#agg_function-any)
 -   [`anyLast`](../../sql-reference/aggregate-functions/reference.md#anylastx)
@@ -18,7 +13,7 @@ Se admiten las siguientes funciones agregadas:
 -   [`groupBitOr`](../../sql-reference/aggregate-functions/reference.md#groupbitor)
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference.md#groupbitxor)
 
-Valores de la `SimpleAggregateFunction(func, Type)` y almacenado de la misma manera que `Type`, por lo que no necesita aplicar funciones con `-Merge`/`-State` sufijos. `SimpleAggregateFunction` tiene un mejor rendimiento que `AggregateFunction` con la misma función de agregación.
+Cuando se usa `SimpleAggregateFunction(func, Type)` el resultado es almacenado datos `Type` así que no necesita aplicar los suficos `-Merge`/`-State` a las funciones de agregación para usarlas. Para la misma función de agregación `SimpleAggregateFunction` tiene un mejor rendimiento que `AggregateFunction`.
 
 **Parámetros**
 

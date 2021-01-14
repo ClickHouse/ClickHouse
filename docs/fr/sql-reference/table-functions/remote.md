@@ -14,6 +14,8 @@ Signature:
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port` ou juste `host`. L'hôte peut être spécifié comme nom de serveur ou l'adresse IPv4 ou IPv6. Une adresse IPv6 est indiquée entre crochets. Le port est le port TCP sur le serveur distant. Si le port est omis, il utilise `tcp_port` à partir du fichier de configuration du serveur (par défaut, 9000).
@@ -78,6 +80,6 @@ Le `remote` table de fonction peut être utile dans les cas suivants:
 Si l'utilisateur n'est pas spécifié, `default` est utilisée.
 Si le mot de passe n'est spécifié, un mot de passe vide est utilisé.
 
-`remoteSecure` - la même chose que `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config ou 9440.
+`remoteSecure` - la même chose que `remote` but with secured connection. Default port — [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) de config ou 9440.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

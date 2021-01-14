@@ -1,17 +1,25 @@
 #pragma once
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Common/Exception.h>
 
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
@@ -20,6 +28,7 @@ class ASTQueryWithTableAndOutput;
 class ASTIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
@@ -41,6 +50,7 @@ struct StorageID
     String getTableName() const;
 
     String getFullTableName() const;
+    String getFullNameNotQuoted() const;
 
     String getNameForLogs() const;
 
@@ -63,18 +73,24 @@ struct StorageID
 
     void assertNotEmpty() const
     {
+        // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
         if (empty())
-            throw Exception("Both table name and UUID are empty", ErrorCodes::LOGICAL_ERROR);
-        if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID())
-            throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
         if (table_name.empty() && !database_name.empty())
-            throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Table name is empty, but database name is not", ErrorCodes::UNKNOWN_TABLE);
     }
 
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
 
     QualifiedTableName getQualifiedName() const { return {database_name, getTableName()}; }
+
+    static StorageID fromDictionaryConfig(const Poco::Util::AbstractConfiguration & config,
+                                          const String & config_prefix);
+
+    /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
+    /// DatabaseCatalog::resolveDictionaryName(...) should be used to access such dictionaries by name.
+    String getInternalDictionaryName() const;
 
 private:
     StorageID() = default;

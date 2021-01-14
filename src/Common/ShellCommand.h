@@ -30,7 +30,7 @@ private:
     bool wait_called = false;
     bool terminate_in_destructor;
 
-    ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_);
+    ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, bool terminate_in_destructor_);
 
     static Poco::Logger * getLogger();
 

@@ -5,6 +5,7 @@ namespace DB
 {
 
 class ExternalModelsLoader;
+class Context;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.
@@ -31,7 +32,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
     const ExternalModelsLoader & models_loader;

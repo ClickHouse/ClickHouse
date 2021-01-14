@@ -78,7 +78,7 @@ Puede haber otras cláusulas después del `ENGINE` cláusula en la consulta. Con
 La descripción de la columna puede especificar una expresión para un valor predeterminado, de una de las siguientes maneras:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Ejemplo: `URLDomain String DEFAULT domain(URL)`.
 
-Si no se define una expresión para el valor predeterminado, los valores predeterminados se establecerán en ceros para números, cadenas vacías para cadenas, matrices vacías para matrices y `0000-00-00` para fechas o `0000-00-00 00:00:00` para las fechas con el tiempo. Los NULL no son compatibles.
+Si no se define una expresión para el valor predeterminado, los valores predeterminados se establecerán en ceros para números, cadenas vacías para cadenas, matrices vacías para matrices y `1970-01-01` para fechas o zero unix timestamp para las fechas con el tiempo. Los NULL no son compatibles.
 
 Si se define la expresión predeterminada, el tipo de columna es opcional. Si no hay un tipo definido explícitamente, se utiliza el tipo de expresión predeterminado. Ejemplo: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ tipo será utilizado para el ‘EventDate’ columna.
 
@@ -155,7 +155,7 @@ Si se especifica un códec, el códec predeterminado no se aplica. Los códecs s
 La compresión es compatible con los siguientes motores de tablas:
 
 -   [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) familia. Admite códecs de compresión de columnas y selecciona el método de compresión predeterminado mediante [compresión](../../operations/server-configuration-parameters/settings.md#server-settings-compression) configuración.
--   [Registro](../../engines/table-engines/log-family/log-family.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
+-   [Registro](../../engines/table-engines/log-family/index.md) familia. Utiliza el `lz4` método de compresión por defecto y soporta códecs de compresión de columna.
 -   [Establecer](../../engines/table-engines/special/set.md). Solo admite la compresión predeterminada.
 -   [Unir](../../engines/table-engines/special/join.md). Solo admite la compresión predeterminada.
 
@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 Crear [diccionario externo](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) con dado [estructura](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [fuente](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [diseño](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) y [vida](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
@@ -466,7 +466,7 @@ Crea un [cuota](../../operations/access-rights.md#quotas-management) que se pued
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]

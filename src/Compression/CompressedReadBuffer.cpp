@@ -1,5 +1,4 @@
 #include "CompressedReadBuffer.h"
-#include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
 
 

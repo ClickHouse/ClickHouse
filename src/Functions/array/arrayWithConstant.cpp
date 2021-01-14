@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Reasonable threshold.
-static constexpr size_t max_arrays_size_in_block = 1000000000;
+static constexpr size_t max_arrays_size_in_columns = 1000000000;
 
 
 /* arrayWithConstant(num, const) - make array of constants with length num.
@@ -47,10 +47,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t num_rows) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t num_rows) const override
     {
-        const auto * col_num = block.getByPosition(arguments[0]).column.get();
-        const auto * col_value = block.getByPosition(arguments[1]).column.get();
+        const auto * col_num = arguments[0].column.get();
+        const auto * col_value = arguments[1].column.get();
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::Offsets & offsets = offsets_col->getData();
@@ -66,13 +66,13 @@ public:
 
             offset += array_size;
 
-            if (unlikely(offset > max_arrays_size_in_block))
+            if (unlikely(offset > max_arrays_size_in_columns))
                 throw Exception("Too large array size while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
             offsets.push_back(offset);
         }
 
-        block.getByPosition(result).column = ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
+        return ColumnArray::create(col_value->replicate(offsets)->convertToFullColumnIfConst(), std::move(offsets_col));
     }
 };
 

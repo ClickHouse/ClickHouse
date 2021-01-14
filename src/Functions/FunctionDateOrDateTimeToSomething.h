@@ -1,3 +1,4 @@
+#pragma once
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/IFunctionImpl.h>
@@ -67,8 +68,18 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
+        /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<ToDataType>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+        {
+            std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            /// only validate the time_zone part if the number of arguments is 2. This is mainly
+            /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
+            if (arguments.size() == 2 && time_zone.empty())
+                throw Exception(
+                    "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            return std::make_shared<ToDataType>(time_zone);
+        }
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             Int64 scale = DataTypeDateTime64::default_scale;
@@ -84,23 +95,23 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
-            DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(block, arguments, result, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
-            DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(block, arguments, result, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
             const TransformDateTime64<Transform> transformer(scale);
-            DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(block, arguments, result, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

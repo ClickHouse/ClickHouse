@@ -86,7 +86,10 @@ static INLINE void memcpy_sse2_128(void *dst, const void *src) {
 //---------------------------------------------------------------------
 // tiny memory copy with jump table optimized
 //---------------------------------------------------------------------
-static INLINE void *memcpy_tiny(void *dst, const void *src, size_t size) {
+/// Attribute is used to avoid an error with undefined behaviour sanitizer
+/// ../contrib/FastMemcpy/FastMemcpy.h:91:56: runtime error: applying zero offset to null pointer
+/// Found by 01307_orc_output_format.sh, cause - ORCBlockInputFormat and external ORC library.
+__attribute__((__no_sanitize__("undefined"))) static INLINE void *memcpy_tiny(void *dst, const void *src, size_t size) {
 	unsigned char *dd = ((unsigned char*)dst) + size;
 	const unsigned char *ss = ((const unsigned char*)src) + size;
 

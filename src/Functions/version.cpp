@@ -26,6 +26,10 @@ public:
         return name;
     }
 
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
+
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -36,9 +40,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
+        return DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
     }
 };
 

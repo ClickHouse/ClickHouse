@@ -32,7 +32,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * In case of failure returns false and doesn't modify buffer pointed by `dst`.
  *
  * @param src - input string, expected to be non-null and null-terminated right after the IPv4 string value.
- * @param dst - where to put output bytes, expected to be non-null and atleast IPV4_BINARY_LENGTH-long.
+ * @param dst - where to put output bytes, expected to be non-null and at IPV4_BINARY_LENGTH-long.
  * @return false if parsing failed, true otherwise.
  */
 inline bool parseIPv4(const char * src, unsigned char * dst)
@@ -68,7 +68,7 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 * IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
 * @param src - input string, expected to be non-null and null-terminated right after the IPv6 string value.
-* @param dst - where to put output bytes, expected to be non-null and atleast IPV6_BINARY_LENGTH-long.
+* @param dst - where to put output bytes, expected to be non-null and at IPV6_BINARY_LENGTH-long.
 * @return false if parsing failed, true otherwise.
 */
 inline bool parseIPv6(const char * src, unsigned char * dst)
@@ -177,7 +177,7 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
 }
 
 /** Format 4-byte binary sequesnce as IPv4 text: 'aaa.bbb.ccc.ddd',
-  * expects inout to be in BE-format, that is 0x7f000001 => "127.0.0.1".
+  * expects in out to be in BE-format, that is 0x7f000001 => "127.0.0.1".
   *
   * Any number of the tail bytes can be masked with given mask string.
   *

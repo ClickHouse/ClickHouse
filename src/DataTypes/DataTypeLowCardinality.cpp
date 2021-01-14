@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Parsers/IAST.h>
@@ -54,7 +55,7 @@ void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, S
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
     path.back() = Substream::DictionaryIndexes;
-    callback(path);
+    callback(path, *this);
     path.pop_back();
 }
 
@@ -774,7 +775,7 @@ void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+    deserializeImpl(column, &IDataType::deserializeAsWholeText, istr, settings);
 }
 
 void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

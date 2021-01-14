@@ -1,0 +1,29 @@
+<test max_ignored_relative_change="0.2">
+    <create_query>DROP TABLE IF EXISTS perf_lc_str</create_query>
+    <create_query>CREATE TABLE perf_lc_str(
+        str LowCardinality(String),
+        arr Array(LowCardinality(String)) default [str]
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_lc_str (str)
+        SELECT concat('asdf', toString(number % 10000))
+        FROM numbers(100000000)
+    </fill_query>
+
+    <query>SELECT count() FROM perf_lc_str WHERE str = 'asdf337'</query>
+    <query>SELECT count() FROM perf_lc_str WHERE arr[1] = 'asdf337'</query>
+    <query>SELECT count() FROM perf_lc_str WHERE has(arr, 'asdf337')</query>
+    <query>SELECT count() FROM perf_lc_str WHERE indexOf(arr, 'asdf337') > 0</query>
+
+    <query>SELECT count() FROM perf_lc_str WHERE arr[1] = str</query>
+    <query>SELECT count() FROM perf_lc_str WHERE has(arr, str)</query>
+    <query>SELECT count() FROM perf_lc_str WHERE indexOf(arr, str) > 0</query>
+
+    <query>SELECT count() FROM perf_lc_str WHERE has(arr, concat('0', str))</query>
+    <query>SELECT count() FROM perf_lc_str WHERE has(arr, concat(str, 'str'))</query>
+    <query>SELECT count() FROM perf_lc_str WHERE has(arr, concat(str, '0'))</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_lc_str</drop_query>
+</test>

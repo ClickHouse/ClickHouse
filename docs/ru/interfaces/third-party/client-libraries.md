@@ -1,13 +1,19 @@
+---
+toc_priority: 26
+toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+---
+
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
 
 !!! warning "Disclaimer"
     Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 
 -   Python:
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
@@ -15,6 +21,7 @@
     -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
+    -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -39,7 +46,8 @@
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C\#
+-   C#
+    -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

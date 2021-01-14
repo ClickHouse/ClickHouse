@@ -109,11 +109,11 @@ Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise
 
 **See also**
 
--   [ifNotFinite](other-functions.md#ifnotfinite).
+-   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
 
 ## multiIf {#multiif}
 
-Allows you to write the [CASE](../operators/index.md#operator_case) operator more compactly in the query.
+Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
 
 Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

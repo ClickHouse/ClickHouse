@@ -1,8 +1,9 @@
-import bottle
 import random
 
+import bottle
 
-@bottle.route('/')
+
+@bottle.route('/hostname')
 def index():
     if random.randrange(2) == 0:
         return 'proxy1'

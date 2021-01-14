@@ -23,12 +23,25 @@
             <volumes>
                 <main>
                     <disk>jbod1</disk>
+                    <move_factor>0.08</move_factor>
                 </main>
                 <external>
                     <disk>external</disk>
                 </external>
             </volumes>
         </small_jbod_with_external>
+
+        <small_jbod_with_external_no_merges>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                    <prefer_not_to_merge>true</prefer_not_to_merge>
+                </external>
+            </volumes>
+        </small_jbod_with_external_no_merges>
 
         <one_more_small_jbod_with_external>
             <volumes>

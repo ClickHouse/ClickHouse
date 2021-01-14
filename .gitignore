@@ -12,6 +12,7 @@
 /build
 /build_*
 /build-*
+/tests/venv
 
 /docs/build
 /docs/publish
@@ -78,6 +79,7 @@ configure-stamp
 *.bin
 *.mrk
 *.mrk2
+*.mrk3
 
 .dupload.conf
 
@@ -116,8 +118,22 @@ website/package-lock.json
 
 # clangd cache
 /.clangd
+/.cache
 
 /compile_commands.json
 
 # Toolchains
 /cmake/toolchain/*
+
+# ANTLR extension cache
+.antlr
+
+# ANTLR generated files
+/src/Parsers/New/*.interp
+/src/Parsers/New/*.tokens
+/src/Parsers/New/ClickHouseParserBaseVisitor.*
+
+# pytest-profiling
+/prof
+
+*.iml

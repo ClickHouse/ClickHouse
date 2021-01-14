@@ -1,5 +1,6 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -33,9 +34,6 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
-
-    if (!settings.one_line)
-        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
 
     settings.ostr << backQuote(name);
 

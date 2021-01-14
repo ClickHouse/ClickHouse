@@ -1,7 +1,6 @@
-#include <iomanip>
-
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -19,11 +18,15 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/randomSeed.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <pcg_random.hpp>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -61,16 +64,21 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: "
-            << (default_database.empty() ? "(not specified)" : default_database)
-            << ". User: " << user
-            << (static_cast<bool>(secure) ? ". Secure" : "")
-            << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+            default_database.empty() ? "(not specified)" : default_database,
+            user,
+            static_cast<bool>(secure) ? ". Secure" : "",
+            static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         if (static_cast<bool>(secure))
         {
 #if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -107,11 +115,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello();
 
-        LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
-            << " server version " << server_version_major
-            << "." << server_version_minor
-            << "." << server_version_patch
-            << ".");
+        LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
+            server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
     {
@@ -132,8 +137,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    //LOG_TRACE(log_wrapper.get(), "Disconnecting");
-
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -168,17 +171,33 @@ void Connection::sendHello()
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
-    auto client_revision = ClickHouseRevision::get();
-
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(client_revision, *out);
+    writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     writeStringBinary(default_database, *out);
-    writeStringBinary(user, *out);
-    writeStringBinary(password, *out);
+    /// If interserver-secret is used, one do not need password
+    /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
+    if (!cluster_secret.empty())
+    {
+        writeStringBinary(USER_INTERSERVER_MARKER, *out);
+        writeStringBinary("" /* password */, *out);
+
+#if USE_SSL
+        sendClusterNameAndSalt();
+#else
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+    }
+    else
+    {
+        writeStringBinary(user, *out);
+        writeStringBinary(password, *out);
+    }
 
     out->next();
 }
@@ -186,10 +205,14 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving hello");
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
+
+    /// Prevent read after eof in readVarUInt in case of reset connection
+    /// (Poco should throw such exception while reading from socket but
+    /// sometimes it doesn't for unknown reason)
+    if (in->eof())
+        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -296,6 +319,19 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     }
 }
 
+#if USE_SSL
+void Connection::sendClusterNameAndSalt()
+{
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+
+    salt = encodeSHA256(&rand, sizeof(rand));
+
+    writeStringBinary(cluster, *out);
+    writeStringBinary(salt, *out);
+}
+#endif
+
 bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
@@ -384,14 +420,13 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
-
-    //LOG_TRACE(log_wrapper.get(), "Sending query");
 
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
@@ -408,12 +443,43 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
-        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                          : SettingsBinaryFormat::OLD;
-        settings->serialize(*out, settings_format);
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                          : SettingsWriteFormat::BINARY;
+        settings->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
+
+    /// Interserver secret
+    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
+    {
+        /// Hash
+        ///
+        /// Send correct hash only for !INITIAL_QUERY, due to:
+        /// - this will avoid extra protocol complexity for simplest cases
+        /// - there is no need in hash for the INITIAL_QUERY anyway
+        ///   (since there is no secure/unsecure changes)
+        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+#if USE_SSL
+            std::string data(salt);
+            data += cluster_secret;
+            data += query;
+            data += query_id;
+            data += client_info->initial_user;
+            /// TODO: add source/target host/ip-address
+
+            std::string hash = encodeSHA256(data);
+            writeStringBinary(hash, *out);
+#else
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+        }
+        else
+            writeStringBinary("", *out);
+    }
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
@@ -441,8 +507,6 @@ void Connection::sendCancel()
     if (!out)
         return;
 
-    //LOG_TRACE(log_wrapper.get(), "Sending cancel");
-
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->next();
 }
@@ -450,8 +514,6 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending data");
-
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
@@ -516,19 +578,23 @@ void Connection::sendScalarsData(Scalars & data)
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
     double elapsed = watch.elapsedSeconds();
 
-    std::stringstream msg;
-    msg << std::fixed << std::setprecision(3);
-    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
-        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
-
     if (compression == Protocol::Compression::Enable)
-        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
-        msg << ", no compression.";
-
-    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 namespace
@@ -592,13 +658,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
-        DB::connect(elem->pipe->getPort(), sink->getPort());
-
-        auto processors = std::move(*elem->pipe).detachProcessors();
-        processors.push_back(sink);
-
-        executor = std::make_shared<PipelineExecutor>(processors);
+        QueryPipeline pipeline;
+        pipeline.init(std::move(*elem->pipe));
+        pipeline.resize(1);
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        {
+            if (type != QueryPipeline::StreamType::Main)
+                return nullptr;
+            return sink;
+        });
+        executor = pipeline.execute();
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();
@@ -616,19 +686,23 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
     double elapsed = watch.elapsedSeconds();
 
-    std::stringstream msg;
-    msg << std::fixed << std::setprecision(3);
-    msg << "Sent data for " << data.size() << " external tables, total " << rows << " rows in " << elapsed << " sec., "
-        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
-
     if (compression == Protocol::Compression::Enable)
-        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(out_bytes),
+            ReadableSize(out_bytes / watch.elapsedSeconds()));
     else
-        msg << ", no compression.";
-
-    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+        LOG_DEBUG(log_wrapper.get(),
+            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            ReadableSize(maybe_compressed_out_bytes),
+            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -668,8 +742,11 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT(in->setAsyncCallback({}));
+
     try
     {
         Packet res;
@@ -682,12 +759,9 @@ Packet Connection::receivePacket()
         }
         else
         {
-            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
             readVarUInt(res.type, *in);
         }
 
-        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];
@@ -740,8 +814,6 @@ Packet Connection::receivePacket()
 
 Block Connection::receiveData()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving data");
-
     initBlockInput();
     return receiveDataImpl(block_in);
 }
@@ -820,8 +892,6 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving exception");
-
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
@@ -838,8 +908,6 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 
 Progress Connection::receiveProgress()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving progress");
-
     Progress progress;
     progress.read(*in, server_revision);
     return progress;

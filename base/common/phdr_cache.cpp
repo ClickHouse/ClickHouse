@@ -1,20 +1,6 @@
 /// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
-#if defined(__has_feature)
-    #if __has_feature(address_sanitizer)
-        #define ADDRESS_SANITIZER 1
-    #endif
-    #if __has_feature(thread_sanitizer)
-        #define THREAD_SANITIZER 1
-    #endif
-#else
-    #if defined(__SANITIZE_ADDRESS__)
-        #define ADDRESS_SANITIZER 1
-    #endif
-    #if defined(__SANITIZE_THREAD__)
-        #define THREAD_SANITIZER 1
-    #endif
-#endif
+#include <common/defines.h>
 
 #if defined(__linux__) && !defined(THREAD_SANITIZER)
     #define USE_PHDR_CACHE 1
@@ -28,7 +14,7 @@
 #   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
-#define __msan_unpoison(X, Y)
+#define __msan_unpoison(X, Y) // NOLINT
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
 #       undef __msan_unpoison
@@ -98,7 +84,7 @@ extern "C"
 #ifdef ADDRESS_SANITIZER
 void __lsan_ignore_object(const void *);
 #else
-void __lsan_ignore_object(const void *) {}
+void __lsan_ignore_object(const void *) {} // NOLINT
 #endif
 }
 

@@ -3,10 +3,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPipeline.h>
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
-#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -19,46 +20,44 @@ class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<Storage
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
-        const SelectQueryInfo & query_info,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-                {part}, column_names, query_info, context, max_block_size, num_streams);
+        QueryPlan query_plan =
+            std::move(*MergeTreeDataSelectExecutor(part->storage)
+                      .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
+
+        return query_plan.convertToPipe();
     }
 
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
-
-    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
-    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
-
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
-    {
-        return part->storage.getColumnDependencies(updated_columns);
-    }
-
-    StorageInMemoryMetadata getInMemoryMetadata() const override
-    {
-        return part->storage.getInMemoryMetadata();
-    }
-
-    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
-
-    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
     NamesAndTypesList getVirtuals() const override
     {
         return part->storage.getVirtuals();
+    }
+
+    String getPartitionId() const
+    {
+        return part->info.partition_id;
+    }
+
+    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
+    {
+        return part->storage.getPartitionIDFromQuery(ast, context);
     }
 
 protected:
@@ -66,8 +65,7 @@ protected:
         : IStorage(getIDFromPart(part_))
         , part(part_)
     {
-        setColumns(part_->storage.getColumns());
-        setIndices(part_->storage.getIndices());
+        setInMemoryMetadata(part_->storage.getInMemoryMetadata());
     }
 
 private:

@@ -33,9 +33,9 @@ public:
         const String & sign_column,
         bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size,
-        WriteBuffer * out_row_sources_buf_,
-        bool use_average_block_sizes,
-        Logger * log_);
+        Poco::Logger * log_,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
+        bool use_average_block_sizes = false);
 
     Status merge() override;
 
@@ -62,7 +62,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
-    Logger * log;
+    Poco::Logger * log;
 
     void reportIncorrectData();
     void insertRow(RowRef & row);

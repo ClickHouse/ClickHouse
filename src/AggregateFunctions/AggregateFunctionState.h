@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -80,7 +79,7 @@ public:
         nested_func->deserialize(place, buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
     }
@@ -93,7 +92,7 @@ public:
         return nested_func->allocatesMemoryInArena();
     }
 
-    AggregateFunctionPtr getNestedFunction() const { return nested_func; }
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }

@@ -1,8 +1,13 @@
+---
+toc_priority: 41
+toc_title: "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439\u0020\u0432\u0020\u043f\u0430\u043c\u044f\u0442\u0438"
+---
+
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
 
 Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#flat), [hashed](#hashed) и [complex\_key\_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
 Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
@@ -34,7 +39,7 @@
 </yandex>
 ```
 
-Соответствущий [DDL-запрос](../../../sql-reference/statements/create.md#create-dictionary-query):
+Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -46,15 +51,17 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 -   [flat](#flat)
--   [hashed](#hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [hashed](#dicts-external_dicts_dict_layout-hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [ssd_cache](#ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
 -   [direct](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [complex\_key\_direct](#complex-key-direct)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [complex_key_direct](#complex-key-direct)
+-   [ip_trie](#ip-trie)
 
 ### flat {#flat}
 
@@ -80,7 +87,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 LAYOUT(FLAT())
 ```
 
-### hashed {#hashed}
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
@@ -100,7 +107,7 @@ LAYOUT(FLAT())
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
@@ -118,7 +125,7 @@ LAYOUT(HASHED())
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `hashed`.
 
@@ -136,7 +143,7 @@ LAYOUT(SPARSE_HASHED())
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений.
 
@@ -290,9 +297,43 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 !!! warning "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `cache`.
+
+### ssd_cache {#ssd-cache}
+
+Похож на `cache`, но хранит данные на SSD и индекс в оперативной памяти.
+
+``` xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
+    </ssd_cache>
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+```
+
+### complex_key_ssd_cache {#complex-key-ssd-cache}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Похож на `ssd_cache`.
 
 ### direct {#direct}
 
@@ -316,11 +357,11 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 LAYOUT(DIRECT())
 ```
 
-### complex\_key\_direct {#complex-key-direct}
+### complex_key_direct {#complex-key-direct}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `direct`.
 
-### ip\_trie {#ip-trie}
+### ip_trie {#ip-trie}
 
 Тип размещения предназначен для сопоставления префиксов сети (IP адресов) с метаданными, такими как ASN.
 
@@ -363,6 +404,14 @@ LAYOUT(DIRECT())
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Ключевой аттрибут `prefix` будет доступен через dictGetString -->
+        <!-- Эта опция увеличивает потреблямую память -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 или
@@ -392,6 +441,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
-Данные хранятся в побитовом дереве (`trie`), он должен полностью помещаться в оперативной памяти.
+Данные должны полностью помещаться в оперативной памяти.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

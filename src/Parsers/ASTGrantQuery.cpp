@@ -1,6 +1,7 @@
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -75,7 +76,7 @@ namespace
     }
 
 
-    void formatToRoles(const ASTExtendedRoleSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
     {
         using Kind = ASTGrantQuery::Kind;
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
@@ -133,9 +134,16 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 }
 
 
+void ASTGrantQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+{
+    access_rights_elements.replaceEmptyDatabase(current_database);
+}
+
+
 void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
+
 }

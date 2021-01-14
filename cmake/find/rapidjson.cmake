@@ -1,5 +1,8 @@
 option(ENABLE_RAPIDJSON "Use rapidjson" ${ENABLE_LIBRARIES})
 if(NOT ENABLE_RAPIDJSON)
+    if(USE_INTERNAL_RAPIDJSON_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal rapidjson library with ENABLE_RAPIDJSON=OFF")
+    endif()
     return()
 endif()
 
@@ -8,6 +11,7 @@ option(USE_INTERNAL_RAPIDJSON_LIBRARY "Set to FALSE to use system rapidjson libr
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rapidjson/include/rapidjson/rapidjson.h")
     if(USE_INTERNAL_RAPIDJSON_LIBRARY)
        message(WARNING "submodule contrib/rapidjson is missing. to fix try run: \n git submodule update --init --recursive")
+       message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal rapidjson library")
        set(USE_INTERNAL_RAPIDJSON_LIBRARY 0)
     endif()
     set(MISSING_INTERNAL_RAPIDJSON_LIBRARY 1)
@@ -15,6 +19,9 @@ endif()
 
 if(NOT USE_INTERNAL_RAPIDJSON_LIBRARY)
     find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/rapidjson.h PATHS ${RAPIDJSON_INCLUDE_PATHS})
+    if(NOT RAPIDJSON_INCLUDE_DIR)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system rapidjson")
+    endif()
 endif()
 
 if(RAPIDJSON_INCLUDE_DIR)

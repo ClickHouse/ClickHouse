@@ -19,7 +19,7 @@ namespace ErrorCodes
 std::string getClusterName(const IAST & node)
 {
     if (const auto * ast_id = node.as<ASTIdentifier>())
-        return ast_id->name;
+        return ast_id->name();
 
     if (const auto * ast_lit = node.as<ASTLiteral>())
         return ast_lit->value.safeGet<String>();

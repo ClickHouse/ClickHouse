@@ -93,15 +93,17 @@ public:
         nested_func->deserialize(place, buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
-        nested_func->insertResultInto(place, to);
+        nested_func->insertResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
     }
+
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 }

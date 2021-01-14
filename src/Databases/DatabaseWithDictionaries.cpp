@@ -34,22 +34,32 @@ namespace ErrorCodes
 
 void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, const DictionaryAttachInfo & attach_info)
 {
-    String full_name = getDatabaseName() + "." + dictionary_name;
+    auto dict_id = StorageID(attach_info.create_query);
+    String internal_name = dict_id.getInternalDictionaryName();
+    assert(attach_info.create_query->as<const ASTCreateQuery &>().table == dictionary_name);
+    assert(!dict_id.database_name.empty());
     {
         std::unique_lock lock(mutex);
         auto [it, inserted] = dictionaries.emplace(dictionary_name, attach_info);
         if (!inserted)
-            throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+            throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                            "Dictionary {} already exists.", dict_id.getNameForLogs());
 
         /// Attach the dictionary as table too.
         try
         {
+            /// TODO Make StorageDictionary an owner of IDictionaryBase objects.
+            /// All DDL operations with dictionaries will work with StorageDictionary table,
+            /// and StorageDictionary will be responsible for loading of DDL dictionaries.
+            /// ExternalLoaderDatabaseConfigRepository and other hacks related to ExternalLoader
+            /// will not be longer required.
             attachTableUnlocked(
                 dictionary_name,
                 StorageDictionary::create(
-                    StorageID(getDatabaseName(), dictionary_name),
-                    full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
+                    dict_id,
+                    internal_name,
+                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config),
+                    StorageDictionary::Location::SameDatabaseAndNameAsDictionary),
                 lock);
         }
         catch (...)
@@ -59,11 +69,11 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
         }
     }
 
-    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, full_name, static_cast<Int8>(ExternalLoaderStatus::NOT_LOADED));
+    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, internal_name, static_cast<Int8>(ExternalLoaderStatus::NOT_LOADED));
 
     /// We want ExternalLoader::reloadConfig() to find out that the dictionary's config
     /// has been added and in case `dictionaries_lazy_load == false` to load the dictionary.
-    reloadDictionaryConfig(full_name);
+    reloadDictionaryConfig(internal_name);
 }
 
 void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name)
@@ -74,20 +84,28 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name)
 
 void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info)
 {
-    String full_name = getDatabaseName() + "." + dictionary_name;
+    auto dict_id = StorageID::createEmpty();
+    String internal_name;
 
     {
         std::unique_lock lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
-            throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_DICTIONARY);
+            throw Exception(ErrorCodes::UNKNOWN_DICTIONARY,
+                            "Dictionary {}.{} doesn't exist.", database_name, dictionary_name);
+        dict_id = StorageID(it->second.create_query);
+        internal_name = dict_id.getInternalDictionaryName();
+        assert(dict_id.table_name == dictionary_name);
+        assert(!dict_id.database_name.empty());
+
         attach_info = std::move(it->second);
         dictionaries.erase(it);
 
         /// Detach the dictionary as table too.
         try
         {
-            detachTableUnlocked(dictionary_name, lock);
+            if (!dict_id.hasUUID())
+                detachTableUnlocked(dictionary_name, lock);
         }
         catch (...)
         {
@@ -96,11 +114,14 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
         }
     }
 
-    CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, full_name);
+    CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, internal_name);
 
     /// We want ExternalLoader::reloadConfig() to find out that the dictionary's config
     /// has been removed and to unload the dictionary.
-    reloadDictionaryConfig(full_name);
+    reloadDictionaryConfig(internal_name);
+
+    if (dict_id.hasUUID())
+        detachTable(dictionary_name);
 }
 
 void DatabaseWithDictionaries::createDictionary(const Context & context, const String & dictionary_name, const ASTPtr & query)
@@ -115,21 +136,22 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
       * - rename .sql.tmp to .sql.
       */
 
+    auto dict_id = StorageID(query);
+    assert(query->as<const ASTCreateQuery &>().table == dictionary_name);
+    assert(!dict_id.database_name.empty());
+
     /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
     if (isDictionaryExist(dictionary_name))
-        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {} already exists.", dict_id.getFullTableName());
 
     /// A dictionary with the same full name could be defined in *.xml config files.
-    String full_name = getDatabaseName() + "." + dictionary_name;
-    if (external_loader.getCurrentStatus(full_name) != ExternalLoader::Status::NOT_EXIST)
-        throw Exception(
-                "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
-                ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    if (external_loader.getCurrentStatus(dict_id.getFullNameNotQuoted()) != ExternalLoader::Status::NOT_EXIST)
+        throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                        "Dictionary {} already exists.", dict_id.getFullNameNotQuoted());
 
-    if (isTableExist(dictionary_name))
-        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
+    if (isTableExist(dictionary_name, global_context))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", dict_id.getFullTableName());
 
     String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
     String dictionary_metadata_tmp_path = dictionary_metadata_path + ".tmp";
@@ -154,17 +176,17 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     /// Add a temporary repository containing the dictionary.
     /// We need this temp repository to try loading the dictionary before actually attaching it to the database.
     auto temp_repository = external_loader.addConfigRepository(std::make_unique<ExternalLoaderTempConfigRepository>(
-        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())));
+        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), context)));
 
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
         /// load() is called here to force loading the dictionary, wait until the loading is finished,
         /// and throw an exception if the loading is failed.
-        external_loader.load(full_name);
+        external_loader.load(dict_id.getInternalDictionaryName());
     }
 
-    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>());
+    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), context);
     attachDictionary(dictionary_name, DictionaryAttachInfo{query, config, time(nullptr)});
     SCOPE_EXIT({
         if (!succeeded)
@@ -177,7 +199,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
 
     /// ExternalDictionariesLoader doesn't know we renamed the metadata path.
     /// That's why we have to call ExternalLoader::reloadConfig() here.
-    reloadDictionaryConfig(full_name);
+    reloadDictionaryConfig(dict_id.getInternalDictionaryName());
 
     /// Everything's ok.
     succeeded = true;
@@ -192,7 +214,8 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
         Poco::File(dictionary_metadata_path).remove();
-        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, getDatabaseName() + "." + dictionary_name);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus,
+                                 StorageID(attach_info.create_query).getInternalDictionaryName());
     }
     catch (...)
     {
@@ -200,19 +223,25 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
         attachDictionary(dictionary_name, attach_info);
         throw;
     }
+
+    UUID dict_uuid = attach_info.create_query->as<ASTCreateQuery>()->uuid;
+    if (dict_uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().removeUUIDMappingFinally(dict_uuid);
 }
 
 DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)
 {
     std::lock_guard lock(mutex);
-    if (!filter_by_dictionary_name)
-        return std::make_unique<DatabaseDictionariesSnapshotIterator>(dictionaries);
-
-    Dictionaries filtered_dictionaries;
-    for (const auto & dictionary_name : dictionaries | boost::adaptors::map_keys)
-        if (filter_by_dictionary_name(dictionary_name))
-            filtered_dictionaries.emplace_back(dictionary_name);
-    return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
+    DictionariesWithID filtered_dictionaries;
+    for (const auto & dictionary : dictionaries)
+    {
+        if (filter_by_dictionary_name && !filter_by_dictionary_name(dictionary.first))
+            continue;
+        filtered_dictionaries.emplace_back();
+        filtered_dictionaries.back().first = dictionary.first;
+        filtered_dictionaries.back().second = dictionary.second.create_query->as<const ASTCreateQuery &>().uuid;
+    }
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries), database_name);
 }
 
 bool DatabaseWithDictionaries::isDictionaryExist(const String & dictionary_name) const
@@ -234,7 +263,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
             ASTPtr ast = it->second.create_query->clone();
             auto & create_query = ast->as<ASTCreateQuery &>();
             create_query.attach = false;
-            create_query.database = getDatabaseName();
+            create_query.database = database_name;
             return ast;
         }
     }
@@ -295,8 +324,11 @@ void DatabaseWithDictionaries::reloadDictionaryConfig(const String & full_name)
 {
     /// Ensure that this database is attached to ExternalLoader as a config repository.
     if (!database_as_config_repo_for_external_loader.load())
-        database_as_config_repo_for_external_loader = boost::make_shared<ext::scope_guard>(
-            external_loader.addConfigRepository(std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this)));
+    {
+        auto repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(*this, global_context);
+        auto remove_repository_callback = external_loader.addConfigRepository(std::move(repository));
+        database_as_config_repo_for_external_loader = boost::make_shared<ext::scope_guard>(std::move(remove_repository_callback));
+    }
 
     external_loader.reloadConfig(getDatabaseName(), full_name);
 }

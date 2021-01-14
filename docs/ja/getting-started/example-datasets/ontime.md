@@ -1,20 +1,18 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 15
-toc_title: "\u30AA\u30F3\u30BF\u30A4\u30E0"
+toc_title: OnTime
 ---
 
-# オンタイム {#ontime}
+# OnTime {#ontime}
 
 このデータセットは二つの方法で取得できます:
 
 -   生データからインポート
--   ダウンロード調の間仕切り
+-   パーティション済みのダウンロード
 
 ## 生データからインポート {#import-from-raw-data}
 
-デー:
+データのダウンロード:
 
 ``` bash
 for s in `seq 1987 2018`
@@ -26,7 +24,7 @@ done
 done
 ```
 
-（からhttps://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
+（https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh より)
 
 テーブルの作成:
 
@@ -153,10 +151,10 @@ SETTINGS index_granularity = 8192;
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## ダウンロード調の間仕切り {#download-of-prepared-partitions}
+## パーティション済みデータのダウンロード {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -164,7 +162,7 @@ $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
 !!! info "情報"
-    以下で説明するクエリを実行する場合は、完全なテーブル名を使用する必要があります, `datasets.ontime`.
+    以下で説明するクエリを実行する場合は、`datasets.ontime` のような 完全なテーブル名を使用する必要があります。
 
 ## クエリ {#queries}
 
@@ -190,7 +188,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q2。 10分以上遅延したフライトの数は、2000年から2008年の曜日でグループ化されています
+Q2. 2000年から2008年までの10分以上遅延したフライトの数を曜日ごとにグループ化
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -200,7 +198,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q3. 2000年から2008年の空港による遅延の数
+Q3. 2000年から2008年までの空港別の遅延件数
 
 ``` sql
 SELECT Origin, count(*) AS c
@@ -211,7 +209,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-Q4 2007年のキャリア別の遅延の数
+Q4. 2007年のキャリア別の遅延の数
 
 ``` sql
 SELECT Carrier, count(*)
@@ -221,7 +219,7 @@ GROUP BY Carrier
 ORDER BY count(*) DESC;
 ```
 
-Q5 2007年のキャリア別遅延の割合
+Q5. 2007年のキャリア別遅延の割合
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -257,7 +255,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-Q6 年のより広い範囲のための前の要求、2000-2008
+Q6. 前のリクエストを2000年から2008年までに広げたもの
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -293,7 +291,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC;
 ```
 
-Q7 年ごとに10分以上遅延したフライトの割合
+Q7. 年別の、10分以上遅延したフライトの割合
 
 ``` sql
 SELECT Year, c1/c2
@@ -326,7 +324,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-Q8 さまざまな年の範囲のための直接接続された都市の数によって最も人気のある目的地
+Q8. 複数年の、直行都市数別の人気の高い目的地
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
@@ -400,7 +398,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-この性能試験はVadim Tkachenkoによって作成されました。 見る:
+このパフォーマンステストは、Vadim Tkachenkoによって作成されました。以下を参照してください。
 
 -   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
 -   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/

@@ -3,7 +3,7 @@
 #include <Columns/ColumnVector.h>
 
 // I know that inclusion of .cpp is not good at all
-#include <Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp>
+#include <Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp> // NOLINT
 
 using namespace DB;
 

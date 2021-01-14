@@ -7,3 +7,6 @@ CREATE TABLE underlying_00967 (key Nullable(UInt64)) Engine=TinyLog();
 INSERT INTO dist_00967 SELECT toUInt64(number) FROM system.numbers LIMIT 1;
 
 SELECT * FROM dist_00967;
+
+DROP TABLE dist_00967;
+DROP TABLE underlying_00967;

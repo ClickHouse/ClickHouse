@@ -44,7 +44,7 @@ bool DataTypeNullable::onlyNull() const
 void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
-    callback(path);
+    callback(path, *this);
     path.back() = Substream::NullableElements;
     nested_data_type->enumerateStreams(callback, path);
     path.pop_back();
@@ -217,7 +217,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeCString("\\N", ostr);
+        writeString(settings.tsv.null_representation, ostr);
     else
         nested_data_type->serializeAsTextEscaped(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -235,7 +235,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
     /// Little tricky, because we cannot discriminate null from first character.
 
     if (istr.eof())
-        throw Exception("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
 
     /// This is not null, surely.
     if (*istr.position() != '\\')
@@ -250,7 +250,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
         ++istr.position();
 
         if (istr.eof())
-            throw Exception("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return safeDeserialize<ReturnType>(column, *nested_data_type,
             [&istr]
@@ -308,16 +308,30 @@ ReturnType DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer 
                                                    const DataTypePtr & nested_data_type)
 {
     return safeDeserialize<ReturnType>(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
+        },
         [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextQuoted(nested, istr, settings); });
 }
 
 
 void DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    safeDeserialize(column, *nested_data_type,
-        [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
+    deserializeWholeText<void>(column, istr, settings, nested_data_type);
+}
+
+template <typename ReturnType>
+ReturnType DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                  const DataTypePtr & nested_data_type)
+{
+    return safeDeserialize<ReturnType>(column, *nested_data_type,
+        [&istr]
+        {
+            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr)
+                || checkStringByFirstCharacterAndAssertTheRest("ᴺᵁᴸᴸ", istr);
+        },
+        [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsWholeText(nested, istr, settings); });
 }
 
 
@@ -391,11 +405,11 @@ ReturnType DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & i
                 /// or if someone uses 'U' or 'L' as delimiter in CSV.
                 /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
                 if (settings.csv.delimiter == 'U' || settings.csv.delimiter == 'L')
-                    throw DB::Exception("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
+                    throw DB::ParsingException("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
                                         "with format_csv_delimiter = 'U' or 'L' for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
                 WriteBufferFromOwnString parsed_value;
                 nested_data_type->serializeAsTextCSV(nested, nested.size() - 1, parsed_value, settings);
-                throw DB::Exception("Error while parsing \"" + std::string(null_literal, null_prefix_len)
+                throw DB::ParsingException("Error while parsing \"" + std::string(null_literal, null_prefix_len)
                                     + std::string(istr.position(), std::min(size_t{10}, istr.available())) + "\" as Nullable(" + nested_data_type->getName()
                                     + ") at position " + std::to_string(istr.count()) + ": expected \"NULL\" or " + nested_data_type->getName()
                                     + ", got \"" + std::string(null_literal, buf.count()) + "\", which was deserialized as \""
@@ -419,7 +433,12 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
     /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
 
     if (col.isNullAt(row_num))
-        writeCString("ᴺᵁᴸᴸ", ostr);
+    {
+        if (settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8)
+            writeCString("ᴺᵁᴸᴸ", ostr);
+        else
+            writeCString("NULL", ostr);
+    }
     else
         nested_data_type->serializeAsText(col.getNestedColumn(), row_num, ostr, settings);
 }
@@ -539,6 +558,7 @@ DataTypePtr removeNullable(const DataTypePtr & type)
 }
 
 
+template bool DataTypeNullable::deserializeWholeText<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextEscaped<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextQuoted<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
 template bool DataTypeNullable::deserializeTextCSV<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);

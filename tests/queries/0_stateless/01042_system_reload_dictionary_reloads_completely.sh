@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e -o pipefail
 
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<'EOF'
 DROP DATABASE IF EXISTS dictdb;
-CREATE DATABASE dictdb Engine = Ordinary;
+CREATE DATABASE dictdb;
 CREATE TABLE dictdb.table(x Int64, y Int64, insert_time DateTime) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dictdb.table VALUES (12, 102, now());
 
@@ -19,7 +20,7 @@ CREATE DICTIONARY dictdb.dict
   insert_time DateTime
 )
 PRIMARY KEY x
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
 LAYOUT(FLAT())
 LIFETIME(1);
 EOF
@@ -29,7 +30,7 @@ $CLICKHOUSE_CLIENT --query "SELECT '12 -> ', dictGetInt64('dictdb.dict', 'y', to
 $CLICKHOUSE_CLIENT --query "INSERT INTO dictdb.table VALUES (13, 103, now())"
 $CLICKHOUSE_CLIENT --query "INSERT INTO dictdb.table VALUES (14, 104, now() - INTERVAL 1 DAY)"
 
-while [ $($CLICKHOUSE_CLIENT --query "SELECT dictGetInt64('dictdb.dict', 'y', toUInt64(13))") = -1 ]
+while [ "$(${CLICKHOUSE_CLIENT} --query "SELECT dictGetInt64('dictdb.dict', 'y', toUInt64(13))")" = -1 ]
     do
         sleep 0.5
     done

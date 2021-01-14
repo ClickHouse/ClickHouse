@@ -43,7 +43,7 @@ private:
     friend class RoleCache;
     EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_);
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, ext::scope_guard & notifications);
 
     const Params params;
     mutable std::shared_ptr<const EnabledRolesInfo> info;

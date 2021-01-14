@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+import os
+import sys
+from scipy import stats
+import pandas as pd
+import numpy as np
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
+
+from pure_http_client import ClickHouseClient
+
+
+def test_and_check(name, a, b, t_stat, p_value):
+    client = ClickHouseClient()
+    client.query("DROP TABLE IF EXISTS mann_whitney;")
+    client.query("CREATE TABLE mann_whitney (left Float64, right UInt8) ENGINE = Memory;");
+    client.query("INSERT INTO mann_whitney VALUES {};".format(", ".join(['({},{}), ({},{})'.format(i, 0, j, 1) for i,j in zip(a, b)])))
+
+    real = client.query_return_df(
+        "SELECT roundBankers({}(left, right).1, 16) as t_stat, ".format(name) +
+               "roundBankers({}(left, right).2, 16) as p_value ".format(name) + 
+        "FROM mann_whitney FORMAT TabSeparatedWithNames;")
+    real_t_stat = real['t_stat'][0]
+    real_p_value = real['p_value'][0]
+    assert(abs(real_t_stat - np.float64(t_stat) < 1e-2)), "clickhouse_t_stat {}, scipy_t_stat {}".format(real_t_stat, t_stat)
+    assert(abs(real_p_value - np.float64(p_value)) < 1e-2), "clickhouse_p_value {}, scipy_p_value {}".format(real_p_value, p_value)
+    client.query("DROP TABLE IF EXISTS mann_whitney;")
+
+
+def test_mann_whitney():
+    rvs1 = np.round(stats.norm.rvs(loc=1, scale=5,size=500), 5)
+    rvs2 = np.round(stats.expon.rvs(scale=0.2,size=500), 5)
+    s, p = stats.mannwhitneyu(rvs1, rvs2, alternative='two-sided')
+    test_and_check("mannWhitneyUTest", rvs1, rvs2, s, p)
+    test_and_check("mannWhitneyUTest('two-sided')", rvs1, rvs2, s, p)
+
+    equal = np.round(stats.cauchy.rvs(scale=5, size=500), 5)
+    s, p = stats.mannwhitneyu(equal, equal, alternative='two-sided')
+    test_and_check("mannWhitneyUTest('two-sided')", equal, equal, s, p)
+
+    s, p = stats.mannwhitneyu(equal, equal, alternative='less', use_continuity=False)
+    test_and_check("mannWhitneyUTest('less', 0)", equal, equal, s, p)
+
+
+    rvs1 = np.round(stats.cauchy.rvs(scale=10,size=65536), 5)
+    rvs2 = np.round(stats.norm.rvs(loc=0, scale=10,size=65536), 5)
+    s, p = stats.mannwhitneyu(rvs1, rvs2, alternative='greater')
+    test_and_check("mannWhitneyUTest('greater')", rvs1, rvs2, s, p)
+
+if __name__ == "__main__":
+    test_mann_whitney()
+    print("Ok.") 

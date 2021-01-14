@@ -27,6 +27,8 @@ namespace ErrorCodes
 class WriteBuffer : public BufferBase
 {
 public:
+    using BufferBase::set;
+    using BufferBase::position;
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
@@ -59,7 +61,6 @@ public:
       * so that the last data is written
       */
     virtual ~WriteBuffer() {}
-
 
     inline void nextIfAtEnd()
     {

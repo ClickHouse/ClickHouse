@@ -38,7 +38,7 @@ private:
     clockid_t clock_type {};
 
 public:
-    CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_);
+    CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_, bool allow_different_codecs_ = false);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 

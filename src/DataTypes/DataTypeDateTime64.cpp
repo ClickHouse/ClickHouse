@@ -1,8 +1,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <common/DateLUT.h>
@@ -20,19 +18,34 @@
 #include <optional>
 #include <string>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+static constexpr UInt32 max_scale = 9;
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
     : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
       TimezoneMixin(time_zone_name)
 {
+    if (scale > max_scale)
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>() - scale_, scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
       TimezoneMixin(time_zone_info)
-{}
+{
+    if (scale > max_scale)
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+}
 
 std::string DataTypeDateTime64::doGetName() const
 {
@@ -44,9 +57,21 @@ std::string DataTypeDateTime64::doGetName() const
     return out.str();
 }
 
-void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
+void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeDateTimeText(assert_cast<const ColumnType &>(column).getData()[row_num], scale, ostr, time_zone);
+    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    switch (settings.date_time_output_format)
+    {
+        case FormatSettings::DateTimeOutputFormat::Simple:
+            writeDateTimeText(value, scale, ostr, time_zone);
+            return;
+        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
+            writeDateTimeUnixTimestamp(value, scale, ostr);
+            return;
+        case FormatSettings::DateTimeOutputFormat::ISO:
+            writeDateTimeTextISO(value, scale, ostr, utc_time_zone);
+            return;
+    }
 }
 
 void DataTypeDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -186,67 +211,6 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
     if (const auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
         return this->scale == ptype->getScale();
     return false;
-}
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-enum class ArgumentKind
-{
-    Optional,
-    Mandatory
-};
-
-template <typename T, ArgumentKind Kind>
-std::conditional_t<Kind == ArgumentKind::Optional, std::optional<T>, T>
-getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name, const std::string context_data_type_name)
-{
-    using NearestResultType = NearestFieldType<T>;
-    const auto field_type = Field::TypeToEnum<NearestResultType>::value;
-    const ASTLiteral * argument = nullptr;
-
-    auto exception_message = [=](const String & message)
-    {
-        return std::string("Parameter #") + std::to_string(argument_index) + " '"
-                + argument_name + "' for " + context_data_type_name
-                + message
-                + ", expected: " + Field::Types::toString(field_type) + " literal.";
-    };
-
-    if (!arguments || arguments->children.size() <= argument_index
-        || !(argument = arguments->children[argument_index]->as<ASTLiteral>()))
-    {
-        if constexpr (Kind == ArgumentKind::Optional)
-            return {};
-        else
-            throw Exception(exception_message(" is missing"),
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-
-    if (argument->value.getType() != field_type)
-        throw Exception(exception_message(String(" has wrong type: ") + argument->value.getTypeName()),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return argument->value.get<NearestResultType>();
-}
-
-static DataTypePtr create64(const ASTPtr & arguments)
-{
-    if (!arguments || arguments->size() == 0)
-        return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
-
-    const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "DateType64");
-    const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, !!scale, "timezone", "DateType64");
-
-    return std::make_shared<DataTypeDateTime64>(scale.value_or(DataTypeDateTime64::default_scale), timezone.value_or(String{}));
-}
-
-void registerDataTypeDateTime64(DataTypeFactory & factory)
-{
-    factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
 }
 
 }

@@ -42,7 +42,7 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
 
 void RegionsNames::reload()
 {
-    Logger * log = &Logger::get("RegionsNames");
+    Poco::Logger * log = &Poco::Logger::get("RegionsNames");
     LOG_DEBUG(log, "Reloading regions names");
 
     RegionID max_region_id = 0;
@@ -55,7 +55,7 @@ void RegionsNames::reload()
         if (!names_source || !names_source->isModified())
             continue;
 
-        LOG_DEBUG(log, "Reloading regions names for language: " << language);
+        LOG_DEBUG(log, "Reloading regions names for language: {}", language);
 
         auto names_reader = names_source->createReader();
 

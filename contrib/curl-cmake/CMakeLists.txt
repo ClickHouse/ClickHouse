@@ -1,150 +1,179 @@
-set (CURL_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
+if (NOT USE_INTERNAL_CURL)
+    return()
+endif()
+
+set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/curl")
 
 set (SRCS
-    ${CURL_DIR}/lib/file.c
-    ${CURL_DIR}/lib/timeval.c
-    ${CURL_DIR}/lib/base64.c
-    ${CURL_DIR}/lib/hostip.c
-    ${CURL_DIR}/lib/progress.c
-    ${CURL_DIR}/lib/formdata.c
-    ${CURL_DIR}/lib/cookie.c
-    ${CURL_DIR}/lib/http.c
-    ${CURL_DIR}/lib/sendf.c
-    ${CURL_DIR}/lib/url.c
-    ${CURL_DIR}/lib/dict.c
-    ${CURL_DIR}/lib/if2ip.c
-    ${CURL_DIR}/lib/speedcheck.c
-    ${CURL_DIR}/lib/ldap.c
-    ${CURL_DIR}/lib/version.c
-    ${CURL_DIR}/lib/getenv.c
-    ${CURL_DIR}/lib/escape.c
-    ${CURL_DIR}/lib/mprintf.c
-    ${CURL_DIR}/lib/telnet.c
-    ${CURL_DIR}/lib/netrc.c
-    ${CURL_DIR}/lib/getinfo.c
-    ${CURL_DIR}/lib/transfer.c
-    ${CURL_DIR}/lib/strcase.c
-    ${CURL_DIR}/lib/easy.c
-    ${CURL_DIR}/lib/security.c
-    ${CURL_DIR}/lib/curl_fnmatch.c
-    ${CURL_DIR}/lib/fileinfo.c
-    ${CURL_DIR}/lib/wildcard.c
-    ${CURL_DIR}/lib/krb5.c
-    ${CURL_DIR}/lib/memdebug.c
-    ${CURL_DIR}/lib/http_chunks.c
-    ${CURL_DIR}/lib/strtok.c
-    ${CURL_DIR}/lib/connect.c
-    ${CURL_DIR}/lib/llist.c
-    ${CURL_DIR}/lib/hash.c
-    ${CURL_DIR}/lib/multi.c
-    ${CURL_DIR}/lib/content_encoding.c
-    ${CURL_DIR}/lib/share.c
-    ${CURL_DIR}/lib/http_digest.c
-    ${CURL_DIR}/lib/md4.c
-    ${CURL_DIR}/lib/md5.c
-    ${CURL_DIR}/lib/http_negotiate.c
-    ${CURL_DIR}/lib/inet_pton.c
-    ${CURL_DIR}/lib/strtoofft.c
-    ${CURL_DIR}/lib/strerror.c
-    ${CURL_DIR}/lib/amigaos.c
-    ${CURL_DIR}/lib/hostasyn.c
-    ${CURL_DIR}/lib/hostip4.c
-    ${CURL_DIR}/lib/hostip6.c
-    ${CURL_DIR}/lib/hostsyn.c
-    ${CURL_DIR}/lib/inet_ntop.c
-    ${CURL_DIR}/lib/parsedate.c
-    ${CURL_DIR}/lib/select.c
-    ${CURL_DIR}/lib/splay.c
-    ${CURL_DIR}/lib/strdup.c
-    ${CURL_DIR}/lib/socks.c
-    ${CURL_DIR}/lib/curl_addrinfo.c
-    ${CURL_DIR}/lib/socks_gssapi.c
-    ${CURL_DIR}/lib/socks_sspi.c
-    ${CURL_DIR}/lib/curl_sspi.c
-    ${CURL_DIR}/lib/slist.c
-    ${CURL_DIR}/lib/nonblock.c
-    ${CURL_DIR}/lib/curl_memrchr.c
-    ${CURL_DIR}/lib/imap.c
-    ${CURL_DIR}/lib/pop3.c
-    ${CURL_DIR}/lib/smtp.c
-    ${CURL_DIR}/lib/pingpong.c
-    ${CURL_DIR}/lib/rtsp.c
-    ${CURL_DIR}/lib/curl_threads.c
-    ${CURL_DIR}/lib/warnless.c
-    ${CURL_DIR}/lib/hmac.c
-    ${CURL_DIR}/lib/curl_rtmp.c
-    ${CURL_DIR}/lib/openldap.c
-    ${CURL_DIR}/lib/curl_gethostname.c
-    ${CURL_DIR}/lib/gopher.c
-    ${CURL_DIR}/lib/idn_win32.c
-    ${CURL_DIR}/lib/http_proxy.c
-    ${CURL_DIR}/lib/non-ascii.c
-    ${CURL_DIR}/lib/asyn-thread.c
-    ${CURL_DIR}/lib/curl_gssapi.c
-    ${CURL_DIR}/lib/http_ntlm.c
-    ${CURL_DIR}/lib/curl_ntlm_wb.c
-    ${CURL_DIR}/lib/curl_ntlm_core.c
-    ${CURL_DIR}/lib/curl_sasl.c
-    ${CURL_DIR}/lib/rand.c
-    ${CURL_DIR}/lib/curl_multibyte.c
-    ${CURL_DIR}/lib/hostcheck.c
-    ${CURL_DIR}/lib/conncache.c
-    ${CURL_DIR}/lib/dotdot.c
-    ${CURL_DIR}/lib/x509asn1.c
-    ${CURL_DIR}/lib/http2.c
-    ${CURL_DIR}/lib/smb.c
-    ${CURL_DIR}/lib/curl_endian.c
-    ${CURL_DIR}/lib/curl_des.c
-    ${CURL_DIR}/lib/system_win32.c
-    ${CURL_DIR}/lib/mime.c
-    ${CURL_DIR}/lib/sha256.c
-    ${CURL_DIR}/lib/setopt.c
-    ${CURL_DIR}/lib/curl_path.c
-    ${CURL_DIR}/lib/curl_ctype.c
-    ${CURL_DIR}/lib/curl_range.c
-    ${CURL_DIR}/lib/psl.c
-    ${CURL_DIR}/lib/doh.c
-    ${CURL_DIR}/lib/urlapi.c
-    ${CURL_DIR}/lib/curl_get_line.c
-    ${CURL_DIR}/lib/altsvc.c
-    ${CURL_DIR}/lib/socketpair.c
-    ${CURL_DIR}/lib/vauth/vauth.c
-    ${CURL_DIR}/lib/vauth/cleartext.c
-    ${CURL_DIR}/lib/vauth/cram.c
-    ${CURL_DIR}/lib/vauth/digest.c
-    ${CURL_DIR}/lib/vauth/digest_sspi.c
-    ${CURL_DIR}/lib/vauth/krb5_gssapi.c
-    ${CURL_DIR}/lib/vauth/krb5_sspi.c
-    ${CURL_DIR}/lib/vauth/ntlm.c
-    ${CURL_DIR}/lib/vauth/ntlm_sspi.c
-    ${CURL_DIR}/lib/vauth/oauth2.c
-    ${CURL_DIR}/lib/vauth/spnego_gssapi.c
-    ${CURL_DIR}/lib/vauth/spnego_sspi.c
-    ${CURL_DIR}/lib/vtls/openssl.c
-    ${CURL_DIR}/lib/vtls/gtls.c
-    ${CURL_DIR}/lib/vtls/vtls.c
-    ${CURL_DIR}/lib/vtls/nss.c
-    ${CURL_DIR}/lib/vtls/polarssl.c
-    ${CURL_DIR}/lib/vtls/polarssl_threadlock.c
-    ${CURL_DIR}/lib/vtls/wolfssl.c
-    ${CURL_DIR}/lib/vtls/schannel.c
-    ${CURL_DIR}/lib/vtls/schannel_verify.c
-    ${CURL_DIR}/lib/vtls/sectransp.c
-    ${CURL_DIR}/lib/vtls/gskit.c
-    ${CURL_DIR}/lib/vtls/mbedtls.c
-    ${CURL_DIR}/lib/vtls/mesalink.c
-    ${CURL_DIR}/lib/vtls/bearssl.c
-    ${CURL_DIR}/lib/vquic/ngtcp2.c
-    ${CURL_DIR}/lib/vquic/quiche.c
-    ${CURL_DIR}/lib/vssh/libssh2.c
-    ${CURL_DIR}/lib/vssh/libssh.c
+    ${LIBRARY_DIR}/lib/file.c
+    ${LIBRARY_DIR}/lib/timeval.c
+    ${LIBRARY_DIR}/lib/base64.c
+    ${LIBRARY_DIR}/lib/hostip.c
+    ${LIBRARY_DIR}/lib/progress.c
+    ${LIBRARY_DIR}/lib/formdata.c
+    ${LIBRARY_DIR}/lib/cookie.c
+    ${LIBRARY_DIR}/lib/http.c
+    ${LIBRARY_DIR}/lib/sendf.c
+    ${LIBRARY_DIR}/lib/url.c
+    ${LIBRARY_DIR}/lib/dict.c
+    ${LIBRARY_DIR}/lib/if2ip.c
+    ${LIBRARY_DIR}/lib/speedcheck.c
+    ${LIBRARY_DIR}/lib/ldap.c
+    ${LIBRARY_DIR}/lib/version.c
+    ${LIBRARY_DIR}/lib/getenv.c
+    ${LIBRARY_DIR}/lib/escape.c
+    ${LIBRARY_DIR}/lib/mprintf.c
+    ${LIBRARY_DIR}/lib/telnet.c
+    ${LIBRARY_DIR}/lib/netrc.c
+    ${LIBRARY_DIR}/lib/getinfo.c
+    ${LIBRARY_DIR}/lib/transfer.c
+    ${LIBRARY_DIR}/lib/strcase.c
+    ${LIBRARY_DIR}/lib/easy.c
+    ${LIBRARY_DIR}/lib/security.c
+    ${LIBRARY_DIR}/lib/curl_fnmatch.c
+    ${LIBRARY_DIR}/lib/fileinfo.c
+    ${LIBRARY_DIR}/lib/wildcard.c
+    ${LIBRARY_DIR}/lib/krb5.c
+    ${LIBRARY_DIR}/lib/memdebug.c
+    ${LIBRARY_DIR}/lib/http_chunks.c
+    ${LIBRARY_DIR}/lib/strtok.c
+    ${LIBRARY_DIR}/lib/connect.c
+    ${LIBRARY_DIR}/lib/llist.c
+    ${LIBRARY_DIR}/lib/hash.c
+    ${LIBRARY_DIR}/lib/multi.c
+    ${LIBRARY_DIR}/lib/content_encoding.c
+    ${LIBRARY_DIR}/lib/share.c
+    ${LIBRARY_DIR}/lib/http_digest.c
+    ${LIBRARY_DIR}/lib/md4.c
+    ${LIBRARY_DIR}/lib/md5.c
+    ${LIBRARY_DIR}/lib/http_negotiate.c
+    ${LIBRARY_DIR}/lib/inet_pton.c
+    ${LIBRARY_DIR}/lib/strtoofft.c
+    ${LIBRARY_DIR}/lib/strerror.c
+    ${LIBRARY_DIR}/lib/amigaos.c
+    ${LIBRARY_DIR}/lib/hostasyn.c
+    ${LIBRARY_DIR}/lib/hostip4.c
+    ${LIBRARY_DIR}/lib/hostip6.c
+    ${LIBRARY_DIR}/lib/hostsyn.c
+    ${LIBRARY_DIR}/lib/inet_ntop.c
+    ${LIBRARY_DIR}/lib/parsedate.c
+    ${LIBRARY_DIR}/lib/select.c
+    ${LIBRARY_DIR}/lib/splay.c
+    ${LIBRARY_DIR}/lib/strdup.c
+    ${LIBRARY_DIR}/lib/socks.c
+    ${LIBRARY_DIR}/lib/curl_addrinfo.c
+    ${LIBRARY_DIR}/lib/socks_gssapi.c
+    ${LIBRARY_DIR}/lib/socks_sspi.c
+    ${LIBRARY_DIR}/lib/curl_sspi.c
+    ${LIBRARY_DIR}/lib/slist.c
+    ${LIBRARY_DIR}/lib/nonblock.c
+    ${LIBRARY_DIR}/lib/curl_memrchr.c
+    ${LIBRARY_DIR}/lib/imap.c
+    ${LIBRARY_DIR}/lib/pop3.c
+    ${LIBRARY_DIR}/lib/smtp.c
+    ${LIBRARY_DIR}/lib/pingpong.c
+    ${LIBRARY_DIR}/lib/rtsp.c
+    ${LIBRARY_DIR}/lib/curl_threads.c
+    ${LIBRARY_DIR}/lib/warnless.c
+    ${LIBRARY_DIR}/lib/hmac.c
+    ${LIBRARY_DIR}/lib/curl_rtmp.c
+    ${LIBRARY_DIR}/lib/openldap.c
+    ${LIBRARY_DIR}/lib/curl_gethostname.c
+    ${LIBRARY_DIR}/lib/gopher.c
+    ${LIBRARY_DIR}/lib/idn_win32.c
+    ${LIBRARY_DIR}/lib/http_proxy.c
+    ${LIBRARY_DIR}/lib/non-ascii.c
+    ${LIBRARY_DIR}/lib/asyn-thread.c
+    ${LIBRARY_DIR}/lib/curl_gssapi.c
+    ${LIBRARY_DIR}/lib/http_ntlm.c
+    ${LIBRARY_DIR}/lib/curl_ntlm_wb.c
+    ${LIBRARY_DIR}/lib/curl_ntlm_core.c
+    ${LIBRARY_DIR}/lib/curl_sasl.c
+    ${LIBRARY_DIR}/lib/rand.c
+    ${LIBRARY_DIR}/lib/curl_multibyte.c
+    ${LIBRARY_DIR}/lib/hostcheck.c
+    ${LIBRARY_DIR}/lib/conncache.c
+    ${LIBRARY_DIR}/lib/dotdot.c
+    ${LIBRARY_DIR}/lib/x509asn1.c
+    ${LIBRARY_DIR}/lib/http2.c
+    ${LIBRARY_DIR}/lib/smb.c
+    ${LIBRARY_DIR}/lib/curl_endian.c
+    ${LIBRARY_DIR}/lib/curl_des.c
+    ${LIBRARY_DIR}/lib/system_win32.c
+    ${LIBRARY_DIR}/lib/mime.c
+    ${LIBRARY_DIR}/lib/sha256.c
+    ${LIBRARY_DIR}/lib/setopt.c
+    ${LIBRARY_DIR}/lib/curl_path.c
+    ${LIBRARY_DIR}/lib/curl_ctype.c
+    ${LIBRARY_DIR}/lib/curl_range.c
+    ${LIBRARY_DIR}/lib/psl.c
+    ${LIBRARY_DIR}/lib/doh.c
+    ${LIBRARY_DIR}/lib/urlapi.c
+    ${LIBRARY_DIR}/lib/curl_get_line.c
+    ${LIBRARY_DIR}/lib/altsvc.c
+    ${LIBRARY_DIR}/lib/socketpair.c
+    ${LIBRARY_DIR}/lib/vauth/vauth.c
+    ${LIBRARY_DIR}/lib/vauth/cleartext.c
+    ${LIBRARY_DIR}/lib/vauth/cram.c
+    ${LIBRARY_DIR}/lib/vauth/digest.c
+    ${LIBRARY_DIR}/lib/vauth/digest_sspi.c
+    ${LIBRARY_DIR}/lib/vauth/krb5_gssapi.c
+    ${LIBRARY_DIR}/lib/vauth/krb5_sspi.c
+    ${LIBRARY_DIR}/lib/vauth/ntlm.c
+    ${LIBRARY_DIR}/lib/vauth/ntlm_sspi.c
+    ${LIBRARY_DIR}/lib/vauth/oauth2.c
+    ${LIBRARY_DIR}/lib/vauth/spnego_gssapi.c
+    ${LIBRARY_DIR}/lib/vauth/spnego_sspi.c
+    ${LIBRARY_DIR}/lib/vtls/openssl.c
+    ${LIBRARY_DIR}/lib/vtls/gtls.c
+    ${LIBRARY_DIR}/lib/vtls/vtls.c
+    ${LIBRARY_DIR}/lib/vtls/nss.c
+    ${LIBRARY_DIR}/lib/vtls/polarssl.c
+    ${LIBRARY_DIR}/lib/vtls/polarssl_threadlock.c
+    ${LIBRARY_DIR}/lib/vtls/wolfssl.c
+    ${LIBRARY_DIR}/lib/vtls/schannel.c
+    ${LIBRARY_DIR}/lib/vtls/schannel_verify.c
+    ${LIBRARY_DIR}/lib/vtls/sectransp.c
+    ${LIBRARY_DIR}/lib/vtls/gskit.c
+    ${LIBRARY_DIR}/lib/vtls/mbedtls.c
+    ${LIBRARY_DIR}/lib/vtls/mesalink.c
+    ${LIBRARY_DIR}/lib/vtls/bearssl.c
+    ${LIBRARY_DIR}/lib/vquic/ngtcp2.c
+    ${LIBRARY_DIR}/lib/vquic/quiche.c
+    ${LIBRARY_DIR}/lib/vssh/libssh2.c
+    ${LIBRARY_DIR}/lib/vssh/libssh.c
 )
 
 add_library (curl ${SRCS})
 
-target_compile_definitions(curl PRIVATE HAVE_CONFIG_H BUILDING_LIBCURL CURL_HIDDEN_SYMBOLS libcurl_EXPORTS)
-target_include_directories(curl PUBLIC ${CURL_DIR}/include ${CURL_DIR}/lib .)
+target_compile_definitions (curl PRIVATE
+    HAVE_CONFIG_H
+    BUILDING_LIBCURL
+    CURL_HIDDEN_SYMBOLS
+    libcurl_EXPORTS
+    OS="${CMAKE_SYSTEM_NAME}"
+)
+target_include_directories (curl PUBLIC
+    ${LIBRARY_DIR}/include
+    ${LIBRARY_DIR}/lib
+    . # curl_config.h
+)
 
-target_compile_definitions(curl PRIVATE OS="${CMAKE_SYSTEM_NAME}")
+target_link_libraries (curl PRIVATE ssl)
 
-target_link_libraries(curl PRIVATE ssl)
+# The library is large - avoid bloat (XXX: is it?)
+target_compile_options (curl PRIVATE -g0)
+
+# find_package(CURL) compatibility for the following packages that uses
+# find_package(CURL)/include(FindCURL):
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+set (CURL_FOUND ON CACHE BOOL "")
+set (CURL_ROOT_DIR ${LIBRARY_DIR} CACHE PATH "")
+set (CURL_INCLUDE_DIR ${LIBRARY_DIR}/include CACHE PATH "")
+set (CURL_INCLUDE_DIRS ${LIBRARY_DIR}/include CACHE PATH "")
+set (CURL_LIBRARY curl CACHE STRING "")
+set (CURL_LIBRARIES ${CURL_LIBRARY} CACHE STRING "")
+set (CURL_VERSION_STRING 7.67.0 CACHE STRING "")
+add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})

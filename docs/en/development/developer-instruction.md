@@ -1,19 +1,17 @@
 ---
 toc_priority: 61
-toc_title: The Beginner ClickHouse Developer Instruction
+toc_title: For Beginners
 ---
+
+# The Beginner ClickHouse Developer Instruction {#the-beginner-clickhouse-developer-instruction}
 
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
-# If You Use Windows {#if-you-use-windows}
-
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/\#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
-
-# If You Use a 32-bit System {#if-you-use-a-32-bit-system}
+If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
 ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
 
-# Creating a Repository on GitHub {#creating-a-repository-on-github}
+## Creating a Repository on GitHub {#creating-a-repository-on-github}
 
 To start working with ClickHouse repository you will need a GitHub account.
 
@@ -30,10 +28,10 @@ To do that in Ubuntu you would run in the command line terminal:
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
 For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
-# Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
+## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
 
 Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
 
@@ -42,7 +40,7 @@ In the command line terminal run:
     git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Note: please, substitute *your\_github\_username* with what is appropriate!
+Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
 
@@ -77,7 +75,7 @@ You can also add original ClickHouse repo’s address to your local repository t
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
-## Working with Submodules {#working-with-submodules}
+### Working with Submodules {#working-with-submodules}
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
@@ -107,7 +105,7 @@ The next commands would help you to reset all submodules to the initial state (!
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
-# Build System {#build-system}
+## Build System {#build-system}
 
 ClickHouse uses CMake and Ninja for building.
 
@@ -127,38 +125,38 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
 
 Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
-# Optional External Libraries {#optional-external-libraries}
+## Optional External Libraries {#optional-external-libraries}
 
 ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
-# C++ Compiler {#c-compiler}
+## C++ Compiler {#c-compiler}
 
-Compilers GCC starting from version 9 and Clang version 8 or above are supported for building ClickHouse.
+Compilers GCC starting from version 10 and Clang version 8 or above are supported for building ClickHouse.
 
 Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/\#install-gcc-9.
+Check the version of gcc: `gcc --version`. If it is below 10, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-10.
 
 Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
 If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
-# The Building Process {#the-building-process}
+## The Building Process {#the-building-process}
 
 Now that you are ready to build ClickHouse we recommend you to create a separate directory `build` inside `ClickHouse` that will contain all of the build artefacts:
 
     mkdir build
     cd build
 
-You can have several different directories (build\_release, build\_debug, etc.) for different types of build.
+You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 10 gcc compiler in this example).
 
 Linux:
 
-    export CC=gcc-9 CXX=g++-9
+    export CC=gcc-10 CXX=g++-10
     cmake ..
 
 Mac OS X:
@@ -202,7 +200,7 @@ Upon successful build you get an executable file `ClickHouse/<build_dir>/program
 
     ls -l programs/clickhouse
 
-# Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
+## Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
 To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
 
@@ -210,7 +208,7 @@ To run the server under the current user you need to navigate to `ClickHouse/pro
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 
@@ -229,7 +227,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
     sudo service clickhouse-server stop
     sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
-# IDE (Integrated Development Environment) {#ide-integrated-development-environment}
+## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
 If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
 
@@ -239,7 +237,7 @@ As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate 
 
 Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
-# Writing Code {#writing-code}
+## Writing Code {#writing-code}
 
 The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
@@ -247,16 +245,16 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
-# Test Data {#test-data}
+## Test Data {#test-data}
 
 Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
 
     sudo apt install wget xz-utils
 
-    wget https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz
-    wget https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
@@ -272,7 +270,7 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
-# Creating Pull Request {#creating-pull-request}
+## Creating Pull Request {#creating-pull-request}
 
 Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
 

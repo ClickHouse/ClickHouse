@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
-    ParserIdentifierWithOptionalParameters parser;
+    ParserDataType parser;
     ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     return get(ast);
 }
@@ -43,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name, {});
+        return get(ident->name(), {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -80,7 +80,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
 }
 
 
-void DataTypeFactory::registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
@@ -136,7 +136,7 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     }, case_sensitiveness);
 }
 
-const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String & family_name) const
+const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
@@ -165,7 +165,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
-    registerDataTypeDateTime64(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
@@ -180,6 +179,8 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeLowCardinality(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
+    registerDataTypeDomainGeo(*this);
+    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

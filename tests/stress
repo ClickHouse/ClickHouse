@@ -6,7 +6,7 @@ trap 'kill -9 $(jobs -p)' EXIT
 function thread()
 {
     while true; do
-        ./clickhouse-test --order random 2>&1 | awk '/^\w+:/ { printf("\033[0;%s%sm \033[0m", ('$1' % 2 ? "4" : "10"), (int('$1' / 2) % 8)) }'
+        ./clickhouse-test --client-option="query-fuzzer-runs=10" --order random 2>&1 | awk '/^\w+:/ { printf("\033[0;%s%sm \033[0m", ('$1' % 2 ? "4" : "10"), (int('$1' / 2) % 8)) }'
     done
 }
 

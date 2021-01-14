@@ -3,7 +3,8 @@
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CUR_DIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS contributors"
@@ -34,14 +35,6 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_numbers ORDER BY number DESC L
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_numbers"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS arrow_events"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_events (event String, value UInt64, description String) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.events FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_events FORMAT Arrow"
-${CLICKHOUSE_CLIENT} --query="SELECT event, description FROM arrow_events WHERE event IN ('ContextLock', 'Query') ORDER BY event"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_events"
-
-
-
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS arrow_types1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS arrow_types3"
@@ -61,18 +54,16 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types1 values (     -128,       
 # max
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types1 values (      127,         255,       32767,         65535,  2147483647,    4294967295, 9223372036854775807, 9223372036854775807, -1.032,     -1.064,    'string-2',             'fixedstring-2', '2004-06-07', '2004-02-03 04:05:06')"
 
-# 'SELECT -127,-128,-129,126,127,128,255,256,257,-32767,-32768,-32769,32766,32767,32768,65535,65536,65537,  -2147483647,-2147483648,-2147483649,2147483646,2147483647,2147483648,4294967295,4294967296,4294967297,   -9223372036854775807,-9223372036854775808,9223372036854775806,9223372036854775807,9223372036854775808,18446744073709551615';
-
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types2 FORMAT Arrow"
 
 echo original:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/arrow_all_types_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/arrow_all_types_1.dump
 echo converted:
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8" | tee ${CLICKHOUSE_TMP}/arrow_all_types_2.dump
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT Arrow" > ${CLICKHOUSE_TMP}/arrow_all_types_1.arrow
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8 FORMAT Arrow" > ${CLICKHOUSE_TMP}/arrow_all_types_2.arrow
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8" | tee "${CLICKHOUSE_TMP}"/arrow_all_types_2.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT Arrow" > "${CLICKHOUSE_TMP}"/arrow_all_types_1.arrow
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types2 ORDER BY int8 FORMAT Arrow" > "${CLICKHOUSE_TMP}"/arrow_all_types_2.arrow
 echo diff:
-diff ${CLICKHOUSE_TMP}/arrow_all_types_1.dump ${CLICKHOUSE_TMP}/arrow_all_types_2.dump
+diff "${CLICKHOUSE_TMP}"/arrow_all_types_1.dump "${CLICKHOUSE_TMP}"/arrow_all_types_2.dump
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types3 values (       79,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'fstr1', '2003-03-04', '2004-05-06')"
@@ -97,8 +88,7 @@ ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE arrow_types2"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_types5       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE arrow_types6       (int8 Nullable(Int8), uint8 Nullable(UInt8), int16 Nullable(Int16), uint16 Nullable(UInt16), int32 Nullable(Int32), uint32 Nullable(UInt32), int64 Nullable(Int64), uint64 Nullable(UInt64), float32 Nullable(Float32), float64 Nullable(Float64), string Nullable(String), fixedstring Nullable(FixedString(15)), date Nullable(Date), datetime Nullable(DateTime)) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types5 values (               NULL,                  NULL,                  NULL,                    NULL,                  NULL,                    NULL,                  NULL,                    NULL,                      NULL,                      NULL,                    NULL,                                  NULL,                NULL,                        NULL)"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT Arrow" > ${CLICKHOUSE_TMP}/arrow_all_types_5.arrow
-#${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types6 FORMAT Arrow"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT Arrow" > "${CLICKHOUSE_TMP}"/arrow_all_types_5.arrow
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types5 ORDER BY int8 FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types6 FORMAT Arrow"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_types1 ORDER BY int8 FORMAT Arrow" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO arrow_types6 FORMAT Arrow"
 echo dest from null:

@@ -702,13 +702,13 @@ arrayDifference(array)
 
 **Paramètre**
 
--   `array` – [Tableau](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Tableau](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Valeurs renvoyées**
 
 Renvoie un tableau de différences entre les éléments adjacents.
 
-Type: [UInt\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.yandex/docs/en/data_types/int_uint/#int-ranges), [Flottant\*](https://clickhouse.yandex/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Flottant\*](https://clickhouse.tech/docs/en/data_types/float/).
 
 **Exemple**
 
@@ -754,7 +754,7 @@ arrayDistinct(array)
 
 **Paramètre**
 
--   `array` – [Tableau](https://clickhouse.yandex/docs/en/data_types/array/).
+-   `array` – [Tableau](https://clickhouse.tech/docs/en/data_types/array/).
 
 **Valeurs renvoyées**
 
@@ -1028,7 +1028,7 @@ Résultat:
 
 ## arrayAUC {#arrayauc}
 
-Calculer AUC (zone sous la courbe, qui est un concept dans l'apprentissage automatique, voir plus de détails: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
+Calculer AUC (zone sous la courbe, qui est un concept dans l'apprentissage automatique, voir plus de détails: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntaxe**
 

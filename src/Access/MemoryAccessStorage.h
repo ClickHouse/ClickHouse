@@ -13,7 +13,11 @@ namespace DB
 class MemoryAccessStorage : public IAccessStorage
 {
 public:
-    MemoryAccessStorage(const String & storage_name_ = "memory");
+    static constexpr char STORAGE_TYPE[] = "memory";
+
+    MemoryAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+
+    const char * getStorageType() const override { return STORAGE_TYPE; }
 
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);

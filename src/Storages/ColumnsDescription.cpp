@@ -26,7 +26,7 @@
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -49,51 +49,48 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto codec_str = [](const CompressionCodecPtr & codec_ptr) { return codec_ptr ? codec_ptr->getCodecDesc() : String(); };
-    auto ttl_str = [](const ASTPtr & ttl_ast) { return ttl_ast ? queryToString(ttl_ast) : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && comment == other.comment
-        && codec_str(codec) == codec_str(other.codec)
-        && ttl_str(ttl) == ttl_str(other.ttl);
+        && ast_to_str(codec) == ast_to_str(other.codec)
+        && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
 void ColumnDescription::writeText(WriteBuffer & buf) const
 {
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    DB::writeText(type->getName(), buf);
+    writeEscapedString(type->getName(), buf);
 
     if (default_desc.expression)
     {
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        DB::writeText(queryToString(default_desc.expression), buf);
+        writeEscapedString(queryToString(default_desc.expression), buf);
     }
 
     if (!comment.empty())
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        DB::writeText(queryToString(ASTLiteral(Field(comment))), buf);
+        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        DB::writeText("CODEC(", buf);
-        DB::writeText(codec->getCodecDesc(), buf);
-        DB::writeText(")", buf);
+        writeEscapedString(queryToString(codec), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        DB::writeText(queryToString(ttl), buf);
+        writeEscapedString(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -120,7 +117,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
+            codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
@@ -167,7 +164,7 @@ static auto getNameRange(const ColumnsDescription::Container & columns, const St
     return std::make_pair(begin, end);
 }
 
-void ColumnsDescription::add(ColumnDescription column, const String & after_column)
+void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first)
 {
     if (has(column.name))
         throw Exception("Cannot add column " + column.name + ": column with this name already exists",
@@ -175,7 +172,9 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
 
     auto insert_it = columns.cend();
 
-    if (!after_column.empty())
+    if (first)
+        insert_it = columns.cbegin();
+    else if (!after_column.empty())
     {
         auto range = getNameRange(columns, after_column);
         if (range.first == range.second)
@@ -211,6 +210,38 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     });
 }
 
+void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
+{
+    const auto & reorder_column = [&](auto get_new_pos)
+    {
+        auto column_range = getNameRange(columns, column_name);
+
+        if (column_range.first == column_range.second)
+            throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+        std::vector<ColumnDescription> moving_columns;
+        for (auto list_it = column_range.first; list_it != column_range.second;)
+        {
+            moving_columns.emplace_back(*list_it);
+            list_it = columns.get<0>().erase(list_it);
+        }
+
+        columns.get<0>().insert(get_new_pos(), moving_columns.begin(), moving_columns.end());
+    };
+
+    if (first)
+        reorder_column([&]() { return columns.cbegin(); });
+    else if (!after_column.empty() && column_name != after_column)
+    {
+        /// Checked first
+        auto range = getNameRange(columns, after_column);
+        if (range.first == range.second)
+            throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+        reorder_column([&]() { return getNameRange(columns, after_column).second; });
+    }
+}
 
 void ColumnsDescription::flattenNested()
 {
@@ -347,6 +378,14 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::hasDefaults() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.expression)
+            return true;
+    return false;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
@@ -373,6 +412,13 @@ std::optional<ColumnDefault> ColumnsDescription::getDefault(const String & colum
 }
 
 
+bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    return it != columns.get<1>().end() && it->codec != nullptr;
+}
+
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto it = columns.get<1>().find(column_name);
@@ -380,12 +426,22 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     if (it == columns.get<1>().end() || !it->codec)
         return default_codec;
 
-    return it->codec;
+    return CompressionCodecFactory::instance().get(it->codec, it->type, default_codec);
 }
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    const auto it = columns.get<1>().find(column_name);
+
+    if (it == columns.get<1>().end() || !it->codec)
+        return default_codec->getFullCodecDesc();
+
+    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
@@ -443,11 +499,11 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
 
     try
     {
-        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
+        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         return actions->getSampleBlock();
     }

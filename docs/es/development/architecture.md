@@ -47,7 +47,7 @@ A `Block` es un contenedor que representa un subconjunto (porción) de una tabla
 
 Cuando calculamos alguna función sobre columnas en un bloque, agregamos otra columna con su resultado al bloque, y no tocamos columnas para argumentos de la función porque las operaciones son inmutables. Más tarde, las columnas innecesarias se pueden eliminar del bloque, pero no se pueden modificar. Es conveniente para la eliminación de subexpresiones comunes.
 
-Se crean bloques para cada fragmento de datos procesado. Tenga en cuenta que para el mismo tipo de cálculo, los nombres y tipos de columna siguen siendo los mismos para diferentes bloques y solo cambian los datos de columna. Es mejor dividir los datos del bloque desde el encabezado del bloque porque los tamaños de bloque pequeños tienen una gran sobrecarga de cadenas temporales para copiar shared\_ptrs y nombres de columna.
+Se crean bloques para cada fragmento de datos procesado. Tenga en cuenta que para el mismo tipo de cálculo, los nombres y tipos de columna siguen siendo los mismos para diferentes bloques y solo cambian los datos de columna. Es mejor dividir los datos del bloque desde el encabezado del bloque porque los tamaños de bloque pequeños tienen una gran sobrecarga de cadenas temporales para copiar shared_ptrs y nombres de columna.
 
 ## Bloquear flujos {#block-streams}
 

@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -38,6 +39,10 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
     /// Don't descend into subqueries in FROM section
     if (node->as<ASTTableExpression>())
+        return false;
+
+    /// Do not go to subqueries defined in with statement
+    if (node->as<ASTWithElement>())
         return false;
 
     if (node->as<ASTSelectQuery>())
@@ -111,11 +116,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            BlockIO res = interpreter.execute();
+            auto stream = interpreter.execute().getInputStream();
 
             try
             {
-                block = res.in->read();
+                block = stream->read();
 
                 if (!block)
                 {
@@ -126,7 +131,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1 || res.in->read())
+                if (block.rows() != 1 || stream->read())
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)
@@ -180,7 +185,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
 
     std::vector<ASTPtr *> out;
-    if (functionIsInOrGlobalInOperator(func.name))
+    if (checkFunctionIsInOrGlobalInOperator(func))
     {
         for (auto & child : ast->children)
         {

@@ -1,57 +1,72 @@
-set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
-set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+# disable grpc due to conflicts of abseil (required by grpc) dynamic annotations with libtsan.a
+if (SANITIZE STREQUAL "thread" AND COMPILER_GCC)
+  set(ENABLE_GRPC_DEFAULT OFF)
+else()
+  set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})
+endif()
 
-function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
-  if(NOT ARGN)
-    message(SEND_ERROR "Error: PROTOBUF_GENERATE_GRPC_CPP() called without any proto files")
-    return()
+option(ENABLE_GRPC "Use gRPC" ${ENABLE_GRPC_DEFAULT})
+
+if(NOT ENABLE_GRPC)
+  if(USE_INTERNAL_GRPC_LIBRARY)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal gRPC library with ENABLE_GRPC=OFF")
   endif()
+  return()
+endif()
 
-  if(PROTOBUF_GENERATE_CPP_APPEND_PATH)
-    foreach(FIL ${ARGN})
-      get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
-      get_filename_component(ABS_PATH ${ABS_FIL} PATH)
-      list(FIND _protobuf_include_path ${ABS_PATH} _contains_already)
-      if(${_contains_already} EQUAL -1)
-          list(APPEND _protobuf_include_path -I ${ABS_PATH})
-      endif()
-    endforeach()
+if(NOT USE_PROTOBUF)
+  message(WARNING "Cannot use gRPC library without protobuf")
+endif()
+
+# Normally we use the internal gRPC framework.
+# You can set USE_INTERNAL_GRPC_LIBRARY to OFF to force using the external gRPC framework, which should be installed in the system in this case.
+# The external gRPC framework can be installed in the system by running
+# sudo apt-get install libgrpc++-dev protobuf-compiler-grpc
+option(USE_INTERNAL_GRPC_LIBRARY "Set to FALSE to use system gRPC library instead of bundled. (Experimental. Set to OFF on your own risk)" ${NOT_UNBUNDLED})
+
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/grpc/CMakeLists.txt")
+  if(USE_INTERNAL_GRPC_LIBRARY)
+    message(WARNING "submodule contrib/grpc is missing. to fix try run: \n git submodule update --init --recursive")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal grpc")
+    set(USE_INTERNAL_GRPC_LIBRARY 0)
+  endif()
+  set(MISSING_INTERNAL_GRPC_LIBRARY 1)
+endif()
+
+if(USE_SSL)
+  set(gRPC_USE_UNSECURE_LIBRARIES FALSE)
+else()
+  set(gRPC_USE_UNSECURE_LIBRARIES TRUE)
+endif()
+
+if(NOT USE_INTERNAL_GRPC_LIBRARY)
+  find_package(gRPC)
+  if(NOT gRPC_INCLUDE_DIRS OR NOT gRPC_LIBRARIES)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't find system gRPC library")
+    set(EXTERNAL_GRPC_LIBRARY_FOUND 0)
+  elseif(NOT gRPC_CPP_PLUGIN)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't find system grpc_cpp_plugin")
+    set(EXTERNAL_GRPC_LIBRARY_FOUND 0)
   else()
-    set(_protobuf_include_path -I ${CMAKE_CURRENT_SOURCE_DIR})
+    set(EXTERNAL_GRPC_LIBRARY_FOUND 1)
+    set(USE_GRPC 1)
   endif()
+endif()
 
-  if(DEFINED PROTOBUF_IMPORT_DIRS)
-    foreach(DIR ${Protobuf_IMPORT_DIRS})
-      get_filename_component(ABS_PATH ${DIR} ABSOLUTE)
-      list(FIND _protobuf_include_path ${ABS_PATH} _contains_already)
-      if(${_contains_already} EQUAL -1)
-          list(APPEND _protobuf_include_path -I ${ABS_PATH})
-      endif()
-    endforeach()
+if(NOT EXTERNAL_GRPC_LIBRARY_FOUND AND NOT MISSING_INTERNAL_GRPC_LIBRARY)
+  set(gRPC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/grpc/include")
+  if(gRPC_USE_UNSECURE_LIBRARIES)
+    set(gRPC_LIBRARIES grpc_unsecure grpc++_unsecure)
+  else()
+    set(gRPC_LIBRARIES grpc grpc++)
   endif()
+  set(gRPC_CPP_PLUGIN $<TARGET_FILE:grpc_cpp_plugin>)
+  set(gRPC_PYTHON_PLUGIN $<TARGET_FILE:grpc_python_plugin>)
 
-  set(${SRCS})
-  set(${HDRS})
-  foreach(FIL ${ARGN})
-    get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
-    get_filename_component(FIL_WE ${FIL} NAME_WE)
+  include("${ClickHouse_SOURCE_DIR}/contrib/grpc-cmake/protobuf_generate_grpc.cmake")
 
-    list(APPEND ${SRCS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.cc")
-    list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.h")
+  set(USE_INTERNAL_GRPC_LIBRARY 1)
+  set(USE_GRPC 1)
+endif()
 
-    add_custom_command(
-      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.cc"
-             "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.h"
-      COMMAND  ${_PROTOBUF_PROTOC}
-      ARGS --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
-           --plugin=protoc-gen-grpc=${_GRPC_CPP_PLUGIN_EXECUTABLE}
-           ${_protobuf_include_path} ${ABS_FIL}
-      DEPENDS ${ABS_FIL}
-      COMMENT "Running gRPC C++ protocol buffer compiler on ${FIL}"
-      VERBATIM)
-  endforeach()
-
-  set_source_files_properties(${${SRCS}} ${${HDRS}} PROPERTIES GENERATED TRUE)
-  set(${SRCS} ${${SRCS}} PARENT_SCOPE)
-  set(${HDRS} ${${HDRS}} PARENT_SCOPE)
-endfunction()
+message(STATUS "Using gRPC=${USE_GRPC}: ${gRPC_INCLUDE_DIRS} : ${gRPC_LIBRARIES} : ${gRPC_CPP_PLUGIN}")

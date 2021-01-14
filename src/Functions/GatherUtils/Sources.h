@@ -28,6 +28,13 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+#pragma GCC visibility push(hidden)
+
+template <typename T> struct NumericArraySink;
+struct StringSink;
+struct FixedStringSink;
+struct GenericArraySink;
+template <typename ArraySink> struct NullableArraySink;
 
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
@@ -36,14 +43,23 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
+    using SinkType = NumericArraySink<T>;
+
+    const ColVecType & column;
     const typename ColVecType::Container & elements;
     const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
 
+    MutableColumnPtr createValuesColumn()
+    {
+        return column.cloneEmpty();
+    }
+
     explicit NumericArraySource(const ColumnArray & arr)
-            : elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
+            : column(typeid_cast<const ColVecType &>(arr.getData()))
+            , elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
 
@@ -122,9 +138,19 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
     }
 };
 
+
+/// The methods can be virtual or not depending on the template parameter. See IStringSource.
 #if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-override"
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wsuggest-override"
+#elif __clang_major__ >= 11
+#   pragma GCC diagnostic push
+#   ifdef HAS_SUGGEST_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-override"
+#   endif
+#   ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#   endif
 #endif
 
 template <typename Base>
@@ -132,6 +158,8 @@ struct ConstSource : public Base
 {
     using Slice = typename Base::Slice;
     using Column = ColumnConst;
+
+    using SinkType = typename Base::SinkType;
 
     size_t total_rows;
     size_t row_num = 0;
@@ -205,14 +233,16 @@ struct ConstSource : public Base
     }
 };
 
-#if !__clang__
-#pragma GCC diagnostic pop
+#if !__clang__ || __clang_major__ >= 11
+#   pragma GCC diagnostic pop
 #endif
 
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnString;
+
+    using SinkType = StringSink;
 
     const typename ColumnString::Chars & elements;
     const typename ColumnString::Offsets & offsets;
@@ -325,9 +355,9 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
@@ -337,14 +367,14 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsForward(begin, offset, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
             return {begin, 0};
 
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -354,19 +384,19 @@ struct UTF8StringSource : public StringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        auto begin = &elements[prev_offset];
-        auto end = elements.data() + offsets[row_num] - 1;
-        auto res_begin = skipCodePointsBackward(end, offset, begin);
-        auto res_end = skipCodePointsForward(res_begin, length, end);
+        const auto * begin = &elements[prev_offset];
+        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
             return {res_begin, size_t(end - res_begin)};
@@ -380,6 +410,8 @@ struct FixedStringSource
 {
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnFixedString;
+
+    using SinkType = FixedStringSink;
 
     const UInt8 * pos;
     const UInt8 * end;
@@ -463,7 +495,7 @@ struct IStringSource
     virtual bool isEnd() const = 0;
     virtual size_t getSizeForReserve() const = 0;
     virtual Slice getWhole() const = 0;
-    virtual ~IStringSource() {}
+    virtual ~IStringSource() = default;
 };
 
 
@@ -501,11 +533,18 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
     using Slice = GenericArraySlice;
     using Column = ColumnArray;
 
+    using SinkType = GenericArraySink;
+
     const IColumn & elements;
     const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
+
+    MutableColumnPtr createValuesColumn()
+    {
+        return elements.cloneEmpty();
+    }
 
     explicit GenericArraySource(const ColumnArray & arr)
             : elements(arr.getData()), offsets(arr.getOffsets())
@@ -540,7 +579,7 @@ struct GenericArraySource : public ArraySourceImpl<GenericArraySource>
 
     size_t getColumnSize() const override
     {
-        return elements.size();
+        return offsets.size();
     }
 
     size_t getElementSize() const
@@ -595,11 +634,18 @@ struct NullableArraySource : public ArraySource
     using ArraySource::row_num;
     using ArraySource::offsets;
 
+    using SinkType = NullableArraySink<typename ArraySource::SinkType>;
+
     const NullMap & null_map;
 
     NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
             : ArraySource(arr), null_map(null_map_)
     {
+    }
+
+    MutableColumnPtr createValuesColumn()
+    {
+        return ColumnNullable::create(static_cast<ArraySource *>(this)->createValuesColumn(), ColumnUInt8::create());
     }
 
     void accept(ArraySourceVisitor & visitor) override { visitor.visit(*this); }
@@ -664,6 +710,8 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
     using Slice = NumericValueSlice<T>;
     using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
+    using SinkType = NumericArraySink<T>;
+
     const T * begin;
     size_t total_rows;
     size_t row_num = 0;
@@ -706,6 +754,7 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
+    using SinkType = GenericArraySink;
 
     const IColumn * column;
     size_t total_rows;
@@ -749,6 +798,8 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 template <typename ValueSource>
 struct NullableValueSource : public ValueSource
 {
+    using SinkType = NullableArraySink<typename ValueSource::SinkType>;
+
     using Slice = NullableSlice<typename ValueSource::Slice>;
     using ValueSource::row_num;
 
@@ -769,4 +820,5 @@ struct NullableValueSource : public ValueSource
 
 }
 
+#pragma GCC visibility pop
 }

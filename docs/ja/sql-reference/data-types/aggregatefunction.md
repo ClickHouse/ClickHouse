@@ -5,7 +5,7 @@ toc_priority: 52
 toc_title: "AggregateFunction(\u540D\u524D,types_of_arguments...)"
 ---
 
-# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
 
 Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [マテリアライズドビュー](../../sql-reference/statements/create.md#create-view). 集計関数の状態を生成する一般的な方法は、集計関数を呼び出すことです。 `-State` 接尾辞。 将来集計の最終結果を取得するには、同じ集計関数を使用する必要があります。 `-Merge`接尾辞。
 

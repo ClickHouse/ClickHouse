@@ -16,6 +16,17 @@ www.example.com
 example.com
 example.com
 example.com
+====NETLOC====
+paul@www.example.com:80
+127.0.0.1:443
+127.0.0.1:443
+example.ru
+example.ru
+paul:zozo@example.ru
+paul:zozo@example.ru
+www.example.com
+www.example.com
+example.com
 ====DOMAIN====
 com
 
@@ -63,6 +74,15 @@ example.com
 example.com
 example.com
 example.com
+example.com
+example.com
+example.com
+example.com
+com
+
+====CUT TO FIRST SIGNIFICANT SUBDOMAIN WITH WWW====
+
+www.com
 example.com
 example.com
 example.com

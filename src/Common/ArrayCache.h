@@ -13,6 +13,8 @@
 #include <boost/noncopyable.hpp>
 #include <ext/scope_guard.h>
 
+#include <common/getPageSize.h>
+
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
@@ -177,13 +179,13 @@ private:
         {
             ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
-                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
 
         ~Chunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
         }
 
         Chunk(Chunk && other) : ptr(other.ptr), size(other.size)
@@ -325,8 +327,6 @@ private:
     {
         return (x + (rounding - 1)) / rounding * rounding;
     }
-
-    static constexpr size_t page_size = 4096;
 
     /// Sizes and addresses of allocated memory will be aligned to specified boundary.
     static constexpr size_t alignment = 16;
@@ -505,6 +505,7 @@ private:
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
         ///  allocate a new chunk.
+        size_t page_size = static_cast<size_t>(::getPageSize());
         size_t required_chunk_size = std::max(min_chunk_size, roundUp(size, page_size));
         if (total_chunks_size + required_chunk_size <= max_total_size)
         {
@@ -557,7 +558,7 @@ public:
     /// Only one of several concurrent threads calling this method will call get_size or initialize,
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
     ///
-    /// Exceptions occuring in callbacks will be propagated to the caller.
+    /// Exceptions occurring in callbacks will be propagated to the caller.
     /// Another thread from the set of concurrent threads will then try to call its callbacks etc.
     ///
     /// Returns cached value wrapped by holder, preventing cache entry from eviction.

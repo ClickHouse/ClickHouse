@@ -11,7 +11,6 @@ add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
 
 target_link_libraries(clickhouse_dictionaries
     PRIVATE
-        ${BTRIE_LIBRARIES}
         clickhouse_common_io
         dbms
         Poco::Data
@@ -20,6 +19,10 @@ target_link_libraries(clickhouse_dictionaries
         Poco::Redis
         string_utils
 )
+
+if(USE_CASSANDRA)
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${CASSANDRA_INCLUDE_DIR})
+endif()
 
 add_subdirectory(Embedded)
 

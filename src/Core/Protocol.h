@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -49,8 +49,12 @@ namespace DB
 ///
 /// If a query returns data, the server sends an empty header block containing
 /// the description of resulting columns before executing the query.
-/// Using this block the client can initialise the output formatter and display the prefix of resulting table
+/// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
+
+/// Marker of the inter-server secret (passed in the user name)
+/// (anyway user cannot be started with a whitespace)
+const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
 
 namespace Protocol
 {
@@ -71,6 +75,8 @@ namespace Protocol
             TablesStatusResponse = 9, /// A response to TablesStatus request.
             Log = 10,                 /// System logs of the query execution
             TableColumns = 11,        /// Columns' description for default values calculation
+
+            MAX = TableColumns,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -79,9 +85,21 @@ namespace Protocol
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals",
-                "Extremes", "TablesStatusResponse", "Log", "TableColumns" };
-            return packet < 12
+            static const char * data[] = {
+                "Hello",
+                "Data",
+                "Exception",
+                "Progress",
+                "Pong",
+                "EndOfStream",
+                "ProfileInfo",
+                "Totals",
+                "Extremes",
+                "TablesStatusResponse",
+                "Log",
+                "TableColumns",
+            };
+            return packet <= MAX
                 ? data[packet]
                 : "Unknown packet";
         }
@@ -113,13 +131,24 @@ namespace Protocol
             Ping = 4,                /// Check that connection to the server is alive.
             TablesStatusRequest = 5, /// Check status of tables on the server.
             KeepAlive = 6,           /// Keep the connection alive
-            Scalar = 7               /// A block of data (compressed or not).
+            Scalar = 7,              /// A block of data (compressed or not).
+
+            MAX = Scalar,
         };
 
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest", "KeepAlive" };
-            return packet < 7
+            static const char * data[] = {
+                "Hello",
+                "Query",
+                "Data",
+                "Cancel",
+                "Ping",
+                "TablesStatusRequest",
+                "KeepAlive",
+                "Scalar",
+            };
+            return packet <= MAX
                 ? data[packet]
                 : "Unknown packet";
         }

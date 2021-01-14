@@ -1,5 +1,3 @@
-#include <string.h>
-
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
@@ -23,7 +21,7 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-Exception::Exception(const std::string & msg, const int32_t code_, int)
+Exception::Exception(const std::string & msg, const Error code_, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code_)
 {
     if (Coordination::isUserError(code))
@@ -34,17 +32,17 @@ Exception::Exception(const std::string & msg, const int32_t code_, int)
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const int32_t code_)
+Exception::Exception(const std::string & msg, const Error code_)
     : Exception(msg + " (" + errorMessage(code_) + ")", code_, 0)
 {
 }
 
-Exception::Exception(const int32_t code_)
+Exception::Exception(const Error code_)
     : Exception(errorMessage(code_), code_, 0)
 {
 }
 
-Exception::Exception(const int32_t code_, const std::string & path)
+Exception::Exception(const Error code_, const std::string & path)
     : Exception(std::string{errorMessage(code_)} + ", path: " + path, code_, 0)
 {
 }
@@ -58,10 +56,10 @@ using namespace DB;
 static void addRootPath(String & path, const String & root_path)
 {
     if (path.empty())
-        throw Exception("Path cannot be empty", ZBADARGUMENTS);
+        throw Exception("Path cannot be empty", Error::ZBADARGUMENTS);
 
     if (path[0] != '/')
-        throw Exception("Path must begin with /", ZBADARGUMENTS);
+        throw Exception("Path must begin with /", Error::ZBADARGUMENTS);
 
     if (root_path.empty())
         return;
@@ -78,64 +76,62 @@ static void removeRootPath(String & path, const String & root_path)
         return;
 
     if (path.size() <= root_path.size())
-        throw Exception("Received path is not longer than root_path", ZDATAINCONSISTENCY);
+        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
 
     path = path.substr(root_path.size());
 }
 
 
-const char * errorMessage(int32_t code)
+const char * errorMessage(Error code)
 {
     switch (code)
     {
-        case ZOK:                      return "Ok";
-        case ZSYSTEMERROR:             return "System error";
-        case ZRUNTIMEINCONSISTENCY:    return "Run time inconsistency";
-        case ZDATAINCONSISTENCY:       return "Data inconsistency";
-        case ZCONNECTIONLOSS:          return "Connection loss";
-        case ZMARSHALLINGERROR:        return "Marshalling error";
-        case ZUNIMPLEMENTED:           return "Unimplemented";
-        case ZOPERATIONTIMEOUT:        return "Operation timeout";
-        case ZBADARGUMENTS:            return "Bad arguments";
-        case ZINVALIDSTATE:            return "Invalid zhandle state";
-        case ZAPIERROR:                return "API error";
-        case ZNONODE:                  return "No node";
-        case ZNOAUTH:                  return "Not authenticated";
-        case ZBADVERSION:              return "Bad version";
-        case ZNOCHILDRENFOREPHEMERALS: return "No children for ephemerals";
-        case ZNODEEXISTS:              return "Node exists";
-        case ZNOTEMPTY:                return "Not empty";
-        case ZSESSIONEXPIRED:          return "Session expired";
-        case ZINVALIDCALLBACK:         return "Invalid callback";
-        case ZINVALIDACL:              return "Invalid ACL";
-        case ZAUTHFAILED:              return "Authentication failed";
-        case ZCLOSING:                 return "ZooKeeper is closing";
-        case ZNOTHING:                 return "(not error) no server responses to process";
-        case ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
+        case Error::ZOK:                      return "Ok";
+        case Error::ZSYSTEMERROR:             return "System error";
+        case Error::ZRUNTIMEINCONSISTENCY:    return "Run time inconsistency";
+        case Error::ZDATAINCONSISTENCY:       return "Data inconsistency";
+        case Error::ZCONNECTIONLOSS:          return "Connection loss";
+        case Error::ZMARSHALLINGERROR:        return "Marshalling error";
+        case Error::ZUNIMPLEMENTED:           return "Unimplemented";
+        case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
+        case Error::ZBADARGUMENTS:            return "Bad arguments";
+        case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
+        case Error::ZAPIERROR:                return "API error";
+        case Error::ZNONODE:                  return "No node";
+        case Error::ZNOAUTH:                  return "Not authenticated";
+        case Error::ZBADVERSION:              return "Bad version";
+        case Error::ZNOCHILDRENFOREPHEMERALS: return "No children for ephemerals";
+        case Error::ZNODEEXISTS:              return "Node exists";
+        case Error::ZNOTEMPTY:                return "Not empty";
+        case Error::ZSESSIONEXPIRED:          return "Session expired";
+        case Error::ZINVALIDCALLBACK:         return "Invalid callback";
+        case Error::ZINVALIDACL:              return "Invalid ACL";
+        case Error::ZAUTHFAILED:              return "Authentication failed";
+        case Error::ZCLOSING:                 return "ZooKeeper is closing";
+        case Error::ZNOTHING:                 return "(not error) no server responses to process";
+        case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
     }
-    if (code > 0)
-        return strerror(code);
 
-    return "unknown error";
+    __builtin_unreachable();
 }
 
-bool isHardwareError(int32_t zk_return_code)
+bool isHardwareError(Error zk_return_code)
 {
-    return zk_return_code == ZINVALIDSTATE
-        || zk_return_code == ZSESSIONEXPIRED
-        || zk_return_code == ZSESSIONMOVED
-        || zk_return_code == ZCONNECTIONLOSS
-        || zk_return_code == ZMARSHALLINGERROR
-        || zk_return_code == ZOPERATIONTIMEOUT;
+    return zk_return_code == Error::ZINVALIDSTATE
+        || zk_return_code == Error::ZSESSIONEXPIRED
+        || zk_return_code == Error::ZSESSIONMOVED
+        || zk_return_code == Error::ZCONNECTIONLOSS
+        || zk_return_code == Error::ZMARSHALLINGERROR
+        || zk_return_code == Error::ZOPERATIONTIMEOUT;
 }
 
-bool isUserError(int32_t zk_return_code)
+bool isUserError(Error zk_return_code)
 {
-    return zk_return_code == ZNONODE
-        || zk_return_code == ZBADVERSION
-        || zk_return_code == ZNOCHILDRENFOREPHEMERALS
-        || zk_return_code == ZNODEEXISTS
-        || zk_return_code == ZNOTEMPTY;
+    return zk_return_code == Error::ZNONODE
+        || zk_return_code == Error::ZBADVERSION
+        || zk_return_code == Error::ZNOCHILDRENFOREPHEMERALS
+        || zk_return_code == Error::ZNODEEXISTS
+        || zk_return_code == Error::ZNOTEMPTY;
 }
 
 

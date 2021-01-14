@@ -39,7 +39,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /** We create an array column with array elements as the most deep elements of nested arrays,
           * and construct offsets by selecting elements of most deep offsets by values of ancestor offsets.
@@ -79,10 +79,10 @@ result offsets: 3, 4
 result: Row 1: [1, 2, 3], Row2: [4]
           */
 
-        const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
         if (!src_col)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " in argument of function 'arrayFlatten'",
+            throw Exception("Illegal column " + arguments[0].column->getName() + " in argument of function 'arrayFlatten'",
                 ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn::Offsets & src_offsets = src_col->getOffsets();
@@ -107,7 +107,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
             prev_data = &next_col->getData();
         }
 
-        block.getByPosition(result).column = ColumnArray::create(
+        return ColumnArray::create(
             prev_data->getPtr(),
             result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
     }

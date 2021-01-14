@@ -1,0 +1,6 @@
+90001
+2
+waiting	default	mutation_table	0000000000	MODIFY COLUMN `value` UInt64
+is_done	parts_to_do
+0	1
+MUTATE_PART	0_0_0_0_2

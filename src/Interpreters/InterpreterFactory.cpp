@@ -17,6 +17,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/ASTShowAccessQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowPrivilegesQuery.h>
@@ -27,21 +28,24 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTGrantQuery.h>
+#include <Parsers/MySQL/ASTCreateQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateUserQuery.h>
-#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
@@ -51,21 +55,25 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
 #include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
+#include <Interpreters/InterpreterShowAccessQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowPrivilegesQuery.h>
-#include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterGrantQuery.h>
+#include <Interpreters/InterpreterExternalDDLQuery.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
-#include <Common/typeid_cast.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -84,20 +92,22 @@ namespace ErrorCodes
 }
 
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, const SelectQueryOptions & options)
 {
+    OpenTelemetrySpanHolder span("InterpreterFactory::get()");
+
     ProfileEvents::increment(ProfileEvents::Query);
 
     if (query->as<ASTSelectQuery>())
     {
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-        return std::make_unique<InterpreterSelectQuery>(query, context, SelectQueryOptions(stage));
+        return std::make_unique<InterpreterSelectQuery>(query, context, options);
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
-        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, SelectQueryOptions(stage));
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
     else if (query->as<ASTInsertQuery>())
     {
@@ -138,7 +148,15 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
+    else if (query->as<ASTExistsDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
     else if (query->as<ASTExistsTableQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsViewQuery>())
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
@@ -147,6 +165,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
     else if (query->as<ASTShowCreateTableQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateViewQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
@@ -230,11 +252,21 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterShowAccessEntitiesQuery>(query, context);
     }
+    else if (query->as<ASTShowAccessQuery>())
+    {
+        return std::make_unique<InterpreterShowAccessQuery>(query, context);
+    }
     else if (query->as<ASTShowPrivilegesQuery>())
     {
         return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
     }
+    else if (query->as<ASTExternalDDLQuery>())
+    {
+        return std::make_unique<InterpreterExternalDDLQuery>(query, context);
+    }
     else
+    {
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+    }
 }
 }

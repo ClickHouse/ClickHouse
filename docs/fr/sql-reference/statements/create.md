@@ -78,7 +78,7 @@ Il peut y avoir d'autres clauses après le `ENGINE` la clause dans la requête. 
 La description de colonne peut spécifier une expression pour une valeur par défaut, de l'une des manières suivantes:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Exemple: `URLDomain String DEFAULT domain(URL)`.
 
-Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `0000-00-00` pour les dates ou `0000-00-00 00:00:00` pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
+Si une expression pour la valeur par défaut n'est pas définie, les valeurs par défaut seront définies sur zéros pour les nombres, chaînes vides pour les chaînes, tableaux vides pour les tableaux et `1970-01-01` pour les dates ou zero unix timestamp pour les dates avec le temps. Les valeurs NULL ne sont pas prises en charge.
 
 Si l'expression par défaut est définie, le type de colonne est facultatif. S'il n'y a pas de type explicitement défini, le type d'expression par défaut est utilisé. Exemple: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type sera utilisé pour la ‘EventDate’ colonne.
 
@@ -155,7 +155,7 @@ Si un codec est spécifié, le codec par défaut ne s'applique pas. Les Codecs p
 La Compression est prise en charge pour les moteurs de tableau suivants:
 
 -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) famille. Prend en charge les codecs de compression de colonne et la sélection de la méthode de compression par défaut par [compression](../../operations/server-configuration-parameters/settings.md#server-settings-compression) paramètre.
--   [Journal](../../engines/table-engines/log-family/log-family.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
+-   [Journal](../../engines/table-engines/log-family/index.md) famille. Utilise le `lz4` méthode de compression par défaut et prend en charge les codecs de compression de colonne.
 -   [Définir](../../engines/table-engines/special/set.md). Uniquement pris en charge la compression par défaut.
 -   [Rejoindre](../../engines/table-engines/special/join.md). Uniquement pris en charge la compression par défaut.
 
@@ -291,7 +291,7 @@ CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
+LIFETIME({MIN min_val MAX max_val | max_val})
 ```
 
 Crée [externe dictionnaire](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) avec le [structure](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [source](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [disposition](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) et [vie](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
@@ -466,7 +466,7 @@ Crée un [quota](../../operations/access-rights.md#quotas-management) qui peut �
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
-    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR}
         {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
