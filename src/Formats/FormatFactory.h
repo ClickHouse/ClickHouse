@@ -3,7 +3,6 @@
 #include <common/types.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <functional>
@@ -16,8 +15,7 @@ namespace DB
 
 class Block;
 class Context;
-struct Settings;
-struct FormatFactorySettings;
+struct FormatSettings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -29,16 +27,10 @@ class IInputFormat;
 class IOutputFormat;
 
 struct RowInputFormatParams;
-struct RowOutputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-FormatSettings getFormatSettings(const Context & context);
-
-template <typename T>
-FormatSettings getFormatSettings(const Context & context,
-    const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -88,7 +80,7 @@ private:
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
+            WriteCallback callback,
             const FormatSettings & settings)>;
 
     struct Creators
@@ -103,6 +95,7 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
+
     static FormatFactory & instance();
 
     BlockInputStreamPtr getInput(
@@ -111,11 +104,10 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {},
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
@@ -123,12 +115,10 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample,
-        const Context & context, WriteCallback callback = {},
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback = {}) const;
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
@@ -145,6 +135,8 @@ public:
 
 private:
     FormatsDictionary dict;
+
+    FormatFactory();
 
     const Creators & getCreators(const String & name) const;
 };

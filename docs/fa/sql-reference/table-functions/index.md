@@ -16,12 +16,12 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
--   [ایجاد جدول به عنوان \<table_function()\>](../statements/create.md#create-table-query) پرس و جو.
+-   [ایجاد جدول به عنوان \<table\_function()\>](../statements/create.md#create-table-query) پرس و جو.
 
         It's one of the methods of creating a table.
 
 !!! warning "اخطار"
-    شما می توانید توابع جدول اگر استفاده نمی [اجازه دادن به _نشانی](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) تنظیم غیر فعال است.
+    شما می توانید توابع جدول اگر استفاده نمی [اجازه دادن به \_نشانی](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) تنظیم غیر فعال است.
 
 | تابع                  | توصیف                                                                                                                                          |
 |-----------------------|------------------------------------------------------------------------------------------------------------------------------------------------|

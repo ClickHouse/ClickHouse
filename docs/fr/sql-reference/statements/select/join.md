@@ -40,7 +40,7 @@ Autres types de jointure disponibles dans ClickHouse:
 ## Setting {#join-settings}
 
 !!! note "Note"
-    La valeur de rigueur par défaut peut être remplacée à l'aide [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) paramètre.
+    La valeur de rigueur par défaut peut être remplacée à l'aide [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) paramètre.
 
 ### ASOF joindre L'utilisation {#asof-join-usage}
 
@@ -101,7 +101,7 @@ Soyez prudent lorsque vous utilisez `GLOBAL`. Pour plus d'informations, voir le 
 
 ### Traitement des cellules vides ou nulles {#processing-of-empty-or-null-cells}
 
-Lors de la jonction de tables, les cellules vides peuvent apparaître. Paramètre [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) définir comment clickhouse remplit ces cellules.
+Lors de la jonction de tables, les cellules vides peuvent apparaître. Paramètre [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) définir comment clickhouse remplit ces cellules.
 
 Si l' `JOIN` les touches sont [Nullable](../../data-types/nullable.md) champs, les lignes où au moins une des clés a la valeur [NULL](../../../sql-reference/syntax.md#null-literal) ne sont pas jointes.
 
@@ -138,10 +138,10 @@ Par défaut, ClickHouse utilise [jointure de hachage](https://en.wikipedia.org/w
 
 Si vous devez restreindre la consommation de mémoire de l'opération join utilisez les paramètres suivants:
 
--   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-Lorsque l'une de ces limites est atteinte, ClickHouse agit comme [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) réglage des instructions.
+Lorsque l'une de ces limites est atteinte, ClickHouse agit comme [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) réglage des instructions.
 
 ## Exemple {#examples}
 

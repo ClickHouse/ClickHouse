@@ -225,7 +225,7 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
 }

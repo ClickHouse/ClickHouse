@@ -11,7 +11,7 @@ toc_title: "\u0645\u0639\u06CC\u0627\u0631 \u0628\u0632\u0631\u06AF \u062F\u0627
 
 ببینید https://amplab.cs.berkeley.edu/benchmark/
 
-ثبت نام برای یک حساب کاربری رایگان در https://aws.amazon.com. این نیاز به یک کارت اعتباری, پست الکترونیک, و شماره تلفن. یک کلید دسترسی جدید در https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
+ثبت نام برای یک حساب کاربری رایگان در https://aws.amazon.com. این نیاز به یک کارت اعتباری, پست الکترونیک, و شماره تلفن. یک کلید دسترسی جدید در https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 زیر را در کنسول اجرا کنید:
 

@@ -26,8 +26,8 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE nonexistent 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
 
 # Delete some values
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE x % 2 = 1 SETTINGS mutations_sync = 2"
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE s = 'd' SETTINGS mutations_sync = 2"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE x % 2 = 1"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE s = 'd'"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_r1 DELETE WHERE m = 3 SETTINGS mutations_sync = 2"
 
 # Insert more data
@@ -62,8 +62,8 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner_r2(x UInt32) ENGINE
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4)"
 
 # Add some mutations and wait for their execution
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 1 SETTINGS mutations_sync = 2"
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 2 SETTINGS mutations_sync = 2"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 1"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 2"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 3 SETTINGS mutations_sync = 2"
 
 # Add another mutation and prevent its execution on the second replica

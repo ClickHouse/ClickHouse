@@ -5,9 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -19,6 +17,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -32,7 +31,6 @@ namespace DB
 
 class ClientInfo;
 class Pipe;
-struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData

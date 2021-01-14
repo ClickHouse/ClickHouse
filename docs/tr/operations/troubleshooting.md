@@ -105,7 +105,7 @@ Kontrol:
 
 -   Bitiş noktası ayarları.
 
-    Kontrol [listen_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
+    Kontrol [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
 
     ClickHouse server, yalnızca varsayılan olarak localhost bağlantılarını kabul eder.
 
@@ -117,7 +117,7 @@ Kontrol:
 
     Kontrol:
 
-    -   Bu [tcp_port_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
+    -   Bu [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
     -   İçin ayarlar [SSL sertifikaları](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Bağlanırken uygun parametreleri kullanın. Örneğin, kullanın `port_secure` parametre ile `clickhouse_client`.

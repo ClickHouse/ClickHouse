@@ -9,7 +9,7 @@ toc_title: Gereksinimler
 
 ## CPU {#cpu}
 
-Önceden oluşturulmuş deb paketlerinden kurulum için, x86_64 mimarisine sahip bir CPU kullanın ve sse 4.2 yönergelerini destekleyin. Clickhouse'u SSE 4.2'yi desteklemeyen veya AArch64 veya PowerPC64LE mimarisine sahip işlemcilerle çalıştırmak için, kaynaklardan Clickhouse'u oluşturmanız gerekir.
+Önceden oluşturulmuş deb paketlerinden kurulum için, x86\_64 mimarisine sahip bir CPU kullanın ve sse 4.2 yönergelerini destekleyin. Clickhouse'u SSE 4.2'yi desteklemeyen veya AArch64 veya PowerPC64LE mimarisine sahip işlemcilerle çalıştırmak için, kaynaklardan Clickhouse'u oluşturmanız gerekir.
 
 ClickHouse paralel veri işleme uygular ve mevcut tüm donanım kaynaklarını kullanır. Bir işlemci seçerken, Clickhouse'un çok sayıda çekirdeğe sahip konfigürasyonlarda daha verimli çalıştığını, ancak daha az çekirdeğe ve daha yüksek bir saat hızına sahip konfigürasyonlardan daha düşük bir saat hızına sahip olduğunu göz önünde bulundurun. Örneğin, 2600 MHz'lik 16 çekirdek, 3600 MHz'lik 8 çekirdeğe tercih edilir.
 

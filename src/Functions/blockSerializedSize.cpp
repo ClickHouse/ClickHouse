@@ -9,7 +9,7 @@ namespace DB
 namespace
 {
 
-/// Returns size on disk for *columns* (without taking into account compression).
+/// Returns size on disk for *block* (without taking into account compression).
 class FunctionBlockSerializedSize : public IFunction
 {
 public:
@@ -30,17 +30,18 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         UInt64 size = 0;
 
-        for (const auto & arg : arguments)
-            size += columnsSerializedSizeOne(arg);
+        for (auto arg_pos : arguments)
+            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
 
-        return DataTypeUInt64().createColumnConst(input_rows_count, size)->convertToFullColumnIfConst();
+        block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
+            input_rows_count, size)->convertToFullColumnIfConst();
     }
 
-    static UInt64 columnsSerializedSizeOne(const ColumnWithTypeAndName & elem)
+    static UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem)
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 

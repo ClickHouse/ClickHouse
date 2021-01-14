@@ -80,7 +80,7 @@ public:
         }
 
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception("Second argument of aggregate function " + getName() + " must be unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (default_value.isNull())
             default_value = type->getDefault();

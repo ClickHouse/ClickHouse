@@ -761,14 +761,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_pipe.setNonBlockingWrite();
+    signal_pipe.setNonBlocking();
     signal_pipe.tryIncreaseSize(1 << 20);
 
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
-    String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
+    String build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
     else

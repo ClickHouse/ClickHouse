@@ -317,7 +317,7 @@ Bir Uint64 Formu jumpconsistenthash hesaplar.
 İki bağımsız değişkeni kabul eder: bir uint64 tipi anahtar ve kova sayısı. Int32 Döndürür.
 Daha fazla bilgi için bağlantıya bakın: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
 Üreten bir [MurmurHash2](https://github.com/aappleby/smhasher) karma değeri.
 
@@ -385,7 +385,7 @@ Sonuç:
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Üreten bir [MurmurHash3](https://github.com/aappleby/smhasher) karma değeri.
 
@@ -415,7 +415,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128 {#murmurhash3-128}
+## murmurHash3\_128 {#murmurhash3-128}
 
 128-bit üretir [MurmurHash3](https://github.com/aappleby/smhasher) karma değeri.
 

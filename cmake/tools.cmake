@@ -15,10 +15,6 @@ if (COMPILER_GCC)
 elseif (COMPILER_CLANG)
     # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-        # If you are developer you can figure out what exact versions of AppleClang are Ok,
-        # remove the following line and commit changes below.
-        message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew.")
-
         # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
         # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
         set (XCODE_MINIMUM_VERSION 10.2)
@@ -83,10 +79,4 @@ if (LINKER_NAME)
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
-endif ()
-
-if (ARCH_PPC64LE)
-    if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
-        message(FATAL_ERROR "Only gcc-8 or higher is supported for powerpc architecture")
-    endif ()
 endif ()

@@ -73,8 +73,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-    auto it_alias = data.aliases.find(node.name());
-    if (it_alias != data.aliases.end() && current_alias != node.name())
+    auto it_alias = data.aliases.find(node.name);
+    if (it_alias != data.aliases.end() && current_alias != node.name)
     {
         if (!IdentifierSemantic::canBeAlias(node))
             return;
@@ -89,7 +89,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         String node_alias = ast->tryGetAlias();
 
         if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
-            || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
+            || (node.name == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
         /// Let's replace it with the corresponding tree node.
@@ -97,7 +97,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         {
             /// Avoid infinite recursion here
             auto opt_name = IdentifierSemantic::getColumnName(alias_node);
-            bool is_cycle = opt_name && *opt_name == node.name();
+            bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
             {
@@ -164,17 +164,14 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
         if (func_node->name == "lambda")
             first_pos = 1;
 
-        if (func_node->arguments)
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & func_children = func_node->arguments->children;
+            auto & child = func_children[i];
 
-            for (size_t i = first_pos; i < func_children.size(); ++i)
-            {
-                auto & child = func_children[i];
-
-                if (needVisitChild(child))
-                    visit(child, data);
-            }
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
     else if (!node->as<ASTSelectQuery>())

@@ -138,10 +138,10 @@ Management queries:
 
 -   Setup a directory for configurations storage.
 
-    ClickHouse stores access entity configurations in the folder set in the [access_control_path](../operations/server-configuration-parameters/settings.md#access_control_path) server configuration parameter.
+    ClickHouse stores access entity configurations in the folder set in the [access\_control\_path](../operations/server-configuration-parameters/settings.md#access_control_path) server configuration parameter.
 
 -   Enable SQL-driven access control and account management for at least one user account.
 
-    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access_management](../operations/settings/settings-users.md#access_management-user-setting) setting to 1.
+    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access\_management](../operations/settings/settings-users.md#access_management-user-setting) setting to 1.
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

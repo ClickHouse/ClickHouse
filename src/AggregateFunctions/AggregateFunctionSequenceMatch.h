@@ -590,7 +590,7 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        this->data(place).sort();
+        const_cast<Data &>(this->data(place)).sort();
         assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 

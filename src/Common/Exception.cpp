@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include <cxxabi.h>
-#include <cstdlib>
 #include <Poco/String.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
@@ -14,7 +13,6 @@
 #include <common/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
@@ -34,32 +32,19 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-/// Aborts the process if error code is LOGICAL_ERROR.
-/// Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code)
-{
-    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
-    // Log the message before we fail.
-#ifdef ABORT_ON_LOGICAL_ERROR
-    if (code == ErrorCodes::LOGICAL_ERROR)
-    {
-        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        abort();
-    }
-#endif
-    ErrorCodes::increment(code);
-}
 
 Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
 {
-    handle_error_code(msg, code);
-}
-
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
-{
-    handle_error_code(msg, code);
+    // In debug builds, treat LOGICAL_ERROR as an assertion failure.
+    // Log the message before we fail.
+#ifndef NDEBUG
+    if (code == ErrorCodes::LOGICAL_ERROR)
+    {
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        assert(false);
+    }
+#endif
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -257,7 +242,7 @@ static std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
 
     try
     {
@@ -376,7 +361,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
-    WriteBufferFromOwnString stream;
+    std::stringstream stream;
 
     try
     {

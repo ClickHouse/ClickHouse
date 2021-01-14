@@ -11,10 +11,10 @@ ClickHouse, sorguların çevrimiçi analitik işlenmesi (*Online Analytical Proc
 
 | Satır | WatchId     | JavaEnable | Başlık               | İyiOlay | OlayZamanı          |
 |-------|-------------|------------|----------------------|---------|---------------------|
-| #0   | 89354350662 | 1          | Yatırımcı İlişkileri | 1       | 2016-05-18 05:19:20 |
-| #1   | 90329509958 | 0          | Bize ulaşın          | 1       | 2016-05-18 08:10:20 |
-| #2   | 89953706054 | 1          | Görev                | 1       | 2016-05-18 07:38:00 |
-| #N   | …           | …          | …                    | …       | …                   |
+| \#0   | 89354350662 | 1          | Yatırımcı İlişkileri | 1       | 2016-05-18 05:19:20 |
+| \#1   | 90329509958 | 0          | Bize ulaşın          | 1       | 2016-05-18 08:10:20 |
+| \#2   | 89953706054 | 1          | Görev                | 1       | 2016-05-18 07:38:00 |
+| \#N   | …           | …          | …                    | …       | …                   |
 
 Başka bir deyişle, bir satırla ilgili tüm değerler fiziksel olarak yan yana depolanır.
 
@@ -22,7 +22,7 @@ MySQL, Postgres ve MS SQL Server gibi veritabanları satır odaklı DBMS örnekl
 
 Sütun odaklı bir DBMS’de ise veriler şu şekilde saklanır:
 
-| Satır:      | #0                  | #1                 | #2                 | #N |
+| Satır:      | \#0                  | \#1                 | \#2                 | \#N |
 |-------------|----------------------|---------------------|---------------------|-----|
 | WatchId:    | 89354350662          | 90329509958         | 89953706054         | …   |
 | JavaEnable: | 1                    | 0                   | 1                   | …   |

@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -18,6 +17,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -52,7 +52,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace
@@ -127,33 +126,11 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const Context & context)
-{
-    String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
-    Poco::Path poco_path = Poco::Path(table_path);
-    if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_absolute_path, poco_path);
-
-    Strings paths;
-    const String path = poco_path.absolute().toString();
-    if (path.find_first_of("*?{") == std::string::npos)
-        paths.push_back(path);
-    else
-        paths = listFilesWithRegexpMatching("/", path);
-
-    for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
-
-    return paths;
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
     if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-    if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     is_db_table = false;
     use_table_fd = true;
@@ -168,22 +145,32 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.context);
+    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path_);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    const std::string path = poco_path.absolute().toString();
+    if (path.find_first_of("*?{") == std::string::npos)
+        paths.push_back(path);
+    else
+        paths = listFilesWithRegexpMatching("/", path);
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
 
     if (args.format_name == "Distributed")
     {
-        if (paths.empty())
-            throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+        if (!paths.empty())
+        {
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-        auto & first_path = paths[0];
-        Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-        StorageInMemoryMetadata storage_metadata;
-        auto columns = ColumnsDescription(header.getNamesAndTypesList());
-        if (!args.columns.empty() && columns != args.columns)
-            throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
-        storage_metadata.setColumns(columns);
-        setInMemoryMetadata(storage_metadata);
+            StorageInMemoryMetadata storage_metadata;
+            storage_metadata.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
+            setInMemoryMetadata(storage_metadata);
+        }
     }
 }
 
@@ -192,8 +179,6 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 {
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
-    if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();
@@ -203,7 +188,6 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 StorageFile::StorageFile(CommonArguments args)
     : IStorage(args.table_id)
     , format_name(args.format_name)
-    , format_settings(args.format_settings)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
 {
@@ -326,11 +310,9 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
-                read_buf = wrapReadBufferWithCompressionMethod(
-                    std::move(nested_buffer), method);
-                reader = FormatFactory::instance().getInput(storage->format_name,
-                    *read_buf, metadata_snapshot->getSampleBlock(), context,
-                    max_block_size, storage->format_settings);
+                read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+                reader = FormatFactory::instance().getInput(
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size);
 
                 if (columns_description.hasDefaults())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
@@ -399,7 +381,7 @@ private:
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -434,11 +416,8 @@ Pipe StorageFile::read(
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
-    {
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info,
-            metadata_snapshot->getColumns()));
-    }
+                this_ptr, metadata_snapshot, context, max_block_size, files_info, metadata_snapshot->getColumns()));
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -451,8 +430,7 @@ public:
         StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const CompressionMethod compression_method,
-        const Context & context,
-        const std::optional<FormatSettings> & format_settings)
+        const Context & context)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(storage.rwlock)
@@ -480,9 +458,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutput(storage.format_name,
-            *write_buf, metadata_snapshot->getSampleBlock(), context,
-            {}, format_settings);
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, metadata_snapshot->getSampleBlock(), context);
     }
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
@@ -528,19 +504,10 @@ BlockOutputStreamPtr StorageFile::write(
 
     std::string path;
     if (!paths.empty())
-    {
         path = paths[0];
-        Poco::File(Poco::Path(path).makeParent()).createDirectories();
-    }
 
     return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_snapshot,
-        chooseCompressionMethod(path, compression_method), context,
-        format_settings);
-}
-
-bool StorageFile::storesDataOnDisk() const
-{
-    return is_db_table;
+        chooseCompressionMethod(path, compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -600,71 +567,32 @@ void StorageFile::truncate(
 
 void registerStorageFile(StorageFactory & factory)
 {
-    StorageFactory::StorageFeatures storage_features{
-        .supports_settings = true,
-        .source_access_type = AccessType::FILE
-    };
-
     factory.registerStorage(
         "File",
-        [](const StorageFactory::Arguments & factory_args)
+        [](const StorageFactory::Arguments & args)
         {
-            StorageFile::CommonArguments storage_args{
-                .table_id = factory_args.table_id,
-                .columns = factory_args.columns,
-                .constraints = factory_args.constraints,
-                .context = factory_args.context
-            };
+            ASTs & engine_args = args.engine_args;
 
-            ASTs & engine_args_ast = factory_args.engine_args;
-
-            if (!(engine_args_ast.size() >= 1 && engine_args_ast.size() <= 3)) // NOLINT
+            if (!(engine_args.size() >= 1 && engine_args.size() <= 3)) // NOLINT
                 throw Exception(
                     "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.local_context);
-            storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
+            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+            String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-            // Use format settings from global server context + settings from
-            // the SETTINGS clause of the create query. Settings from current
-            // session and user are ignored.
-            if (factory_args.storage_def->settings)
-            {
-                FormatFactorySettings user_format_settings;
+            String compression_method;
+            StorageFile::CommonArguments common_args{
+                args.table_id, format_name, compression_method, args.columns, args.constraints, args.context};
 
-                // Apply changed settings from global context, but ignore the
-                // unknown ones, because we only have the format settings here.
-                const auto & changes = factory_args.context.getSettingsRef().changes();
-                for (const auto & change : changes)
-                {
-                    if (user_format_settings.has(change.name))
-                    {
-                        user_format_settings.set(change.name, change.value);
-                    }
-                }
-
-                // Apply changes from SETTINGS clause, with validation.
-                user_format_settings.applyChanges(
-                    factory_args.storage_def->settings->changes);
-
-                storage_args.format_settings = getFormatSettings(
-                    factory_args.context, user_format_settings);
-            }
-            else
-            {
-                storage_args.format_settings = getFormatSettings(
-                    factory_args.context);
-            }
-
-            if (engine_args_ast.size() == 1) /// Table in database
-                return StorageFile::create(factory_args.relative_data_path, storage_args);
+            if (engine_args.size() == 1) /// Table in database
+                return StorageFile::create(args.relative_data_path, common_args);
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
             String source_path;
 
-            if (auto opt_name = tryGetIdentifierName(engine_args_ast[1]))
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
             {
                 if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
@@ -676,7 +604,7 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception(
                         "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
@@ -689,23 +617,23 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if (engine_args_ast.size() == 3)
+            if (engine_args.size() == 3)
             {
-                engine_args_ast[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[2], factory_args.local_context);
-                storage_args.compression_method = engine_args_ast[2]->as<ASTLiteral &>().value.safeGet<String>();
+                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+                compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
             }
             else
-                storage_args.compression_method = "auto";
+                compression_method = "auto";
 
             if (0 <= source_fd) /// File descriptor
-                return StorageFile::create(source_fd, storage_args);
+                return StorageFile::create(source_fd, common_args);
             else /// User's file
-                return StorageFile::create(source_path, factory_args.context.getUserFilesPath(), storage_args);
+                return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
         },
-        storage_features);
+        {
+            .source_access_type = AccessType::FILE,
+        });
 }
-
-
 NamesAndTypesList StorageFile::getVirtuals() const
 {
     return NamesAndTypesList{

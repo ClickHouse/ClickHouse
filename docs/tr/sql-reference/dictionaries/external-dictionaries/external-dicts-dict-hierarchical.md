@@ -27,7 +27,7 @@ Aşağıdaki hiyerarşik yapıya bakın:
 
 Bu hiyerarşi aşağıdaki sözlük tablosu olarak ifade edilebilir.
 
-| region_id | parent_region | region_name |
+| region\_id | parent\_region | region\_name |
 |------------|----------------|--------------|
 | 1          | 0              | Rusya        |
 | 2          | 1              | Moskova      |

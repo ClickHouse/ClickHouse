@@ -6,6 +6,24 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunctionImpl.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunctionImpl.h FunctionFactory.h FunctionHelpers.h)
 
+if (NOT USE_H3)
+    list (REMOVE_ITEM clickhouse_functions_sources
+        geoToH3.cpp
+        h3EdgeAngle.cpp
+        h3EdgeLengthM.cpp
+        h3GetBaseCell.cpp
+        h3GetResolution.cpp
+        h3HexAreaM2.cpp
+        h3IndexesAreNeighbors.cpp
+        h3IsValid.cpp
+        h3kRing.cpp
+        h3ToChildren.cpp
+        h3ToParent.cpp
+        h3ToString.cpp
+        stringToH3.cpp
+    )
+endif ()
+
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions

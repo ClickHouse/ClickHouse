@@ -620,24 +620,6 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
 }
 
-void Pipe::resize(size_t num_streams, bool force, bool strict)
-{
-    if (output_ports.empty())
-        throw Exception("Cannot resize an empty Pipe.", ErrorCodes::LOGICAL_ERROR);
-
-    if (!force && num_streams == numOutputPorts())
-        return;
-
-    ProcessorPtr resize;
-
-    if (strict)
-        resize = std::make_shared<StrictResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
-    else
-        resize = std::make_shared<ResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
-
-    addTransform(std::move(resize));
-}
-
 void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     if (output_ports.empty())

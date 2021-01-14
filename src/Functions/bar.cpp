@@ -67,13 +67,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
     {
-        Int64 min = extractConstant<Int64>(arguments, 1, "Second"); /// The level at which the line has zero length.
-        Int64 max = extractConstant<Int64>(arguments, 2, "Third"); /// The level at which the line has the maximum length.
+        Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
+        Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// The level at which the line has the maximum length.
 
         /// The maximum width of the bar in characters, by default.
-        Float64 max_width = arguments.size() == 4 ? extractConstant<Float64>(arguments, 3, "Fourth") : 80;
+        Float64 max_width = arguments.size() == 4 ? extractConstant<Float64>(block, arguments, 3, "Fourth") : 80;
 
         if (max_width < 1)
             throw Exception("Max_width argument must be >= 1.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -81,7 +81,7 @@ public:
         if (max_width > 1000)
             throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        const auto & src = *arguments[0].column;
+        const auto & src = *block.getByPosition(arguments[0]).column;
 
         auto res_column = ColumnString::create();
 
@@ -96,19 +96,19 @@ public:
             || executeNumber<Float32>(src, *res_column, min, max, max_width)
             || executeNumber<Float64>(src, *res_column, min, max, max_width))
         {
-            return res_column;
+            block.getByPosition(result).column = std::move(res_column);
         }
         else
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
     template <typename T>
-    T extractConstant(const ColumnsWithTypeAndName & arguments, size_t argument_pos, const char * which_argument) const
+    T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
     {
-        const auto & column = *arguments[argument_pos].column;
+        const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
         if (!isColumnConst(column))
             throw Exception(

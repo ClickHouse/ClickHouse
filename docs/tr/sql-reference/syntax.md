@@ -15,9 +15,9 @@ Bu `INSERT` sorgu her iki ayrıştırıcıyı da kullanır:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-Bu `INSERT INTO t VALUES` parça tam ayrıştırıcı tarafından ayrıştırılır ve veriler `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` hızlı akış ayrıştırıcısı tarafından ayrıştırılır. Ayrıca kullanarak veriler için tam ayrıştırıcı açabilirsiniz [ınput_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ayar. Ne zaman `input_format_values_interpret_expressions = 1`, ClickHouse önce hızlı akış ayrıştırıcısı ile değerleri ayrıştırmaya çalışır. Başarısız olursa, ClickHouse veriler için tam ayrıştırıcıyı kullanmaya çalışır ve bir SQL gibi davranır [ifade](#syntax-expressions).
+Bu `INSERT INTO t VALUES` parça tam ayrıştırıcı tarafından ayrıştırılır ve veriler `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` hızlı akış ayrıştırıcısı tarafından ayrıştırılır. Ayrıca kullanarak veriler için tam ayrıştırıcı açabilirsiniz [ınput\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) ayar. Ne zaman `input_format_values_interpret_expressions = 1`, ClickHouse önce hızlı akış ayrıştırıcısı ile değerleri ayrıştırmaya çalışır. Başarısız olursa, ClickHouse veriler için tam ayrıştırıcıyı kullanmaya çalışır ve bir SQL gibi davranır [ifade](#syntax-expressions).
 
-Veri herhangi bir biçime sahip olabilir. Bir sorgu alındığında, sunucu daha fazla hesaplar [max_query_size](../operations/settings/settings.md#settings-max_query_size) istek bayt RAM (varsayılan olarak, 1 MB) ve geri kalanı akış ayrıştırılır.
+Veri herhangi bir biçime sahip olabilir. Bir sorgu alındığında, sunucu daha fazla hesaplar [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) istek bayt RAM (varsayılan olarak, 1 MB) ve geri kalanı akış ayrıştırılır.
 Bu büyük sorunları önlemek için izin verir `INSERT` sorgular.
 
 Kullanırken `Values` biçim içinde bir `INSERT` sorgu, verilerin bir ifadedeki ifadelerle aynı şekilde ayrıştırıldığı görünebilir `SELECT` sorgu, ancak bu doğru değil. Bu `Values` biçim çok daha sınırlıdır.

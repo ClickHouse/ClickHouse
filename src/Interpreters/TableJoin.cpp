@@ -28,6 +28,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
+    if (settings.partial_merge_join)
+        join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
 }
 
 void TableJoin::resetCollected()

@@ -18,7 +18,7 @@ Clickhouse'daki sorgular birkaç türe ayrılabilir:
 Aşağıdaki ayarlar, kullanıcı izinlerini sorgu Türüne göre düzenler:
 
 -   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` herhangi bir ayar ile yapılabilir.
 
@@ -43,7 +43,7 @@ sadece belirli ayarları değiştirmekten, ayrıntılar için bkz [ayarlardaki k
 
 Varsayılan değer: 0
 
-## allow_ddl {#settings_allow_ddl}
+## allow\_ddl {#settings_allow_ddl}
 
 İzin verir veya reddeder [DDL](https://en.wikipedia.org/wiki/Data_definition_language) sorgular.
 

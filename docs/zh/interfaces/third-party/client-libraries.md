@@ -4,7 +4,7 @@
     Yandex不维护下面列出的库，也没有进行任何广泛的测试以确保其质量。
 
 -   Python
-    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [ﾂ环板driverｮﾂ嘉ｯﾂ偲](https://github.com/mymarilyn/clickhouse-driver)
     -   [ﾂ环板clientｮﾂ嘉ｯﾂ偲](https://github.com/yurial/clickhouse-client)
 -   PHP
@@ -38,7 +38,7 @@
     -   [掳胫client-禄脢鹿脷露胫鲁隆鹿-client酶](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C#
+-   C\#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [克莱克豪斯Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

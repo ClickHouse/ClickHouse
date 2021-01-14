@@ -9,7 +9,7 @@ toc_title: "AMPLab B\xFCy\xFCk Veri Benchmark"
 
 Bkz. https://amplab.cs.berkeley.edu/benchmark/
 
-Ücretsiz bir hesap için kaydolun https://aws.amazon.com. bir kredi kartı, e-posta ve telefon numarası gerektirir. Yeni bir erişim anahtarı alın https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
+Ücretsiz bir hesap için kaydolun https://aws.amazon.com. bir kredi kartı, e-posta ve telefon numarası gerektirir. Yeni bir erişim anahtarı alın https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 Konsolda aşağıdakileri çalıştırın:
 

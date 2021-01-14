@@ -14,19 +14,13 @@ unset (_current_dir_name)
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
-if (SANITIZE STREQUAL "undefined")
-    # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
-endif()
-
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
-add_subdirectory (dragonbox-cmake)
+add_subdirectory (croaring)
 add_subdirectory (FastMemcpy)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
@@ -36,11 +30,10 @@ add_subdirectory (libmetrohash)
 add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
+add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
-add_subdirectory (croaring-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
@@ -65,6 +58,10 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
+endif ()
+
+if (USE_INTERNAL_BTRIE_LIBRARY)
+    add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -99,10 +96,10 @@ if (USE_INTERNAL_H3_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_SSL_LIBRARY)
-    add_subdirectory (boringssl-cmake)
+    add_subdirectory (openssl-cmake)
 
-    add_library(OpenSSL::Crypto ALIAS crypto)
-    add_library(OpenSSL::SSL ALIAS ssl)
+    add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
+    add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
 if (USE_INTERNAL_LDAP_LIBRARY)
@@ -160,6 +157,9 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
     add_subdirectory(snappy)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
+    if(SANITIZE STREQUAL "undefined")
+        target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
+    endif()
 endif()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
@@ -241,14 +241,6 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
-    # And c++2a cannot be used, due to ambiguous operator !=
-    if (COMPILER_GCC OR COMPILER_CLANG)
-        set (_CXX_STANDARD "gnu++17")
-    else()
-        set (_CXX_STANDARD "c++17")
-    endif()
-    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
     target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
@@ -326,10 +318,3 @@ if (USE_KRB5)
         add_subdirectory (cyrus-sasl-cmake)
     endif()
 endif()
-
-if (USE_INTERNAL_ROCKSDB_LIBRARY)
-    add_subdirectory(rocksdb-cmake)
-endif()
-
-add_subdirectory(fast_float)
-
