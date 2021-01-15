@@ -81,6 +81,7 @@ endif()
 
 if (USE_LIBPQXX)
     add_headers_and_sources(dbms Databases/PostgreSQL)
+    add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
 
 if (USE_ROCKSDB)
@@ -94,10 +95,6 @@ endif()
 
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
-endif()
-
-if (USE_LIBPQXX)
-    add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
