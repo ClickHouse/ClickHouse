@@ -195,7 +195,7 @@ void StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, context);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
@@ -384,28 +384,44 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
+    MutableColumnPtr last_col;
     try
     {
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            col_to->insertRangeFrom(col_from, 0, rows);
+            last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(col_to);
+            to.getByPosition(column_no).column = std::move(last_col);
         }
     }
     catch (...)
     {
         /// Rollback changes.
+
+        /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
+        /// So ignore any memory limits, even global (since memory tracking has drift).
+        MemoryTracker::BlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+
         try
         {
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
+                /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
+                if (!col_to)
+                {
+                    col_to = std::move(last_col);
+                    /// Suppress clang-tidy [bugprone-use-after-move]
+                    last_col = {};
+                }
+                /// But if there is still nothing, abort
+                if (!col_to)
+                    throw Exception("No column to rollback", ErrorCodes::LOGICAL_ERROR);
                 if (col_to->size() != old_rows)
                     col_to = col_to->cut(0, old_rows);
             }
@@ -569,7 +585,7 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
@@ -763,7 +779,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -818,7 +834,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushBack()
+void StorageBuffer::backgroundFlush()
 {
     try
     {
@@ -980,6 +996,9 @@ void registerStorageBuffer(StorageFactory & factory)
             StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_id,
             static_cast<bool>(args.local_context.getSettingsRef().insert_allow_materialized_columns));
+    },
+    {
+        .supports_parallel_insert = true,
     });
 }
 

@@ -29,6 +29,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 #include <Interpreters/QueryLog.h>
@@ -105,7 +106,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 
         /// The table does not have a column with that name
         if (!table_sample.has(current_name))
-            throw Exception("No such column " + current_name + " in table " + query.table_id.getNameForLogs(),
+            throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
@@ -268,7 +269,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & selects = select_query.list_of_selects->children;
                 const auto & union_modes = select_query.list_of_modes;
 
-                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some querys which can be Trivial select querys
+                /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
                 is_trivial_insert_select
                     = std::all_of(
                           union_modes.begin(),

@@ -27,7 +27,8 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_);
+        bool require_nonempty_,
+        bool access_to_key_from_attributes_);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -45,7 +46,8 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime,
+                                                     require_nonempty, access_to_key_from_attributes);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -228,9 +230,6 @@ private:
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
-    template <typename T>
-    void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
-
     Columns getKeyColumns() const;
     RowIdxConstIter ipNotFound() const;
     RowIdxConstIter tryLookupIPv4(UInt32 addr, uint8_t * buf) const;
@@ -241,10 +240,11 @@ private:
 
     static const uint8_t * getIPv6FromOffset(const IPv6Container & ipv6_col, size_t i);
 
-    const DictionaryStructure dict_struct;
+    DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
+    const bool access_to_key_from_attributes;
     const std::string key_description{dict_struct.getKeyDescription()};
 
     /// Contains sorted IP subnetworks. If some addresses equals, subnet with lower mask is placed first.

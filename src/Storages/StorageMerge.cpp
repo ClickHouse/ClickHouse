@@ -1,6 +1,5 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -240,7 +239,7 @@ Pipe StorageMerge::read(
         {
             auto storage_ptr = std::get<0>(*it);
             auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot);
+            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, context);
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -542,7 +541,6 @@ void StorageMerge::convertingSourceStream(
                                     + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
             }
         }
-
     }
 }
 

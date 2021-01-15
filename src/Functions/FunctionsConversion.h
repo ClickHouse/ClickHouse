@@ -108,10 +108,14 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
+
+struct ConvertDefaultBehaviorTag {};
+struct ConvertReturnNullOnErrorTag {};
+
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
-template <typename FromDataType, typename ToDataType, typename Name>
+template <typename FromDataType, typename ToDataType, typename Name, typename SpecialTag = ConvertDefaultBehaviorTag>
 struct ConvertImpl
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -187,6 +191,10 @@ struct ConvertImpl
                         (*vec_null_map_to)[i] = true;
                     else
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+                {
+                    throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
                 }
                 else
                 {
@@ -279,7 +287,7 @@ struct ConvertImpl
 
 /** Conversion of DateTime to Date: throw off time component.
   */
-template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl> {};
 
 
@@ -301,7 +309,7 @@ struct ToDateTimeImpl
     }
 };
 
-template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
+template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl> {};
 
 /// Implementation of toDate function.
@@ -357,21 +365,21 @@ struct ToDateTransform8Or16Signed
   *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
   *  (otherwise such usage would be frequent mistake).
   */
-template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
 
 
@@ -456,9 +464,9 @@ struct ToDateTime64Transform
     }
 };
 
-template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name>
+template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
-template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name>
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
@@ -481,9 +489,9 @@ struct FromDateTime64Transform
     }
 };
 
-template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, FromDateTime64Transform<ToDateImpl>> {};
-template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name>
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, FromDateTime64Transform<ToDateTimeImpl>> {};
 
 
@@ -547,7 +555,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 
 /// DataTypeEnum<T> to DataType<T> free conversion
 template <typename FieldType, typename Name>
-struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
+struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, ConvertDefaultBehaviorTag>
 {
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
@@ -557,7 +565,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 
 
 template <typename FromDataType, typename Name>
-struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name>
+struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name, ConvertDefaultBehaviorTag>
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
@@ -974,12 +982,20 @@ struct ConvertThroughParsing
 
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertDefaultBehaviorTag>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertDefaultBehaviorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
+
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
+
+template <typename ToDataType, typename Name>
+struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
 struct ConvertImplGenericFromString
@@ -1027,14 +1043,17 @@ struct ConvertImplGenericFromString
 
 
 template <>
-struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
-    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp> {};
+struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertDefaultBehaviorTag>
+    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertDefaultBehaviorTag> {};
 
+template <>
+struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertReturnNullOnErrorTag>
+    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertReturnNullOnErrorTag> {};
 
 /** If types are identical, just take reference to column.
   */
 template <typename T, typename Name>
-struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
+struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name, ConvertDefaultBehaviorTag>
 {
     template <typename Additions = void *>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/,
@@ -1049,7 +1068,7 @@ struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name>
   * Cutting sequences of zero bytes from end of strings.
   */
 template <typename Name>
-struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
+struct ConvertImpl<DataTypeFixedString, DataTypeString, Name, ConvertDefaultBehaviorTag>
 {
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
@@ -1153,6 +1172,9 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
+    static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
+                                                      std::is_same_v<ToDataType, DataTypeString>;
+
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
@@ -1166,6 +1188,15 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
+        auto res = FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationForNulls(arguments, getter);
+        to_nullable = res->isNullable();
+        checked_return_type = true;
+        return res;
+    }
+
+    DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
     {
         FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
@@ -1243,6 +1274,11 @@ public:
         }
     }
 
+    /// Function actually uses default implementation for nulls,
+    /// but we need to know if return type is Nullable or not,
+    /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
+    bool useDefaultImplementationForNulls() const override { return checked_return_type; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
@@ -1292,6 +1328,9 @@ public:
     }
 
 private:
+    mutable bool checked_return_type = false;
+    mutable bool to_nullable = false;
+
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (arguments.empty())
@@ -1301,11 +1340,12 @@ private:
         const IDataType * from_type = arguments[0].type.get();
         ColumnPtr result_column;
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types, const auto & tag) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
+            using SpecialTag = std::decay_t<decltype(tag)>;
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
@@ -1325,12 +1365,12 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, scale);
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, dt64->getScale());
             }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
@@ -1349,10 +1389,10 @@ private:
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
-                    result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count);
+                    result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
             }
             else
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
 
             return true;
         };
@@ -1365,7 +1405,7 @@ private:
 
             if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
             {
-                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call))
+                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{}))
                     throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1373,7 +1413,21 @@ private:
             }
         }
 
-        bool done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call);
+        bool done;
+        if constexpr (to_string_or_fixed_string)
+        {
+            done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+        }
+        else
+        {
+            /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
+            /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
+            if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
+                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
+            else
+                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
+        }
+
         if (!done)
         {
             /// Generic conversion of any type to String.
@@ -2209,7 +2263,7 @@ private:
 
     template <typename ToDataType>
     std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
-    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type) const
+    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
     {
         TypeIndex type_index = from_type->getTypeId();
         UInt32 scale = to_type->getScale();
@@ -2228,11 +2282,12 @@ private:
 
         auto wrapper_cast_type = cast_type;
 
-        return [wrapper_cast_type, type_index, scale, to_type]
+        return [wrapper_cast_type, type_index, scale, to_type, requested_result_is_nullable]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool {
+            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
+            {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
@@ -2254,6 +2309,19 @@ private:
                         additions.scale = scale;
                         result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
                             arguments, result_type, input_rows_count, additions);
+
+                        return true;
+                    }
+                }
+                else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
+                {
+                    if (requested_result_is_nullable)
+                    {
+                        /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
+                        /// In case when converting to Nullable type, we apply different parsing rule,
+                        /// that will not throw an exception but return NULL in case of malformed input.
+                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast, ConvertReturnNullOnErrorTag>::execute(
+                            arguments, result_type, input_rows_count, scale);
 
                         return true;
                     }
@@ -2423,24 +2491,23 @@ private:
             const auto * col = arguments.front().column.get();
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*col);
 
-            if (column_tuple.getColumn(0).size() != column_tuple.getColumn(1).size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map can only be performed from tuple of arrays with equal sizes."
-                    " Size of keys: {}. Size of values: {}", column_tuple.getColumn(0).size(), column_tuple.getColumn(1).size());
-
-            ColumnPtr offsets;
+            Columns offsets(2);
             Columns converted_columns(2);
             for (size_t i = 0; i < 2; ++i)
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(column_tuple.getColumn(i));
                 ColumnsWithTypeAndName element = {{column_array.getDataPtr(), from_kv_types[i], ""}};
                 converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
-
-                if (!offsets)
-                    offsets = column_array.getOffsetsPtr();
+                offsets[i] = column_array.getOffsetsPtr();
             }
 
-            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets);
+            const auto & keys_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[0]).getData();
+            const auto & values_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets[1]).getData();
+            if (keys_offsets != values_offsets)
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map can only be performed from tuple of arrays with equal sizes.");
+
+            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets[0]);
         };
     }
 
@@ -2876,7 +2943,7 @@ private:
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>> ||
                 std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
-                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
+                ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
             }
 

@@ -251,7 +251,7 @@ stop_time = None
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
-    all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
+    all_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
     global exit_code
     global SERVER_DIED
     global stop_time
@@ -571,6 +571,8 @@ def main(args):
             Note: if you are using unbundled mode, you also have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
+    if args.antlr:
+        build_flags.append('antlr')
 
     if args.use_skip_list:
         tests_to_skip_from_list = collect_tests_to_skip(args.skip_list_path, build_flags)
@@ -688,7 +690,7 @@ def main(args):
                 prefix, suffix = item.split('_', 1)
 
                 try:
-                    return reverse * int(prefix), suffix
+                    return reverse * int(prefix)
                 except ValueError:
                     return 99997
 
@@ -698,6 +700,7 @@ def main(args):
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
             all_tests.sort(key=key_func)
 
+            jobs = args.jobs
             parallel_tests = []
             sequential_tests = []
             for test in all_tests:
@@ -706,35 +709,32 @@ def main(args):
                 else:
                     parallel_tests.append(test)
 
-            print("Found", len(parallel_tests), "parallel tests and", len(sequential_tests), "sequential tests")
-            run_n, run_total = args.parallel.split('/')
-            run_n = float(run_n)
-            run_total = float(run_total)
-            tests_n = len(parallel_tests)
-            if run_total > tests_n:
-                run_total = tests_n
-            if run_n > run_total:
-                continue
+            if jobs > 1 and len(parallel_tests) > 0:
+                print("Found", len(parallel_tests), "parallel tests and", len(sequential_tests), "sequential tests")
+                run_n, run_total = args.parallel.split('/')
+                run_n = float(run_n)
+                run_total = float(run_total)
+                tests_n = len(parallel_tests)
+                if run_total > tests_n:
+                    run_total = tests_n
 
-            jobs = args.jobs
-            if jobs > tests_n:
-                jobs = tests_n
-            if jobs > run_total:
-                run_total = jobs
+                if jobs > tests_n:
+                    jobs = tests_n
+                if jobs > run_total:
+                    run_total = jobs
 
-            batch_size = len(parallel_tests) // jobs
-            parallel_tests_array = []
-            for i in range(0, len(parallel_tests), batch_size):
-                parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir, run_total))
+                batch_size = len(parallel_tests) // jobs
+                parallel_tests_array = []
+                for i in range(0, len(parallel_tests), batch_size):
+                    parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir))
 
-            if jobs > 1:
                 with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, parallel_tests_array)
 
-                run_tests_array((sequential_tests, suite, suite_dir, suite_tmp_dir, run_total))
+                run_tests_array((sequential_tests, suite, suite_dir, suite_tmp_dir))
                 total_tests_run += len(sequential_tests) + len(parallel_tests)
             else:
-                run_tests_array((all_tests, suite, suite_dir, suite_tmp_dir, run_total))
+                run_tests_array((all_tests, suite, suite_dir, suite_tmp_dir))
                 total_tests_run += len(all_tests)
 
     if args.hung_check:
@@ -873,6 +873,7 @@ if __name__ == '__main__':
     parser.add_argument('--use-skip-list', action='store_true', default=False, help="Use skip list to skip tests if found")
     parser.add_argument('--db-engine', help='Database engine name')
 
+    parser.add_argument('--antlr', action='store_true', default=False, dest='antlr', help='Use new ANTLR parser in tests')
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
@@ -964,6 +965,12 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
+    if args.antlr:
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

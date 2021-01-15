@@ -37,6 +37,7 @@ SRCS(
     ClusterProxy/SelectStreamFactory.cpp
     ClusterProxy/executeQuery.cpp
     CollectJoinOnKeysVisitor.cpp
+    ColumnAliasesVisitor.cpp
     Context.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
@@ -157,6 +158,7 @@ SRCS(
     interpretSubquery.cpp
     join_common.cpp
     loadMetadata.cpp
+    replaceAliasColumnsInQuery.cpp
     processColumnTransformers.cpp
     sortBlock.cpp
 
