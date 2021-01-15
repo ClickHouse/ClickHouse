@@ -192,6 +192,18 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
     return it->second;
 }
 
+
+void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
+{
+    state = new_state;
+}
+
+IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
+{
+    return state;
+}
+
+
 DayNum IMergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
