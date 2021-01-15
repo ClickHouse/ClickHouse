@@ -206,9 +206,8 @@ public:
     static std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
     {
         auto nested = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-        ColumnPtr nested_column(createNested(nested));
-        auto array_column{ColumnArray::create(nested_column)};
-        const_cast<ColumnArray *>(array_column.get())->insert(array_field);
+        auto array_column = ColumnArray::create(createNested(nested));
+        array_column->insert(array_field);
         WriteBufferFromOwnString ostr;
         data_type->serializeAsText(*array_column, 0, ostr, FormatSettings{});
 
@@ -217,7 +216,7 @@ public:
     }
 
 
-    static ColumnPtr createNested(DataTypePtr nested)
+    static MutableColumnPtr createNested(DataTypePtr nested)
     {
         bool is_nullable = false;
         if (nested->isNullable())
@@ -227,7 +226,7 @@ public:
         }
 
         WhichDataType which(nested);
-        ColumnPtr nested_column;
+        MutableColumnPtr nested_column;
         if (which.isString() || which.isFixedString())   nested_column = ColumnString::create();
         else if (which.isInt8() || which.isInt16())      nested_column = ColumnInt16::create();
         else if (which.isUInt8() || which.isUInt16())    nested_column = ColumnUInt16::create();
@@ -263,7 +262,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(nested_column, ColumnUInt8::create(nested_column->size(), 0));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
 
         return nested_column;
     }
