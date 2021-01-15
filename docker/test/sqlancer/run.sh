@@ -20,3 +20,7 @@ export NUM_QUERIES=1000
 ( java -jar target/SQLancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere --oracle TLPGroupBy | tee /test_output/TLPWhereGroupBy.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPWhereGroupBy.err
 ( java -jar target/SQLancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPDistinct | tee /test_output/TLPDistinct.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPDistinct.err
 ( java -jar target/SQLancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPAggregate | tee /test_output/TLPAggregate.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPAggregate.err
+
+cp /var/log/clickhouse-server/clickhouse-server.log /test_output/
+cp /var/log/clickhouse-server/stderr.log /test_output/
+cp /var/log/clickhouse-server/stdout.log /test_output/
