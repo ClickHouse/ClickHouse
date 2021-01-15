@@ -5485,9 +5485,9 @@ void StorageReplicatedMergeTree::getClearBlocksInPartitionOps(
             continue;
 
         ReadBufferFromString buf(result.data);
-        Int64 block_num = 0;
-        bool parsed = tryReadIntText(block_num, buf) && buf.eof();
-        if (!parsed || (min_block_num <= block_num && block_num <= max_block_num))
+        MergeTreePartInfo part_info;
+        bool parsed = MergeTreePartInfo::tryParsePartName(result.data, &part_info, format_version);
+        if (!parsed || (min_block_num <= part_info.min_block && part_info.max_block <= max_block_num))
             ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
     }
 }
@@ -6074,7 +6074,7 @@ bool StorageReplicatedMergeTree::dropPart(
 
         Coordination::Requests ops;
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
-        size_t clean_block_ops_size = ops.size();
+        size_t clear_block_ops_size = ops.size();
 
         /// Set fake level to treat this part as virtual in queue.
         auto drop_part_info = part->info;
@@ -6102,7 +6102,7 @@ bool StorageReplicatedMergeTree::dropPart(
         else
             zkutil::KeeperMultiException::check(rc, ops, responses);
 
-        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clean_block_ops_size + 1]).path_created;
+        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size + 1]).path_created;
         entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
         return true;
