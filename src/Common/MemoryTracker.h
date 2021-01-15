@@ -165,7 +165,7 @@ public:
         VariableContext previous_level;
     public:
         /// level_ - block in level and above
-        BlockerInThread(VariableContext level_ = VariableContext::Global);
+        BlockerInThread(VariableContext level_ = VariableContext::User);
         ~BlockerInThread();
 
         static bool isBlocked(VariableContext current_level)
@@ -201,7 +201,7 @@ public:
     public:
         /// level_ - block in level and above
         /// block_fault_injections_ - block in fault injection too
-        LockExceptionInThread(VariableContext level_ = VariableContext::Global, bool block_fault_injections_ = true);
+        LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
         ~LockExceptionInThread();
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
