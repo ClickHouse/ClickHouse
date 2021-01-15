@@ -556,7 +556,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
                 {
                     String candidate_path = getFullRelativePath() + IDataType::getFileNameForStream(part_column.name, substream_path) + ".bin";
 
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns.
+                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
                     if (volume->getDisk()->exists(candidate_path) && volume->getDisk()->getFileSize(candidate_path) != 0)
                         path_to_data_file = candidate_path;
                 }
