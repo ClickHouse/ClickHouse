@@ -233,6 +233,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             sharding_key,
             String{},
             String{},
+            DistributedSettings{},
             false,
             cluster)
         : StorageDistributed::create(
@@ -246,6 +247,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, con
             sharding_key,
             String{},
             String{},
+            DistributedSettings{},
             false,
             cluster);
 
