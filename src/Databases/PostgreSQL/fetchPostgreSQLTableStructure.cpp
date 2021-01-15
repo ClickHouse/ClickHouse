@@ -1,4 +1,4 @@
-#include <Databases/PostgreSQL/FetchFromPostgreSQL.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #if USE_LIBPQXX
 
@@ -22,6 +22,61 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+}
+
+
+static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
+{
+    DataTypePtr res;
+
+    /// Get rid of trailing '[]' for arrays
+    if (dimensions)
+        while (type.ends_with("[]"))
+            type.resize(type.size() - 2);
+
+    if (type == "smallint")
+        res = std::make_shared<DataTypeInt16>();
+    else if (type == "integer")
+        res = std::make_shared<DataTypeInt32>();
+    else if (type == "bigint")
+        res = std::make_shared<DataTypeInt64>();
+    else if (type == "real")
+        res = std::make_shared<DataTypeFloat32>();
+    else if (type == "double precision")
+        res = std::make_shared<DataTypeFloat64>();
+    else if (type == "serial")
+        res = std::make_shared<DataTypeUInt32>();
+    else if (type == "bigserial")
+        res = std::make_shared<DataTypeUInt64>();
+    else if (type.starts_with("timestamp"))
+        res = std::make_shared<DataTypeDateTime>();
+    else if (type == "date")
+        res = std::make_shared<DataTypeDate>();
+    else if (type.starts_with("numeric"))
+    {
+        /// Numeric and decimal will both end up here as numeric.
+        res = DataTypeFactory::instance().get(type);
+        uint32_t precision = getDecimalPrecision(*res);
+        uint32_t scale = getDecimalScale(*res);
+
+        if (precision <= DecimalUtils::maxPrecision<Decimal32>())
+            res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
+        else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
+            res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+        else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+        else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
+            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+    }
+
+    if (!res)
+        res = std::make_shared<DataTypeString>();
+    if (is_nullable)
+        res = std::make_shared<DataTypeNullable>(res);
+    while (--dimensions)
+        res = std::make_shared<DataTypeArray>(res);
+
+    return res;
 }
 
 
@@ -77,61 +132,6 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
         return nullptr;
 
     return std::make_shared<NamesAndTypesList>(columns);
-}
-
-
-DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint16_t dimensions)
-{
-    DataTypePtr res;
-
-    /// Get rid of trailing '[]' for arrays
-    if (dimensions)
-        while (type.ends_with("[]"))
-            type.resize(type.size() - 2);
-
-    if (type == "smallint")
-        res = std::make_shared<DataTypeInt16>();
-    else if (type == "integer")
-        res = std::make_shared<DataTypeInt32>();
-    else if (type == "bigint")
-        res = std::make_shared<DataTypeInt64>();
-    else if (type == "real")
-        res = std::make_shared<DataTypeFloat32>();
-    else if (type == "double precision")
-        res = std::make_shared<DataTypeFloat64>();
-    else if (type == "serial")
-        res = std::make_shared<DataTypeUInt32>();
-    else if (type == "bigserial")
-        res = std::make_shared<DataTypeUInt64>();
-    else if (type.starts_with("timestamp"))
-        res = std::make_shared<DataTypeDateTime>();
-    else if (type == "date")
-        res = std::make_shared<DataTypeDate>();
-    else if (type.starts_with("numeric"))
-    {
-        /// Numeric and decimal will both end up here as numeric.
-        res = DataTypeFactory::instance().get(type);
-        uint32_t precision = getDecimalPrecision(*res);
-        uint32_t scale = getDecimalScale(*res);
-
-        if (precision <= DecimalUtils::maxPrecision<Decimal32>())
-            res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
-            res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
-            res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal256>())
-            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
-    }
-
-    if (!res)
-        res = std::make_shared<DataTypeString>();
-    if (is_nullable)
-        res = std::make_shared<DataTypeNullable>(res);
-    while (--dimensions)
-        res = std::make_shared<DataTypeArray>(res);
-
-    return res;
 }
 
 }

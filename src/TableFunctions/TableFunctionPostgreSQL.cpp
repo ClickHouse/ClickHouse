@@ -9,7 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Databases/PostgreSQL/FetchFromPostgreSQL.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
 
 
