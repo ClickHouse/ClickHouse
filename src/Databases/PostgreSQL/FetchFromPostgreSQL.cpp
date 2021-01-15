@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -28,6 +29,13 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
     std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
+
+    if (postgres_table_name.find('\'') != std::string::npos
+        || postgres_table_name.find('\\') != std::string::npos)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL table name cannot contain single quote or backslash characters, passed {}",
+            postgres_table_name);
+    }
 
     std::string query = fmt::format(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
@@ -53,7 +61,7 @@ std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
         stream.complete();
         tx.commit();
     }
-    catch (pqxx::undefined_table const &)
+    catch (const pqxx::undefined_table &)
     {
         throw Exception(fmt::format(
                     "PostgreSQL table {}.{} does not exist",
