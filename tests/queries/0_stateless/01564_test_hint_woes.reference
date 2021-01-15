@@ -23,3 +23,5 @@ select nonexistent column; -- { serverError 47 }
 insert into values_01564 values (1); select 1;
 select 1;
 1
+-- the return code must be zero after the final query has failed with expected error
+insert into values_01564 values (11); -- { serverError 469 }

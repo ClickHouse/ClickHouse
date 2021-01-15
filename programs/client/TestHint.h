@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNEXPECTED_ERROR_CODE;
-}
-
-
 /// Checks expected server and client error codes in testmode.
 /// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
 /// Also you can enable echoing all queries by writing "-- { echo }".
