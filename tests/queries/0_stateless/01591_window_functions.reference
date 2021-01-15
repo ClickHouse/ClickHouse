@@ -122,7 +122,7 @@ select * from (select * from numbers(5) order by rand()) order by count() over (
 2
 3
 4
-select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc) desc;
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number) + 1) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't

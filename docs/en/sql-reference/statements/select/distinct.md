@@ -18,10 +18,6 @@ It is possible to obtain the same result by applying [GROUP BY](../../../sql-ref
 -   When [ORDER BY](../../../sql-reference/statements/select/order-by.md) is omitted and [LIMIT](../../../sql-reference/statements/select/limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
 -   Data blocks are output as they are processed, without waiting for the entire query to finish running.
 
-## Limitations {#limitations}
-
-`DISTINCT` is not supported if `SELECT` has at least one array column.
-
 ## Examples {#examples}
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
