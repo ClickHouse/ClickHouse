@@ -85,8 +85,9 @@ DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint
     DataTypePtr res;
 
     /// Get rid of trailing '[]' for arrays
-    if (dimensions && type.ends_with("[]"))
-        type.resize(type.size() - 2);
+    if (dimensions)
+        while (type.ends_with("[]"))
+            type.resize(type.size() - 2);
 
     if (type == "smallint")
         res = std::make_shared<DataTypeInt16>();
@@ -127,7 +128,7 @@ DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullable, uint
         res = std::make_shared<DataTypeString>();
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
-    while (dimensions--)
+    while (--dimensions)
         res = std::make_shared<DataTypeArray>(res);
 
     return res;
