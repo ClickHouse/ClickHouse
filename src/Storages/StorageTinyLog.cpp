@@ -300,12 +300,18 @@ void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, 
 {
     IDataType::SerializeBinaryBulkSettings settings;
     const auto & [name, type] = name_and_type;
-    settings.getter = createStreamGetter(name_and_type, written_streams);
 
     if (serialize_states.count(name) == 0)
-        type->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+    {
+        /// Some stream getters may be called form `serializeBinaryBulkStatePrefix`.
+        /// Use different WrittenStreams set, or we get nullptr for them in `serializeBinaryBulkWithMultipleStreams`
+        WrittenStreams prefix_written_streams;
+        settings.getter = createStreamGetter(name_and_type, prefix_written_streams);
+        type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+    }
 
-    type->serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
+    settings.getter = createStreamGetter(name_and_type, written_streams);
+    type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 }
 
 
