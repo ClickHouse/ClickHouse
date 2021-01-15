@@ -75,8 +75,23 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto * val : data)
+        for(size_t i = 0; i < data.size(); ++i)
+        {
+            auto * val = data[i];
+            if(val==NULL)
+            {
+                continue;
+            }
+
+            for(size_t j=i;j<data.size();++j)
+            {
+                if(data[j]==val)
+                {
+                    data[j]= NULL;
+                }
+            }
             func->destroy(val);
+        }
 }
 
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)

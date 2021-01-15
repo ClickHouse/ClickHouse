@@ -687,9 +687,42 @@ public:
     {
         if constexpr (has_defaults)
             applyLazyDefaults();
-
-        for (size_t j = 0; j < right_indexes.size(); ++j)
-            columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+	std::unordered_map<Block*, std::unordered_map<size_t,size_t> >::iterator iter;
+        std::unordered_map<size_t,size_t>::iterator iter2;
+        bool bFound = false;
+        size_t pos = 0;
+        for (size_t j = 0; j < right_indexes.size(); ++j){
+            if (std::string(columns[j]->getFamilyName())!="AggregateFunction"){  //not aggFuncCol,copy data directly
+                columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+            }else{ // copy pointer for same bitmap
+              if(!bFound){
+                    iter = copiedDataInfo.find((Block*)&block);
+                    if(iter!=copiedDataInfo.end()){    //found block
+                        iter2 = iter->second.find(row_num);
+                        if(iter2!=iter->second.end()){  //found row
+                            pos = iter2->first;
+                            auto pCol = typeid_cast<ColumnAggregateFunction *>(columns[j].get());
+                            pCol->getData().push_back(pCol->getData()[pos]);
+                        }else{
+                            pos = columns[j]->size();
+                            iter->second.insert(std::pair<size_t,size_t>(row_num,pos));
+                            columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+                        }
+                    }else{
+                        pos = columns[j]->size();
+                        std::unordered_map<size_t,size_t> rowInfo;
+                        rowInfo.insert(std::pair<size_t,size_t>(row_num,pos));
+                        copiedDataInfo.insert(std::pair<Block*, std::unordered_map<size_t,size_t> >((Block*)&block,
+                            rowInfo));
+                        columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+                    }
+                    bFound = true;
+            }else{
+                auto pCol = typeid_cast<ColumnAggregateFunction *>(columns[j].get());
+                pCol->getData().push_back(pCol->getData()[pos]);
+            }
+          }
+        }
     }
 
     void appendDefaultRow()
@@ -726,6 +759,7 @@ private:
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
+    std::unordered_map<Block*, std::unordered_map<size_t,size_t> > copiedDataInfo;
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {
