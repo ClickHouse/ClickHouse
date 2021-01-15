@@ -1264,7 +1264,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (cast_keys_info.empty())
     {
-        /// Otherwise types checked in ctor
+        /// Otherwise types checked in constructor
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_sample_block, key_names_right);
     }
 
@@ -1308,6 +1308,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         joinBlockImplCross(block, not_processed);
     else
         throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
+    JoinCommon::remapLeftKeysToRight(block, right_table_keys, *table_join);
 }
 
 

@@ -43,11 +43,15 @@ NameToTypeMap getJoinColumnsNeedCast(const Block & block_converted, const Names 
 
 bool isCastJoinKeysAllowed(const Block & left_block, const Block & right_block, const TableJoin & table_join);
 void addCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);
-
 void restoreCastedJoinColumns(Block & block, std::unordered_map<std::string, NameAndTypePair> name_mapping);
+
+void castColumnInplace(ColumnWithTypeAndName & col, const ColumnWithTypeAndName & dst_sample);
 
 void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);
+
+NameToNameMap getLeftKeysToRemap(const TableJoin & table_join);
+void remapLeftKeysToRight(Block & block, const Block & right_table_keys, const TableJoin & table_join);
 
 }
 

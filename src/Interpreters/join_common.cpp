@@ -21,14 +21,19 @@ namespace ErrorCodes
 namespace
 {
 
-void changeNullability(MutableColumnPtr & mutable_column)
+
+void changeNullabilityInplace(ColumnPtr & column)
 {
-    ColumnPtr column = std::move(mutable_column);
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
         column = nullable->getNestedColumnPtr();
     else
         column = makeNullable(column);
+}
 
+void changeNullability(MutableColumnPtr & mutable_column)
+{
+    ColumnPtr column = std::move(mutable_column);
+    changeNullabilityInplace(column);
     mutable_column = IColumn::mutate(std::move(column));
 }
 
@@ -175,13 +180,14 @@ Columns materializeColumns(const Block & block, const Names & names)
 /// Join keys not casted in some cases:
 /// - for tables with `engine = Join` (in this case left_block hasn't rows)
 /// - if some keys are not nullable (this limitation comes from accurateCastOrNull)
-/// - (RIGHT/FULL JOIN ... USING)
+/// - `FULL JOIN ... USING` (not implemented, key column will contain values from columns from both tables and should be supertype of them)
 bool isCastJoinKeysAllowed(const Block & left_block, const Block & right_block, const TableJoin & table_join)
 {
     bool key_names_match = table_join.keyNamesLeft().size() == table_join.keyNamesRight().size();
-
-    bool is_left_or_inner = isLeft(table_join.kind()) || isInner(table_join.kind());
-    bool using_forbidden = table_join.hasUsing() && !is_left_or_inner;
+    bool using_forbidden = table_join.hasUsing()
+        && !isLeft(table_join.kind())
+        && !isInner(table_join.kind())
+        && !isRight(table_join.kind());
     if (!left_block || !right_block || !key_names_match || using_forbidden)
         return false;
 
@@ -223,6 +229,27 @@ void restoreCastedJoinColumns(Block & block, std::unordered_map<std::string, Nam
     for (const auto & nm : name_mapping)
         cols_to_remove.insert(block.getPositionByName(nm.second.name));
     block.erase(cols_to_remove);
+}
+
+void castColumnInplace(ColumnWithTypeAndName & col, const ColumnWithTypeAndName & dst_sample)
+{
+    DataTypePtr target_type = dst_sample.type;
+
+    if (col.type->equals(*target_type))
+        return;
+
+
+    changeLowCardinality(col.column, dst_sample.column);
+    if (col.type->isNullable() != target_type->isNullable())
+    {
+        changeNullabilityInplace(col.column);
+        if (target_type->isNullable())
+            col.type = makeNullable(col.type);
+        else
+            col.type = removeNullable(col.type);
+    }
+    col.column = castColumnAccurate(col, target_type);
+    col.type = target_type;
 }
 
 ColumnRawPtrs getRawPointers(const Columns & columns)
@@ -381,6 +408,33 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
+NameToNameMap getLeftKeysToRemap(const TableJoin & table_join)
+{
+    NameToNameMap mapping;
+    if (table_join.hasUsing())
+    {
+        const auto & required_right_keys = table_join.requiredRightKeys();
+        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+        {
+            const String & left_key_name = table_join.keyNamesLeft()[i];
+            const String & right_key_name = table_join.keyNamesRight()[i];
+            if (!required_right_keys.contains(right_key_name))
+                mapping[left_key_name] = right_key_name;
+        }
+    }
+    return mapping;
+}
+
+void remapLeftKeysToRight(Block & block, const Block & right_table_keys, const TableJoin & table_join)
+{
+    if (isRight(table_join.kind()))
+    {
+        auto names_to_remap = JoinCommon::getLeftKeysToRemap(table_join);
+        for (const auto & [left_name, right_name] : names_to_remap)
+            JoinCommon::castColumnInplace(block.getByName(left_name), right_table_keys.getByName(right_name));
+    }
+}
+
 }
 
 
@@ -395,19 +449,14 @@ NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sam
     table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
 
-    bool remap_keys = table_join.hasUsing();
+    auto names_to_remap = JoinCommon::getLeftKeysToRemap(table_join);
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+    for (const auto & [left_key_name, right_key_name] : names_to_remap)
     {
-        const String & left_key_name = table_join.keyNamesLeft()[i];
-        const String & right_key_name = table_join.keyNamesRight()[i];
-
         size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
         size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
-
-        if (remap_keys && !required_right_keys.has(right_key_name))
-            left_to_right_key_remap[left_key_pos] = right_key_pos;
+        left_to_right_key_remap[left_key_pos] = right_key_pos;
     }
 
     /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys

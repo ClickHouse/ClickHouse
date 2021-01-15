@@ -24,7 +24,7 @@ SELECT '- left using -';
 SELECT * FROM t1 LEFT JOIN t2 USING(a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- right -';
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
-SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a)); -- { serverError 53 }
+-- SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner -';
 SELECT * FROM t1 INNER JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner using -';
@@ -61,7 +61,7 @@ SELECT '- left using -';
 SELECT * FROM t1 LEFT JOIN t2 USING(a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- right -';
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
-SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a)); -- { serverError 53 }
+-- SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner -';
 SELECT * FROM t1 INNER JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner using -';
@@ -184,14 +184,14 @@ SELECT '-';
 SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
 SELECT '-';
 SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
-SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c); -- { serverError 53 }
+-- SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c);
 SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
 SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
 SELECT '-';
 SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
-SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c); -- { serverError 53 }
+-- SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c);
 SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
@@ -220,14 +220,14 @@ SELECT '-';
 SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
 SELECT '-';
 SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
-SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c); -- { serverError 53 }
+-- SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c);
 SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
 SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
 SELECT '-';
 SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
-SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c); -- { serverError 53 }
+-- SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c);
 SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';

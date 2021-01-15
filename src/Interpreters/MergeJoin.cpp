@@ -678,6 +678,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     JoinCommon::restoreLowCardinalityInplace(block);
     JoinCommon::restoreCastedJoinColumns(block, left_key_names_mapping);
+    JoinCommon::remapLeftKeysToRight(block, right_table_keys, *table_join);
 }
 
 template <bool in_memory, bool is_all>
