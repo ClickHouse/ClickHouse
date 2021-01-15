@@ -258,62 +258,11 @@ ASTPtr tryParseQuery(
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
+    _out_query_end = last_token.end;
 
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
         insert = res->as<ASTInsertQuery>();
-
-    // We have to do some extra work to determine where the next query begins,
-    // preserving its leading comments.
-    // The query we just parsed may contain a test hint comment in the same line,
-    // e.g. select nonexistent_column; -- { serverError 12345 }.
-    // We must add this comment to the query text, so that it is handled by the
-    // test hint parser. It is important to do this before handling syntax errors,
-    // so that we can expect for syntax client errors in test hints.
-    // The token iterator skips comments and whitespace, so we have to find the
-    // newline in the string manually. If it's earlier than the next significant
-    // token, it means that the text before newline is some trailing whitespace
-    // or comment, and we should add it to our query.
-    const auto * newline = find_first_symbols<'\n'>(last_token.end, all_queries_end);
-
-    Tokens next_query_tokens(last_token.end, all_queries_end, max_query_size);
-    IParser::Pos next_query_iterator(next_query_tokens, max_parser_depth);
-
-    while (next_query_iterator.isValid()
-        && next_query_iterator->type == TokenType::Semicolon)
-    {
-        ++next_query_iterator;
-    }
-    const char * next_query_begin = next_query_iterator->begin;
-
-    // 1) We must always include the entire line in case of parse errors, because
-    // we don't know where the query ends. OTOH, we can't always include it,
-    // because there might be several valid queries on one line.
-    // 2) We must include the entire line for INSERT queries with inline data.
-    // We don't know where the data ends, but there might be a test hint on the
-    // same line in case of values format.
-    // 3) We include the entire line if the next query starts after it. This is
-    // a generic case of trailing in-line comment.
-    if (!parse_res
-        || (insert && insert->data)
-        || newline < next_query_begin)
-    {
-        assert(newline >= last_token.end);
-        _out_query_end = newline;
-    }
-    else
-    {
-        _out_query_end = last_token.end;
-    }
-
-    // Another corner case -- test hint comment that is ended by the end of data.
-    // Reproduced by test cases without newline at end, your editor may be
-    // configured to add one on save.
-    if (!next_query_iterator.isValid())
-    {
-        assert(next_query_iterator->end == all_queries_end);
-        _out_query_end = all_queries_end;
-    }
 
     // If parsed query ends at data for insertion. Data for insertion could be
     // in any format and not necessary be lexical correct, so we can't perform
@@ -330,7 +279,6 @@ ASTPtr tryParseQuery(
 
         return res;
     }
-
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
