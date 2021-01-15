@@ -183,3 +183,4 @@
 01636_nullable_fuzz2
 01639_distributed_sync_insert_zero_rows
 01644_distributed_async_insert_fsync_smoke
+01552_impl_aggfunc_cloneresize
