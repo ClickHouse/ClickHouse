@@ -676,7 +676,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)

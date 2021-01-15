@@ -18,7 +18,11 @@ if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
   separate_arguments(WITHOUT_COVERAGE_LIST)
   # disable coverage for contib files and build with optimisations
-  add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  if (COMPILER_CLANG)
+      add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
+  endif()
 endif()
 
 if (SANITIZE STREQUAL "undefined")
