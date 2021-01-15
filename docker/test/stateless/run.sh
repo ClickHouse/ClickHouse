@@ -68,3 +68,4 @@ export -f run_tests
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
+tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
