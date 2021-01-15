@@ -63,7 +63,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     {
         if (checksums.files.count(removed_file))
         {
-            data_part->volume->getDisk()->remove(data_part->getFullRelativePath() + removed_file);
+            data_part->volume->getDisk()->removeFile(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
         }
     }

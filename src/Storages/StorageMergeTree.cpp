@@ -625,7 +625,7 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->remove(it->path());
+                disk->removeFile(it->path());
             }
         }
     }
@@ -1437,7 +1437,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
             catch (const Exception & ex)
             {
                 if (disk->exists(tmp_checksums_path))
-                    disk->remove(tmp_checksums_path);
+                    disk->removeFile(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");
