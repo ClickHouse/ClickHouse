@@ -17,6 +17,7 @@ PEERDIR(
 
 SRCS(
     CachedCompressedReadBuffer.cpp
+    CheckingCompressedReadBuffer.cpp
     CompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
     CompressedReadBufferFromFile.cpp

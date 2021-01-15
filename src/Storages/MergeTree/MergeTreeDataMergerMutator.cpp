@@ -1065,7 +1065,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
         }
 
-        tmp_disk->remove(rows_sources_file_path);
+        tmp_disk->removeFile(rows_sources_file_path);
     }
 
     for (const auto & part : parts)
