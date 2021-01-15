@@ -382,6 +382,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, co
         storage_engine_arguments->children.resize(storage_engine_arguments->children.size() - 1);
 
     /// Add table_name to engine arguments
+    assert(storage_engine_arguments->children.size() >= 2);
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
 
     return create_table_query;
