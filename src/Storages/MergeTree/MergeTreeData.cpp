@@ -1506,6 +1506,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
+        if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
         if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
         {
             if (!is_custom_partitioned)
