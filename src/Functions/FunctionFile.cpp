@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -50,18 +51,33 @@ namespace DB
                 auto res = ColumnString::create();
                 auto & res_chars = res->getChars();
                 auto & res_offsets = res->getOffsets();
-		
+
+                //TBD: Here, need to restrict the access permission for only user_path...
+
                 ReadBufferFromFile in(filename);
+
+                // Method-1: Read the whole file at once
+                size_t file_len = Poco::File(filename).getSize();
+                res_chars.resize(file_len + 1);
+                char *res_buf = reinterpret_cast<char *>(&res_chars[0]);
+                in.readStrict(res_buf, file_len);
+
+                /*
+                //Method-2: Read with loop
+
                 char *res_buf;
-                size_t file_len = 0, rlen = 0;
-                while (0 == file_len || 4096 == rlen)
+                size_t file_len = 0, rlen = 0, bsize = 4096;
+                while (0 == file_len || rlen == bsize)
                 {
                     file_len += rlen;
-                    res_chars.resize(4096 + file_len);
+                    res_chars.resize(1 + bsize + file_len);
                     res_buf = reinterpret_cast<char *>(&res_chars[0]);
-                    rlen = in.read(res_buf + file_len, 4096);
+                    rlen = in.read(res_buf + file_len, bsize);
                 }
                 file_len += rlen;
+                */
+
+
                 res_offsets.push_back(file_len + 1);
                 res_buf[file_len] = '\0';
 
