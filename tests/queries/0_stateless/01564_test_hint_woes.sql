@@ -33,8 +33,14 @@ select nonexistent column; -- { serverError 47 }
 -- query after values on the same line
 insert into values_01564 values (1); select 1;
 
+-- even this works (not sure why we need it lol)
+-- insert into values_01564 values (11) /*{ serverError 469 }*/; select 1;
+
 -- syntax error, where the last token we can parse is long before the semicolon.
 select this is too many words for an alias; -- { clientError 62 }
---OPTIMIZE TABLE values_01564 DEDUPLICATE BY; -- { clientError 62 }
---OPTIMIZE TABLE values_01564 DEDUPLICATE BY a EXCEPT a; -- { clientError 62 }
---select 'a' || distinct one || 'c' from system.one; -- { clientError 62 }
+OPTIMIZE TABLE values_01564 DEDUPLICATE BY; -- { clientError 62 }
+OPTIMIZE TABLE values_01564 DEDUPLICATE BY a EXCEPT a; -- { clientError 62 }
+select 'a' || distinct one || 'c' from system.one; -- { clientError 62 }
+
+-- the return code must be zero after the final query has failed with expected error
+insert into values_01564 values (11); -- { serverError 469 }
