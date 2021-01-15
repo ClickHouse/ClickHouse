@@ -127,9 +127,9 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
 
 void MutationCommands::writeText(WriteBuffer & out) const
 {
-    WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
-    writeEscapedString(commands_buf.str(), out);
+    std::stringstream commands_ss;
+    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
+    writeEscapedString(commands_ss.str(), out);
 }
 
 void MutationCommands::readText(ReadBuffer & in)
