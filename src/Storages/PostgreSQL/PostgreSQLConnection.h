@@ -6,6 +6,7 @@
 
 #if USE_LIBPQXX
 #include <pqxx/pqxx>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -18,15 +19,15 @@ class PostgreSQLConnection
     using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 public:
+    PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+        : connection_str(formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password))) {}
+
     PostgreSQLConnection(const std::string & connection_str_) : connection_str(connection_str_) {}
+
     PostgreSQLConnection(const PostgreSQLConnection &) = delete;
     PostgreSQLConnection operator =(const PostgreSQLConnection &) = delete;
 
-    ConnectionPtr conn()
-    {
-        checkUpdateConnection();
-        return connection;
-    }
+    ConnectionPtr conn();
 
     std::string & conn_str() { return connection_str; }
 
@@ -34,11 +35,10 @@ private:
     ConnectionPtr connection;
     std::string connection_str;
 
-    void checkUpdateConnection()
-    {
-        if (!connection || !connection->is_open())
-            connection = std::make_unique<pqxx::connection>(connection_str);
-    }
+    static std::string formatConnectionString(
+        std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
+
+    void checkUpdateConnection();
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;

@@ -302,14 +302,13 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String connection_str;
-        connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
-                engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-                parsed_host_port.first, std::to_string(parsed_host_port.second),
-                engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-                engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
+        auto connection = std::make_shared<PostgreSQLConnection>(
+            engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
+            parsed_host_port.first,
+            parsed_host_port.second,
+            engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
+            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
-        auto connection = std::make_shared<PostgreSQLConnection>(connection_str);
         return StoragePostgreSQL::create(
             args.table_id, remote_table, connection, args.columns, args.constraints, args.context);
     },

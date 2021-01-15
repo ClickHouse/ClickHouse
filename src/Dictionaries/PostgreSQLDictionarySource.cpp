@@ -172,13 +172,12 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto config_prefix = root_config_prefix + ".postgresql";
-        auto connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
+        auto connection = std::make_shared<PostgreSQLConnection>(
             config.getString(fmt::format("{}.db", config_prefix), ""),
             config.getString(fmt::format("{}.host", config_prefix), ""),
             config.getUInt(fmt::format("{}.port", config_prefix), 0),
             config.getString(fmt::format("{}.user", config_prefix), ""),
             config.getString(fmt::format("{}.password", config_prefix), ""));
-        auto connection = std::make_shared<PostgreSQLConnection>(connection_str);
 
         return std::make_unique<PostgreSQLDictionarySource>(
                 dict_struct, config, config_prefix, connection, sample_block);

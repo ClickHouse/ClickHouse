@@ -203,12 +203,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
         auto parsed_host_port = parseAddress(host_port, 5432);
-        String connection_str;
-        connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
-                postgres_database_name, parsed_host_port.first, std::to_string(parsed_host_port.second),
-                username, password);
+
         /// no connection is made here
-        auto connection = std::make_shared<PostgreSQLConnection>(connection_str);
+        auto connection = std::make_shared<PostgreSQLConnection>(
+            postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);

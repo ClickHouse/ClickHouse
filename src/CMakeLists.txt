@@ -96,6 +96,10 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
 endif()
 
+if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Storages/PostgreSQL)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
