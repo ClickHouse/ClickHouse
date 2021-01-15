@@ -5,12 +5,13 @@
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StoragePostgreSQL.h>
-#include "pqxx/pqxx"
 
 
 namespace DB
 {
+
+class PostgreSQLConnection;
+using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {

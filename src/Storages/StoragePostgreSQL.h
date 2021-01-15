@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include "pqxx/pqxx"
+#include <pqxx/pqxx>
 
 
 namespace DB
@@ -50,35 +50,6 @@ private:
     String remote_table_name;
     Context global_context;
     PostgreSQLConnectionPtr connection;
-};
-
-
-/// Tiny connection class to make it more convenient to use.
-/// Connection is not made until actually used.
-class PostgreSQLConnection
-{
-public:
-    PostgreSQLConnection(const std::string & connection_str_) : connection_str(connection_str_) {}
-    PostgreSQLConnection(const PostgreSQLConnection &) = delete;
-    PostgreSQLConnection operator =(const PostgreSQLConnection &) = delete;
-
-    ConnectionPtr conn()
-    {
-        checkUpdateConnection();
-        return connection;
-    }
-
-    std::string & conn_str() { return connection_str; }
-
-private:
-    ConnectionPtr connection;
-    std::string connection_str;
-
-    void checkUpdateConnection()
-    {
-        if (!connection || !connection->is_open())
-            connection = std::make_unique<pqxx::connection>(connection_str);
-    }
 };
 
 }

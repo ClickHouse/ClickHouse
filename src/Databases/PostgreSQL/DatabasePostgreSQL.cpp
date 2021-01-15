@@ -4,6 +4,8 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
