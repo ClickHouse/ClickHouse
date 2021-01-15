@@ -15,7 +15,7 @@
 #include <Common/escapeForFileName.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Databases/PostgreSQL/FetchFromPostgreSQL.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 
 namespace DB
