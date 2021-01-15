@@ -65,12 +65,12 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
     auto parsed_host_port = parseAddress(args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
-    connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
-            args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-            parsed_host_port.first, std::to_string(parsed_host_port.second),
-            args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-            args[4]->as<ASTLiteral &>().value.safeGet<String>());
-    connection = std::make_shared<PostgreSQLConnection>(connection_str);
+    connection = std::make_shared<PostgreSQLConnection>(
+        args[1]->as<ASTLiteral &>().value.safeGet<String>(),
+        parsed_host_port.first,
+        parsed_host_port.second,
+        args[3]->as<ASTLiteral &>().value.safeGet<String>(),
+        args[4]->as<ASTLiteral &>().value.safeGet<String>());
 }
 
 
