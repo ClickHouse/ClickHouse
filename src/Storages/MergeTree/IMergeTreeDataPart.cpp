@@ -12,10 +12,22 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/DirectorySyncGuard.h>
+#include <Common/CurrentMetrics.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric PartsTemporary;
+    extern const Metric PartsPreCommitted;
+    extern const Metric PartsCommitted;
+    extern const Metric PartsOutdated;
+    extern const Metric PartsDeleting;
+    extern const Metric PartsDeleteOnDestroy;
+}
 
 namespace DB
 {
@@ -137,6 +149,61 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
+static void incrementMetric(IMergeTreeDataPart::State state)
+{
+    switch (state)
+    {
+        case IMergeTreeDataPart::State::Temporary:
+            CurrentMetrics::add(CurrentMetrics::PartsTemporary);
+            return;
+        case IMergeTreeDataPart::State::PreCommitted:
+            CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
+            return;
+        case IMergeTreeDataPart::State::Committed:
+            CurrentMetrics::add(CurrentMetrics::PartsCommitted);
+            return;
+        case IMergeTreeDataPart::State::Outdated:
+            CurrentMetrics::add(CurrentMetrics::PartsOutdated);
+            return;
+        case IMergeTreeDataPart::State::Deleting:
+            CurrentMetrics::add(CurrentMetrics::PartsDeleting);
+            return;
+        case IMergeTreeDataPart::State::DeleteOnDestroy:
+            CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
+            return;
+    }
+
+    __builtin_unreachable();
+}
+
+static void decrementMetric(IMergeTreeDataPart::State state)
+{
+    switch (state)
+    {
+        case IMergeTreeDataPart::State::Temporary:
+            CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
+            return;
+        case IMergeTreeDataPart::State::PreCommitted:
+            CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
+            return;
+        case IMergeTreeDataPart::State::Committed:
+            CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
+            return;
+        case IMergeTreeDataPart::State::Outdated:
+            CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
+            return;
+        case IMergeTreeDataPart::State::Deleting:
+            CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
+            return;
+        case IMergeTreeDataPart::State::DeleteOnDestroy:
+            CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
+            return;
+    }
+
+    __builtin_unreachable();
+}
+
+
 IMergeTreeDataPart::IMergeTreeDataPart(
     MergeTreeData & storage_, const String & name_, const VolumePtr & volume_, const std::optional<String> & relative_path_, Type part_type_)
     : storage(storage_)
@@ -147,6 +214,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
+    incrementMetric(state);
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -164,6 +232,12 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
+    incrementMetric(state);
+}
+
+IMergeTreeDataPart::~IMergeTreeDataPart()
+{
+    decrementMetric(state);
 }
 
 
@@ -191,6 +265,20 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
         return {};
     return it->second;
 }
+
+
+void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
+{
+    decrementMetric(state);
+    state = new_state;
+    incrementMetric(state);
+}
+
+IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
+{
+    return state;
+}
+
 
 DayNum IMergeTreeDataPart::getMinDate() const
 {
@@ -235,8 +323,6 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
 }
-
-IMergeTreeDataPart::~IMergeTreeDataPart() = default;
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
