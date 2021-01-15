@@ -73,8 +73,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-    auto it_alias = data.aliases.find(node.name());
-    if (it_alias != data.aliases.end() && current_alias != node.name())
+    auto it_alias = data.aliases.find(node.name);
+    if (it_alias != data.aliases.end() && current_alias != node.name)
     {
         if (!IdentifierSemantic::canBeAlias(node))
             return;
@@ -89,7 +89,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         String node_alias = ast->tryGetAlias();
 
         if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
-            || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
+            || (node.name == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
         /// Let's replace it with the corresponding tree node.
@@ -97,7 +97,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         {
             /// Avoid infinite recursion here
             auto opt_name = IdentifierSemantic::getColumnName(alias_node);
-            bool is_cycle = opt_name && *opt_name == node.name();
+            bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
             {
@@ -148,9 +148,9 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(IAST * node, Data & data)
+void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
-    if (auto * func_node = node->as<ASTFunction>())
+    if (const auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
         {
@@ -164,27 +164,14 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->name == "lambda")
             first_pos = 1;
 
-        if (func_node->arguments)
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & func_children = func_node->arguments->children;
+            auto & child = func_children[i];
 
-            for (size_t i = first_pos; i < func_children.size(); ++i)
-            {
-                auto & child = func_children[i];
-
-                if (needVisitChild(child))
-                    visit(child, data);
-            }
-        }
-
-        if (func_node->window_partition_by)
-        {
-            visitChildren(func_node->window_partition_by.get(), data);
-        }
-
-        if (func_node->window_order_by)
-        {
-            visitChildren(func_node->window_order_by.get(), data);
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -231,7 +218,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast.get(), data);
+        visitChildren(ast, data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());

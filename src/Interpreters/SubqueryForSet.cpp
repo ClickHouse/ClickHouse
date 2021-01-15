@@ -3,7 +3,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/ExpressionActions.h>
-
+#include <DataStreams/LazyBlockInputStream.h>
 
 namespace DB
 {

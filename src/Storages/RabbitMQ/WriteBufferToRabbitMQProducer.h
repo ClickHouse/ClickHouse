@@ -9,7 +9,7 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Names.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address_,
-            const Context & global_context,
+            Context & global_context,
             const std::pair<String, String> & login_password_,
             const Names & routing_keys_,
             const String & exchange_name_,
@@ -76,20 +76,20 @@ private:
     String channel_id;
 
     /* payloads.queue:
-     *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once
+     *      - payloads are pushed to queue in countRow and poped by another thread in writingFunc, each payload gets into queue only once
      * returned.queue:
      *      - payloads are pushed to queue:
      *           1) inside channel->onError() callback if channel becomes unusable and the record of pending acknowledgements from server
      *              is non-empty.
      *           2) inside removeRecord() if received nack() - negative acknowledgement from the server that message failed to be written
      *              to disk or it was unable to reach the queue.
-     *      - payloads are popped from the queue once republished
+     *      - payloads are poped from the queue once republished
      */
     ConcurrentBoundedQueue<std::pair<UInt64, String>> payloads, returned;
 
     /* Counter of current delivery on a current channel. Delivery tags are scoped per channel. The server attaches a delivery tag for each
      * published message - a serial number of delivery on current channel. Delivery tag is a way of server to notify publisher if it was
-     * able or unable to process delivery, i.e. it sends back a response with a corresponding delivery tag.
+     * able or unable to process delivery, i.e. it sends back a responce with a corresponding delivery tag.
      */
     UInt64 delivery_tag = 0;
 
@@ -100,7 +100,7 @@ private:
      */
     bool wait_all = true;
 
-    /* false: until writeSuffix is called
+    /* false: untill writeSuffix is called
      * true: means payloads.queue will not grow anymore
      */
     std::atomic<UInt64> wait_num = 0;

@@ -24,7 +24,7 @@ ISink::Status ISink::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    current_chunk = input.pull(true);
+    current_chunk = input.pull();
     has_input = true;
     return Status::Ready;
 }

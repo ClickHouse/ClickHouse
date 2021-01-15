@@ -309,39 +309,3 @@ select bitmapMax(bitmapBuild([1,5,7,9]));
 select bitmapMax(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]));
-
-
--- reproduce #18911
-CREATE TABLE bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
-INSERT INTO bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
-INSERT INTO bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
-INSERT INTO bitmap_test SELECT '2019-01-03', 2, number FROM numbers(1,10);
-
-SELECT
-    bitmapCardinality(day_today) AS today_users,
-    bitmapCardinality(day_before) AS before_users,
-    bitmapOrCardinality(day_today, day_before) AS all_users,
-    bitmapAndCardinality(day_today, day_before) AS old_users,
-    bitmapAndnotCardinality(day_today, day_before) AS new_users,
-    bitmapXorCardinality(day_today, day_before) AS diff_users
-FROM
-(
-    SELECT
-        city_id,
-        groupBitmapState(uid) AS day_today
-    FROM bitmap_test
-    WHERE pickup_date = '2019-01-02'
-    GROUP BY
-        rand((rand((rand('') % nan) = NULL) % 7) % rand(NULL)),
-        city_id
-) AS js1
-ALL LEFT JOIN
-(
-    SELECT
-        city_id,
-        groupBitmapState(uid) AS day_before
-    FROM bitmap_test
-    WHERE pickup_date = '2019-01-01'
-    GROUP BY city_id
-) AS js2 USING (city_id) FORMAT Null;
-drop table bitmap_test;

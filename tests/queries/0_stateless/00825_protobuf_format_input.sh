@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 set -eo pipefail
@@ -44,17 +43,7 @@ EOF
 # To generate the file 00825_protobuf_format_input.insh use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
-# shellcheck source=./00825_protobuf_format_input.insh
 source "$CURDIR"/00825_protobuf_format_input.insh
-
-$CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
-
-$CLICKHOUSE_CLIENT --query "TRUNCATE TABLE in_persons_00825;"
-$CLICKHOUSE_CLIENT --query "TRUNCATE TABLE in_squares_00825;"
-
-# shellcheck source=./00825_protobuf_format_input_single.insh
-source "$CURDIR"/00825_protobuf_format_input_single.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
@@ -63,13 +52,6 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
 set +eo pipefail
 echo -ne '\xe0\x80\x3f\x0b' \
     | $CLICKHOUSE_CLIENT --query="INSERT INTO in_persons_00825 FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'" 2>&1 \
-    | grep -qF "Protobuf messages are corrupted" && echo "ok" || echo "fail"
-set -eo pipefail
-
-# Try to input malformed data for ProtobufSingle
-set +eo pipefail
-echo -ne '\xff\xff\x3f\x0b' \
-    | $CLICKHOUSE_CLIENT --query="INSERT INTO in_persons_00825 FORMAT ProtobufSingle SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person'" 2>&1 \
     | grep -qF "Protobuf messages are corrupted" && echo "ok" || echo "fail"
 set -eo pipefail
 
