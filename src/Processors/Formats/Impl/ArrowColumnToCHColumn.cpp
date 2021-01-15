@@ -7,11 +7,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -229,6 +231,30 @@ namespace DB
         }
     }
 
+    static void fillColumnWithArrayData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
+    {
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*internal_column);
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        IColumn & nested_column = column_array.getData();
+
+        column_array.reserve(arrow_column->length());
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        {
+            auto & chunk = static_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+            const auto & chunk_data = chunk.data();
+            for (int i = 0; i < chunk_data->length; ++i)
+            {
+                const auto & array_val = chunk_data->GetValues<arrow::StringArray>(i);
+                for (int64_t array_i = 0; array_i < array_val->length(); ++array_i)
+                {
+                    auto string_val = array_val->GetString(array_i);
+                    nested_column.insertData(string_val.c_str(), string_val.length());
+                }
+                offsets.push_back(offsets.back(), array_val->length());
+            }
+        }
+    }
+
 /// Creates a null bytemap from arrow's null bitmap
     static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & bytemap)
     {
@@ -291,6 +317,21 @@ namespace DB
                 internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(),
                                                                                      decimal_type->scale());
             }
+            else if (arrow_type == arrow::Type::LIST) {
+                const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
+                const auto * nested_list_type = list_type->value_type().get();
+
+                if (nested_list_type->id() == arrow::Type::STRING)
+                {
+                    const auto internal_nested_nested_type = DataTypeFactory::instance().get("String");
+                    internal_nested_type = std::make_shared<DataTypeArray>(internal_nested_nested_type);
+                }
+                else {
+                    throw Exception{"The internal type \"" + nested_list_type->name() + "\" of an array column \"" + header_column.name
+                                    + "\" is not supported for conversion from a " + format_name + " data format",
+                                    ErrorCodes::CANNOT_CONVERT_TYPE};
+                }
+            }
             else if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
                 [=](auto && elem) { return elem.first == arrow_type; });
                 internal_type_it != arrow_type_to_internal_type.end())
@@ -335,7 +376,9 @@ namespace DB
                 case arrow::Type::DECIMAL:
                     //fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column); // Have problems with trash values under NULL, but faster
                     fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
-
+                    break;
+                case arrow::Type::LIST:
+                    fillColumnWithArrayData(arrow_column, read_column);
                     break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \
