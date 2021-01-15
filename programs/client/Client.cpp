@@ -898,6 +898,40 @@ private:
         }
     }
 
+    void reportQueryError() const
+    {
+        // If we probably have progress bar, we should add additional
+        // newline, otherwise exception may display concatenated with
+        // the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
+
+        if (server_exception)
+        {
+            std::string text = server_exception->displayText();
+            auto embedded_stack_trace_pos = text.find("Stack trace");
+            if (std::string::npos != embedded_stack_trace_pos
+                && !config().getBool("stacktrace", false))
+            {
+                text.resize(embedded_stack_trace_pos);
+            }
+            std::cerr << "Received exception from server (version "
+                << server_version << "):" << std::endl << "Code: "
+                << server_exception->code() << ". " << text << std::endl;
+        }
+
+        if (client_exception)
+        {
+            fmt::print(stderr,
+                "Error on processing query '{}':\n{}",
+                full_query, client_exception->message());
+        }
+
+        // A debug check -- at least some exception must be set, if the error
+        // flag is set, and vice versa.
+        assert(have_error == (client_exception || server_exception));
+    }
+
     bool processMultiQuery(const String & all_queries_text)
     {
         // It makes sense not to base any control flow on this, so that it is
@@ -1148,7 +1182,7 @@ private:
 
                 if (!test_hint.clientError() && !test_hint.serverError())
                 {
-                    // No error was expected but it still ocurred. This is the
+                    // No error was expected but it still occurred. This is the
                     // default case w/o test hint, doesn't need additional
                     // diagnostics.
                     error_matches_hint = false;
@@ -1185,32 +1219,7 @@ private:
             // Report error.
             if (have_error)
             {
-                // If we probably have progress bar, we should add additional
-                // newline, otherwise exception may display concatenated with
-                // the progress bar.
-                if (need_render_progress)
-                    std::cerr << '\n';
-
-                if (server_exception)
-                {
-                    std::string text = server_exception->displayText();
-                    auto embedded_stack_trace_pos = text.find("Stack trace");
-                    if (std::string::npos != embedded_stack_trace_pos
-                        && !config().getBool("stacktrace", false))
-                    {
-                        text.resize(embedded_stack_trace_pos);
-                    }
-                    std::cerr << "Received exception from server (version "
-                        << server_version << "):" << std::endl << "Code: "
-                        << server_exception->code() << ". " << text << std::endl;
-                }
-
-                if (client_exception)
-                {
-                    fmt::print(stderr,
-                        "Error on processing query '{}':\n{}",
-                        full_query, client_exception->message());
-                }
+                reportQueryError();
             }
 
             // Stop processing queries if needed.
@@ -1414,6 +1423,11 @@ private:
         }
 
         processParsedSingleQuery();
+
+        if (have_error)
+        {
+            reportQueryError();
+        }
     }
 
     // Parameters are in global variables:
