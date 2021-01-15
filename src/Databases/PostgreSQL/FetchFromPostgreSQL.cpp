@@ -24,7 +24,8 @@ namespace ErrorCodes
 }
 
 
-std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(ConnectionPtr connection, const String & postgres_table_name, bool use_nulls)
+std::shared_ptr<NamesAndTypesList> fetchPostgreSQLTableStructure(
+    std::shared_ptr<pqxx::connection> connection, const String & postgres_table_name, bool use_nulls)
 {
     auto columns = NamesAndTypesList();
 
