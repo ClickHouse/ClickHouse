@@ -873,6 +873,11 @@ bool KeyCondition::tryPrepareSetIndex(
     return true;
 }
 
+
+/** Allow to use two argument function with constant argument to be analyzed as a single argument function.
+  * In other words, it performs "currying" (binding of arguments).
+  * This is needed, for example, to support correct analysis of `toDate(time, 'UTC')`.
+  */
 class FunctionWithOptionalConstArg : public IFunctionBase
 {
 public:
