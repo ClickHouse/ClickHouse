@@ -296,14 +296,18 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${C
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-# On platforms other than macOS, linkers have an option to disable size optimizations. (-O0)
-# By setting the options, builds (and in particular, linking stages) may be marginally faster.
-# Additionally, the linker behavior will fall closer in line with what the user would expect.
-# For releases, we allow the linker optimizer to do whatever it can, so options are left as-is.
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    if (NOT OS_DARWIN)
+# Skip string-merging passes in Linux and FreeBSD linkers to speed up linking. This is incompatible with macOS.
+option(DISABLE_LINKER_OPTIMIZATIONS OFF)
+
+if (DISABLE_LINKER_OPTIMIZATIONS)
+    if (OS_DARWIN)
+        message(WARNING "Cannot disable linker optimizations (not macOS compatible)")
+    else()
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-O0")
+        message(STATUS "Disabled linker optimizations.")
     endif()
+elseif()
+    message(STATUS "Linker optimizations are enabled.")
 endif()
 
 if (COMPILER_CLANG)
@@ -577,37 +581,39 @@ include (cmake/print_include_directories.cmake)
 include (cmake/sanitize_target_link_libraries.cmake)
 
 # Various build speed optimizations.
+
+# Combine files in contrib/ into single translation units to accelerate builds. Requires CMake 3.16 or later.
 option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder. (No-op on CMake < 3.16.0)" ON)
-option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder. (No-op on CMake < 3.19.0)" ON)
+
+# Combine files in src/Functions into single translation units to accelerate builds. Requires CMake 3.16 or later.
+option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder. (No-op on CMake < 3.16.0)" ON)
+
+# Trade off GDB initialization speed for reduced IO while linking, especially when using FASTBUILD_SPLIT_DWARF. Requires Clang.
 option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows GDB symbol loading. Reduces IO." OFF)
+
+# Splits debug information into separate files. On slow disks, this can speed up incremental builds, but on fast disks, they may slow down.
 option(FASTBUILD_SPLIT_DWARF "Build with split DWARF files. Makes debugging symbols non-portable. Reduces IO." OFF)
 
 # Check Unity build compatibility.
 if ((FASTBUILD_CONTRIB_UNITY OR FASTBUILD_FUNCTIONS_UNITY) AND CMAKE_VERSION VERSION_LESS "3.16.0")
-    message("Disabling Unity builds. (Needs CMake >= 3.16.0)")
+    message(WARNING "Disabling Unity builds. (Needs CMake >= 3.16.0)")
     set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
     set(FASTBUILD_FUNCTIONS_UNITY OFF CACHE BOOL INTERNAL FORCE)
 elseif (FASTBUILD_CONTRIB_UNITY AND UNBUNDLED)
-    message("Disabling FASTBUILD_CONTRIB_UNITY. (UNBUNDLED is set, so contrib Unity builds serve no purpose)")
+    message(WARNING "Disabling FASTBUILD_CONTRIB_UNITY. (UNBUNDLED is set, so contrib Unity builds serve no purpose)")
     set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
-endif()
-
-# Check for a Unity build related bug affecting FASTBUILD_FUNCTIONS_UNITY.
-if (FASTBUILD_FUNCTIONS_UNITY AND CMAKE_VERSION VERSION_LESS "3.19.0")
-    message("Disabling FASTBUILD_FUNCTIONS_UNITY. (Needs CMake >= 3.19.0)")
-    set(FASTBUILD_FUNCTIONS_UNITY OFF CACHE BOOL INTERNAL FORCE)
 endif()
 
 # Check no-pubnames compatibility.
 if (FASTBUILD_NO_PUBNAMES AND NOT COMPILER_CLANG)
-    message("Disabling FASTBUILD_NO_PUBNAMES. (Requires Clang)")
+    message(WARNING "Disabling FASTBUILD_NO_PUBNAMES. (Requires Clang)")
     set(FASTBUILD_NO_PUBNAMES OFF CACHE BOOL INTERNAL FORCE)
 endif()
 
 # Check split-dwarf compatibility.
 if (FASTBUILD_SPLIT_DWARF AND COMPILER_MATCHES_CCACHE AND CCACHE_VERSION VERSION_LESS "4.0.0")
     # Until ccache 4.0.0, ccache has very poor support for split-dwarf.
-    message("Disabling FASTBUILD_SPLIT_DWARF. (Requires ccache >= 4.0.0)")
+    message(WARNING "Disabling FASTBUILD_SPLIT_DWARF. (Requires ccache >= 4.0.0)")
     set(FASTBUILD_SPLIT_DWARF OFF CACHE BOOL INTERNAL FORCE)
 endif()
 
