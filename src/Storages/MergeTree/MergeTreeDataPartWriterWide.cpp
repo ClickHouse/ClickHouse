@@ -26,7 +26,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 
     Granules result;
     size_t current_row = 0;
-    /// When our last mark is not finished yet and we have to write in rows into it
+    /// When our last mark is not finished yet and we have to write rows into it
     if (rows_written_in_last_mark > 0)
     {
         size_t rows_left_in_last_mark = index_granularity.getMarkRows(current_mark) - rows_written_in_last_mark;
@@ -438,6 +438,13 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Still have {} rows in bin stream, last mark #{} index granularity size {}, last rows {}", column->size(), mark_num, index_granularity.getMarksCount(), index_granularity_rows);
+        }
+
+        if (index_granularity_rows > data_part->index_granularity_info.fixed_index_granularity)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Mark #{} has {} rows, but max fixed granularity is {}, index granularity size {}",
+                            mark_num, index_granularity_rows, data_part->index_granularity_info.fixed_index_granularity, index_granularity.getMarksCount());
         }
 
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
