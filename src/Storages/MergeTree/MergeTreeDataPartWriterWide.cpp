@@ -183,8 +183,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
                 /// adjust last mark rows and flush to disk.
                 if (rows_written_in_last_mark >= index_granularity_for_block)
                     adjustLastMarkIfNeedAndFlushToDisk(rows_written_in_last_mark);
-                else /// We still can write some rows from new block into previous granule.
-                    adjustLastMarkIfNeedAndFlushToDisk(index_granularity_for_block - rows_written_in_last_mark);
+                else /// We still can write some rows from new block into previous granule. So the granule size will be block granularity size.
+                    adjustLastMarkIfNeedAndFlushToDisk(index_granularity_for_block);
             }
         }
 
@@ -614,6 +614,11 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
 
 void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark)
 {
+    /// We don't want to split already written granules to smaller
+    if (rows_written_in_last_mark > new_rows_in_last_mark)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tryin to make mark #{} smaller ({} rows) then it already has {}",
+                        getCurrentMark(), new_rows_in_last_mark, rows_written_in_last_mark);
+
     /// We can adjust marks only if we computed granularity for blocks.
     /// Otherwise we cannot change granularity because it will differ from
     /// other columns
