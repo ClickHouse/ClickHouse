@@ -303,6 +303,9 @@ void registerStorageMemory(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageMemory::create(args.table_id, args.columns, args.constraints);
+    },
+    {
+        .supports_parallel_insert = true,
     });
 }
 
