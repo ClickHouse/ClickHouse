@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include "readInvalidateQuery.h"
 #endif
 

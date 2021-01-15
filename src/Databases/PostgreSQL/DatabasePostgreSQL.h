@@ -9,13 +9,15 @@
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
 {
 
 class Context;
+class PostgreSQLConnection;
+using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
+
 
 /** Real-time access to table list and table structure from remote PostgreSQL.
  *  All tables are created after pull-out structure from remote PostgreSQL.

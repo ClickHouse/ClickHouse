@@ -33,6 +33,7 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #endif
 
 namespace DB

@@ -10,6 +10,7 @@
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
 #include <Databases/PostgreSQL/FetchFromPostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 
 
 namespace DB
