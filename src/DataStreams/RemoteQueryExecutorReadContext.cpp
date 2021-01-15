@@ -226,8 +226,12 @@ void RemoteQueryExecutorReadContext::cancel()
 RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
     /// socket_fd is closed by Poco::Net::Socket
-    /// timer_fd is closed by TimerDescriptor
-    close(epoll_fd);
+    if (epoll_fd != -1)
+        close(epoll_fd);
+    if (pipe_fd[0] != -1)
+        close(pipe_fd[0]);
+    if (pipe_fd[1] != -1)
+        close(pipe_fd[1]);
 }
 
 }

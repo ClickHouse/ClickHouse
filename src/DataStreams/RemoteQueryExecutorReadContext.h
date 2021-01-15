@@ -43,8 +43,8 @@ public:
     /// We put those descriptors into our own epoll_fd which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     int socket_fd = -1;
-    int epoll_fd;
-    int pipe_fd[2];
+    int epoll_fd = -1;
+    int pipe_fd[2] = { -1, -1 };
 
     explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_);
     ~RemoteQueryExecutorReadContext();
