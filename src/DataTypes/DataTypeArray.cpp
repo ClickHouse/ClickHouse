@@ -187,10 +187,10 @@ namespace
         offsets_data.resize(sizes_data.size());
 
         IColumn::Offset prev_offset = 0;
-        for (size_t i = 0; i < sizes_data.size(); ++i)
+        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
         {
-            offsets_data[i] = prev_offset;
             prev_offset += sizes_data[i];
+            offsets_data[i] = prev_offset;
         }
 
         return column_offsets;
