@@ -6,7 +6,8 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
-
+#include <Storages/StorageFile.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -19,6 +20,25 @@ namespace DB
 
     void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path);
 
+
+    inline bool startsWith2(const std::string & s, const std::string & prefix)
+    {
+        return s.size() >= prefix.size() && 0 == memcmp(s.data(), prefix.data(), prefix.size());
+    }
+
+    void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
+    {
+        if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
+            return;
+
+        /// "/dev/null" is allowed for perf testing
+        if (!startsWith2(table_path, db_dir_path) && table_path != "/dev/null")
+            throw Exception("File is not inside " + db_dir_path, 9);
+
+        Poco::File table_path_poco_file = Poco::File(table_path);
+        if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
+            throw Exception("File must not be a directory", 9);
+    }
 
     /** A function to read file as a string.
   */
