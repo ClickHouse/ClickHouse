@@ -14,10 +14,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace NormalizeQuery
+namespace
 {
 
-struct Impl
+struct NormalizeQueryImpl
 {
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -56,7 +56,7 @@ struct Name
 
 void registerFunctionNormalizeQuery(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionStringToString<NormalizeQuery::Impl, NormalizeQuery::Name>>();
+    factory.registerFunction<FunctionStringToString<NormalizeQueryImpl, Name>>();
 }
 
 }
