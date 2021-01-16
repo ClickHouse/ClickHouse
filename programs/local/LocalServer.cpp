@@ -273,9 +273,10 @@ try
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(*global_context);
 
-    String path = global_context->getPath();
-    if (!path.empty())
+    if (config().has("path"))
     {
+        String path = global_context->getPath();
+
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 
