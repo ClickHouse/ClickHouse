@@ -35,14 +35,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 class ColumnMap::IIndex
 {
 public:
-    virtual ~IIndex() {}
+    virtual ~IIndex() = default;
 
     virtual IColumn::Ptr findAll(const IColumn & needles, size_t rows_count) const = 0;
 
@@ -109,9 +108,7 @@ public:
         , values_column(values_column_)
         , offsets(offsets_)
     {
-        LOG_DEBUG(logger(), "Index({} => {}) 0x{} arena initial size: {}"
-                , keys_column.getName(), values_column.getName(), static_cast<const void*>(this), 0 /*arena.size()*/);
-        rebuild(0, offsets.size());
+        addRowsToIndex(0, offsets.size());
     }
 
     ~ColumnMapIndex() override
@@ -152,7 +149,7 @@ public:
     // updates the index with N last rows of the key/value columns.
     void afterAppend(size_t number_of_items) override
     {
-        rebuild(offsets.size() - number_of_items, offsets.size());
+        addRowsToIndex(offsets.size() - number_of_items, offsets.size());
         items_added += number_of_items;
     }
 
@@ -168,15 +165,15 @@ public:
         Stopwatch stopwatch;
         stopwatch.start();
 
-        rebuild(0, offsets.size());
+        addRowsToIndex(0, offsets.size());
 
         index_rebuilds_microseconds += stopwatch.elapsedMicroseconds();
         ++index_rebuilds;
     }
 
-    void rebuild(size_t start_row, size_t end_row)
+    void addRowsToIndex(size_t start_row, size_t end_row)
     {
-//        LOG_DEBUG(logger(), "Index({} => {}) 0x{} Starting index rebuild: {} to {} on column with {}:{}:{} items"
+//        LOG_DEBUG(logger(), "Index({} => {}) 0x{} Adding items to index: {} to {} on column with {}:{}:{} items"
 //                  "\n\tkeys col: {}, vals col: {}, offsets: {}"
 //                  , keys_column.getName(), values_column.getName(), static_cast<const void*>(this)
 //                  , start_row, end_row
@@ -256,19 +253,19 @@ public:
 
         if (const auto * needles_column = checkAndGetColumn<ColumnConst>(needles))
         {
-            auto findConst = [this](const auto & typed_needles_column, size_t rows_count_) -> auto
+            auto find_const = [this](const auto & typed_needles_column, size_t rows_count_) -> auto
             {
                 return this->findAllTyped<ConstColumnValueExtractor>(typed_needles_column, rows_count_);
             };
-            return findDispatch(findConst, needles_column->getDataColumn(), rows_count);
+            return findDispatch(find_const, needles_column->getDataColumn(), rows_count);
         }
         else
         {
-            auto findVector = [this](const auto & typed_needles_column, size_t rows_count_) -> auto
+            auto find_vector = [this](const auto & typed_needles_column, size_t rows_count_) -> auto
             {
                 return this->findAllTyped<VectorColumnValueExtractor>(typed_needles_column, rows_count_);
             };
-            return findDispatch(findVector, needles, rows_count);
+            return findDispatch(find_vector, needles, rows_count);
         }
     }
 
@@ -446,8 +443,7 @@ ColumnMap::ColumnMap(const ColumnMap & other)
       key_index(nullptr)
 {}
 
-ColumnMap::~ColumnMap()
-{}
+ColumnMap::~ColumnMap() = default;
 
 MutableColumnPtr ColumnMap::cloneEmpty() const
 {
@@ -688,20 +684,7 @@ ColumnPtr ColumnMap::findAll(const IColumn & keys, size_t rows_count) const
         }
     }
 
-//    LOG_DEBUG(&logger, "({} => {}) 0x{} executing findAll on {} keys"
-//            , getNestedData().getColumn(0).getName(), getNestedData().getColumn(1).getName(), static_cast<const void*>(this)
-//            , keys.getName());
-//    Stopwatch stopwatch;
-//    stopwatch.start();
-
-    const auto result = key_index.load()->findAll(keys, rows_count);
-
-//    const auto elapsed = stopwatch.elapsedNanoseconds();
-//    LOG_DEBUG(&logger, "({} => {}) 0x{} result is {} {}, it took {} ns"
-//            , getNestedData().getColumn(0).getName(), getNestedData().getColumn(1).getName(), static_cast<const void*>(this)
-//            , result->size(), result->getName(), elapsed);
-
-    return result;
+    return key_index.load()->findAll(keys, rows_count);
 }
 
 }
