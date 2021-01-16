@@ -76,7 +76,7 @@ function fuzz
     if [[ -n "$NEW_TESTS" ]]
     then
         NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
-    done
+    fi
 
     ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
