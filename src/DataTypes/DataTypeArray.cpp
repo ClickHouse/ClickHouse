@@ -161,9 +161,14 @@ namespace
         auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
 
         sizes_data.resize(offsets_data.size());
-        sizes_data[0] = offsets_data[0];
-        for (size_t i = 1; i < offsets_data.size(); ++i)
-            sizes_data[i] = offsets_data[i] - offsets_data[i - 1];
+
+        IColumn::Offset prev_offset = 0;
+        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+        {
+            auto current_offset = offsets_data[i];
+            sizes_data[i] = current_offset - prev_offset;
+            prev_offset =  current_offset;
+        }
 
         return column_sizes;
     }
@@ -180,9 +185,13 @@ namespace
         auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
 
         offsets_data.resize(sizes_data.size());
-        offsets_data[0] = sizes_data[0];
+
+        IColumn::Offset prev_offset = 0;
         for (size_t i = 0; i < sizes_data.size(); ++i)
-            offsets_data[i] = offsets_data[i - 1] + sizes_data[i];
+        {
+            offsets_data[i] = prev_offset;
+            prev_offset += sizes_data[i];
+        }
 
         return column_offsets;
     }
