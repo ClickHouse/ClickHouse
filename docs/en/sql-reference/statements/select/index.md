@@ -268,7 +268,11 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ## SETTINGS in SELECT Query {#settings-in-select}
 
-There are multiple ways to make settings, see [here](../../../operations/settings/index.md). One of them is to specify necessary settings right in the SELECT query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
+You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
+
+To specify several settings, use several `SETTINGS` clauses. 
+
+Other ways to make settings, see [here](../../../operations/settings/index.md). 
 
 **Example**
 

@@ -23,6 +23,7 @@ SELECT [DISTINCT] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
@@ -161,4 +162,19 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Подробнее смотрите в разделе «Настройки». Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию.
 
-{## [Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
+## SETTINGS в запросе SELECT {#settings-in-select}
+
+Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT`, в секции `SETTINGS`. Значение настройки действует только в рамках данного запроса, а после его выполнения сбрасывается до предыдущего значения или значения по умолчанию. 
+
+Чтобы задать значения нескольких настроек, используйте несколько отдельных секций `SETTINGS`. 
+
+Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
+
+**Пример**
+
+``` sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1 SETTINGS cast_keep_nullable=1;
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)
+<!--hide-->
