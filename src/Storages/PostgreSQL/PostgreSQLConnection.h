@@ -5,7 +5,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <pqxx/pqxx>
+#include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
 
 
