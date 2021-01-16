@@ -234,7 +234,7 @@ static void checkAccessRightsForSelect(
             if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
                 return;
         }
-        throw Exception(context.getUserName() + " : Not enough privileges. "
+        throw Exception(context.getUserName() + ": Not enough privileges. "
                         "To execute this query it's necessary to have grant SELECT for at least one column on " + table_id.getFullTableName(),
                         ErrorCodes::ACCESS_DENIED);
     }
