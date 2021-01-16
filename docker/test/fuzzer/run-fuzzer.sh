@@ -1,4 +1,6 @@
 #!/bin/bash
+# shellcheck disable=SC2086
+
 set -eux
 set -o pipefail
 trap "exit" INT TERM
