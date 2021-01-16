@@ -32,9 +32,6 @@ function clone
 
 function download
 {
-#    wget -O- -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/performance/performance.tgz" \
-#        | tar --strip-components=1 -zxv
-
     wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-11_debug_none_bundled_unsplitted_disable_False_binary/clickhouse"
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
@@ -72,6 +69,14 @@ function watchdog
 
 function fuzz
 {
+    # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
+    cd ch
+    NEW_TESTS=$(git diff --name-only master | grep -P 'tests/queries/0_stateless/*.sql' | sed -r -e 's!^!ch/!' | sort -R)
+    cd ..
+    if [[ -n "$NEW_TESTS" ]]; do
+        NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
+    done
+
     ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
     kill -0 $server_pid
@@ -84,7 +89,7 @@ function fuzz
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
+    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
@@ -106,7 +111,7 @@ function fuzz
 
 case "$stage" in
 "")
-    ;&
+    ;&  # Did you know? This is "fallthrough" in bash. https://stackoverflow.com/questions/12010686/case-statement-fallthrough
 "clone")
     time clone
     if [ -v FUZZ_LOCAL_SCRIPT ]
