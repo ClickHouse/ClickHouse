@@ -31,16 +31,16 @@ def start_cluster():
         cluster.shutdown()
 
 
-def create_tables():
+def create_tables(remote_cluster_name):
     for _, instance in list(cluster.instances.items()):
-        instance.query('CREATE TABLE data (key Int, value String) Engine=Memory()')
-        instance.query("""
+        instance.query('CREATE TABLE data (key Int, value String) Engine=MergeTree() ORDER BY key')
+        instance.query(f"""
         CREATE TABLE dist AS data
         Engine=Distributed(
-            insert_distributed_async_send_cluster,
+            {remote_cluster_name},
             currentDatabase(),
             data,
-            rand()
+            key
         )
         """)
         # only via SYSTEM FLUSH DISTRIBUTED
@@ -69,7 +69,7 @@ def get_node(batch):
 
 def bootstrap(batch):
     drop_tables()
-    create_tables()
+    create_tables('insert_distributed_async_send_cluster_two_replicas')
     return insert_data(get_node(batch))
 
 def get_path_to_dist_batch(file='2.bin'):
@@ -163,3 +163,51 @@ def test_insert_distributed_async_send_corrupted_small(batch):
     node.exec_in_container(['bash', '-c', f'mv {path} /tmp/bin && head -c {from_original_size} /tmp/bin > {path} && head -c {zeros_size} /dev/zero >> {path}'])
 
     check_dist_after_corruption(False, batch)
+
+@batch_params
+def test_insert_distributed_async_send_different_header(batch):
+    """
+    Check INSERT Into Distributed() with different headers in *.bin
+    If batching will not distinguish headers underlying table will never receive the data.
+    """
+
+    drop_tables()
+    create_tables('insert_distributed_async_send_cluster_two_shards')
+
+    node = get_node(batch)
+    node.query("INSERT INTO dist VALUES (0, '')", settings={
+        'prefer_localhost_replica': 0,
+    })
+    node.query('ALTER TABLE dist MODIFY COLUMN value Nullable(String)')
+    node.query("INSERT INTO dist VALUES (2, '')", settings={
+        'prefer_localhost_replica': 0,
+    })
+
+    if batch:
+        # first batch with Nullable(String)
+        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
+            'mutations_sync': 1,
+        })
+        # but only one batch will be sent
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: String to Nullable\(String\)\. Stack trace:"):
+            node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 1
+        # second batch with String
+        n1.query('ALTER TABLE data MODIFY COLUMN value String', settings={
+            'mutations_sync': 1,
+        })
+        node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 2
+    else:
+        # first send with String
+        with pytest.raises(QueryRuntimeException, match=r"DB::Exception: Cannot convert: Nullable\(String\) to String\. Stack trace:"):
+            node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 1
+        # second send with Nullable(String)
+        n1.query('ALTER TABLE data MODIFY COLUMN value Nullable(String)', settings={
+            'mutations_sync': 1,
+        })
+        node.query('SYSTEM FLUSH DISTRIBUTED dist')
+        assert int(n1.query('SELECT count() FROM data')) == 2
+
+    assert int(n2.query('SELECT count() FROM data')) == 0
