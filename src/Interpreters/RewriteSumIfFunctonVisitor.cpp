@@ -13,6 +13,18 @@ void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
         visit(*func, ast, data);
 }
 
+static ASTPtr createNewFunctionWithOneArgument(const String & func_name, const ASTPtr & argument)
+{
+    auto new_func = std::make_shared<ASTFunction>();
+    new_func->name = func_name;
+
+    auto new_arguments = std::make_shared<ASTExpressionList>();
+    new_arguments->children.push_back(argument);
+    new_func->arguments = new_arguments;
+    new_func->children.push_back(new_arguments);
+    return new_func;
+}
+
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
     if (!func.arguments || func.arguments->children.empty())
@@ -29,15 +41,9 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     {
         /// sumIf(1, cond) -> countIf(cond)
         const auto * literal = func_arguments[0]->as<ASTLiteral>();
-        if (func_arguments.size() == 2 && literal && literal->value.get<Int64>() == 1)
+        if (func_arguments.size() == 2 && literal && literal->value.get<UInt64>() == 1)
         {
-            auto new_func = std::make_shared<ASTFunction>();
-            new_func->name = "countIf";
-
-            auto new_arguments = std::make_shared<ASTExpressionList>();
-            new_arguments->children.push_back(func_arguments[1]);
-            new_func->arguments = new_arguments;
-            new_func->children.push_back(new_arguments);
+            auto new_func = createNewFunctionWithOneArgument("countIf", func_arguments[1]);
             new_func->setAlias(func.alias);
             ast = std::move(new_func);
             return;
@@ -58,18 +64,12 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
         if (first_literal && second_literal)
         {
-            auto first_value = first_literal->value.get<Int64>();
-            auto second_value = second_literal->value.get<Int64>();
+            auto first_value = first_literal->value.get<UInt64>();
+            auto second_value = second_literal->value.get<UInt64>();
             /// sum(if(cond, 1, 0)) -> countIf(cond)
             if (first_value == 1 && second_value == 0)
             {
-                auto new_func = std::make_shared<ASTFunction>();
-                new_func->name = "countIf";
-
-                auto new_arguments = std::make_shared<ASTExpressionList>();
-                new_arguments->children.push_back(if_arguments[0]);
-                new_func->arguments = new_arguments;
-                new_func->children.push_back(new_arguments);
+                auto new_func = createNewFunctionWithOneArgument("countIf", if_arguments[0]);
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;
@@ -77,21 +77,8 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             /// sum(if(cond, 0, 1)) -> countIf(not(cond))
             if (first_value == 0 && second_value == 1)
             {
-                auto new_func = std::make_shared<ASTFunction>();
-                new_func->name = "countIf";
-
-                auto not_func = std::make_shared<ASTFunction>();
-                not_func->name = "not";
-
-                auto not_func_arguments = std::make_shared<ASTExpressionList>();
-                not_func->arguments = not_func_arguments;
-                not_func->children.push_back(not_func_arguments);
-                not_func_arguments->children.push_back(if_arguments[0]);
-
-                auto new_arguments = std::make_shared<ASTExpressionList>();
-                new_arguments->children.push_back(std::move(not_func));
-                new_func->arguments = new_arguments;
-                new_func->children.push_back(new_arguments);
+                auto not_func = createNewFunctionWithOneArgument("not", if_arguments[0]);
+                auto new_func = createNewFunctionWithOneArgument("countIf", not_func);
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;
