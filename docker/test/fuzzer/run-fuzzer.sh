@@ -73,7 +73,8 @@ function fuzz
     cd ch
     NEW_TESTS=$(git diff --name-only master | grep -P 'tests/queries/0_stateless/*.sql' | sed -r -e 's!^!ch/!' | sort -R)
     cd ..
-    if [[ -n "$NEW_TESTS" ]]; do
+    if [[ -n "$NEW_TESTS" ]]
+    then
         NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
     done
 
