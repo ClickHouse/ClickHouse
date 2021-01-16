@@ -73,7 +73,7 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeString>();
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
-    while (--dimensions)
+    while (dimensions--)
         res = std::make_shared<DataTypeArray>(res);
 
     return res;
