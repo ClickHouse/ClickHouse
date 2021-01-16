@@ -119,7 +119,7 @@ namespace DB
     };
 
 
-    void registerFunctionFromFile(FunctionFactory & factory)
+    void registerFunctionFile(FunctionFactory & factory)
     {
         factory.registerFunction<FunctionFile>();
     }

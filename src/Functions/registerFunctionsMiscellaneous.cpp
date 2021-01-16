@@ -67,6 +67,7 @@ void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
+void registerFunctionFile(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -134,6 +135,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionErrorCodeToName(factory);
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
+    registerFunctionFile(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
