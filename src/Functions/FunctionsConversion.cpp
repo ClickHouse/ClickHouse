@@ -6,7 +6,6 @@ namespace DB
 {
 
 void registerFunctionFixedString(FunctionFactory & factory);
-void registerFunctionFromFile(FunctionFactory & factory);
 
 void registerFunctionsConversion(FunctionFactory & factory)
 {
@@ -37,7 +36,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToString>();
 
     registerFunctionFixedString(factory);
-    registerFunctionFromFile(factory);
     
     factory.registerFunction<FunctionToUnixTimestamp>();
 
