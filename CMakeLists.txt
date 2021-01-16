@@ -375,9 +375,7 @@ else ()
     option(WERROR "Enable -Werror compiler option" ON)
 endif ()
 
-if (WERROR)
-    add_warning(error)
-endif ()
+option(WERROR "Enable -Werror compiler option" OFF)
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)

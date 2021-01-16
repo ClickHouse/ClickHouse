@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/File.h>
+#include <Poco/Path.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -15,15 +17,19 @@ namespace DB
         extern const int NOT_IMPLEMENTED;
     }
 
+    void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path);
 
-/** A function to read file as a string.
+
+    /** A function to read file as a string.
   */
     class FunctionFile : public IFunction
     {
     public:
         static constexpr auto name = "file";
-        static FunctionPtr create(const Context &) { return std::make_shared<FunctionFile>(); }
-        static FunctionPtr create() { return std::make_shared<FunctionFile>(); }
+        static FunctionPtr create(const Context &context) { return std::make_shared<FunctionFile>(context); }
+        //static FunctionPtr create() { return std::make_shared<FunctionFile>(); }
+        explicit FunctionFile(const Context &context_) : context(context_) {};
+        //FunctionFile() {};
 
         String getName() const override { return name; }
 
@@ -52,13 +58,21 @@ namespace DB
                 auto & res_chars = res->getChars();
                 auto & res_offsets = res->getOffsets();
 
-                //TBD: Here, need to restrict the access permission for only user_path...
+                //File_path access permission check.
+                const String user_files_path = context.getUserFilesPath();
+                String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+                Poco::Path poco_filepath = Poco::Path(filename);
+                if (poco_filepath.isRelative())
+                    poco_filepath = Poco::Path(user_files_absolute_path, poco_filepath);
+                const String file_absolute_path = poco_filepath.absolute().toString();
+                checkCreationIsAllowed(context, user_files_absolute_path, file_absolute_path);
 
+                //Start read from file.
                 ReadBufferFromFile in(filename);
 
                 // Method-1: Read the whole file at once
                 size_t file_len = Poco::File(filename).getSize();
-                res_chars.resize(file_len + 1);
+                res_chars.resize_exact(file_len + 1);
                 char *res_buf = reinterpret_cast<char *>(&res_chars[0]);
                 in.readStrict(res_buf, file_len);
 
@@ -88,6 +102,9 @@ namespace DB
                 throw Exception("Bad Function arguments for file() " + std::string(filename), ErrorCodes::ILLEGAL_COLUMN);
             }
         }
+
+    private:
+        const Context & context;
     };
 
     void registerFunctionFromFile(FunctionFactory & factory)
