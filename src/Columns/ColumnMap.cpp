@@ -113,7 +113,7 @@ public:
 
     ~ColumnMapIndex() override
     {
-        if (hash_tables.size() > 0 || find_queries > 0)
+        if (hash_tables.empty() || find_queries > 0)
         {
             LOG_DEBUG(logger(), "Index({} => {}) 0x{} Destroying index, final stats"
                     "\n\thashtables                  : {}"
@@ -221,7 +221,7 @@ public:
     {
         const NeedleColumnType & needle_col;
 
-        VectorColumnValueExtractor(const NeedleColumnType & needle_col_)
+        explicit VectorColumnValueExtractor(const NeedleColumnType & needle_col_)
             : needle_col(needle_col_)
         {}
 
@@ -235,7 +235,7 @@ public:
     struct ConstColumnValueExtractor
     {
         const KeyStorageType value;
-        ConstColumnValueExtractor(const NeedleColumnType & needle_col)
+        explicit ConstColumnValueExtractor(const NeedleColumnType & needle_col)
             : value(static_cast<KeyStorageType>(needle_col.getElement(0)))
         {}
 
@@ -439,7 +439,8 @@ ColumnMap::ColumnMap(MutableColumnPtr && nested_)
 }
 
 ColumnMap::ColumnMap(const ColumnMap & other)
-    : nested(other.nested),
+    : Base(other),
+      nested(other.nested),
       key_index(nullptr)
 {}
 
