@@ -393,7 +393,7 @@ static void appendBlock(const Block & from, Block & to)
     MutableColumnPtr last_col;
     try
     {
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
@@ -785,7 +785,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;

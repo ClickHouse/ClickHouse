@@ -767,7 +767,7 @@ protected:
 
     static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
     {
-        return {part->state, part->info};
+        return {part->getState(), part->info};
     }
 
     using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
@@ -813,7 +813,7 @@ protected:
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
-        return [state] (const DataPartPtr & part) { part->state = state; };
+        return [state] (const DataPartPtr & part) { part->setState(state); };
     }
 
     void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
