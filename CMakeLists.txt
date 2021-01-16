@@ -582,11 +582,11 @@ include (cmake/sanitize_target_link_libraries.cmake)
 
 # Various build speed optimizations.
 
-# Combine files in contrib/ into single translation units to accelerate builds. Requires CMake 3.16 or later.
-option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder. (No-op on CMake < 3.16.0)" ON)
+# Combine files in contrib/ into single translation units to accelerate builds. No-op when UNBUNDLED set or ENABLE_LIBRARIES unset. Requires CMake 3.16 or later.
+option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder." ON)
 
 # Combine files in src/Functions into single translation units to accelerate builds. Requires CMake 3.16 or later.
-option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder. (No-op on CMake < 3.16.0)" ON)
+option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder." ON)
 
 # Trade off GDB initialization speed for reduced IO while linking, especially when using FASTBUILD_SPLIT_DWARF. Requires Clang.
 option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows GDB symbol loading. Reduces IO." OFF)
@@ -595,12 +595,15 @@ option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows
 option(FASTBUILD_SPLIT_DWARF "Build with split DWARF files. Makes debugging symbols non-portable. Reduces IO." OFF)
 
 # Check Unity build compatibility.
-if ((FASTBUILD_CONTRIB_UNITY OR FASTBUILD_FUNCTIONS_UNITY) AND CMAKE_VERSION VERSION_LESS "3.16.0")
-    message(WARNING "Disabling Unity builds. (Needs CMake >= 3.16.0)")
+if ((FASTBUILD_CONTRIB_UNITY OR FASTBUILD_FUNCTIONS_UNITY) AND CMAKE_VERSION VERSION_LESS "3.16.0") # Check CMake version
+    message(WARNING "Disabling Unity builds. (Requires CMake >= 3.16.0)")
     set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
     set(FASTBUILD_FUNCTIONS_UNITY OFF CACHE BOOL INTERNAL FORCE)
-elseif (FASTBUILD_CONTRIB_UNITY AND UNBUNDLED)
+elseif (FASTBUILD_CONTRIB_UNITY AND UNBUNDLED) # Check if UNBUNDLED is set
     message(WARNING "Disabling FASTBUILD_CONTRIB_UNITY. (UNBUNDLED is set, so contrib Unity builds serve no purpose)")
+    set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
+elseif (FASTBUILD_CONTRIB_UNITY AND NOT ENABLE_LIBRARIES) # Check if ENABLE_LIBRARIES is unset
+    message(WARNING "Disabling FASTBUILD_CONTRIB_UNITY. (ENABLE_LIBRARIES is unset, so contrib Unity builds serve no purpose)")
     set(FASTBUILD_CONTRIB_UNITY OFF CACHE BOOL INTERNAL FORCE)
 endif()
 
