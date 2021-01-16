@@ -6,8 +6,8 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
-#include <Storages/StorageFile.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace DB
 {
@@ -15,29 +15,14 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
+        extern const int TOO_LARGE_STRING_SIZE;
         extern const int NOT_IMPLEMENTED;
-    }
-
-    void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path);
-
-
-    inline bool startsWith2(const std::string & s, const std::string & prefix)
-    {
-        return s.size() >= prefix.size() && 0 == memcmp(s.data(), prefix.data(), prefix.size());
-    }
-
-    void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
-    {
-        if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
-            return;
-
-        /// "/dev/null" is allowed for perf testing
-        if (!startsWith2(table_path, db_dir_path) && table_path != "/dev/null")
-            throw Exception("File is not inside " + db_dir_path, 9);
-
-        Poco::File table_path_poco_file = Poco::File(table_path);
-        if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
-            throw Exception("File must not be a directory", 9);
+        extern const int FILE_DOESNT_EXIST;
+        extern const int CANNOT_OPEN_FILE;
+        extern const int CANNOT_CLOSE_FILE;
+        extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+        extern const int INCORRECT_FILE_NAME;
+        extern const int DATABASE_ACCESS_DENIED;
     }
 
     /** A function to read file as a string.
@@ -47,9 +32,7 @@ namespace DB
     public:
         static constexpr auto name = "file";
         static FunctionPtr create(const Context &context) { return std::make_shared<FunctionFile>(context); }
-        //static FunctionPtr create() { return std::make_shared<FunctionFile>(); }
         explicit FunctionFile(const Context &context_) : context(context_) {};
-        //FunctionFile() {};
 
         String getName() const override { return name; }
 
@@ -78,39 +61,35 @@ namespace DB
                 auto & res_chars = res->getChars();
                 auto & res_offsets = res->getOffsets();
 
-                //File_path access permission check.
+                //File access permission check
                 const String user_files_path = context.getUserFilesPath();
                 String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
                 Poco::Path poco_filepath = Poco::Path(filename);
                 if (poco_filepath.isRelative())
                     poco_filepath = Poco::Path(user_files_absolute_path, poco_filepath);
                 const String file_absolute_path = poco_filepath.absolute().toString();
-                checkCreationIsAllowed(context, user_files_absolute_path, file_absolute_path);
+                checkReadIsAllowed(user_files_absolute_path, file_absolute_path);
 
-                //Start read from file.
-                ReadBufferFromFile in(filename);
-
-                // Method-1: Read the whole file at once
-                size_t file_len = Poco::File(filename).getSize();
+                //Method-1: Read file with ReadBuffer
+                ReadBufferFromFile in(file_absolute_path);
+                ssize_t file_len = Poco::File(file_absolute_path).getSize();
                 res_chars.resize_exact(file_len + 1);
                 char *res_buf = reinterpret_cast<char *>(&res_chars[0]);
                 in.readStrict(res_buf, file_len);
 
                 /*
-                //Method-2: Read with loop
-
-                char *res_buf;
-                size_t file_len = 0, rlen = 0, bsize = 4096;
-                while (0 == file_len || rlen == bsize)
-                {
-                    file_len += rlen;
-                    res_chars.resize(1 + bsize + file_len);
-                    res_buf = reinterpret_cast<char *>(&res_chars[0]);
-                    rlen = in.read(res_buf + file_len, bsize);
-                }
-                file_len += rlen;
+                //Method-2: Read directly into the String buf, which avoiding one copy from PageCache to ReadBuffer
+                int fd;
+                if (-1 == (fd = open(file_absolute_path.c_str(), O_RDONLY)))
+                     throwFromErrnoWithPath("Cannot open file " + std::string(file_absolute_path), std::string(file_absolute_path),
+                                           errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+                if (file_len != pread(fd, res_buf, file_len, 0))
+                    throwFromErrnoWithPath("Read failed with " + std::string(file_absolute_path), std::string(file_absolute_path),
+                                           ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                if (0 != close(fd))
+                    throw Exception("Cannot close file " + std::string(file_absolute_path), ErrorCodes::CANNOT_CLOSE_FILE);
+                fd = -1;
                 */
-
 
                 res_offsets.push_back(file_len + 1);
                 res_buf[file_len] = '\0';
@@ -124,8 +103,21 @@ namespace DB
         }
 
     private:
+        void checkReadIsAllowed(const std::string & user_files_path, const std::string & file_path) const
+        {
+            // If run in Local mode, no need for path checking.
+            if (context.getApplicationType() != Context::ApplicationType::LOCAL)
+                if (file_path.find(user_files_path) != 0)
+                    throw Exception("File is not inside " + user_files_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+
+            Poco::File path_poco_file = Poco::File(file_path);
+            if (path_poco_file.exists() && path_poco_file.isDirectory())
+                throw Exception("File can't be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+        }
+
         const Context & context;
     };
+
 
     void registerFunctionFromFile(FunctionFactory & factory)
     {
