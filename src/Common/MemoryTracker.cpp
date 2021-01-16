@@ -316,6 +316,12 @@ void MemoryTracker::set(Int64 to)
 }
 
 
+void MemoryTracker::setHardLimit(Int64 value)
+{
+    hard_limit.store(value, std::memory_order_relaxed);
+}
+
+
 void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.

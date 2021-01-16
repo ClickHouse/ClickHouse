@@ -96,6 +96,8 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
+    void setHardLimit(Int64 value);
+
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
