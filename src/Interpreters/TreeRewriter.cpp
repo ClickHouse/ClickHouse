@@ -472,11 +472,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 required.insert(column_name_type.name);
     }
 
-    /// You need to read at least one column to find the number of rows.
-    if (is_select && required.empty())
+    /// Figure out if we're able to use the trivial count optimization.
+    has_explicit_columns = !required.empty();
+    if (is_select && !has_explicit_columns)
     {
         optimize_trivial_count = true;
 
+        /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
