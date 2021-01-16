@@ -310,6 +310,11 @@ if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
 endif()
 
+if (USE_LIBPQXX)
+    add_subdirectory (libpq-cmake)
+    add_subdirectory (libpqxx-cmake)
+endif()
+
 if (USE_NURAFT)
   add_subdirectory(nuraft-cmake)
 endif()
