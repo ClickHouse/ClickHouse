@@ -26,7 +26,7 @@ void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
     int alter_version, std::lock_guard<std::mutex> & /*state_lock*/)
 {
     /// Data alter (mutation) always added before. See ReplicatedMergeTreeQueue::pullLogsToQueue.
-    /// So mutation already added to this sequence or doesn't exist.
+    /// So mutation alredy added to this sequence or doesn't exist.
     if (!queue_state.count(alter_version))
         queue_state.emplace(alter_version, AlterState{.metadata_finished=false, .data_finished=true});
     else

@@ -6,7 +6,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
-#include <IO/Operators.h>
 
 
 namespace DB

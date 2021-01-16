@@ -7,9 +7,8 @@
 #include <Common/quoteString.h>
 
 #include <IO/createReadBufferFromFileBase.h>
-#include <common/logger_useful.h>
+#include <IO/createWriteBufferFromFileBase.h>
 #include <unistd.h>
-
 
 namespace DB
 {
@@ -25,8 +24,6 @@ namespace ErrorCodes
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
-    extern const int CANNOT_UNLINK;
-    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -233,31 +230,15 @@ DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
+    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
 }
 
-void DiskLocal::removeFile(const String & path)
+void DiskLocal::remove(const String & path)
 {
-    auto fs_path = disk_path + path;
-    if (0 != unlink(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
-}
-
-void DiskLocal::removeFileIfExists(const String & path)
-{
-    auto fs_path = disk_path + path;
-    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
-}
-
-void DiskLocal::removeDirectory(const String & path)
-{
-    auto fs_path = disk_path + path;
-    if (0 != rmdir(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
+    Poco::File(disk_path + path).remove(false);
 }
 
 void DiskLocal::removeRecursive(const String & path)

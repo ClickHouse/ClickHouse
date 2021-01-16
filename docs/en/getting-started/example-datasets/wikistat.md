@@ -1,5 +1,5 @@
 ---
-toc_priority: 17
+toc_priority: 18
 toc_title: WikiStat
 ---
 

@@ -53,7 +53,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
 }
 
 /// Helper functions for formatted input.
@@ -300,7 +299,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 else
                 {
                     if constexpr (throw_exception)
-                        throw ParsingException("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
@@ -370,14 +369,7 @@ end:
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    if constexpr (IsDecimalNumber<T>)
-    {
-        readIntText<check_overflow>(x.value, buf);
-    }
-    else
-    {
-        readIntTextImpl<T, void, check_overflow>(x, buf);
-    }
+    readIntTextImpl<T, void, check_overflow>(x, buf);
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
@@ -386,6 +378,11 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
 
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
+void readIntText(Decimal<T> & x, ReadBuffer & buf)
+{
+    readIntText<check_overflow>(x.value, buf);
+}
 
 /** More efficient variant (about 1.5 times on real dataset).
   * Differs in following:
@@ -478,9 +475,6 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 // Buffer pointer is left at EOL, don't forget to advance it.
 void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
-/// Only 0x20 as whitespace character
-void readStringUntilWhitespace(String & s, ReadBuffer & buf);
-
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -532,11 +526,8 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
-template <typename Vector>
-void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
-
 /// This could be used as template parameter for functions above, if you want to just skip data.
-struct NullOutput
+struct NullSink
 {
     void append(const char *, size_t) {}
     void push_back(char) {}
@@ -561,7 +552,7 @@ template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
     /// Optimistic path, when whole value is in buffer.
-    if (!buf.eof() && buf.position() + 10 <= buf.buffer().end())
+    if (buf.position() + 10 <= buf.buffer().end())
     {
         UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
         buf.position() += 5;
@@ -628,11 +619,9 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
     return readDateTextImpl<bool>(date, buf);
 }
 
-template <typename ReturnType = void>
-inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
-{
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+{
     char s[36];
     size_t size = buf.read(s, 32);
 
@@ -645,47 +634,19 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             if (size != 36)
             {
                 s[size] = 0;
-
-                if constexpr (throw_exception)
-                {
-                    throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-                }
-                else
-                {
-                    return ReturnType(false);
-                }
+                throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
             }
 
             parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
         }
         else
             parseUUIDWithoutSeparator(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
-
-        return ReturnType(true);
     }
     else
     {
         s[size] = 0;
-
-        if constexpr (throw_exception)
-        {
-            throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
-        }
-        else
-        {
-            return ReturnType(false);
-        }
+        throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
-}
-
-inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<void>(uuid, buf);
-}
-
-inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
-{
-    return readUUIDTextImpl<bool>(uuid, buf);
 }
 
 
@@ -709,7 +670,7 @@ UInt128 stringToUUID(const String & str);
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
+/** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void>
@@ -718,17 +679,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-
-    /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto DateTimeStringInputSize = 19;
-    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
-
-    if (optimistic_path_for_date_time_input)
+    if (s + 19 <= buf.buffer().end())
     {
         if (s[4] < '0' || s[4] > '9')
         {
@@ -745,7 +701,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            buf.position() += DateTimeStringInputSize;
+            buf.position() += 19;
             return ReturnType(true);
         }
         else
@@ -824,7 +780,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     if (19 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
@@ -1016,7 +972,7 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;
@@ -1039,7 +995,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw Exception("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
         }
 
         first = false;
@@ -1241,24 +1197,5 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
-
-
-struct PcgDeserializer
-{
-    static void deserializePcg32(const pcg32_fast & rng, ReadBuffer & buf)
-    {
-        decltype(rng.state_) multiplier, increment, state;
-        readText(multiplier, buf);
-        assertChar(' ', buf);
-        readText(increment, buf);
-        assertChar(' ', buf);
-        readText(state, buf);
-
-        if (multiplier != rng.multiplier())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
-        if (increment != rng.increment())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
-    }
-};
 
 }

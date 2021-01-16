@@ -29,7 +29,7 @@ constexpr size_t min(size_t x, size_t y)
 }
 
 /// @note There's no auto scale to larger big integer, only for integral ones.
-/// It's cause of (U)Int64 backward compatibility and very big performance penalties.
+/// It's cause of (U)Int64 backward compatibilty and very big performance penalties.
 constexpr size_t nextSize(size_t size)
 {
     if (size < 8)
