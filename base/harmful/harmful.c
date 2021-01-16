@@ -118,7 +118,7 @@ TRAP(logout)
 TRAP(logwtmp)
 TRAP(lrand48)
 TRAP(mallinfo)
-TRAP(mallopt)
+//TRAP(mallopt) // Used by tsan
 TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
@@ -193,7 +193,7 @@ TRAP(dbm_nextkey)
 TRAP(dbm_open)
 TRAP(dbm_store)
 TRAP(dirname)
-TRAP(dlerror)
+//TRAP(dlerror) // Used by tsan
 TRAP(ftw)
 TRAP(getc_unlocked)
 //TRAP(getenv) // Ok at program startup
