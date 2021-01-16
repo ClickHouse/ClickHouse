@@ -352,6 +352,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// Forward user settings
                 job.local_context = std::make_unique<Context>(context);
 
+                /// InterpreterInsertQuery is modifying the AST, but the same AST is also used to insert to remote shards.
                 auto copy_query_ast = query_ast->clone();
 
                 InterpreterInsertQuery interp(copy_query_ast, *job.local_context);
