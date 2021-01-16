@@ -181,7 +181,7 @@ void MemoryTracker::alloc(Int64 size)
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock;
+        BlockerInThread untrack_lock(VariableContext::Global);
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
@@ -195,7 +195,7 @@ void MemoryTracker::alloc(Int64 size)
 
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
-        BlockerInThread untrack_lock;
+        BlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
     }
@@ -203,14 +203,14 @@ void MemoryTracker::alloc(Int64 size)
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock;
+        BlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock;
+        BlockerInThread untrack_lock(VariableContext::Global);
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
@@ -256,7 +256,7 @@ void MemoryTracker::free(Int64 size)
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock;
+        BlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
     }
 

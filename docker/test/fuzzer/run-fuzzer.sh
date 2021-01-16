@@ -72,7 +72,7 @@ function watchdog
 
 function fuzz
 {
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -10000 > server.log &
+    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -85,7 +85,7 @@ function fuzz
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
     ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        > >(tail -n 10000 > fuzzer.log) \
+        > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
 
