@@ -167,6 +167,7 @@ public:
 
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
     /// any dimension number array into text format, because it incloses in '[]' and for postgres it must be '{}'.
+    /// Check if array[...] syntax from PostgreSQL will be applicable.
     void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
