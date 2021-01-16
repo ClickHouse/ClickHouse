@@ -22,7 +22,8 @@ namespace ErrorCodes
 }
 
 /// Namespace for some CustomWeek symbols. Shares commonalities with DateTimeTransforms.h's namespace. Helps avoid ODR violations.
-namespace CustomWeek {
+namespace CustomWeek
+{
     static inline UInt32 dateIsNotSupported(const char * name)
     {
         throw Exception("Illegal type Date of argument for function " + std::string(name), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
