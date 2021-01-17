@@ -357,6 +357,8 @@ public:
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
+    bool supportsSubcolumns() const override { return true; }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;

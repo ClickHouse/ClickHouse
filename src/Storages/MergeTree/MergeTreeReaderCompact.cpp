@@ -53,14 +53,14 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         auto name_and_type = columns.begin();
         for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
         {
-            const auto & [name, type] = getColumnFromPart(*name_and_type);
-            auto position = data_part->getColumnPosition(name);
+            auto column_from_part = getColumnFromPart(*name_and_type);
 
-            if (!position && typeid_cast<const DataTypeArray *>(type.get()))
+            auto position = data_part->getColumnPosition(column_from_part.name);
+            if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
             {
                 /// If array of Nested column is missing in part,
                 /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(name);
+                position = findColumnForOffsets(column_from_part.name);
                 read_only_offsets[i] = (position != std::nullopt);
             }
 
@@ -133,10 +133,8 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         if (!column_positions[i])
             continue;
 
-        bool append = res_columns[i] != nullptr;
-        if (!append)
+        if (res_columns[i] == nullptr)
             res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
-        mutable_columns[i] = res_columns[i]->assumeMutable();
     }
 
     while (read_rows < max_rows_to_read)
@@ -146,20 +144,18 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
+            auto column_from_part = getColumnFromPart(*name_and_type);
             if (!res_columns[pos])
                 continue;
 
-            auto [name, type] = getColumnFromPart(*name_and_type);
-            auto & column = mutable_columns[pos];
-
             try
             {
+                auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(name, *column, *type, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(column_from_part, column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
-
                 if (read_rows_in_column < rows_to_read)
                     throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
                         ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -170,7 +166,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                     storage.reportBrokenPart(data_part->name);
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + name + ")");
+                e.addMessage("(while reading column " + column_from_part.name + ")");
                 throw;
             }
             catch (...)
@@ -184,24 +180,17 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         read_rows += rows_to_read;
     }
 
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto & column = mutable_columns[i];
-        if (column && !column->empty())
-            res_columns[i] = std::move(column);
-        else
-            res_columns[i] = nullptr;
-    }
-
     next_mark = from_mark;
 
     return read_rows;
 }
 
 void MergeTreeReaderCompact::readData(
-    const String & name, IColumn & column, const IDataType & type,
+    const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
+    const auto & [name, type] = name_and_type;
+
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
@@ -213,14 +202,25 @@ void MergeTreeReaderCompact::readData(
         return data_buffer;
     };
 
+    IDataType::DeserializeBinaryBulkStatePtr state;
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-    deserialize_settings.position_independent_encoding = true;
 
-    IDataType::DeserializeBinaryBulkStatePtr state;
-    type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-    type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+    if (name_and_type.isSubcolumn())
+    {
+        auto type_in_storage = name_and_type.getTypeInStorage();
+        ColumnPtr temp_column = type_in_storage->createColumn();
+
+        type_in_storage->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type_in_storage->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state);
+        column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+    }
+    else
+    {
+        type->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+    }
 
     /// The buffer is left in inconsistent state after reading single offsets
     if (only_offsets)
