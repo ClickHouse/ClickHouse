@@ -352,6 +352,9 @@ SHOW [CURRENT] QUOTA
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
+!!! info "Note"
+    `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
+
 ### Syntax {#show-cluster-syntax}
 
 ``` sql
@@ -359,10 +362,62 @@ SHOW (CLUSTER '<name>') | (CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]);
 ```
 ### Examples 
 
+Query:
+
 ``` sql
 SHOW CLUSTERS;
-SHOW CLUSTERS LIKE 'xxx';
-SHOW CLUSTER 'xxx';
+```
+
+Result:
+
+```text
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+Result:
+
+```text
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+Query:
+
+``` sql
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+Result:
+
+```text
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+estimated_recovery_time: 0
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
