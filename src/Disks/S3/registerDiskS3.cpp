@@ -37,7 +37,7 @@ namespace
             throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
     }
 
-    void checkRemoveAccess(IDisk & disk) { disk.remove("test_acl"); }
+    void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
 
     std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
         const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)

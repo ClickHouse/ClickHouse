@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Databases/DatabasesCommon.h>
-#include <Core/BackgroundSchedulePool.h>
-
 #include <Databases/DatabaseOrdinary.h>
+
 
 namespace DB
 {
