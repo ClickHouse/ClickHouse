@@ -352,7 +352,10 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// Forward user settings
                 job.local_context = std::make_unique<Context>(context);
 
-                InterpreterInsertQuery interp(query_ast, *job.local_context);
+                /// InterpreterInsertQuery is modifying the AST, but the same AST is also used to insert to remote shards.
+                auto copy_query_ast = query_ast->clone();
+
+                InterpreterInsertQuery interp(copy_query_ast, *job.local_context);
                 auto block_io = interp.execute();
 
                 job.stream = block_io.out;
@@ -653,9 +656,13 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().write(header_buf);
             context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+            writeVarUInt(block.rows(), header_buf);
+            writeVarUInt(block.bytes(), header_buf);
+            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
+            /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
             const StringRef header = header_buf.stringRef();

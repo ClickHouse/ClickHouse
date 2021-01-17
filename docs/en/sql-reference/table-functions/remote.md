@@ -10,13 +10,14 @@ Allows you to access remote servers without creating a `Distributed` table.
 Signatures:
 
 ``` sql
-remote('addresses_expr', db, table[, 'user'[, 'password']])
-remote('addresses_expr', db.table[, 'user'[, 'password']])
-remoteSecure('addresses_expr', db, table[, 'user'[, 'password']])
-remoteSecure('addresses_expr', db.table[, 'user'[, 'password']])
+remote('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
+remote('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
+remoteSecure('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
+remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 ```
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. The port is the TCP port on the remote server. If the port is omitted, it uses `tcp_port` from the server’s config file (by default, 9000).
+`sharding_key` - We can specify sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`.
 
 !!! important "Important"
     The port is required for an IPv6 address.
