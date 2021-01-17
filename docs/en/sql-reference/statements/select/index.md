@@ -270,14 +270,12 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
 
-To specify several settings, use several `SETTINGS` clauses. 
-
-Other ways to make settings, see [here](../../../operations/settings/index.md). 
+Other ways to make settings see [here](../../../operations/settings/index.md). 
 
 **Example**
 
 ``` sql
-SELECT * FROM some_table SETTINGS optimize_read_in_order=1 SETTINGS cast_keep_nullable=1;
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)

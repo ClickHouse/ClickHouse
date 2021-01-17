@@ -166,14 +166,12 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
 
-Чтобы задать значения нескольких настроек, используйте несколько отдельных секций `SETTINGS`. 
-
 Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
 
 **Пример**
 
 ``` sql
-SELECT * FROM some_table SETTINGS optimize_read_in_order=1 SETTINGS cast_keep_nullable=1;
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/)
