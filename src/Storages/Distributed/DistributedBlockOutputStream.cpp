@@ -655,6 +655,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
+            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
+            ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
