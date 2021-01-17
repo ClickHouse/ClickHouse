@@ -614,7 +614,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data
-    std::string first_file_tmp_path{};
+    std::string first_file_tmp_path;
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     const auto disk = reservation->getDisk();
