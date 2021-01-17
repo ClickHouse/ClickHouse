@@ -41,8 +41,8 @@ namespace DB
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (!isStringOrFixedString(arguments[0].type))
-                throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
+            if (!isString(arguments[0].type))
+                throw Exception(getName() + " is only implemented for types String", ErrorCodes::NOT_IMPLEMENTED);
             return std::make_shared<DataTypeString>();
         }
 
@@ -78,7 +78,7 @@ namespace DB
                 in.readStrict(res_buf, file_len);
 
                 /*
-                //Method-2: Read directly into the String buf, which avoiding one copy from PageCache to ReadBuffer
+                //Method-2(Just for reference): Read directly into the String buf, which avoiding one copy from PageCache to ReadBuffer
                 int fd;
                 if (-1 == (fd = open(file_absolute_path.c_str(), O_RDONLY)))
                      throwFromErrnoWithPath("Cannot open file " + std::string(file_absolute_path), std::string(file_absolute_path),
