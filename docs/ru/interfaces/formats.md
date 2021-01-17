@@ -24,6 +24,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
+| [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
@@ -488,6 +489,33 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
         "rows_before_limit_at_least": 3
 }
+```
+
+## JSONAsString {#jsonasstring}
+
+В этом формате один объект JSON интерпретируется как одно значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки.
+
+В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#default) или [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), либо отсутствовать. Как только вы соберете весь объект JSON в строку, для его обработки вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1};
+SELECT * FROM json_as_string;
+```
+
+Результат:
+
+``` text
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
