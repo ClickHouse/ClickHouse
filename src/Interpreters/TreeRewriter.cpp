@@ -782,10 +782,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     normalize(query, result.aliases, settings);
 
-    // After normalization, we temporarily detach WITH statement to avoid further analysis
-    ASTPtr with = select_query->with();
-    select_query->setExpression(ASTSelectQuery::Expression::WITH, {});
-
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
@@ -821,8 +817,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
-    // Reattach the WITH statement
-    select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with));
     return std::make_shared<const TreeRewriterResult>(result);
 }
 
