@@ -526,7 +526,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        NamesAndTypesList columns_from_storage;
+        if (storage->supportsSubcolumns())
+            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
+        else
+            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -590,11 +595,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 required.insert(column_name_type.name);
     }
 
-    /// You need to read at least one column to find the number of rows.
-    if (is_select && required.empty())
+    /// Figure out if we're able to use the trivial count optimization.
+    has_explicit_columns = !required.empty();
+    if (is_select && !has_explicit_columns)
     {
         optimize_trivial_count = true;
 
+        /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
