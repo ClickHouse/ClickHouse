@@ -17,6 +17,7 @@
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace CurrentMetrics
@@ -321,7 +322,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
+    {
+        column_name_to_position.emplace(column.name, pos);
+        for (const auto & subcolumn : column.type->getSubcolumnNames())
+            column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
+        ++pos;
+    }
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -454,7 +460,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageM
         if (alter_conversions.isColumnRenamed(column.name))
             column_name = alter_conversions.getColumnOldName(column.name);
 
-        if (!hasColumnFiles(column_name, *column_type))
+        if (!hasColumnFiles(column))
             continue;
 
         const auto size = getColumnSize(column_name, *column_type).data_compressed;
@@ -640,7 +646,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    String candidate_path = getFullRelativePath() + IDataType::getFileNameForStream(part_column.name, substream_path) + ".bin";
+                    String candidate_path = getFullRelativePath() + IDataType::getFileNameForStream(part_column, substream_path) + ".bin";
 
                     /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
                     if (volume->getDisk()->exists(candidate_path) && volume->getDisk()->getFileSize(candidate_path) != 0)

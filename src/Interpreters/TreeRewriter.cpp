@@ -526,7 +526,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        NamesAndTypesList columns_from_storage;
+        if (storage->supportsSubcolumns())
+            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
+        else
+            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else

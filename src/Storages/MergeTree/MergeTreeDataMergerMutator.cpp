@@ -1493,7 +1493,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         column.type->enumerateStreams(
             [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+                ++stream_counts[IDataType::getFileNameForStream(column, substream_path)];
             },
             {});
     }
@@ -1511,7 +1511,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                String stream_name = IDataType::getFileNameForStream(command.column_name, substream_path);
+                String stream_name = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
@@ -1532,7 +1532,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
 
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
             {
-                String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
+                String stream_from = IDataType::getFileNameForStream({command.column_name, command.data_type}, substream_path);
 
                 String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
 
@@ -1565,7 +1565,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     {
         IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
         {
-            String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
+            String stream_name = IDataType::getFileNameForStream({entry.name, entry.type}, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
