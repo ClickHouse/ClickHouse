@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 REPLICAS=5
@@ -36,6 +37,7 @@ function alter_thread
 function kill_mutation_thread
 {
     while true; do
+        # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done = 0 and table like 'concurrent_kill_%' and database='${CLICKHOUSE_DATABASE}' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
             $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id'" 1> /dev/null
@@ -58,7 +60,22 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_kill_$i"
 done
 
-$CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_kill_$i MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2"
+# with timeout alter query can be not finished yet, so to execute new alter
+# we use retries
+counter=0
+while true; do
+    if $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_kill_1 MODIFY COLUMN value Int64 SETTINGS replication_alter_partitions_sync=2" 2> /dev/null ; then
+        break
+    fi
+
+    if [ "$counter" -gt 120 ]
+    then
+        break
+    fi
+    sleep 0.5
+    counter=$(($counter + 1))
+done
+
 
 metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/test_01593_concurrent_kill/replicas/$i/' and name = 'metadata_version'")
 for i in $(seq $REPLICAS); do

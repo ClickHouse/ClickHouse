@@ -465,7 +465,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    res.flattenNested();
+    if (context.getSettingsRef().flatten_nested)
+        res.flattenNested();
 
     if (res.getAllPhysical().empty())
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
@@ -641,7 +642,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.as_table_function)
         return;
 
-    if (create.storage || create.is_view || create.is_materialized_view || create.is_live_view || create.is_dictionary)
+    if (create.storage || create.is_dictionary || create.isView())
     {
         if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
             throw Exception(
@@ -672,7 +673,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
-        if (as_create.is_view)
+        if (as_create.is_ordinary_view)
             throw Exception(
                 "Cannot CREATE a table AS " + qualified_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
@@ -826,7 +827,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
 
-    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
+    if (create.select && create.isView())
     {
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
@@ -1009,7 +1010,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.database, create.table, create.uuid};
@@ -1155,7 +1156,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.database, create.table);
     }
-    else if (create.is_view || create.is_materialized_view || create.is_live_view)
+    else if (create.isView())
     {
         assert(!create.temporary);
         if (create.replace_view)

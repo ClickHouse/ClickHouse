@@ -20,6 +20,7 @@ public:
         UNKNOWN,
         SHUTDOWN,
         KILL,
+        SUSPEND,
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
@@ -65,9 +66,10 @@ public:
     String table;
     String replica;
     String replica_zk_path;
-    bool is_drop_whole_replica;
+    bool is_drop_whole_replica{};
     String storage_policy;
     String volume;
+    UInt64 seconds{};
 
     String getID(char) const override { return "SYSTEM query"; }
 
