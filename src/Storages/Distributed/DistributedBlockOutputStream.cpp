@@ -145,6 +145,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
     if (random_shard_insert)
     {
         writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
+        ++inserted_blocks;
     }
     else
     {
