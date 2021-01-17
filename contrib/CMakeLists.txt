@@ -120,7 +120,6 @@ if (USE_INTERNAL_LDAP_LIBRARY)
 endif ()
 
 # Should go before:
-# - mariadb-connector-c
 # - aws-s3-cmake
 # - sentry-native
 add_subdirectory (curl-cmake)
@@ -142,6 +141,7 @@ function(mysql_support)
         set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
         set(WITH_EXTERNAL_ZLIB ON)
     endif()
+    set(WITH_CURL OFF)
     add_subdirectory (mariadb-connector-c)
 endfunction()
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
