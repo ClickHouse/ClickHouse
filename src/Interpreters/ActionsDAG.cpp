@@ -1066,7 +1066,10 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin
         }
     }
 
-    return split(split_nodes);
+    auto res = split(split_nodes);
+    /// Do not remove array joined columns if they are not used.
+    res.first->settings.project_input = false;
+    return res;
 }
 
 }
