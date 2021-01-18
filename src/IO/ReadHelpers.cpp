@@ -253,9 +253,6 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
-
-        if (buf.hasPendingData())
-            return;
     }
 }
 
