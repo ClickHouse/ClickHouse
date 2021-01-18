@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
+    extern const int CANNOT_DELETE_DIRECTORY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -618,7 +619,7 @@ void DiskS3::clearDirectory(const String & path)
 {
     for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
         if (isFile(it->path()))
-            remove(it->path());
+            removeFile(it->path());
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -646,7 +647,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         const String tmp_path = to_path + ".old";
         moveFile(to_path, tmp_path);
         moveFile(from_path, to_path);
-        remove(tmp_path);
+        removeFile(tmp_path);
     }
     else
         moveFile(from_path, to_path);
@@ -663,7 +664,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
+std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     bool exist = exists(path);
     if (exist && readMeta(path).read_only)
@@ -686,7 +687,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     {
         /// If metadata file exists - remove and create new.
         if (exist)
-            remove(path);
+            removeFile(path);
 
         auto metadata = createMeta(path);
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
@@ -716,10 +717,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
     Poco::File file(metadata_path + path);
 
     if (!file.isFile())
-    {
-        file.remove();
-        return;
-    }
+        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
 
     try
     {
@@ -794,11 +792,26 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
     }
 }
 
-void DiskS3::remove(const String & path)
+void DiskS3::removeFile(const String & path)
 {
     AwsS3KeyKeeper keys;
     removeMeta(path, keys);
     removeAws(keys);
+}
+
+void DiskS3::removeFileIfExists(const String & path)
+{
+    AwsS3KeyKeeper keys;
+    if (Poco::File(metadata_path + path).exists())
+    {
+        removeMeta(path, keys);
+        removeAws(keys);
+    }
+}
+
+void DiskS3::removeDirectory(const String & path)
+{
+    Poco::File(metadata_path + path).remove();
 }
 
 void DiskS3::removeRecursive(const String & path)

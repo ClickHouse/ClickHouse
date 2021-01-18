@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -64,6 +65,8 @@
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/getHashOfLoadedBinary.h>
+#include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -103,6 +106,12 @@ namespace CurrentMetrics
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
+
+    /// Do not fork separate process from watchdog if we attached to terminal.
+    /// Otherwise it breaks gdb usage.
+    if (argc > 0 && !isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
+        app.shouldSetupWatchdog(argv[0]);
+
     try
     {
         return app.run(argc, argv);
@@ -177,6 +186,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -366,6 +376,7 @@ void checkForUsersNotInMainConfig(
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Poco::Logger * log = &logger();
+
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
@@ -428,7 +439,44 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
-    if (executable_path.empty())
+
+    if (!executable_path.empty())
+    {
+        /// Integrity check based on checksum of the executable code.
+        /// Note: it is not intended to protect from malicious party,
+        /// because the reference checksum can be easily modified as well.
+        /// And we don't involve asymmetric encryption with PKI yet.
+        /// It's only intended to protect from faulty hardware.
+        /// Note: it is only based on machine code.
+        /// But there are other sections of the binary (e.g. exception handling tables)
+        /// that are interpreted (not executed) but can alter the behaviour of the program as well.
+
+        String calculated_binary_hash = getHashOfLoadedBinaryHex();
+
+        if (stored_binary_hash.empty())
+        {
+            LOG_WARNING(log, "Calculated checksum of the binary: {}."
+                " There is no information about the reference checksum.", calculated_binary_hash);
+        }
+        else if (calculated_binary_hash == stored_binary_hash)
+        {
+            LOG_INFO(log, "Calculated checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
+                " to the reference checksum stored in the binary ({1})."
+                " It may indicate one of the following:"
+                " - the file {2} was changed just after startup;"
+                " - the file {2} is damaged on disk due to faulty hardware;"
+                " - the loaded executable is damaged in memory due to faulty hardware;"
+                " - the file {2} was intentionally modified;"
+                " - logical error in code."
+                , calculated_binary_hash, stored_binary_hash, executable_path);
+        }
+    }
+    else
         executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
 
     /// After full config loaded

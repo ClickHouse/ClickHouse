@@ -19,6 +19,7 @@
 00800_low_cardinality_distributed_insert
 00821_distributed_storage_with_join_on
 00829_bitmap_function
+00829_bitmap64_function
 00850_global_join_dups
 00858_issue_4756
 00877_memory_limit_for_new_delete
@@ -146,6 +147,7 @@
 01461_query_start_time_microseconds
 01455_shard_leaf_max_rows_bytes_to_read
 01505_distributed_local_type_conversion_enum
+01505_log_distributed_deadlock
 00604_show_create_database
 00609_mv_index_in_in
 00510_materizlized_view_and_deduplication_zookeeper
@@ -178,3 +180,9 @@
 01558_ttest_scipy
 01561_mann_whitney_scipy
 01601_custom_tld
+01602_insert_into_table_function_cluster
+01636_nullable_fuzz2
+01639_distributed_sync_insert_zero_rows
+01644_distributed_async_insert_fsync_smoke
+01552_impl_aggfunc_cloneresize
+01651_bugs_from_15889

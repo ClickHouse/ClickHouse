@@ -14,7 +14,7 @@ bool ParserOptimizeQueryColumnsSpecification::parseImpl(Pos & pos, ASTPtr & node
 {
     // Do not allow APPLY and REPLACE transformers.
     // Since we use Columns Transformers only to get list of columns,
-    // ad we can't actuall modify content of the columns for deduplication.
+    // we can't actually modify content of the columns for deduplication.
     const auto allowed_transformers = ParserColumnsTransformers::ColumnTransformers{ParserColumnsTransformers::ColumnTransformer::EXCEPT};
 
     return ParserColumnsMatcher(allowed_transformers).parse(pos, node, expected)
