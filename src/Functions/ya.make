@@ -204,6 +204,7 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -220,6 +221,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
