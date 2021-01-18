@@ -110,6 +110,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
             {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
             {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
         };
+
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
