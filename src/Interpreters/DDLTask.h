@@ -8,6 +8,11 @@ namespace Poco
 class Logger;
 }
 
+namespace zkutil
+{
+class ZooKeeper;
+}
+
 namespace DB
 {
 

@@ -287,7 +287,7 @@
     </div>
     <div id="run_div">
         <button class="shadow" id="run">Run</button>
-        <span class="hint">&nbsp;(Ctrl+Enter)</span>
+        <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
         <span id="hourglass">⧗</span>
         <span id="check-mark">✔</span>
         <span id="stats"></span>
@@ -352,17 +352,20 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    previous_query = query;
+                    var state = {
+                        query: query,
+                        status: this.status,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                    };
                     var title = "ClickHouse Query: " + query;
-                    history.pushState(
-                        {
-                            query: query,
-                            status: this.status,
-                            response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
-                        },
-                        title,
-                        window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query));
+                    var url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
+                    if (previous_query == '') {
+                        history.replaceState(state, title, url);
+                    } else {
+                        history.pushState(state, title, url);
+                    }
                     document.title = title;
+                    previous_query = query;
                 }
             } else {
                 //console.log(this);
@@ -421,10 +424,10 @@
         post();
     }
 
-    document.onkeypress = function(event)
+    document.onkeydown = function(event)
     {
         /// Firefox has code 13 for Enter and Chromium has code 10.
-        if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
+        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             post();
         }
     }
@@ -531,6 +534,23 @@
     var theme = window.localStorage.getItem('theme');
     if (theme) {
         setColorTheme(theme);
+    } else {
+        /// Obtain system-level user preference
+        var media_query_list = window.matchMedia('prefers-color-scheme: dark')
+
+        if (media_query_list.matches) {
+            /// Set without saving to localstorage
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+
+        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
+        media_query_list.addEventListener('change', function(e) {
+            if (e.matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        });
     }
 
     document.getElementById('toggle-light').onclick = function()

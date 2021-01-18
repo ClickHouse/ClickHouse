@@ -28,7 +28,7 @@ CREATE DICTIONARY database_for_dict.dict1
   Tax Float64
 )
 PRIMARY KEY CountryID
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'date_table' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'date_table' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
@@ -62,7 +62,7 @@ CREATE DICTIONARY database_for_dict.dict2
   Tax Float64
 )
 PRIMARY KEY CountryID
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'datetime_table' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'datetime_table' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
@@ -93,7 +93,7 @@ CREATE DICTIONARY database_for_dict.dictionary_with_hierarchy
     RegionName String
 )
 PRIMARY KEY RegionID
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
 LAYOUT(HASHED())
 LIFETIME(MIN 1 MAX 1000);
 

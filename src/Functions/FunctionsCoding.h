@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/hex.h>
+#include <Common/IPv6ToBinary.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -1617,20 +1618,28 @@ public:
 class FunctionIPv6CIDRToRange : public IFunction
 {
 private:
-    /// TODO Inefficient.
+
+#if defined(__SSE2__)
+
+    #include <emmintrin.h>
+
+    static inline void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
+    {
+        __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep)));
+        __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_lower), lower);
+
+        __m128i inv_mask = _mm_xor_si128(mask, _mm_cmpeq_epi32(_mm_setzero_si128(), _mm_setzero_si128()));
+        __m128i upper = _mm_or_si128(lower, inv_mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_upper), upper);
+    }
+
+#else
+
     /// NOTE IPv6 is stored in memory in big endian format that makes some difficulties.
     static void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
-        UInt8 mask[16]{};
-
-        UInt8 bytes_to_keep = bits_to_keep / 8;
-        UInt8 bits_to_keep_in_last_byte = bits_to_keep % 8;
-
-        for (size_t i = 0; i < bits_to_keep / 8; ++i)
-            mask[i] = 0xFFU;
-
-        if (bits_to_keep_in_last_byte)
-            mask[bytes_to_keep] = 0xFFU << (8 - bits_to_keep_in_last_byte);
+        const auto * mask = getCIDRMaskIPv6(bits_to_keep);
 
         for (size_t i = 0; i < 16; ++i)
         {
@@ -1638,6 +1647,8 @@ private:
             dst_upper[i] = dst_lower[i] | ~mask[i];
         }
     }
+
+#endif
 
 public:
     static constexpr auto name = "IPv6CIDRToRange";
@@ -1831,5 +1842,98 @@ public:
     }
 };
 
+class FunctionIsIPv4String : public FunctionIPv4StringToNum
+{
+public:
+    static constexpr auto name = "isIPv4String";
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIsIPv4String>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnPtr & column = arguments[0].column;
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        {
+            auto col_res = ColumnUInt8::create();
+
+            ColumnUInt8::Container & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars & vec_src = col->getChars();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+            UInt32 result = 0;
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(&result));
+                prev_offset = offsets_src[i];
+            }
+            return col_res;
+        }
+        else
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionIsIPv6String : public FunctionIPv6StringToNum
+{
+public:
+    static constexpr auto name = "isIPv6String";
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIsIPv6String>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnPtr & column = arguments[0].column;
+
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        {
+            auto col_res = ColumnUInt8::create();
+
+            ColumnUInt8::Container & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars & vec_src = col->getChars();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+            char v[IPV6_BINARY_LENGTH];
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = DB::parseIPv6(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(v));
+                prev_offset = offsets_src[i];
+            }
+            return col_res;
+        }
+        else
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
 
 }

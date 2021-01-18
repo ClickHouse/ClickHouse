@@ -93,6 +93,8 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
+When dictionary with FILE source is created via DDL command (`CREATE DICTIONARY ...`), source of the dictionary have to be located in `user_files` directory, to prevent DB users accessing arbitrary file on clickhouse node.
+
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
@@ -108,16 +110,12 @@ Example of settings:
 </source>
 ```
 
-or
-
-``` sql
-SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
-```
-
 Setting fields:
 
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on clickhouse node.
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -168,6 +166,8 @@ Setting fields:
     -   `header` – Single HTTP header entry.
     -   `name` – Identifiant name used for the header send on the request.
     -   `value` – Value set for a specific identifiant name.
+
+When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries checked with the `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server. 
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -583,7 +583,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(MONGO(
+SOURCE(MONGODB(
     host 'localhost'
     port 27017
     user ''

@@ -3,9 +3,6 @@ from rbac.helper.common import *
 import rbac.helper.errors as errors
 
 @TestSuite
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_DropView_Access("1.0"),
-)
 def privilege_granted_directly_or_via_role(self, node=None):
     """Check that user is only able to execute DETACH VIEW when they have required privilege, either directly or via role.
     """
@@ -47,7 +44,9 @@ def privilege_check(grant_target_name, user_name, node=None):
                     exitcode=exitcode, message=message)
 
         finally:
-            with Finally("I drop the view"):
+            with Finally("I reattach the view as a table", flags=TE):
+                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+            with And("I drop the view", flags=TE):
                 node.query(f"DROP VIEW IF EXISTS {view_name}")
 
     with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
@@ -64,7 +63,9 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"DETACH VIEW {view_name}", settings = [("user", user_name)])
 
         finally:
-            with Finally("I drop the view"):
+            with Finally("I reattach the view as a table", flags=TE):
+                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+            with And("I drop the table", flags=TE):
                 node.query(f"DROP VIEW IF EXISTS {view_name}")
 
     with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
@@ -85,7 +86,9 @@ def privilege_check(grant_target_name, user_name, node=None):
                     exitcode=exitcode, message=message)
 
         finally:
-            with Finally("I drop the view"):
+            with Finally("I reattach the view as a table", flags=TE):
+                node.query(f"ATTACH VIEW IF NOT EXISTS {view_name} AS SELECT 1")
+            with And("I drop the view", flags=TE):
                 node.query(f"DROP VIEW IF EXISTS {view_name}")
 
 @TestFeature

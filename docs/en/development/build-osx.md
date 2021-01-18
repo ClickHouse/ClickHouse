@@ -35,10 +35,12 @@ $ cd ClickHouse
 
 ## Build ClickHouse {#build-clickhouse}
 
+> Please note: ClickHouse doesn't support build with native Apple Clang compiler, we need use clang from LLVM.
+
 ``` bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang`
+$ cmake ..-DCMAKE_C_COMPILER=`brew --prefix llvm`/bin/clang -DCMAKE_CXX_COMPILER=`brew --prefix llvm`/bin/clang++ -DCMAKE_PREFIX_PATH=`brew --prefix llvm`
 $ ninja
 $ cd ..
 ```

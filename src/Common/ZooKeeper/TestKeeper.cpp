@@ -31,7 +31,6 @@ using Undo = std::function<void()>;
 
 struct TestKeeperRequest : virtual Request
 {
-    virtual bool isMutable() const { return false; }
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
@@ -85,7 +84,6 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
     explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
-    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -112,7 +110,6 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
     explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
-    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -224,6 +221,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 path_created += seq_num_str.str();
             }
 
+            /// Increment sequential number even if node is not sequential
             ++it->second.seq_num;
 
             response.path_created = path_created;
@@ -235,7 +233,6 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 auto & undo_parent = container.at(parent_path);
                 --undo_parent.stat.cversion;
                 --undo_parent.stat.numChildren;
-
                 --undo_parent.seq_num;
             };
 

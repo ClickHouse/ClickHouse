@@ -83,7 +83,8 @@
 #if (__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 101400)
 #define _TTHREAD_EMULATE_TIMESPEC_GET_
 #endif
-
+#elif defined(__FreeBSD__)
+#define HAVE_PTHREAD_SETNAME_FREEBSD 1
 #else
 // pthread_setname_gnu
 #define HAVE_PTHREAD_SETNAME_GNU 1

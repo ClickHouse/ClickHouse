@@ -211,10 +211,10 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 {
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
-        for (const auto & command : query_alter->command_list->commands)
+        for (const auto & command : query_alter->command_list->children)
         {
             //FIXME allow all types of queries (maybe we should execute ATTACH an similar queries on leader)
-            if (!isSupportedAlterType(command->type))
+            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }

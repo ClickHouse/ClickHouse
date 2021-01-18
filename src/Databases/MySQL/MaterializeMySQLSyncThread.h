@@ -7,7 +7,6 @@
 #if USE_MYSQL
 
 #    include <mutex>
-#    include <Core/BackgroundSchedulePool.h>
 #    include <Core/MySQL/MySQLClient.h>
 #    include <DataStreams/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>
@@ -95,11 +94,11 @@ private:
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, const Context & context);
     };
 
-    void synchronization(const String & mysql_version);
+    void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
-    std::optional<MaterializeMetadata> prepareSynchronized(const String & mysql_version);
+    std::optional<MaterializeMetadata> prepareSynchronized();
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 

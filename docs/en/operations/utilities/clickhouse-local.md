@@ -32,7 +32,8 @@ Arguments:
 -   `-S`, `--structure` — table structure for input data.
 -   `-if`, `--input-format` — input format, `TSV` by default.
 -   `-f`, `--file` — path to data, `stdin` by default.
--   `-q` `--query` — queries to execute with `;` as delimeter.
+-   `-q` `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
+-   `-qf` `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `-N`, `--table` — table name where to put output data, `table` by default.
 -   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
 -   `--stacktrace` — whether to dump debug output in case of exception.

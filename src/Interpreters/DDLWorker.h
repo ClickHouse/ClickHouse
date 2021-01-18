@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -25,13 +26,12 @@ namespace Poco
 
 namespace DB
 {
-
-class Context;
 class ASTAlterQuery;
 struct DDLLogEntry;
 struct DDLTaskBase;
 using DDLTaskPtr = std::unique_ptr<DDLTaskBase>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+class AccessRightsElements;
 
 
 class DDLWorker
@@ -129,7 +129,7 @@ protected:
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
-    std::optional<ThreadPool> worker_pool;
+    std::unique_ptr<ThreadPool> worker_pool;
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
@@ -139,6 +139,7 @@ protected:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
+    std::atomic<UInt64> max_id = 0;
 };
 
 

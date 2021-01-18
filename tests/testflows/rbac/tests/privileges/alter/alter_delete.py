@@ -7,12 +7,9 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
-aliases = {"ALTER DELETE", "DELETE"}
+aliases = {"ALTER DELETE", "DELETE", "ALL"}
 
 @TestSuite
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_AlterDelete_Access("1.0"),
-)
 def privilege_granted_directly_or_via_role(self, table_type, privilege, node=None):
     """Check that user is only able to execute ALTER DELETE when they have required privilege, either directly or via role.
     """
@@ -68,6 +65,7 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterDelete("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
