@@ -8,6 +8,7 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <Columns/ColumnDecimal.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <IO/ReadHelpers.h>
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 MySQLBlockInputStream::Connection::Connection(
@@ -110,6 +112,11 @@ namespace
                 data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
                 break;
             }
+            case ValueType::vtFixedString:
+                assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
+                break;
+            default:
+                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 

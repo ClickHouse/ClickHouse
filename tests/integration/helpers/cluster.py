@@ -196,6 +196,12 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = self.docker_base_tag
+        if not env_variables:
+            env_variables = {}
+
+        # Code coverage files will be placed in database directory
+        # (affect only WITH_COVERAGE=1 build)
+        env_variables['LLVM_PROFILE_FILE'] = '/var/lib/clickhouse/server_%h_%p_%m.profraw'
 
         instance = ClickHouseInstance(
             cluster=self,
@@ -222,7 +228,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             hostname=hostname,
-            env_variables=env_variables or {},
+            env_variables=env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -761,9 +767,11 @@ class ClickHouseCluster:
 
         if kill:
             try:
-                subprocess_check_call(self.base_cmd + ['kill'])
+                subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
             except Exception as e:
-                print("Kill command failed durung shutdown. {}".format(repr(e)))
+                print("Kill command failed during shutdown. {}".format(repr(e)))
+                print("Trying to kill forcefully")
+                subprocess_check_call(self.base_cmd + ['kill'])
 
         try:
             subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])

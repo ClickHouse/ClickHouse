@@ -10,11 +10,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
 
 #include <Parsers/IAST.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+
+#include <Core/NamesAndTypes.h>
 
 
 namespace DB
@@ -145,10 +148,57 @@ namespace
 
         offset_values.resize(i);
     }
+
+    ColumnPtr arrayOffsetsToSizes(const IColumn & column)
+    {
+        const auto & column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_sizes = column_offsets.cloneEmpty();
+
+        if (column_offsets.empty())
+            return column_sizes;
+
+        const auto & offsets_data = column_offsets.getData();
+        auto & sizes_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_sizes).getData();
+
+        sizes_data.resize(offsets_data.size());
+
+        IColumn::Offset prev_offset = 0;
+        for (size_t i = 0, size = offsets_data.size(); i < size; ++i)
+        {
+            auto current_offset = offsets_data[i];
+            sizes_data[i] = current_offset - prev_offset;
+            prev_offset =  current_offset;
+        }
+
+        return column_sizes;
+    }
+
+    ColumnPtr arraySizesToOffsets(const IColumn & column)
+    {
+        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
+        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
+
+        if (column_sizes.empty())
+            return column_offsets;
+
+        const auto & sizes_data = column_sizes.getData();
+        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
+
+        offsets_data.resize(sizes_data.size());
+
+        IColumn::Offset prev_offset = 0;
+        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
+        {
+            prev_offset += sizes_data[i];
+            offsets_data[i] = prev_offset;
+        }
+
+        return column_offsets;
+    }
 }
 
 
-void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeArray::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::ArraySizes);
     callback(path, *this);
@@ -158,7 +208,7 @@ void DataTypeArray::enumerateStreams(const StreamCallback & callback, SubstreamP
 }
 
 
-void DataTypeArray::serializeBinaryBulkStatePrefix(
+void DataTypeArray::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -168,7 +218,7 @@ void DataTypeArray::serializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeArray::serializeBinaryBulkStateSuffix(
+void DataTypeArray::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -178,7 +228,7 @@ void DataTypeArray::serializeBinaryBulkStateSuffix(
 }
 
 
-void DataTypeArray::deserializeBinaryBulkStatePrefix(
+void DataTypeArray::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -188,7 +238,7 @@ void DataTypeArray::deserializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
+void DataTypeArray::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -235,44 +285,52 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
 }
 
 
-void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeArray::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
-
     settings.path.push_back(Substream::ArraySizes);
-    if (auto * stream = settings.getter(settings.path))
+
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    {
+        column_array.getOffsetsPtr() = arraySizesToOffsets(*cached_column);
+    }
+    else if (auto * stream = settings.getter(settings.path))
     {
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
             DataTypeNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
+
+        addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
     }
 
     settings.path.back() = Substream::ArrayElements;
 
     ColumnArray::Offsets & offset_values = column_array.getOffsets();
-    IColumn & nested_column = column_array.getData();
+    ColumnPtr & nested_column = column_array.getDataPtr();
 
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
-    if (last_offset < nested_column.size())
+    if (last_offset < nested_column->size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
-    size_t nested_limit = last_offset - nested_column.size();
+    size_t nested_limit = last_offset - nested_column->size();
 
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state);
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state, cache);
+
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column.empty() && nested_column.size() != last_offset)
-        throw Exception("Cannot read all array values: read just " + toString(nested_column.size()) + " of " + toString(last_offset),
+    if (!nested_column->empty() && nested_column->size() != last_offset)
+        throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
             ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
@@ -325,7 +383,7 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
                 if (*istr.position() == ',')
                     ++istr.position();
                 else
-                    throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                    throw ParsingException(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
                         "Cannot read array from text, expected comma or end of array, found '{}'",
                         *istr.position());
             }
@@ -530,6 +588,44 @@ bool DataTypeArray::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
 }
 
+DataTypePtr DataTypeArray::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    return tryGetSubcolumnTypeImpl(subcolumn_name, 0);
+}
+
+DataTypePtr DataTypeArray::tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const
+{
+    if (subcolumn_name == "size" + std::to_string(level))
+        return createOneElementTuple(std::make_shared<DataTypeUInt64>(), subcolumn_name, false);
+
+    DataTypePtr subcolumn;
+    if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
+        subcolumn = nested_array->tryGetSubcolumnTypeImpl(subcolumn_name, level + 1);
+    else
+        subcolumn = nested->tryGetSubcolumnType(subcolumn_name);
+
+    return (subcolumn ? std::make_shared<DataTypeArray>(std::move(subcolumn)) : subcolumn);
+}
+
+ColumnPtr DataTypeArray::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    return getSubcolumnImpl(subcolumn_name, column, 0);
+}
+
+ColumnPtr DataTypeArray::getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const
+{
+    const auto & column_array = assert_cast<const ColumnArray &>(column);
+    if (subcolumn_name == "size" + std::to_string(level))
+        return arrayOffsetsToSizes(column_array.getOffsetsColumn());
+
+    ColumnPtr subcolumn;
+    if (const auto * nested_array = typeid_cast<const DataTypeArray *>(nested.get()))
+        subcolumn = nested_array->getSubcolumnImpl(subcolumn_name, column_array.getData(), level + 1);
+    else
+        subcolumn = nested->getSubcolumn(subcolumn_name, column_array.getData());
+
+    return ColumnArray::create(subcolumn, column_array.getOffsetsPtr());
+}
 
 size_t DataTypeArray::getNumberOfDimensions() const
 {

@@ -1,4 +1,5 @@
 #include <DataStreams/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteQueryExecutorReadContext.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <Common/FiberStack.h>
 
 namespace DB
 {
@@ -192,68 +194,119 @@ Block RemoteQueryExecutor::read()
 
         Packet packet = multiplexed_connections->receivePacket();
 
-        switch (packet.type)
-        {
-            case Protocol::Server::Data:
-                /// If the block is not empty and is not a header block
-                if (packet.block && (packet.block.rows() > 0))
-                    return adaptBlockStructure(packet.block, header);
-                break;  /// If the block is empty - we will receive other packets before EndOfStream.
-
-            case Protocol::Server::Exception:
-                got_exception_from_replica = true;
-                packet.exception->rethrow();
-                break;
-
-            case Protocol::Server::EndOfStream:
-                if (!multiplexed_connections->hasActiveConnections())
-                {
-                    finished = true;
-                    return Block();
-                }
-                break;
-
-            case Protocol::Server::Progress:
-                /** We use the progress from a remote server.
-                  * We also include in ProcessList,
-                  * and we use it to check
-                  * constraints (for example, the minimum speed of query execution)
-                  * and quotas (for example, the number of lines to read).
-                  */
-                if (progress_callback)
-                    progress_callback(packet.progress);
-                break;
-
-            case Protocol::Server::ProfileInfo:
-                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
-                if (profile_info_callback)
-                    profile_info_callback(packet.profile_info);
-                break;
-
-            case Protocol::Server::Totals:
-                totals = packet.block;
-                break;
-
-            case Protocol::Server::Extremes:
-                extremes = packet.block;
-                break;
-
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
-                break;
-
-            default:
-                got_unknown_packet_from_replica = true;
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
-                    toString(packet.type),
-                    multiplexed_connections->dumpAddresses());
-        }
+        if (auto block = processPacket(std::move(packet)))
+            return *block;
     }
 }
 
-void RemoteQueryExecutor::finish()
+std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> & read_context [[maybe_unused]])
+{
+
+#if defined(OS_LINUX)
+    if (!sent_query)
+    {
+        sendQuery();
+
+        if (context.getSettingsRef().skip_unavailable_shards && (0 == multiplexed_connections->size()))
+            return Block();
+    }
+
+    if (!read_context)
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return Block();
+
+        read_context = std::make_unique<ReadContext>(*multiplexed_connections);
+    }
+
+    do
+    {
+        if (!read_context->resumeRoutine())
+            return Block();
+
+        if (read_context->is_read_in_progress.load(std::memory_order_relaxed))
+        {
+            read_context->setTimer();
+            return read_context->epoll_fd;
+        }
+        else
+        {
+            if (auto data = processPacket(std::move(read_context->packet)))
+                return std::move(*data);
+        }
+    }
+    while (true);
+#else
+    return read();
+#endif
+}
+
+std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
+{
+    switch (packet.type)
+    {
+        case Protocol::Server::Data:
+            /// If the block is not empty and is not a header block
+            if (packet.block && (packet.block.rows() > 0))
+                return adaptBlockStructure(packet.block, header);
+            break;  /// If the block is empty - we will receive other packets before EndOfStream.
+
+        case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+            packet.exception->rethrow();
+            break;
+
+        case Protocol::Server::EndOfStream:
+            if (!multiplexed_connections->hasActiveConnections())
+            {
+                finished = true;
+                return Block();
+            }
+            break;
+
+        case Protocol::Server::Progress:
+            /** We use the progress from a remote server.
+              * We also include in ProcessList,
+              * and we use it to check
+              * constraints (for example, the minimum speed of query execution)
+              * and quotas (for example, the number of lines to read).
+              */
+            if (progress_callback)
+                progress_callback(packet.progress);
+            break;
+
+        case Protocol::Server::ProfileInfo:
+            /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+            if (profile_info_callback)
+                profile_info_callback(packet.profile_info);
+            break;
+
+        case Protocol::Server::Totals:
+            totals = packet.block;
+            break;
+
+        case Protocol::Server::Extremes:
+            extremes = packet.block;
+            break;
+
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
+        default:
+            got_unknown_packet_from_replica = true;
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                multiplexed_connections->dumpAddresses());
+    }
+
+    return {};
+}
+
+void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 {
     /** If one of:
       * - nothing started to do;
@@ -270,7 +323,7 @@ void RemoteQueryExecutor::finish()
       */
 
     /// Send the request to abort the execution of the request, if not already sent.
-    tryCancel("Cancelling query because enough data has been read");
+    tryCancel("Cancelling query because enough data has been read", read_context);
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     Packet packet = multiplexed_connections->drain();
@@ -299,7 +352,7 @@ void RemoteQueryExecutor::finish()
     }
 }
 
-void RemoteQueryExecutor::cancel()
+void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
 {
     {
         std::lock_guard lock(external_tables_mutex);
@@ -313,7 +366,7 @@ void RemoteQueryExecutor::cancel()
     if (!isQueryPending() || hasThrownException())
         return;
 
-    tryCancel("Cancelling query");
+    tryCancel("Cancelling query", read_context);
 }
 
 void RemoteQueryExecutor::sendScalars()
@@ -365,7 +418,7 @@ void RemoteQueryExecutor::sendExternalTables()
     multiplexed_connections->sendExternalTablesData(external_tables_data);
 }
 
-void RemoteQueryExecutor::tryCancel(const char * reason)
+void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context)
 {
     {
         /// Flag was_cancelled is atomic because it is checked in read().
@@ -375,6 +428,10 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
             return;
 
         was_cancelled = true;
+
+        if (read_context && *read_context)
+            (*read_context)->cancel();
+
         multiplexed_connections->sendCancel();
     }
 

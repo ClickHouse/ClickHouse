@@ -261,10 +261,13 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
+    ParserKeyword all("ALL");
     ParserExpressionList contents(false);
     ParserSelectWithUnionQuery select;
+    ParserKeyword over("OVER");
 
-    bool has_distinct_modifier = false;
+    bool has_all = false;
+    bool has_distinct = false;
 
     ASTPtr identifier;
     ASTPtr query;
@@ -278,10 +281,34 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    auto pos_after_bracket = pos;
+    auto old_expected = expected;
+
+    if (all.ignore(pos, expected))
+        has_all = true;
 
     if (distinct.ignore(pos, expected))
-        has_distinct_modifier = true;
-    else
+        has_distinct = true;
+
+    if (!has_all && all.ignore(pos, expected))
+        has_all = true;
+
+    if (has_all && has_distinct)
+        return false;
+
+    if (has_all || has_distinct)
+    {
+        /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+        if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+        {
+            pos = pos_after_bracket;
+            expected = old_expected;
+            has_all = false;
+            has_distinct = false;
+        }
+    }
+
+    if (!has_distinct && !has_all)
     {
         auto old_pos = pos;
         auto maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
@@ -342,6 +369,26 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("Argument of function toDate is unquoted: toDate(" + contents_str + "), must be: toDate('" + contents_str + "')"
             , ErrorCodes::SYNTAX_ERROR);
     }
+    else if (Poco::toLower(getIdentifierName(identifier)) == "position")
+    {
+        /// POSITION(needle IN haystack) is equivalent to function position(haystack, needle)
+        if (const auto * list = expr_list_args->as<ASTExpressionList>())
+        {
+            if (list->children.size() == 1)
+            {
+                if (const auto * in_func = list->children[0]->as<ASTFunction>())
+                {
+                    if (in_func->name == "in")
+                    {
+                        // switch the two arguments
+                        const auto & arg_list = in_func->arguments->as<ASTExpressionList &>();
+                        if (arg_list.children.size() == 2)
+                            expr_list_args->children = {arg_list.children[1], arg_list.children[0]};
+                    }
+                }
+            }
+        }
+    }
 
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
     if (allow_function_parameters && pos->type == TokenType::OpeningRoundBracket)
@@ -349,14 +396,37 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
 
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
-        if (has_distinct_modifier)
+        if (has_distinct)
             return false;
 
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
 
+        pos_after_bracket = pos;
+        old_expected = expected;
+
+        if (all.ignore(pos, expected))
+            has_all = true;
+
         if (distinct.ignore(pos, expected))
-            has_distinct_modifier = true;
+            has_distinct = true;
+
+        if (!has_all && all.ignore(pos, expected))
+            has_all = true;
+
+        if (has_all && has_distinct)
+            return false;
+
+        if (has_all || has_distinct)
+        {
+            /// case f(ALL), f(ALL, x), f(DISTINCT), f(DISTINCT, x), ALL and DISTINCT should be treat as identifier
+            if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
+            {
+                pos = pos_after_bracket;
+                expected = old_expected;
+                has_distinct = false;
+            }
+        }
 
         if (!contents.parse(pos, expr_list_args, expected))
             return false;
@@ -370,7 +440,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     tryGetIdentifierNameInto(identifier, function_node->name);
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
-    if (has_distinct_modifier)
+    if (has_distinct)
         function_node->name += "Distinct";
 
     function_node->arguments = expr_list_args;
@@ -382,7 +452,96 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
+    if (over.ignore(pos, expected))
+    {
+        function_node->is_window_function = true;
+
+        // We are slightly breaking the parser interface by parsing the window
+        // definition into an existing ASTFunction. Normally it would take a
+        // reference to ASTPtr and assign it the new node. We only have a pointer
+        // of a different type, hence this workaround with a temporary pointer.
+        ASTPtr function_node_as_iast = function_node;
+
+        ParserWindowDefinition window_definition;
+        if (!window_definition.parse(pos, function_node_as_iast, expected))
+        {
+            return false;
+        }
+    }
+
     node = function_node;
+    return true;
+}
+
+bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTFunction * function = dynamic_cast<ASTFunction *>(node.get());
+
+    // Variant 1:
+    // function_name ( * ) OVER window_name
+    // FIXME doesn't work anyway for now -- never used anywhere, window names
+    // can't be defined, and TreeRewriter thinks the window name is a column so
+    // the query fails.
+    if (pos->type != TokenType::OpeningRoundBracket)
+    {
+        ASTPtr window_name_ast;
+        ParserIdentifier window_name_parser;
+        if (window_name_parser.parse(pos, window_name_ast, expected))
+        {
+            function->children.push_back(window_name_ast);
+            function->window_name = window_name_ast;
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    ++pos;
+
+    // Variant 2:
+    // function_name ( * ) OVER ( window_definition )
+    ParserKeyword keyword_partition_by("PARTITION BY");
+    ParserNotEmptyExpressionList columns_partition_by(
+        false /* we don't allow declaring aliases here*/);
+    ParserKeyword keyword_order_by("ORDER BY");
+    ParserOrderByExpressionList columns_order_by;
+
+    if (keyword_partition_by.ignore(pos, expected))
+    {
+        ASTPtr partition_by_ast;
+        if (columns_partition_by.parse(pos, partition_by_ast, expected))
+        {
+            function->children.push_back(partition_by_ast);
+            function->window_partition_by = partition_by_ast;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    if (keyword_order_by.ignore(pos, expected))
+    {
+        ASTPtr order_by_ast;
+        if (columns_order_by.parse(pos, order_by_ast, expected))
+        {
+            function->children.push_back(order_by_ast);
+            function->window_order_by = order_by_ast;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+    {
+        expected.add(pos, "')'");
+        return false;
+    }
+    ++pos;
+
     return true;
 }
 
@@ -1337,6 +1496,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             is_strict = true;
 
         ASTs identifiers;
+        ASTPtr regex_node;
+        ParserStringLiteral regex;
         auto parse_id = [&identifiers, &pos, &expected]
         {
             ASTPtr identifier;
@@ -1351,7 +1512,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             // support one or more parameter
             ++pos;
-            if (!ParserList::parseUtil(pos, expected, parse_id, false))
+            if (!ParserList::parseUtil(pos, expected, parse_id, false) && !regex.parse(pos, regex_node, expected))
                 return false;
 
             if (pos->type != TokenType::ClosingRoundBracket)
@@ -1361,12 +1522,15 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         else
         {
             // only one parameter
-            if (!parse_id())
+            if (!parse_id() && !regex.parse(pos, regex_node, expected))
                 return false;
         }
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
-        res->children = std::move(identifiers);
+        if (regex_node)
+            res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        else
+            res->children = std::move(identifiers);
         res->is_strict = is_strict;
         node = std::move(res);
         return true;
