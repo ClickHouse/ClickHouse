@@ -28,14 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Box = boost::geometry::model::box<Point>;
-
-
 class FunctionPolygonsSymDifference : public IFunction
 {
 public:
@@ -68,17 +60,17 @@ public:
         return DataTypeCustomMultiPolygonSerialization::nestedDataType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
+        auto get_parser = [&arguments] (size_t i) {
             const auto * const_col =
-                checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+                checkAndGetColumn<ColumnConst>(arguments[i].column.get());
 
             bool is_const = static_cast<bool>(const_col);
 
-            return std::pair<bool, GeometryFromColumnParser>{is_const, is_const ?
-                makeGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), block.getByPosition(arguments[i]).type, block.getByPosition(arguments[i]).name)) :
-                makeGeometryFromColumnParser(block.getByPosition(arguments[i]))};
+            return std::pair<bool, CartesianGeometryFromColumnParser>{is_const, is_const ?
+                makeCartesianGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[i].type, arguments[i].name)) :
+                makeCartesianGeometryFromColumnParser(arguments[i])};
         };
 
         auto [is_first_polygon_const, first_parser] = get_parser(0);
@@ -87,7 +79,7 @@ public:
         auto [is_second_polygon_const, second_parser] = get_parser(1);
         auto second_container = createContainer(second_parser);
 
-        Float64MultiPolygonSerializer serializer;
+        CartesianMultiPolygonSerializer serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
@@ -96,19 +88,19 @@ public:
             if (!is_second_polygon_const || i == 0)
                 get(second_parser, second_container, i);
 
-            Float64Geometry sym_difference = Float64MultiPolygon({{{{}}}});
+            CartesianGeometry sym_difference = CartesianMultiPolygon({{{{}}}});
             boost::geometry::sym_difference(
-                boost::get<Float64MultiPolygon>(first_container),
-                boost::get<Float64MultiPolygon>(second_container),
-                boost::get<Float64MultiPolygon>(sym_difference));
+                boost::get<CartesianMultiPolygon>(first_container),
+                boost::get<CartesianMultiPolygon>(second_container),
+                boost::get<CartesianMultiPolygon>(sym_difference));
 
-            boost::get<Float64MultiPolygon>(sym_difference).erase(
-                boost::get<Float64MultiPolygon>(sym_difference).begin());
+            boost::get<CartesianMultiPolygon>(sym_difference).erase(
+                boost::get<CartesianMultiPolygon>(sym_difference).begin());
 
             serializer.add(sym_difference);
         }
 
-        block.getByPosition(result).column = std::move(serializer.finalize());
+        return serializer.finalize();
     }
 
     bool useDefaultImplementationForConstants() const override

@@ -60,13 +60,13 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto * const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[0]).column.get());
+        const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
 
         auto parser = const_col ?
-            makeGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), block.getByPosition(arguments[0]).type, block.getByPosition(arguments[0]).name)) :
-            makeGeometryFromColumnParser(block.getByPosition(arguments[0]));
+            makeCartesianGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[0].type, arguments[0].name)) :
+            makeCartesianGeometryFromColumnParser(arguments[0]);
 
         bool geo_column_is_const = static_cast<bool>(const_col);
 
@@ -76,7 +76,7 @@ public:
         bool has_style = arguments.size() > 1;
         ColumnPtr style;
         if (has_style) {
-            style = block.getByPosition(arguments[1]).column;
+            style = arguments[1].column;
         }
 
         for (size_t i = 0; i < input_rows_count; i++)
@@ -90,7 +90,7 @@ public:
             res_column->insertData(serialized.c_str(), serialized.size());
         }
 
-        block.getByPosition(result).column = std::move(res_column);
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override

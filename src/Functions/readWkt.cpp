@@ -39,9 +39,9 @@ public:
         return DataType::nestedDataType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto column_string = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        auto column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
 
         Serializer serializer;
         Geometry geometry;
@@ -53,7 +53,7 @@ public:
             serializer.add(geometry);
         }
 
-        block.getByPosition(result).column = serializer.finalize();
+        return serializer.finalize();
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -62,7 +62,7 @@ public:
     }
 };
 
-class FunctionReadWktPoint : public FunctionReadWkt<DataTypeCustomPointSerialization, Float64Point, Float64PointSerializer>
+class FunctionReadWktPoint : public FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, CartesianPointSerializer>
 {
 public:
     static inline const char * name = "readWktPoint";
@@ -76,7 +76,7 @@ public:
     }
 };
 
-class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, Float64Polygon, Float64PolygonSerializer>
+class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, CartesianPolygonSerializer>
 {
 public:
     static inline const char * name = "readWktPolygon";
@@ -90,7 +90,7 @@ public:
     }
 };
 
-class FunctionReadWktMultiPolygon : public FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, Float64MultiPolygon, Float64MultiPolygonSerializer>
+class FunctionReadWktMultiPolygon : public FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, CartesianMultiPolygonSerializer>
 {
 public:
     static inline const char * name = "readWktMultiPolygon";

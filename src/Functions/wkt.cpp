@@ -36,9 +36,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto parser = makeGeometryFromColumnParser(block.getByPosition(arguments[0]));
+        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
         auto res_column = ColumnString::create();
 
         auto container = createContainer(parser);
@@ -52,7 +52,7 @@ public:
             res_column->insertData(serialized.c_str(), serialized.size());
         }
 
-        block.getByPosition(result).column = std::move(res_column);
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override

@@ -28,14 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Box = boost::geometry::model::box<Point>;
-
-
 class FunctionPolygonConvexHull : public IFunction
 {
 public:
@@ -68,34 +60,34 @@ public:
         return DataTypeCustomPolygonSerialization::nestedDataType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            return makeGeometryFromColumnParser(polygon);
+        auto get_parser = [&arguments] (size_t i) {
+            const ColumnWithTypeAndName polygon = arguments[i];
+            return makeCartesianGeometryFromColumnParser(polygon);
         };
 
         auto parser = get_parser(0);
         auto container = createContainer(parser);
 
-        Float64PolygonSerializer serializer;
+        CartesianPolygonSerializer serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
             get(parser, container, i);
 
-            Float64Geometry convex_hull = Float64Polygon({{{}}});
+            CartesianGeometry convex_hull = CartesianPolygon({{{}}});
             boost::geometry::convex_hull(
-                boost::get<Float64MultiPolygon>(container),
-                boost::get<Float64Polygon>(convex_hull));
+                boost::get<CartesianMultiPolygon>(container),
+                boost::get<CartesianPolygon>(convex_hull));
 
-            boost::get<Float64Polygon>(convex_hull).outer().erase(
-                boost::get<Float64Polygon>(convex_hull).outer().begin());
+            boost::get<CartesianPolygon>(convex_hull).outer().erase(
+                boost::get<CartesianPolygon>(convex_hull).outer().begin());
 
             serializer.add(convex_hull);
         }
 
-        block.getByPosition(result).column = std::move(serializer.finalize());
+        return serializer.finalize();
     }
 
     bool useDefaultImplementationForConstants() const override

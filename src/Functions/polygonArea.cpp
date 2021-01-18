@@ -28,24 +28,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Box = boost::geometry::model::box<Point>;
-
-
-class FunctionPolygonArea : public IFunction
+template <typename Derived>
+class FunctionPolygonAreaBase : public IFunction
 {
 public:
-    static inline const char * name = "polygonArea";
+    static inline const char * name = Derived::name;
 
-    explicit FunctionPolygonArea() = default;
+    explicit FunctionPolygonAreaBase() = default;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPolygonArea>();
+        return std::make_shared<FunctionPolygonAreaBase>();
     }
 
     String getName() const override
@@ -68,29 +61,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            return makeGeometryFromColumnParser(polygon);
-        };
-
-        auto parser = get_parser(0);
-        auto container = createContainer(parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            get(parser, container, i);
-
-            Float64 area = boost::geometry::area(
-                boost::get<Float64MultiPolygon>(container));
-
-            res_column->insertValue(area);
-        }
-
-        block.getByPosition(result).column = std::move(res_column);
+        return static_cast<const Derived*>(this)->executeImplementation(arguments, result_type, input_rows_count);
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -100,9 +73,67 @@ public:
 };
 
 
-void registerFunctionPolygonArea(FunctionFactory & factory)
+class FunctionPolygonAreaCartesian : public FunctionPolygonAreaBase<FunctionPolygonAreaCartesian>
 {
-    factory.registerFunction<FunctionPolygonArea>();
+public:
+    static inline const char * name = "polygonAreaCartesian";
+
+    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+    {
+        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
+        auto container = createContainer(parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(parser, container, i);
+
+            Float64 area = boost::geometry::area(
+                boost::get<CartesianMultiPolygon>(container));
+
+            res_column->insertValue(area);
+        }
+
+        return res_column;
+    }
+};
+
+class FunctionPolygonAreaGeographic : public FunctionPolygonAreaBase<FunctionPolygonAreaGeographic>
+{
+public:
+    static inline const char * name = "polygonAreaGeographic";
+
+    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+    {
+        auto parser = makeGeographicGeometryFromColumnParser(arguments[0]);
+        auto container = createContainer(parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(parser, container, i);
+
+            Float64 area = boost::geometry::area(
+                boost::get<GeographicMultiPolygon>(container));
+
+            res_column->insertValue(area);
+        }
+
+        return res_column;
+    }
+};
+
+
+void registerFunctionPolygonAreaCartesian(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonAreaCartesian>();
+}
+
+void registerFunctionPolygonAreaGeographic(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonAreaGeographic>();
 }
 
 }
