@@ -3,6 +3,7 @@
 CLICKHOUSE_CURL_TIMEOUT=30
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 # Too deep recursion

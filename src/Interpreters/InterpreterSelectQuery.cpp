@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -33,6 +34,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
@@ -99,6 +101,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int ACCESS_DENIED;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -211,6 +214,48 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
     JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
 }
 
+/// Checks that the current user has the SELECT privilege.
+static void checkAccessRightsForSelect(
+    const Context & context,
+    const StorageID & table_id,
+    const StorageMetadataPtr & table_metadata,
+    const Strings & required_columns,
+    const TreeRewriterResult & syntax_analyzer_result)
+{
+    if (!syntax_analyzer_result.has_explicit_columns && table_metadata && !table_metadata->getColumns().empty())
+    {
+        /// For a trivial query like "SELECT count() FROM table" access is granted if at least
+        /// one column is accessible.
+        /// In this case just checking access for `required_columns` doesn't work correctly
+        /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
+        /// which is probably not the same column as the column the current user has access to.
+        auto access = context.getAccess();
+        for (const auto & column : table_metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+                return;
+        }
+        throw Exception(context.getUserName() + ": Not enough privileges. "
+                        "To execute this query it's necessary to have grant SELECT for at least one column on " + table_id.getFullTableName(),
+                        ErrorCodes::ACCESS_DENIED);
+    }
+
+    /// General check.
+    context.checkAccess(AccessType::SELECT, table_id, required_columns);
+}
+
+/// Returns true if we should ignore quotas and limits for a specified table in the system database.
+static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+{
+    if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+    {
+        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.count(table_id.table_name))
+            return true;
+    }
+    return false;
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -255,14 +300,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
+    bool got_storage_from_query = false;
     if (!has_input && !storage)
+    {
         storage = joined_tables.getLeftTableStorage();
+        got_storage_from_query = true;
+    }
 
     if (storage)
     {
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
-        if (metadata_snapshot == nullptr)
+        if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
     }
 
@@ -280,9 +329,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage && joined_tables.isLeftTableSubquery())
         {
             /// Rewritten with subquery. Free storage locks here.
-            storage = {};
+            storage = nullptr;
             table_lock.reset();
             table_id = StorageID::createEmpty();
+            metadata_snapshot = nullptr;
         }
     }
 
@@ -445,16 +495,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const StorageID & left_table_id = joined_tables.leftTableID();
-
-    if (left_table_id)
-        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
-
-    /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system")
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
     {
-        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        /// The current user should have the SELECT privilege.
+        /// If this table_id is for a table function we don't check access rights here because in this case they have been already checked in ITableFunction::execute().
+        checkAccessRightsForSelect(*context, table_id, metadata_snapshot, required_columns, *syntax_analyzer_result);
+
+        /// Remove limits for some tables in the `system` database.
+        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
             options.ignore_limits = true;
@@ -528,7 +576,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (analysis_result.prewhere_info)
         {
             ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
-            header = materializeBlock(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -1209,6 +1256,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
+
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
         if (num_rows)
@@ -1315,9 +1363,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (is_alias)
                 {
                     auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
+                    column_expr = column_default->expression->clone();
+                    // recursive visit for alias to alias
+                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
+
+                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), *context);
+                    column_expr = setAlias(column_expr, column);
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
@@ -1529,7 +1580,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, *context);
         }
 
         StreamLocalLimits limits;
