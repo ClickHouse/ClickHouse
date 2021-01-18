@@ -495,7 +495,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
 В этом формате один объект JSON интерпретируется как одно значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки.
 
-В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать. Как только вы соберете весь объект JSON в строку, для его обработки вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
+В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Как только вы соберете весь объект JSON в строку, для его обработки вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
 
 **Пример**
 
