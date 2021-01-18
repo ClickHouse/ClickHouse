@@ -236,12 +236,6 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns
 
     for (auto & col : columns)
     {
-        /// Materialize column.
-        /// Column is not empty if it is constant, but after Join all constants will be materialized.
-        /// So, we need remove constants from header.
-        if (col.column)
-            col.column = nullptr;
-
         const auto right_type_it = left_name_to_remap_type.find(col.name);
         if (right_type_it != left_name_to_remap_type.end())
             col.type = right_type_it->second;
