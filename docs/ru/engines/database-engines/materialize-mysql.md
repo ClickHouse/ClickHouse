@@ -13,7 +13,7 @@ toc_title: MaterializeMySQL
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...];
+ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
 **Параметры движка**
