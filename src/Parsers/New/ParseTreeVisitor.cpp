@@ -34,7 +34,6 @@
 // Include last, because antlr-runtime undefines EOF macros, which is required in boost multiprecision numbers.
 #include <Parsers/New/ParseTreeVisitor.h>
 
-
 namespace DB
 {
 
@@ -114,15 +113,17 @@ antlrcpp::Any ParseTreeVisitor::visitShowTablesStmt(ClickHouseParser::ShowTables
 
     auto and_args = PtrTo<ColumnExprList>(new ColumnExprList{ColumnExpr::createLiteral(Literal::createNumber("1"))});
 
+    auto current_database = ColumnExpr::createLiteral(Literal::createString(current_database_name));
     if (ctx->databaseIdentifier())
     {
-        auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
-        auto args = PtrTo<ColumnExprList>(new ColumnExprList{
-            ColumnExpr::createIdentifier(database),
-            ColumnExpr::createLiteral(Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName()))
-        });
-        and_args->push(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, args));
+        current_database = ColumnExpr::createLiteral(Literal::createString(visit(ctx->databaseIdentifier()).as<PtrTo<DatabaseIdentifier>>()->getName()));
     }
+    auto database = std::make_shared<ColumnIdentifier>(nullptr, std::make_shared<Identifier>("database"));
+    auto equals_args = PtrTo<ColumnExprList>(new ColumnExprList{
+        ColumnExpr::createIdentifier(database),
+        current_database
+    });
+    and_args->push(ColumnExpr::createFunction(std::make_shared<Identifier>("equals"), nullptr, equals_args));
 
     if (ctx->LIKE())
     {
