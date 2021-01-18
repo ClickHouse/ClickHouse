@@ -852,7 +852,7 @@ private:
 
     // Consumes trailing semicolons and tries to consume the same-line trailing
     // comment.
-    void adjustQueryEnd(const char *& this_query_end,
+    static void adjustQueryEnd(const char *& this_query_end,
         const char * all_queries_end, int max_parser_depth)
     {
         // We have to skip the trailing semicolon that might be left
@@ -1086,15 +1086,6 @@ private:
                 this_query_begin - all_queries_text.data(),
                 this_query_end - this_query_begin);
 
-//            fmt::print(stderr, "parsed query '{}', left '{}'\n",
-//                std::string_view(this_query_begin,
-//                    this_query_end - this_query_begin),
-//                std::string_view(this_query_end,
-//                    all_queries_end - this_query_end));
-//
-//            fmt::print(stderr, "query_to_send '{}', full_query '{}'\n",
-//                query_to_send, full_query);
-
             if (query_fuzzer_runs)
             {
                 if (!processWithFuzzing(full_query))
@@ -1234,12 +1225,6 @@ private:
                     return false;
                 }
             }
-
-//            fmt::print(stderr, "final query '{}', left '{}'\n",
-//                std::string_view(this_query_begin,
-//                    this_query_end - this_query_begin),
-//                std::string_view(this_query_end,
-//                    all_queries_end - this_query_end));
 
             this_query_begin = this_query_end;
         }
