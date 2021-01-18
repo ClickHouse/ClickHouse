@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorage.h>
+#include <Coordination/TestKeeperStorage.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
