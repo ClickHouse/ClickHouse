@@ -25,6 +25,8 @@ namespace ErrorCodes
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -237,9 +239,25 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
     return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
-void DiskLocal::remove(const String & path)
+void DiskLocal::removeFile(const String & path)
 {
-    Poco::File(disk_path + path).remove(false);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeFileIfExists(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeDirectory(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != rmdir(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
