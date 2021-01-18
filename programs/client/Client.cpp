@@ -193,15 +193,15 @@ private:
     /// Parsed query. Is used to determine some settings (e.g. format, output file).
     ASTPtr parsed_query;
 
-    /// The last exception that was received from the server. Is used for the return code in batch mode.
-    std::unique_ptr<Exception> last_exception_received_from_server;
+    /// The last exception that was received from the server. Is used for the
+    /// return code in batch mode.
+    std::unique_ptr<Exception> server_exception;
+    /// Likewise, the last exception that occurred on the client.
+    std::unique_ptr<Exception> client_exception;
 
-    /// If the last query resulted in exception.
-    bool received_exception_from_server = false;
-    int expected_server_error = 0;
-    int expected_client_error = 0;
-    int actual_server_error = 0;
-    int actual_client_error = 0;
+    /// If the last query resulted in exception. `server_exception` or
+    /// `client_exception` must be set.
+    bool have_error = false;
 
     UInt64 server_revision = 0;
     String server_version;
@@ -667,18 +667,14 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    actual_client_error = e.code();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                    {
-                        std::cerr << std::endl
-                            << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    std::cerr << std::endl
+                        << "Exception on client:" << std::endl
+                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
 
-                        if (config().getBool("stacktrace", false))
-                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+                    if (config().getBool("stacktrace", false))
+                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
 
-                        std::cerr << std::endl;
-                    }
+                    std::cerr << std::endl;
 
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
@@ -704,9 +700,20 @@ private:
 
             nonInteractive();
 
-            /// If exception code isn't zero, we should return non-zero return code anyway.
-            if (last_exception_received_from_server)
-                return last_exception_received_from_server->code() != 0 ? last_exception_received_from_server->code() : -1;
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception
+                ? server_exception.get() : client_exception.get();
+            if (exception)
+            {
+                return exception->code() != 0 ? exception->code() : -1;
+            }
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
 
             return 0;
         }
@@ -892,6 +899,40 @@ private:
         }
     }
 
+    void reportQueryError() const
+    {
+        // If we probably have progress bar, we should add additional
+        // newline, otherwise exception may display concatenated with
+        // the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
+
+        if (server_exception)
+        {
+            std::string text = server_exception->displayText();
+            auto embedded_stack_trace_pos = text.find("Stack trace");
+            if (std::string::npos != embedded_stack_trace_pos
+                && !config().getBool("stacktrace", false))
+            {
+                text.resize(embedded_stack_trace_pos);
+            }
+            std::cerr << "Received exception from server (version "
+                << server_version << "):" << std::endl << "Code: "
+                << server_exception->code() << ". " << text << std::endl;
+        }
+
+        if (client_exception)
+        {
+            fmt::print(stderr,
+                "Error on processing query '{}':\n{}",
+                full_query, client_exception->message());
+        }
+
+        // A debug check -- at least some exception must be set, if the error
+        // flag is set, and vice versa.
+        assert(have_error == (client_exception || server_exception));
+    }
+
     bool processMultiQuery(const String & all_queries_text)
     {
         // It makes sense not to base any control flow on this, so that it is
@@ -1055,51 +1096,135 @@ private:
                 continue;
             }
 
-            // Look for the hint in the text of query + insert data, if any.
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            TestHint test_hint(test_mode, full_query);
-            expected_client_error = test_hint.clientError();
-            expected_server_error = test_hint.serverError();
-
             try
             {
                 processParsedSingleQuery();
-
-                if (insert_ast && insert_ast->data)
-                {
-                    // For VALUES format: use the end of inline data as reported
-                    // by the format parser (it is saved in sendData()). This
-                    // allows us to handle queries like:
-                    //   insert into t values (1); select 1
-                    //, where the inline data is delimited by semicolon and not
-                    // by a newline.
-                    this_query_end = parsed_query->as<ASTInsertQuery>()->end;
-
-                    adjustQueryEnd(this_query_end, all_queries_end,
-                        context.getSettingsRef().max_parser_depth);
-                }
             }
             catch (...)
             {
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                actual_client_error = last_exception_received_from_server->code();
-                if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
-                received_exception_from_server = true;
+                // Surprisingly, this is a client error. A server error would
+                // have been reported w/o throwing (see onReceiveSeverException()).
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                have_error = true;
             }
 
-            if (!test_hint.checkActual(
-                actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
+            // For INSERTs with inline data: use the end of inline data as
+            // reported by the format parser (it is saved in sendData()).
+            // This allows us to handle queries like:
+            //   insert into t values (1); select 1
+            // , where the inline data is delimited by semicolon and not by a
+            // newline.
+            if (insert_ast && insert_ast->data)
             {
+                this_query_end = insert_ast->end;
+                adjustQueryEnd(this_query_end, all_queries_end,
+                    context.getSettingsRef().max_parser_depth);
+            }
+
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin,
+                this_query_end - this_query_begin));
+
+            // Check whether the error (or its absence) matches the test hints
+            // (or their absence).
+            bool error_matches_hint = true;
+            if (have_error)
+            {
+                if (test_hint.serverError())
+                {
+                    if (!server_exception)
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected server error code '{}' but got no server error.\n",
+                            test_hint.serverError());
+                    }
+                    else if (server_exception->code() != test_hint.serverError())
+                    {
+                        error_matches_hint = false;
+                        std::cerr << "Expected server error code: " <<
+                            test_hint.serverError() << " but got: " <<
+                            server_exception->code() << "." << std::endl;
+                    }
+                }
+
+                if (test_hint.clientError())
+                {
+                    if (!client_exception)
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got no client error.\n",
+                            test_hint.clientError());
+                    }
+                    else if (client_exception->code() != test_hint.clientError())
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got '{}'.\n",
+                            test_hint.clientError(),
+                            client_exception->code());
+                    }
+                }
+
+                if (!test_hint.clientError() && !test_hint.serverError())
+                {
+                    // No error was expected but it still occurred. This is the
+                    // default case w/o test hint, doesn't need additional
+                    // diagnostics.
+                    error_matches_hint = false;
+                }
+            }
+            else
+            {
+                if (test_hint.clientError())
+                {
+                    fmt::print(stderr,
+                        "The query succeeded but the client error '{}' was expected.\n",
+                        test_hint.clientError());
+                    error_matches_hint = false;
+                }
+
+                if (test_hint.serverError())
+                {
+                    fmt::print(stderr,
+                        "The query succeeded but the server error '{}' was expected.\n",
+                        test_hint.serverError());
+                    error_matches_hint = false;
+                }
+            }
+
+            // If the error is expected, force reconnect and ignore it.
+            if (have_error && error_matches_hint)
+            {
+                client_exception.reset();
+                server_exception.reset();
+                have_error = false;
                 connection->forceConnected(connection_parameters.timeouts);
             }
 
-            if (received_exception_from_server && !ignore_error)
+            // Report error.
+            if (have_error)
+            {
+                reportQueryError();
+            }
+
+            // Stop processing queries if needed.
+            if (have_error && !ignore_error)
             {
                 if (is_interactive)
+                {
                     break;
+                }
                 else
+                {
                     return false;
+                }
             }
 
             this_query_begin = this_query_end;
@@ -1207,15 +1332,20 @@ private:
                 // Some functions (e.g. protocol parsers) don't throw, but
                 // set last_exception instead, so we'll also do it here for
                 // uniformity.
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                received_exception_from_server = true;
+                // Surprisingly, this is a client exception, because we get the
+                // server exception w/o throwing (see onReceiveException()).
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                have_error = true;
             }
 
-            if (received_exception_from_server)
+            if (have_error)
             {
+                const auto * exception = server_exception
+                    ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n",
                     ast_to_process->formatForErrorMessage(),
-                    last_exception_received_from_server->message());
+                    exception->message());
             }
 
             if (!connection->isConnected())
@@ -1228,13 +1358,14 @@ private:
 
             // The server is still alive so we're going to continue fuzzing.
             // Determine what we're going to use as the starting AST.
-            if (received_exception_from_server)
+            if (have_error)
             {
                 // Query completed with error, keep the previous starting AST.
                 // Also discard the exception that we now know to be non-fatal,
                 // so that it doesn't influence the exit code.
-                last_exception_received_from_server.reset(nullptr);
-                received_exception_from_server = false;
+                server_exception.reset();
+                client_exception.reset();
+                have_error = false;
             }
             else if (ast_to_process->formatForErrorMessage().size() > 500)
             {
@@ -1278,6 +1409,11 @@ private:
         }
 
         processParsedSingleQuery();
+
+        if (have_error)
+        {
+            reportQueryError();
+        }
     }
 
     // Parameters are in global variables:
@@ -1288,8 +1424,9 @@ private:
     void processParsedSingleQuery()
     {
         resetOutput();
-        last_exception_received_from_server.reset();
-        received_exception_from_server = false;
+        client_exception.reset();
+        server_exception.reset();
+        have_error = false;
 
         if (echo_queries)
         {
@@ -1354,7 +1491,7 @@ private:
         }
 
         /// Do not change context (current DB, settings) in case of an exception.
-        if (!received_exception_from_server)
+        if (!have_error)
         {
             if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
@@ -1765,8 +1902,7 @@ private:
                 return true;
 
             case Protocol::Server::Exception:
-                onReceiveExceptionFromServer(*packet.exception);
-                last_exception_received_from_server = std::move(packet.exception);
+                onReceiveExceptionFromServer(std::move(packet.exception));
                 return false;
 
             case Protocol::Server::Log:
@@ -1798,8 +1934,7 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onReceiveExceptionFromServer(std::move(packet.exception));
                     return false;
 
                 case Protocol::Server::Log:
@@ -1832,8 +1967,7 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onReceiveExceptionFromServer(std::move(packet.exception));
                     return false;
 
                 case Protocol::Server::Log:
@@ -2142,32 +2276,11 @@ private:
     }
 
 
-    void onReceiveExceptionFromServer(const Exception & e)
+    void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
     {
+        have_error = true;
+        server_exception = std::move(e);
         resetOutput();
-        received_exception_from_server = true;
-
-        actual_server_error = e.code();
-        if (expected_server_error)
-        {
-            if (actual_server_error == expected_server_error)
-                return;
-            std::cerr << "Expected error code: " << expected_server_error << " but got: " << actual_server_error << "." << std::endl;
-        }
-
-        std::string text = e.displayText();
-
-        auto embedded_stack_trace_pos = text.find("Stack trace");
-        if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
-            text.resize(embedded_stack_trace_pos);
-
-        /// If we probably have progress bar, we should add additional newline,
-        /// otherwise exception may display concatenated with the progress bar.
-        if (need_render_progress)
-            std::cerr << '\n';
-
-        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-            << "Code: " << e.code() << ". " << text << std::endl;
     }
 
 
