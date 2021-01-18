@@ -136,7 +136,7 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-    void addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const;
+    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns) const;
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }

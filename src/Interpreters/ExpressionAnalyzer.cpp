@@ -205,7 +205,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
             auto sample_columns = temp_actions->getResultColumns();
-            analyzedJoin().addJoinedColumnsAndCorrectNullability(sample_columns);
+            analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
 

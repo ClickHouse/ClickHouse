@@ -235,11 +235,12 @@ void castColumnInplace(ColumnWithTypeAndName & col, const ColumnWithTypeAndName 
 {
     DataTypePtr target_type = dst_sample.type;
 
-    if (col.type->equals(*target_type))
+    if (typesEqualUpToNullability(col.type, target_type))
         return;
 
+    if (target_type->lowCardinality() || col.type->lowCardinality())
+        throw DB::Exception("Casting LowCardinality columns in join is not valid", ErrorCodes::LOGICAL_ERROR);
 
-    changeLowCardinality(col.column, dst_sample.column);
     if (col.type->isNullable() != target_type->isNullable())
     {
         changeNullabilityInplace(col.column);
@@ -408,6 +409,7 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
+/// Return mapping from left columns that need to have type from right table to names from right
 NameToNameMap getLeftKeysToRemap(const TableJoin & table_join)
 {
     NameToNameMap mapping;
@@ -423,6 +425,26 @@ NameToNameMap getLeftKeysToRemap(const TableJoin & table_join)
         }
     }
     return mapping;
+}
+
+/// Return mapping from left column that need to have type from right table to corresponding types from right
+NameToTypeMap getLeftKeysToRemapType(const TableJoin & table_join, NamesAndTypesList right_columns)
+{
+    NameToTypeMap right_name_to_type;
+    for (const auto & col : right_columns)
+        right_name_to_type[col.name] = col.type;
+
+    NameToTypeMap left_name_to_remap_type;
+
+    for (const auto & [left_name, right_name] : getLeftKeysToRemap(table_join))
+    {
+        const auto right_type = right_name_to_type.find(right_name);
+        if (right_type == right_name_to_type.end())
+            throw DB::Exception(
+                "Column " + right_name + " not found in " + right_columns.toString(), ErrorCodes::LOGICAL_ERROR);
+        left_name_to_remap_type[left_name] = right_type->second;
+    }
+    return left_name_to_remap_type;
 }
 
 void remapLeftKeysToRight(Block & block, const Block & right_table_keys, const TableJoin & table_join)

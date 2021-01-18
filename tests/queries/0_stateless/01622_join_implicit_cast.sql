@@ -24,7 +24,7 @@ SELECT '- left using -';
 SELECT * FROM t1 LEFT JOIN t2 USING(a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- right -';
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
--- SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
+SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner -';
 SELECT * FROM t1 INNER JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner using -';
@@ -41,12 +41,18 @@ SELECT '- inner -';
 SELECT * FROM t2 INNER JOIN t1 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 
 SELECT '- types -';
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 FULL JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 LEFT JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 LEFT JOIN t2 USING (a);
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 RIGHT JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 INNER JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 INNER JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 FULL JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 LEFT JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 RIGHT JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 INNER JOIN t2 ON t1.a == t2.a;
+
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 LEFT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' FROM t1 LEFT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 INNER JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' FROM t1 INNER JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 RIGHT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'String' FROM t1 RIGHT JOIN t2 USING (a);
+
 
 SET join_algorithm = 'partial_merge';
 
@@ -61,7 +67,7 @@ SELECT '- left using -';
 SELECT * FROM t1 LEFT JOIN t2 USING(a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- right -';
 SELECT * FROM t1 RIGHT JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
--- SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
+SELECT * FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner -';
 SELECT * FROM t1 INNER JOIN t2 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 SELECT '- inner using -';
@@ -78,12 +84,18 @@ SELECT '- inner -';
 SELECT * FROM t2 INNER JOIN t1 ON t1.a == t2.a ORDER BY (toInt32(if(empty(t2.a), '0', t2.a)), toInt32(t1.a));
 
 SELECT '- types -';
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 FULL JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 LEFT JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 LEFT JOIN t2 USING (a);
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 RIGHT JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 INNER JOIN t2 ON t1.a == t2.a;
-SELECT any(toTypeName(a)), any(toTypeName(t2.a)) FROM t1 INNER JOIN t2 USING (a);
+
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 FULL JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 LEFT JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 RIGHT JOIN t2 ON t1.a == t2.a;
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 INNER JOIN t2 ON t1.a == t2.a;
+
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 LEFT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' FROM t1 LEFT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 INNER JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' FROM t1 INNER JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'UInt8' AND any(toTypeName(t2.a)) == 'String' FROM t1 RIGHT JOIN t2 USING (a);
+SELECT any(toTypeName(a)) == 'String' FROM t1 RIGHT JOIN t2 USING (a);
 
 SET join_algorithm = 'auto';
 
@@ -181,17 +193,19 @@ SET join_algorithm = 'hash';
 SELECT '--- hash ---';
 
 SELECT '-';
-SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (a);
 SELECT '-';
-SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
--- SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c);
+SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (a);
+SELECT '-';
+SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c) ORDER BY (a);
 SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
-SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (a);
 SELECT '-';
-SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
--- SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c);
+SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (a);
+SELECT '-';
+SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c) ORDER BY (a);
 SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
@@ -217,17 +231,19 @@ SET join_algorithm = 'partial_merge';
 SELECT '--- partial_merge ---';
 
 SELECT '-';
-SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t1 INNER JOIN t2 USING (a, b, c) ORDER BY (a);
 SELECT '-';
-SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
--- SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c);
+SELECT * FROM t1 LEFT JOIN t2 USING (a, b, c) ORDER BY (a);
+SELECT '-';
+SELECT * FROM t1 RIGHT JOIN t2 USING (a, b, c) ORDER BY (a);
 SELECT * FROM t1 FULL JOIN t2 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';
-SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
+SELECT * FROM t2 INNER JOIN t1 USING (a, b, c) ORDER BY (a);
 SELECT '-';
-SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (t1.a, t1.b, t1.c, t2.a, t2.b, t2.c);
--- SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c);
+SELECT * FROM t2 LEFT JOIN t1 USING (a, b, c) ORDER BY (a);
+SELECT '-';
+SELECT * FROM t2 RIGHT JOIN t1 USING (a, b, c) ORDER BY (a);
 SELECT * FROM t2 FULL JOIN t1 USING (a, b, c); -- { serverError 53 }
 
 SELECT '-';

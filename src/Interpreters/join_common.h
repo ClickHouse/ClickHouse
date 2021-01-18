@@ -51,6 +51,8 @@ void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);
 
 NameToNameMap getLeftKeysToRemap(const TableJoin & table_join);
+NameToTypeMap getLeftKeysToRemapType(const TableJoin & table_join, NamesAndTypesList right_columns);
+
 void remapLeftKeysToRight(Block & block, const Block & right_table_keys, const TableJoin & table_join);
 
 }

@@ -10,6 +10,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/materializeBlock.h>
+#include <Interpreters/join_common.h>
 
 
 namespace DB
@@ -227,8 +228,12 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
         columns_added_by_join.push_back(joined_column);
 }
 
-void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
+void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns) const
 {
+    JoinCommon::NameToTypeMap left_name_to_remap_type;
+    if (isRight(kind()))
+        left_name_to_remap_type = JoinCommon::getLeftKeysToRemapType(*this, columns_from_joined_table);
+
     for (auto & col : columns)
     {
         /// Materialize column.
@@ -236,6 +241,10 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & c
         /// So, we need remove constants from header.
         if (col.column)
             col.column = nullptr;
+
+        const auto right_type_it = left_name_to_remap_type.find(col.name);
+        if (right_type_it != left_name_to_remap_type.end())
+            col.type = right_type_it->second;
 
         if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
