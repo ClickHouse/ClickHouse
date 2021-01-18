@@ -23,18 +23,27 @@ namespace ErrorCodes
 class TestHint
 {
 public:
-    TestHint(bool enabled_, const String & query_)
-    : enabled(enabled_)
-    , query(query_)
+    TestHint(bool enabled_, const String & query_) :
+        enabled(enabled_),
+        query(query_)
     {
         if (!enabled_)
             return;
+
+        // Don't parse error hints in leading comments, because it feels weird.
+        // Leading 'echo' hint is OK.
+        bool is_leading_hint = true;
 
         Lexer lexer(query.data(), query.data() + query.size());
 
         for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
-            if (token.type == TokenType::Comment)
+            if (token.type != TokenType::Comment
+                && token.type != TokenType::Whitespace)
+            {
+                is_leading_hint = false;
+            }
+            else if (token.type == TokenType::Comment)
             {
                 String comment(token.begin, token.begin + token.size());
 
@@ -47,7 +56,7 @@ public:
                         if (pos_end != String::npos)
                         {
                             String hint(comment.begin() + pos_start + 1, comment.begin() + pos_end);
-                            parse(hint);
+                            parse(hint, is_leading_hint);
                         }
                     }
                 }
@@ -60,7 +69,9 @@ public:
                      bool & got_exception, std::unique_ptr<Exception> & last_exception) const
     {
         if (!enabled)
+        {
             return true;
+        }
 
         if (allErrorsExpected(actual_server_error, actual_client_error))
         {
@@ -94,7 +105,7 @@ private:
     int client_error = 0;
     bool echo = false;
 
-    void parse(const String & hint)
+    void parse(const String & hint, bool is_leading_hint)
     {
         std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         ss << hint;
@@ -106,11 +117,15 @@ private:
             if (ss.eof())
                 break;
 
-            if (item == "serverError")
-                ss >> server_error;
-            else if (item == "clientError")
-                ss >> client_error;
-            else if (item == "echo")
+            if (!is_leading_hint)
+            {
+                if (item == "serverError")
+                    ss >> server_error;
+                else if (item == "clientError")
+                    ss >> client_error;
+            }
+
+            if (item == "echo")
                 echo = true;
         }
     }
