@@ -96,7 +96,10 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
         <user_directories>
             <ldap>
                 <server>my_ldap_server</server>
-                <user_template>my_user</user_template>
+                <roles>
+                    <my_local_role1 />
+                    <my_local_role2 />
+                </roles>
             </ldap>
         </user_directories>
     ```
