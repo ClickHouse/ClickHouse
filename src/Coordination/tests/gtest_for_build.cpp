@@ -215,12 +215,6 @@ TEST(CoordinationTest, TestSummingRaft3)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    while (s2.state_machine->getValue() != 78)
-    {
-        std::cout << "Waiting s2 to apply entry\n";
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
     while (s3.state_machine->getValue() != 78)
     {
         std::cout << "Waiting s3 to apply entry\n";

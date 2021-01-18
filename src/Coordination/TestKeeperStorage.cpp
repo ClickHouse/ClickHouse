@@ -1,4 +1,4 @@
-#include <Common/ZooKeeper/TestKeeperStorage.h>
+#include <Coordination/TestKeeperStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/setThreadName.h>
 #include <mutex>
