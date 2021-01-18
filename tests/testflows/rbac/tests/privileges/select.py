@@ -25,7 +25,7 @@ def without_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
+    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
 )
 def user_with_privilege(self, table_type, node=None):
     """Check that user can select from a table on which they have select privilege.
@@ -47,7 +47,7 @@ def user_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
+    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to select from a table after select privilege
@@ -76,7 +76,7 @@ def user_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
+    RQ_SRS_006_RBAC_Select_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass", [
     ("d", "d", "x", "d", '\'2020-01-01\''),
@@ -115,7 +115,7 @@ def user_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
+    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
 )
 def role_with_privilege(self, table_type, node=None):
     """Check that user can select from a table after it is granted a role that
@@ -142,7 +142,7 @@ def role_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
+    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
 )
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has select privilege on a table is unable
@@ -197,7 +197,7 @@ def role_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
+    RQ_SRS_006_RBAC_Select_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass", [
     ("d", "d", "x", "d", '\'2020-01-01\''),
@@ -241,7 +241,7 @@ def role_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select_Cluster("1.0"),
+    RQ_SRS_006_RBAC_Select_Cluster("1.0"),
 )
 def user_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user is able to select from a table with
@@ -270,14 +270,16 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
 
 @TestOutline(Feature)
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_Select("1.0"),
-    RQ_SRS_006_RBAC_Privileges_Select_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Select("1.0"),
+    RQ_SRS_006_RBAC_Select_TableEngines("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
 @Name("select")
 def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
+    """Check the RBAC functionality of SELECT.
+    """
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:

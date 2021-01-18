@@ -10,6 +10,12 @@ Connects to a ClickHouse server and repeatedly sends specified queries.
 Syntax:
 
 ``` bash
+$ clickhouse-benchmark --query ["single query"] [keys]
+```
+
+or
+
+``` bash
 $ echo "single query" | clickhouse-benchmark [keys]
 ```
 
@@ -34,6 +40,7 @@ clickhouse-benchmark [keys] < queries_file
 
 ## Keys {#clickhouse-benchmark-keys}
 
+-   `--query=WORD` - Query to execute. If this parameter is not passed clickhouse-benchmark will read queries from standard input. 
 -   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
 -   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.

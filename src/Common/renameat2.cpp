@@ -67,6 +67,10 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     /// Other cases when EINVAL can be returned should never happen.
     if (errno == EINVAL)
         return false;
+    /// We should never get ENOSYS on Linux, because we check kernel version in supportsRenameat2Impl().
+    /// However, we can get in on WSL.
+    if (errno == ENOSYS)
+        return false;
 
     if (errno == EEXIST)
         throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);

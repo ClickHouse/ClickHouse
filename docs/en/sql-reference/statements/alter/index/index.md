@@ -14,10 +14,9 @@ The following operations are available:
 
 -   `ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name` - The query rebuilds the secondary index `name` in the partition `partition_name`. Implemented as a [mutation](../../../../sql-reference/statements/alter/index.md#mutations).
 
-The first two commands areare lightweight in a sense that they only change metadata or remove files.
+The first two commands are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing indices metadata via ZooKeeper.
 
 !!! note "Note"
-    Index manipulation is supported only for tables with [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md) engine (including
-[replicated](../../../../engines/table-engines/mergetree-family/replication.md) variants).
+    Index manipulation is supported only for tables with [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../../engines/table-engines/mergetree-family/replication.md) variants).

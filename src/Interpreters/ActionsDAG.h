@@ -80,7 +80,7 @@ public:
     };
 
     /// Index is used to:
-    ///     * find Node buy it's result_name
+    ///     * find Node by it's result_name
     ///     * specify order of columns in result
     /// It represents a set of available columns.
     /// Removing of column from index is equivalent to removing of column from final result.
@@ -133,14 +133,13 @@ public:
                 insert(node);
         }
 
-        void remove(Node * node)
+        void remove(std::list<Node *>::iterator it)
         {
-            auto it = map.find(node->result_name);
-            if (it != map.end())
-                return;
+            auto map_it = map.find((*it)->result_name);
+            if (map_it != map.end() && map_it->second == it)
+                map.erase(map_it);
 
-            list.erase(it->second);
-            map.erase(it);
+            list.erase(it);
         }
 
         void swap(Index & other)
@@ -176,6 +175,7 @@ private:
 
 public:
     ActionsDAG() = default;
+    ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
@@ -209,8 +209,6 @@ public:
     /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
-    /// Removes column from index.
-    void removeColumn(const std::string & column_name);
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
 
@@ -222,6 +220,7 @@ public:
     ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
 
     bool hasArrayJoin() const;
+    bool hasStatefulFunctions() const;
     bool empty() const; /// If actions only contain inputs.
 
     const ActionsSettings & getSettings() const { return settings; }
@@ -247,6 +246,12 @@ public:
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
+
+    /// Create ActionsDAG which represents expression equivalent to applying lhs and rhs actions consequently.
+    /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
+    /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
+    /// Otherwise, any two actions may be combined.
+    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
 private:
     Node & addNode(Node node, bool can_replace = false);

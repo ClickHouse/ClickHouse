@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/QueryLog.h>
 #include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
@@ -125,6 +126,25 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
         }
     }
     return required_access;
+}
+
+void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+{
+    elem.query_kind = "Rename";
+    const auto & rename = ast->as<const ASTRenameQuery &>();
+    for (const auto & element : rename.elements)
+    {
+        {
+            String database = backQuoteIfNeed(element.from.database.empty() ? context.getCurrentDatabase() : element.from.database);
+            elem.query_databases.insert(database);
+            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.table));
+        }
+        {
+            String database = backQuoteIfNeed(element.to.database.empty() ? context.getCurrentDatabase() : element.to.database);
+            elem.query_databases.insert(database);
+            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.table));
+        }
+    }
 }
 
 }

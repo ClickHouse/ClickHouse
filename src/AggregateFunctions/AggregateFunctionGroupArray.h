@@ -112,7 +112,6 @@ class GroupArrayNumericImpl final
 {
     using Data = GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>;
     static constexpr bool limit_num_elems = Trait::has_limit;
-    DataTypePtr & data_type;
     UInt64 max_elems;
     UInt64 seed;
 
@@ -121,7 +120,6 @@ public:
         const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>, GroupArrayNumericImpl<T, Trait>>(
             {data_type_}, {})
-        , data_type(this->argument_types[0])
         , max_elems(max_elems_)
         , seed(seed_)
     {
@@ -129,7 +127,7 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(this->argument_types[0]); }
 
     void insert(Data & a, const T & v, Arena * arena) const
     {
@@ -188,13 +186,13 @@ public:
             if (!limit_num_elems)
             {
                 if (rhs_elems.value.size())
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
             }
             else
             {
                 UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
                 if (elems_to_insert)
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
             }
         }
 

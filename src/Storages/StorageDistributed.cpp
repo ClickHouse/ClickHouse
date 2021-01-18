@@ -2,7 +2,7 @@
 
 #include <Databases/IDatabase.h>
 #include <Disks/StoragePolicy.h>
-#include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -17,6 +17,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -315,7 +316,8 @@ std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const
 
     // LIMIT BY
     // LIMIT
-    if (select.limitBy() || select.limitLength())
+    // OFFSET
+    if (select.limitBy() || select.limitLength() || select.limitOffset())
         return QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -361,6 +363,7 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
+    const DistributedSettings & distributed_settings_,
     bool attach_,
     ClusterPtr owned_cluster_)
     : IStorage(id_)
@@ -372,6 +375,8 @@ StorageDistributed::StorageDistributed(
     , cluster_name(global_context.getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
+    , distributed_settings(distributed_settings_)
+    , rng(randomSeed())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -414,9 +419,10 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
+    const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, attach, std::move(owned_cluster_))
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -537,12 +543,13 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (!storage_policy && !owned_cluster && !settings.insert_distributed_sync)
     {
-        throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
+        throw Exception("Storage " + getName() + " must have own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// If sharding key is not specified, then you can only write to a shard containing only one shard
-    if (!has_sharding_key && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
+    if (!settings.insert_distributed_one_random_shard && !has_sharding_key
+        && ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) >= 2))
     {
         throw Exception("Method write is not supported by storage " + getName() + " with more than one shard and no sharding key provided",
                         ErrorCodes::STORAGE_REQUIRES_PARAMETER);
@@ -554,8 +561,10 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, metadata_snapshot, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()), cluster,
-        insert_sync, timeout);
+        context, *this, metadata_snapshot,
+        createInsertToRemoteTableQuery(
+            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        cluster, insert_sync, timeout);
 }
 
 
@@ -595,7 +604,7 @@ void StorageDistributed::startup()
         return;
 
     for (const DiskPtr & disk : data_volume->getDisks())
-        createDirectoryMonitors(disk->getPath());
+        createDirectoryMonitors(disk);
 
     for (const String & path : getDataPaths())
     {
@@ -675,9 +684,9 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
-void StorageDistributed::createDirectoryMonitors(const std::string & disk)
+void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 {
-    const std::string path(disk + relative_data_path);
+    const std::string path(disk->getPath() + relative_data_path);
     Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
@@ -708,10 +717,10 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
 {
-    const std::string path(disk + relative_data_path + name);
-    const std::string key(disk + name);
+    const std::string & disk_path = disk->getPath();
+    const std::string key(disk_path + name);
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
@@ -719,7 +728,10 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     {
         node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
         node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
-            *this, path, node_data.connection_pool, monitors_blocker, global_context.getDistributedSchedulePool());
+            *this, disk, relative_data_path + name,
+            node_data.connection_pool,
+            monitors_blocker,
+            global_context.getDistributedSchedulePool());
     }
     return *node_data.directory_monitor;
 }
@@ -889,6 +901,32 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 }
 
 
+size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shards)
+{
+
+    UInt32 total_weight = 0;
+    for (const auto & shard : shards)
+        total_weight += shard.weight;
+
+    assert(total_weight > 0);
+
+    size_t res;
+    {
+        std::lock_guard lock(rng_mutex);
+        res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
+    }
+
+    for (auto i = 0ul, s = shards.size(); i < s; ++i)
+    {
+        if (shards[i].weight > res)
+            return i;
+        res -= shards[i].weight;
+    }
+
+    __builtin_unreachable();
+}
+
+
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
@@ -900,7 +938,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)
-            node.second.directory_monitor->updatePath(new_path);
+            node.second.directory_monitor->updatePath(new_path_to_table_data);
     }
 
     relative_data_path = new_path_to_table_data;
@@ -922,6 +960,8 @@ void registerStorageDistributed(StorageFactory & factory)
           * - constant expression with string result, like currentDatabase();
           * -- string literal as specific case;
           * - empty string means 'use default database from cluster'.
+          *
+          * Distributed engine also supports SETTINGS clause.
           */
 
         ASTs & engine_args = args.engine_args;
@@ -963,6 +1003,13 @@ void registerStorageDistributed(StorageFactory & factory)
                     ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
         }
 
+        /// TODO: move some arguments from the arguments to the SETTINGS.
+        DistributedSettings distributed_settings;
+        if (args.storage_def->settings)
+        {
+            distributed_settings.loadFromQuery(*args.storage_def);
+        }
+
         return StorageDistributed::create(
             args.table_id, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
@@ -970,9 +1017,12 @@ void registerStorageDistributed(StorageFactory & factory)
             sharding_key,
             storage_policy,
             args.relative_data_path,
+            distributed_settings,
             args.attach);
     },
     {
+        .supports_settings = true,
+        .supports_parallel_insert = true,
         .source_access_type = AccessType::REMOTE,
     });
 }

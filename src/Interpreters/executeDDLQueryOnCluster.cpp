@@ -2,6 +2,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -12,7 +13,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -69,9 +72,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
-        for (const auto & command : query_alter->command_list->commands)
+        for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterType(command->type))
+            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
@@ -256,12 +259,12 @@ Block DDLQueryStatusInputStream::readImpl()
                             node_path);
         }
 
-        Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
+        Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "finished"));
         ++try_number;
         if (new_hosts.empty())
             continue;
 
-        current_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
+        current_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
 
         MutableColumns columns = sample.cloneEmptyColumns();
         for (const String & host_id : new_hosts)
@@ -269,7 +272,7 @@ Block DDLQueryStatusInputStream::readImpl()
             ExecutionStatus status(-1, "Cannot obtain error message");
             {
                 String status_data;
-                if (zookeeper->tryGet(node_path + "/finished/" + host_id, status_data))
+                if (zookeeper->tryGet(fs::path(node_path) / "finished" / host_id, status_data))
                     status.tryDeserializeText(status_data);
             }
 

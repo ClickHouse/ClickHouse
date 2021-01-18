@@ -31,6 +31,8 @@ public:
         const StorageID & table_id_,
         const String & format_name_,
         UInt64 min_upload_part_size_,
+        UInt64 max_single_part_upload_size_,
+        UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
@@ -59,7 +61,8 @@ private:
     const Context & global_context;
 
     String format_name;
-    UInt64 min_upload_part_size;
+    size_t min_upload_part_size;
+    size_t max_single_part_upload_size;
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
     String name;

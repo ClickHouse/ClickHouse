@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -179,31 +180,14 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-class ASTAlterCommandList : public IAST
-{
-public:
-    std::vector<ASTAlterCommand *> commands;
-
-    void add(const ASTPtr & command)
-    {
-        commands.push_back(command->as<ASTAlterCommand>());
-        children.push_back(command);
-    }
-
-    String getID(char) const override { return "AlterCommandList"; }
-
-    ASTPtr clone() const override;
-
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     bool is_live_view{false}; /// true for ALTER LIVE VIEW
 
-    ASTAlterCommandList * command_list = nullptr;
+    ASTExpressionList * command_list = nullptr;
+
+    bool isSettingsAlter() const;
 
     String getID(char) const override;
 

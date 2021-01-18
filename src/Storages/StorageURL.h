@@ -4,12 +4,15 @@
 #include <Poco/URI.h>
 #include <ext/shared_ptr_helper.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <IO/ConnectionTimeouts.h>
+#include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
 
 
 namespace DB
 {
+
+struct ConnectionTimeouts;
+
 /**
  * This class represents table engine for external urls.
  * It sends HTTP GET to server when select is called and

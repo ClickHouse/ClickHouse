@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Parsers/IAST.h>
@@ -49,7 +50,7 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
                         + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeLowCardinality::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
@@ -242,7 +243,7 @@ static DeserializeStateLowCardinality * checkAndGetLowCardinalityDeserializeStat
     return low_cardinality_state;
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkStatePrefix(
+void DataTypeLowCardinality::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -262,7 +263,7 @@ void DataTypeLowCardinality::serializeBinaryBulkStatePrefix(
     state = std::make_shared<SerializeStateLowCardinality>(key_version);
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkStateSuffix(
+void DataTypeLowCardinality::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -288,7 +289,7 @@ void DataTypeLowCardinality::serializeBinaryBulkStateSuffix(
     }
 }
 
-void DataTypeLowCardinality::deserializeBinaryBulkStatePrefix(
+void DataTypeLowCardinality::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -481,7 +482,7 @@ namespace
     }
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
+void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -578,11 +579,12 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     index_version.getDataType()->serializeBinaryBulk(*positions, *indexes_stream, 0, num_rows);
 }
 
-void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * /* cache */) const
 {
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(column);
 

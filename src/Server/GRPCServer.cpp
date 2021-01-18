@@ -31,10 +31,6 @@
 #include <grpc++/server_builder.h>
 
 
-/// For diagnosing problems use the following environment variables:
-/// export GRPC_TRACE=all
-/// export GRPC_VERBOSITY=DEBUG
-
 using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
 using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
 using GRPCResult = clickhouse::grpc::Result;
@@ -57,6 +53,39 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Make grpc to pass logging messages to ClickHouse logging system.
+    void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
+    {
+        static std::once_flag once_flag;
+        std::call_once(once_flag, [&config]
+        {
+            static Poco::Logger * logger = &Poco::Logger::get("grpc");
+            gpr_set_log_function([](gpr_log_func_args* args)
+            {
+                if (args->severity == GPR_LOG_SEVERITY_DEBUG)
+                    LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
+                else if (args->severity == GPR_LOG_SEVERITY_INFO)
+                    LOG_INFO(logger, "{} ({}:{})", args->message, args->file, args->line);
+                else if (args->severity == GPR_LOG_SEVERITY_ERROR)
+                    LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
+            });
+
+            if (config.getBool("grpc.verbose_logs", false))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+                grpc_tracer_set_enabled("all", true);
+            }
+            else if (logger->is(Poco::Message::PRIO_DEBUG))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+            }
+            else if (logger->is(Poco::Message::PRIO_INFORMATION))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+            }
+        });
+    }
+
     grpc_compression_algorithm parseCompressionAlgorithm(const String & str)
     {
         if (str == "none")
@@ -965,7 +994,7 @@ namespace
 
         AsynchronousBlockInputStream async_in(io.in);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, async_in.getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1037,7 +1066,7 @@ namespace
 
         auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, executor->getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
@@ -1292,7 +1321,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputFormat(output_format, buf, totals);
+        auto stream = query_context->getOutputStream(output_format, buf, totals);
         stream->writePrefix();
         stream->write(totals);
         stream->writeSuffix();
@@ -1304,7 +1333,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputFormat(output_format, buf, extremes);
+        auto stream = query_context->getOutputStream(output_format, buf, extremes);
         stream->writePrefix();
         stream->write(extremes);
         stream->writeSuffix();
@@ -1604,6 +1633,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
+    initGRPCLogging(iserver.config());
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);

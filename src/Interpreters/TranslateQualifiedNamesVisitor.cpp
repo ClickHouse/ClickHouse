@@ -126,6 +126,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 {
     ASTPtr & func_arguments = node.arguments;
 
+    if (!func_arguments) return;
+
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
@@ -222,11 +224,14 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
-                for (const auto & column : table.columns)
+                for (const auto * cols : {&table.columns, &table.alias_columns, &table.materialized_columns})
                 {
-                    if (first_table || !data.join_using_columns.count(column.name))
+                    for (const auto & column : *cols)
                     {
-                        addIdentifier(columns, table.table, column.name);
+                        if (first_table || !data.join_using_columns.count(column.name))
+                        {
+                            addIdentifier(columns, table.table, column.name);
+                        }
                     }
                 }
 

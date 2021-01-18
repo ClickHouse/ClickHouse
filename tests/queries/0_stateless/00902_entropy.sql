@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS defaults
 (
      vals UInt64
 ) ENGINE = Memory;
-insert into defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5), (3), (1), (1), (4), (5), (2)
+insert into defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5), (3), (1), (1), (4), (5), (2);
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from defaults);
 
 
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS defaults
 (
     vals UInt32
 ) ENGINE = Memory;
-insert into defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5), (3), (1), (1), (4), (5), (2)
+insert into defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5), (3), (1), (1), (4), (5), (2);
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from defaults);
 
 
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS defaults
 (
     vals Int32
 ) ENGINE = Memory;
-insert into defaults values (0), (0), (-1), (0), (0), (0), (-1), (2), (3), (5), (3), (-1), (-1), (4), (5), (2)
+insert into defaults values (0), (0), (-1), (0), (0), (0), (-1), (2), (3), (5), (3), (-1), (-1), (4), (5), (2);
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from defaults);
 
 
