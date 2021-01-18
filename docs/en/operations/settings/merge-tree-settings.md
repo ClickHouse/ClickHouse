@@ -35,7 +35,7 @@ If the number of active parts in a single partition exceeds the `parts_to_throw_
 
 Possible values:
 
--   Positive integer.
+-   Any positive integer.
 
 Default value: 300.
 
@@ -50,7 +50,7 @@ If the number of active parts in a single partition exceeds the `parts_to_delay_
 
 Possible values:
 
--   Positive integer.
+-   Any positive integer.
 
 Default value: 150.
 
@@ -62,7 +62,7 @@ The value in seconds, which is used to calculate the `INSERT` delay, if the numb
 
 Possible values:
 
--   Positive integer.
+-   Any positive integer.
 
 Default value: 1.
 
@@ -82,7 +82,7 @@ If the total number of active parts in all partitions of a table exceeds the `ma
 
 Possible values:
 
--   Positive integer.
+-   Any positive integer.
 
 Default value: 100000.
 
@@ -95,6 +95,7 @@ The number of most recently inserted blocks for which Zookeeper stores hashes to
 Possible values:
 
 -   Any positive integer.
+-   0 (disable deduplication)
 
 Default value: 100.
 
@@ -160,7 +161,7 @@ Possible values:
 Default value: 1048576 (1 MB)
 
 `max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of parts which can be merged despite the lack of available disk space (in pool). This is necessary to reduce the number of small parts and the chance of `Too many parts` errors.
-Merges book disk space by doubling the total merged parts sizes. Thus, with a small amount of free disk space, a situation may happen that there is free space, but this space is already booked by ongoing merges, so other merges unable to start, and the number of small parts grows with every insert.
+Merges book disk space by doubling the total merged parts sizes. Thus, with a small amount of free disk space, a situation may happen that there is free space, but this space is already booked by ongoing large merges, so other merges unable to start, and the number of small parts grows with every insert.
 
 ## merge_max_block_size {#merge-max-block-size}
 
