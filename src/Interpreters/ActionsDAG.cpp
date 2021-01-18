@@ -923,21 +923,11 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
                                 input_node.result_name = child->result_name;
                                 child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                /// If it is already an input, it was created by other branch.
-                                assert(child->type != ActionType::INPUT);
                                 new_inputs.push_back(child);
                             }
                         }
 
                         child = child_data.to_second;
-                    }
-
-                    /// Every input should be in both DAGs.
-                    if (copy.type == ActionType::INPUT)
-                    {
-                        auto & input_copy = first_nodes.emplace_back(*cur.node);
-                        assert(cur_data.to_first == nullptr);
-                        cur_data.to_first = &input_copy;
                     }
                 }
                 else
@@ -952,7 +942,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
                         assert(child != nullptr);
                     }
 
-                    if (cur_data.used_in_result || copy.type == ActionType::INPUT)
+                    if (cur_data.used_in_result)
                     {
                         /// If this node is needed in result, add it as input.
                         Node input_node;
@@ -961,8 +951,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
                         input_node.result_name = node.result_name;
                         cur_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                        if (copy.type != ActionType::INPUT)
-                            new_inputs.push_back(cur.node);
+                        new_inputs.push_back(cur.node);
                     }
                 }
             }
@@ -978,9 +967,6 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
     for (auto * input : inputs)
     {
         const auto & cur = data[input];
-        second_inputs.push_back(cur.to_second);
-        first_index.insert(cur.to_first);
-
         first_inputs.push_back(cur.to_first);
     }
 
