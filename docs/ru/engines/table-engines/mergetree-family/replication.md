@@ -246,9 +246,4 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Если данные в ZooKeeper оказались утеряны или повреждены, то вы можете сохранить данные, переместив их в нереплицируемую таблицу, как описано в пункте выше.
 
-**Смотрите также**
-
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
--   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
-
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replication/) <!--hide-->

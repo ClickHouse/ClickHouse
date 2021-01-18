@@ -8,7 +8,6 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <gtest/gtest.h>
 
@@ -18,9 +17,9 @@ using namespace DB;
 
 static String astToString(IAST * ast)
 {
-    WriteBufferFromOwnString buf;
-    dumpAST(*ast, buf);
-    return buf.str();
+    std::ostringstream oss;
+    dumpAST(*ast, oss);
+    return oss.str();
 }
 
 /// Tests for external dictionaries DDL parser

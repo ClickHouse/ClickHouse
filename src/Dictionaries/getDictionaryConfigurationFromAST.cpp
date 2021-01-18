@@ -14,7 +14,6 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -99,40 +98,38 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-
-    if (layout->parameters)
-        for (const auto & param : layout->parameters->children)
+    for (const auto & param : layout->parameters->children)
+    {
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
         {
-            const ASTPair * pair = param->as<ASTPair>();
-            if (!pair)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
-                    param->formatForErrorMessage());
-            }
-
-            const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
-            if (!value_literal)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be a literal, got '{}' instead",
-                    pair->second->formatForErrorMessage());
-            }
-
-            const auto value_field = value_literal->value;
-
-            if (value_field.getType() != Field::Types::UInt64
-                && value_field.getType() != Field::Types::String)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
-                    value_field.getTypeName());
-            }
-
-            AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-            AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
-            layout_type_parameter_element->appendChild(value_to_append);
-            layout_type_element->appendChild(layout_type_parameter_element);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
         }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64
+            && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
+        layout_type_element->appendChild(layout_type_parameter_element);
+    }
 }
 
 /*
@@ -359,8 +356,7 @@ NamesToTypeNames buildDictionaryAttributesConfiguration(
 void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTExpressionList * ast_expr_list,
-    const Context & context)
+    const ASTExpressionList * ast_expr_list)
 {
     const auto & children = ast_expr_list->children;
     for (size_t i = 0; i != children.size(); ++i)
@@ -369,30 +365,19 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (const auto * identifier = pair->second->as<const ASTIdentifier>())
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
             AutoPtr<Text> value(doc->createTextNode(identifier->name()));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * literal = pair->second->as<const ASTLiteral>())
+        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (const auto * list = pair->second->as<const ASTExpressionList>())
+        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
         {
-            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list, context);
-        }
-        else if (const auto * func = pair->second->as<ASTFunction>())
-        {
-            auto builder = FunctionFactory::instance().tryGet(func->name, context);
-            auto function = builder->build({});
-            auto result = function->execute({}, {}, 0);
-
-            Field value;
-            result->get(0, value);
-            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
-            current_xml_element->appendChild(text_value);
+            buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
         }
         else
         {
@@ -421,14 +406,13 @@ void buildSourceConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
-    const ASTDictionarySettings * settings,
-    const Context & context)
+    const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
-    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>(), context);
+    buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
 
     if (settings != nullptr)
     {
@@ -482,8 +466,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 }
 
 
-DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const Context & context, const std::string & database_)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
 {
     checkAST(query);
 
@@ -527,7 +510,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const Context & 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

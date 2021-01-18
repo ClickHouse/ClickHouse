@@ -579,7 +579,7 @@ Si una función captura la propiedad de un objeto creado en el montón, cree el 
 
 **14.** Valores devueltos.
 
-En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `return std::move(res)`.
+En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `[return std::move(res)]{.strike}`.
 
 Si la función asigna un objeto en el montón y lo devuelve, use `shared_ptr` o `unique_ptr`.
 
@@ -673,7 +673,7 @@ Utilice siempre `#pragma once` en lugar de incluir guardias.
 **24.** No use `trailing return type` para funciones a menos que sea necesario.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Declaración e inicialización de variables.

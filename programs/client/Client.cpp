@@ -45,7 +45,6 @@
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -55,13 +54,10 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
-#include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -79,7 +75,6 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Formats/registerFormats.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -112,7 +107,6 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
 }
 
 
@@ -138,9 +132,6 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_a_tty = false;         /// stdin is a terminal.
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
-
-    /// If not empty, queries will be read from these files
-    std::vector<std::string> queries_files;
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String full_query; /// Current query as it was given to the client.
@@ -231,7 +222,6 @@ private:
 
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
-    QueryProcessingStage::Enum query_processing_stage;
 
     void initialize(Poco::Util::Application & self) override
     {
@@ -473,7 +463,6 @@ private:
     {
         UseSSL use_ssl;
 
-        registerFormats();
         registerFunctions();
         registerAggregateFunctions();
 
@@ -482,15 +471,8 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        /// - -qf (--queries-file) command line option is present.
-        ///   The value of the option is used as file with query (or of multiple queries) to execute.
-        if (!stdin_is_a_tty || config().has("query") || !queries_files.empty())
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
-
-        if (config().has("query") && !queries_files.empty())
-        {
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
-        }
 
         std::cout << std::fixed << std::setprecision(3);
         std::cerr << std::fixed << std::setprecision(3);
@@ -702,8 +684,14 @@ private:
             auto query_id = config().getString("query_id", "");
             if (!query_id.empty())
                 context.setCurrentQueryId(query_id);
-
-            nonInteractive();
+            if (query_fuzzer_runs)
+            {
+                nonInteractiveWithFuzzing();
+            }
+            else
+            {
+                nonInteractive();
+            }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             if (last_exception_received_from_server)
@@ -794,22 +782,8 @@ private:
     {
         String text;
 
-        if (!queries_files.empty())
-        {
-            for (const auto & queries_file : queries_files)
-            {
-                connection->setDefaultDatabase(connection_parameters.default_database);
-                ReadBufferFromFile in(queries_file);
-                readStringUntilEOF(text, in);
-                if (!processMultiQuery(text))
-                    break;
-            }
-            return;
-        }
-        else if (config().has("query"))
-        {
-            text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
-        }
+        if (config().has("query"))
+            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -818,10 +792,113 @@ private:
             readStringUntilEOF(text, in);
         }
 
-        if (query_fuzzer_runs)
-            processWithFuzzing(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
+    }
+
+    void nonInteractiveWithFuzzing()
+    {
+        if (config().has("query"))
+        {
+            // Poco configuration should not process substitutions in form of
+            // ${...} inside query
+            processWithFuzzing(config().getRawString("query"));
+            return;
+        }
+
+        // Try to stream the queries from stdin, without reading all of them
+        // into memory. The interface of the parser does not support streaming,
+        // in particular, it can't distinguish the end of partial input buffer
+        // and the final end of input file. This means we have to try to split
+        // the input into separate queries here. Two patterns of input are
+        // especially interesting:
+        // 1) multiline query:
+        //      select 1
+        //      from system.numbers;
+        //
+        // 2) csv insert with in-place data:
+        //      insert into t format CSV 1;2
+        //
+        // (1) means we can't split on new line, and (2) means we can't split on
+        // semicolon. Solution: split on ';\n'. This sequence is frequent enough
+        // in the SQL tests which are our principal input for fuzzing. Now we
+        // have another interesting case:
+        // 3) escaped semicolon followed by newline, e.g.
+        //      select ';
+        //          '
+        //
+        // To handle (3), parse until we can, and read more data if the parser
+        // complains. Hopefully this should be enough...
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        std::string text;
+        while (!in.eof())
+        {
+            // Read until separator.
+            while (!in.eof())
+            {
+                char * next_separator = find_first_symbols<';'>(in.position(),
+                    in.buffer().end());
+
+                if (next_separator < in.buffer().end())
+                {
+                    next_separator++;
+                    if (next_separator < in.buffer().end()
+                        && *next_separator == '\n')
+                    {
+                        // Found ';\n', append it to the query text and try to
+                        // parse.
+                        next_separator++;
+                        text.append(in.position(), next_separator - in.position());
+                        in.position() = next_separator;
+                        break;
+                    }
+                }
+
+                // Didn't find the semicolon and reached the end of buffer.
+                text.append(in.position(), next_separator - in.position());
+                in.position() = next_separator;
+
+                if (text.size() > 1024 * 1024)
+                {
+                    // We've read a lot of text and still haven't seen a separator.
+                    // Likely some pathological input, just fall through to prevent
+                    // too long loops.
+                    break;
+                }
+            }
+
+            // Parse and execute what we've read.
+            const auto * new_end = processWithFuzzing(text);
+
+            if (new_end > &text[0])
+            {
+                const auto rest_size = text.size() - (new_end - &text[0]);
+
+                memcpy(&text[0], new_end, rest_size);
+                text.resize(rest_size);
+            }
+            else
+            {
+                // We didn't read enough text to parse a query. Will read more.
+            }
+
+            // Ensure that we're still connected to the server. If the server died,
+            // the reconnect is going to fail with an exception, and the fuzzer
+            // will exit. The ping() would be the best match here, but it's
+            // private, probably for a good reason that the protocol doesn't allow
+            // pings at any possible moment.
+            // Don't forget to reset the default database which might have changed.
+            connection->setDefaultDatabase("");
+            connection->forceConnected(connection_parameters.timeouts);
+
+            if (text.size() > 4 * 1024)
+            {
+                // Some pathological situation where the text is larger than 4kB
+                // and we still cannot parse a single query in it. Abort.
+                std::cerr << "Read too much text and still can't parse a query."
+                     " Aborting." << std::endl;
+                exit(1);
+            }
+        }
     }
 
     bool processQueryText(const String & text)
@@ -849,16 +926,10 @@ private:
     {
         const bool test_mode = config().has("testmode");
 
-        {
-            /// disable logs if expects errors
+        {   /// disable logs if expects errors
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
-                processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            if (test_hint.echoQueries())
-                echo_queries = true;
+                processTextAsSingleQuery("SET send_logs_level = 'none'");
         }
 
         /// Several queries separated by ';'.
@@ -924,7 +995,7 @@ private:
                 if (hint.clientError() != e.code())
                 {
                     if (hint.clientError())
-                        e.addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
+                        e.addMessage("\nExpected clinet error: " + std::to_string(hint.clientError()));
                     throw;
                 }
 
@@ -983,50 +1054,39 @@ private:
             expected_client_error = test_hint.clientError();
             expected_server_error = test_hint.serverError();
 
-            if (query_fuzzer_runs)
+            try
             {
-                if (!processWithFuzzing(full_query))
-                    return false;
+                processParsedSingleQuery();
+
+                if (insert_ast && insert_ast->data)
+                {
+                    // For VALUES format: use the end of inline data as reported
+                    // by the format parser (it is saved in sendData()). This
+                    // allows us to handle queries like:
+                    //   insert into t values (1); select 1
+                    //, where the inline data is delimited by semicolon and not
+                    // by a newline.
+                    this_query_end = parsed_query->as<ASTInsertQuery>()->end;
+                }
             }
-            else
+            catch (...)
             {
-                try
-                {
-                    processParsedSingleQuery();
+                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                actual_client_error = last_exception_received_from_server->code();
+                if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
+                received_exception_from_server = true;
+            }
 
-                    if (insert_ast && insert_ast->data)
-                    {
-                        // For VALUES format: use the end of inline data as reported
-                        // by the format parser (it is saved in sendData()). This
-                        // allows us to handle queries like:
-                        //   insert into t values (1); select 1
-                        //, where the inline data is delimited by semicolon and not
-                        // by a newline.
-                        this_query_end = parsed_query->as<ASTInsertQuery>()->end;
-                    }
-                }
-                catch (...)
-                {
-                    last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                    actual_client_error = last_exception_received_from_server->code();
-                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
-                    received_exception_from_server = true;
-                }
+            if (!test_hint.checkActual(actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
+                connection->forceConnected(connection_parameters.timeouts);
 
-                if (!test_hint.checkActual(
-                    actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
-                {
-                    connection->forceConnected(connection_parameters.timeouts);
-                }
-
-                if (received_exception_from_server && !ignore_error)
-                {
-                    if (is_interactive)
-                        break;
-                    else
-                        return false;
-                }
+            if (received_exception_from_server && !ignore_error)
+            {
+                if (is_interactive)
+                    break;
+                else
+                    return false;
             }
 
             this_query_begin = this_query_end;
@@ -1036,148 +1096,163 @@ private:
     }
 
 
-    /// Returns false when server is not available.
-    bool processWithFuzzing(const String & text)
+    // Returns the last position we could parse.
+    const char * processWithFuzzing(const String & text)
     {
-        ASTPtr orig_ast;
+        /// Several queries separated by ';'.
+        /// INSERT data is ended by the end of line, not ';'.
 
-        try
-        {
-            const char * begin = text.data();
-            orig_ast = parseQuery(begin, begin + text.size(), true);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::SYNTAX_ERROR)
-                throw;
-        }
+        const char * begin = text.data();
+        const char * end = begin + text.size();
 
-        if (!orig_ast)
+        while (begin < end)
         {
-            // Can't continue after a parsing error
-            return true;
-        }
-
-        // Don't repeat inserts, the tables grow too big. Also don't repeat
-        // creates because first we run the unmodified query, it will succeed,
-        // and the subsequent queries will fail. When we run out of fuzzer
-        // errors, it may be interesting to add fuzzing of create queries that
-        // wraps columns into LowCardinality or Nullable. Also there are other
-        // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-        // them as well. Also there is no point fuzzing DROP queries.
-        size_t this_query_runs = query_fuzzer_runs;
-        if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>() || orig_ast->as<ASTDropQuery>())
-        {
-            this_query_runs = 1;
-        }
-
-        ASTPtr fuzz_base = orig_ast;
-        for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
-        {
-            fmt::print(stderr, "Fuzzing step {} out of {}\n",
-                fuzz_step, this_query_runs);
-
-            ASTPtr ast_to_process;
-            try
+            // Skip whitespace before the query
+            while (isWhitespaceASCII(*begin) || *begin == ';')
             {
-                WriteBufferFromOwnString dump_before_fuzz;
-                fuzz_base->dumpTree(dump_before_fuzz);
-                auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+                ++begin;
+            }
 
-                ast_to_process = fuzz_base->clone();
+            const auto * this_query_begin = begin;
+            ASTPtr orig_ast = parseQuery(begin, end, true);
 
-                WriteBufferFromOwnString dump_of_cloned_ast;
-                ast_to_process->dumpTree(dump_of_cloned_ast);
+            if (!orig_ast)
+            {
+                // Can't continue after a parsing error
+                return begin;
+            }
 
-                // Run the original query as well.
-                if (fuzz_step > 0)
+            auto * as_insert = orig_ast->as<ASTInsertQuery>();
+            if (as_insert && as_insert->data)
+            {
+                // INSERT data is ended by newline
+                as_insert->end = find_first_symbols<'\n'>(as_insert->data, end);
+                begin = as_insert->end;
+            }
+
+            full_query = text.substr(this_query_begin - text.data(),
+                begin - text.data());
+
+            // Don't repeat inserts, the tables grow too big. Also don't repeat
+            // creates because first we run the unmodified query, it will succeed,
+            // and the subsequent queries will fail. When we run out of fuzzer
+            // errors, it may be interesting to add fuzzing of create queries that
+            // wraps columns into LowCardinality or Nullable. Also there are other
+            // kinds of create queries such as CREATE DICTIONARY, we could fuzz
+            // them as well.
+            int this_query_runs = query_fuzzer_runs;
+            if (as_insert
+                || orig_ast->as<ASTCreateQuery>())
+            {
+                this_query_runs = 1;
+            }
+
+            ASTPtr fuzz_base = orig_ast;
+            for (int fuzz_step = 0; fuzz_step < this_query_runs; fuzz_step++)
+            {
+                fprintf(stderr, "fuzzing step %d out of %d for query at pos %zd\n",
+                    fuzz_step, this_query_runs, this_query_begin - text.data());
+
+                ASTPtr ast_to_process;
+                try
                 {
-                    fuzzer.fuzzMain(ast_to_process);
+                    std::stringstream dump_before_fuzz;
+                    fuzz_base->dumpTree(dump_before_fuzz);
+                    auto base_before_fuzz = fuzz_base->formatForErrorMessage();
+
+                    ast_to_process = fuzz_base->clone();
+
+                    std::stringstream dump_of_cloned_ast;
+                    ast_to_process->dumpTree(dump_of_cloned_ast);
+
+                    // Run the original query as well.
+                    if (fuzz_step > 0)
+                    {
+                        fuzzer.fuzzMain(ast_to_process);
+                    }
+
+                    auto base_after_fuzz = fuzz_base->formatForErrorMessage();
+
+                    // Debug AST cloning errors.
+                    if (base_before_fuzz != base_after_fuzz)
+                    {
+                        fprintf(stderr, "base before fuzz: %s\n"
+                            "base after fuzz: %s\n", base_before_fuzz.c_str(),
+                            base_after_fuzz.c_str());
+                        fprintf(stderr, "dump before fuzz:\n%s\n",
+                            dump_before_fuzz.str().c_str());
+                        fprintf(stderr, "dump of cloned ast:\n%s\n",
+                            dump_of_cloned_ast.str().c_str());
+                        fprintf(stderr, "dump after fuzz:\n");
+                        fuzz_base->dumpTree(std::cerr);
+
+                        fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+
+                        assert(false);
+                    }
+
+                    auto fuzzed_text = ast_to_process->formatForErrorMessage();
+                    if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
+                    {
+                        fprintf(stderr, "got boring ast\n");
+                        continue;
+                    }
+
+                    parsed_query = ast_to_process;
+                    query_to_send = parsed_query->formatForErrorMessage();
+
+                    processParsedSingleQuery();
+                }
+                catch (...)
+                {
+                    // Some functions (e.g. protocol parsers) don't throw, but
+                    // set last_exception instead, so we'll also do it here for
+                    // uniformity.
+                    last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    received_exception_from_server = true;
                 }
 
-                auto base_after_fuzz = fuzz_base->formatForErrorMessage();
-
-                // Debug AST cloning errors.
-                if (base_before_fuzz != base_after_fuzz)
+                if (received_exception_from_server)
                 {
-                    fmt::print(stderr,
-                        "Base before fuzz: {}\n"
-                        "Base after fuzz: {}\n",
-                        base_before_fuzz, base_after_fuzz);
-                    fmt::print(stderr, "Dump before fuzz:\n{}\n", dump_before_fuzz.str());
-                    fmt::print(stderr, "Dump of cloned AST:\n{}\n", dump_of_cloned_ast.str());
-                    fmt::print(stderr, "Dump after fuzz:\n");
-
-                    WriteBufferFromOStream cerr_buf(std::cerr, 4096);
-                    fuzz_base->dumpTree(cerr_buf);
-                    cerr_buf.next();
-
-                    fmt::print(stderr, "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
-
-                    assert(false);
+                    fmt::print(stderr, "Error on processing query '{}': {}\n",
+                        ast_to_process->formatForErrorMessage(),
+                        last_exception_received_from_server->message());
                 }
 
-                auto fuzzed_text = ast_to_process->formatForErrorMessage();
-                if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
+                if (!connection->isConnected())
                 {
-                    fmt::print(stderr, "Got boring AST\n");
-                    continue;
+                    // Probably the server is dead because we found an assertion
+                    // failure. Fail fast.
+                    fmt::print(stderr, "Lost connection to the server\n");
+                    return begin;
                 }
 
-                parsed_query = ast_to_process;
-                query_to_send = parsed_query->formatForErrorMessage();
-
-                processParsedSingleQuery();
-            }
-            catch (...)
-            {
-                // Some functions (e.g. protocol parsers) don't throw, but
-                // set last_exception instead, so we'll also do it here for
-                // uniformity.
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                received_exception_from_server = true;
-            }
-
-            if (received_exception_from_server)
-            {
-                fmt::print(stderr, "Error on processing query '{}': {}\n",
-                    ast_to_process->formatForErrorMessage(),
-                    last_exception_received_from_server->message());
-            }
-
-            if (!connection->isConnected())
-            {
-                // Probably the server is dead because we found an assertion
-                // failure. Fail fast.
-                fmt::print(stderr, "Lost connection to the server\n");
-                return false;
-            }
-
-            // The server is still alive so we're going to continue fuzzing.
-            // Determine what we're going to use as the starting AST.
-            if (received_exception_from_server)
-            {
-                // Query completed with error, keep the previous starting AST.
-                // Also discard the exception that we now know to be non-fatal,
-                // so that it doesn't influence the exit code.
-                last_exception_received_from_server.reset(nullptr);
-                received_exception_from_server = false;
-            }
-            else if (ast_to_process->formatForErrorMessage().size() > 500)
-            {
-                // ast too long, start from original ast
-                fmt::print(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
-                fuzz_base = orig_ast;
-            }
-            else
-            {
-                // fuzz starting from this successful query
-                fmt::print(stderr, "Query succeeded, using this AST as a start\n");
-                fuzz_base = ast_to_process;
+                // The server is still alive so we're going to continue fuzzing.
+                // Determine what we're going to use as the starting AST.
+                if (received_exception_from_server)
+                {
+                    // Query completed with error, keep the previous starting AST.
+                    // Also discard the exception that we now know to be non-fatal,
+                    // so that it doesn't influence the exit code.
+                    last_exception_received_from_server.reset(nullptr);
+                    received_exception_from_server = false;
+                }
+                else if (ast_to_process->formatForErrorMessage().size() > 500)
+                {
+                    // ast too long, start from original ast
+                    fprintf(stderr, "Current AST is too long, discarding it and using the original AST as a start\n");
+                    fuzz_base = orig_ast;
+                }
+                else
+                {
+                    // fuzz starting from this successful query
+                    fprintf(stderr, "Query succeeded, using this AST as a start\n");
+                    fuzz_base = ast_to_process;
+                }
             }
         }
 
-        return true;
+        return begin;
     }
 
     void processTextAsSingleQuery(const String & text_)
@@ -1364,7 +1439,7 @@ private:
                     connection_parameters.timeouts,
                     query_to_send,
                     context.getCurrentQueryId(),
-                    query_processing_stage,
+                    QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
                     &context.getClientInfo(),
                     true);
@@ -1405,7 +1480,7 @@ private:
             connection_parameters.timeouts,
             query_to_send,
             context.getCurrentQueryId(),
-            query_processing_stage,
+            QueryProcessingStage::Complete,
             &context.getSettingsRef(),
             &context.getClientInfo(),
             true);
@@ -1452,9 +1527,7 @@ private:
         if (is_interactive)
         {
             std::cout << std::endl;
-            WriteBufferFromOStream res_buf(std::cout, 4096);
-            formatAST(*res, res_buf);
-            res_buf.next();
+            formatAST(*res, std::cout);
             std::cout << std::endl << std::endl;
         }
 
@@ -1790,13 +1863,6 @@ private:
     {
         if (!block_out_stream)
         {
-            /// Ignore all results when fuzzing as they can be huge.
-            if (query_fuzzer_runs)
-            {
-                block_out_stream = std::make_shared<NullBlockOutputStream>(block);
-                return;
-            }
-
             WriteBuffer * out_buf = nullptr;
             String pager = config().getString("pager", "");
             if (!pager.empty())
@@ -1840,12 +1906,7 @@ private:
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
 
-            /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!need_render_progress)
-                block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
-            else
-                block_out_stream = context.getOutputStream(current_format, *out_buf, block);
-
+            block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
             block_out_stream->writePrefix();
         }
     }
@@ -1902,18 +1963,15 @@ private:
             written_first_block = true;
         }
 
-        bool clear_progress = false;
-        if (need_render_progress)
-            clear_progress = std_out.offset() > 0;
-
-        if (clear_progress)
+        bool clear_progess = std_out.offset() > 0;
+        if (clear_progess)
             clearProgress();
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (clear_progress)
+        if (clear_progess)
             writeProgress();
     }
 
@@ -2244,7 +2302,6 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -2254,8 +2311,6 @@ public:
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
-                "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
             ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")
@@ -2274,7 +2329,6 @@ public:
             ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-            ("history_file", po::value<std::string>(), "path to history file")
         ;
 
         Settings cmd_settings;
@@ -2371,8 +2425,6 @@ public:
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
-        query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
-
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
@@ -2384,12 +2436,11 @@ public:
             config().setString("query_id", options["query_id"].as<std::string>());
         if (options.count("query"))
             config().setString("query", options["query"].as<std::string>());
-        if (options.count("queries-file"))
-            queries_files = options["queries-file"].as<std::vector<std::string>>();
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
             config().setString("pager", options["pager"].as<std::string>());
+
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
         if (options.count("secure"))
@@ -2434,8 +2485,6 @@ public:
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
         if (options.count("highlight"))
             config().setBool("highlight", options["highlight"].as<bool>());
-        if (options.count("history_file"))
-            config().setString("history_file", options["history_file"].as<std::string>());
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
@@ -2443,6 +2492,7 @@ public:
             config().setBool("multiquery", true);
 
             // Ignore errors in parsing queries.
+            // TODO stop using parseQuery.
             config().setBool("ignore-error", true);
             ignore_error = true;
         }
@@ -2451,7 +2501,7 @@ public:
         {
             std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
             std::string error;
-            if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+            if (!context.getClientInfo().parseTraceparentHeader(
                 traceparent, error))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2462,7 +2512,7 @@ public:
 
         if (options.count("opentelemetry-tracestate"))
         {
-            context.getClientInfo().client_trace_context.tracestate =
+            context.getClientInfo().opentelemetry_tracestate =
                 options["opentelemetry-tracestate"].as<std::string>();
         }
 

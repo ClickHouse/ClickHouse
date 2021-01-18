@@ -20,6 +20,7 @@ toc_title: "\u30B5\u30FC\u30C9\u30D1\u30FC\u30C6\u30A3\u88FD\u30E9\u30A4\u30D6\u
 | googletest         | [BSD3条項ライセンス](https://github.com/google/googletest/blob/master/LICENSE)                                                              |
 | h3                 | [Apacheライセンス2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                       |
 | hyperscan          | [BSD3条項ライセンス](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                |
+| libbtrie           | [BSD2条項ライセンス](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                         |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                         |
 | libdivide          | [Zlibライセンス](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                        |
 | libgsasl           | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                            |

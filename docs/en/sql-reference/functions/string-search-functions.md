@@ -400,8 +400,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
-
+**See also**
 -   [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
@@ -441,8 +440,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
-
+**See also**
 -   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
@@ -537,110 +535,5 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCas
 
 !!! note "Note"
     For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
-
-## countSubstrings(haystack, needle) {#countSubstrings}
-
-Count the number of substring occurrences
-
-For a case-insensitive search, use the function `countSubstringsCaseInsensitive` (or `countSubstringsCaseInsensitiveUTF8`).
-
-**Syntax**
-
-``` sql
-countSubstrings(haystack, needle[, start_pos])
-```
-
-**Parameters**
-
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
-
-**Returned values**
-
--   Number of occurrences.
-
-Type: `Integer`.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT countSubstrings('foobar.com', '.')
-```
-
-Result:
-
-``` text
-┌─countSubstrings('foobar.com', '.')─┐
-│                                  1 │
-└────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT countSubstrings('aaaa', 'aa')
-```
-
-Result:
-
-``` text
-┌─countSubstrings('aaaa', 'aa')─┐
-│                             2 │
-└───────────────────────────────┘
-```
-
-## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
-
-Returns the number of regular expression matches for a `pattern` in a `haystack`.
-
-**Syntax**
-
-``` sql
-countMatches(haystack, pattern)
-```
-
-**Parameters**
-
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The number of matches.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT countMatches('foobar.com', 'o+');
-```
-
-Result:
-
-``` text
-┌─countMatches('foobar.com', 'o+')─┐
-│                                2 │
-└──────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT countMatches('aaaa', 'aa');
-```
-
-Result:
-
-``` text
-┌─countMatches('aaaa', 'aa')────┐
-│                             2 │
-└───────────────────────────────┘
-```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->
