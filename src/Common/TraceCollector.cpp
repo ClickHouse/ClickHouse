@@ -36,7 +36,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
       * when QueryProfiler is invoked under locks and TraceCollector cannot pull data from pipe.
       */
-    pipe.setNonBlockingWrite();
+    pipe.setNonBlocking();
     pipe.tryIncreaseSize(1 << 20);
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);

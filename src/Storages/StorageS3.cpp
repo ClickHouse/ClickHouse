@@ -33,7 +33,6 @@
 #include <re2/re2.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
 
@@ -83,8 +82,7 @@ namespace
             , file_path(bucket + "/" + key)
         {
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
-            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
-            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+            reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
             if (columns.hasDefaults())
                 reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
@@ -143,19 +141,18 @@ namespace
     public:
         StorageS3BlockOutputStream(
             const String & format,
+            UInt64 min_upload_part_size,
             const Block & sample_block_,
             const Context & context,
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
-            const String & key,
-            size_t min_upload_part_size,
-            size_t max_single_part_upload_size)
+            const String & key)
             : sample_block(sample_block_)
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-            writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, true), compression_method, 3);
+            writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
         Block getHeader() const override
@@ -195,7 +192,6 @@ StorageS3::StorageS3(
     const StorageID & table_id_,
     const String & format_name_,
     UInt64 min_upload_part_size_,
-    UInt64 max_single_part_upload_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_,
@@ -205,7 +201,6 @@ StorageS3::StorageS3(
     , global_context(context_.getGlobalContext())
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
 {
@@ -221,14 +216,7 @@ StorageS3::StorageS3(
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
     client = S3::ClientFactory::instance().create(
-        uri_.endpoint,
-        uri_.is_virtual_hosted_style,
-        credentials.GetAWSAccessKeyId(),
-        credentials.GetAWSSecretKey(),
-        std::move(settings.headers),
-        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false)),
-        context_.getRemoteHostFilter(),
-        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
+        uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_, std::move(settings.headers), context_.getRemoteHostFilter());
 }
 
 
@@ -336,15 +324,9 @@ Pipe StorageS3::read(
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        format_name,
-        metadata_snapshot->getSampleBlock(),
-        global_context,
-        chooseCompressionMethod(uri.endpoint, compression_method),
-        client,
-        uri.bucket,
-        uri.key,
-        min_upload_part_size,
-        max_single_part_upload_size);
+        format_name, min_upload_part_size, metadata_snapshot->getSampleBlock(),
+        global_context, chooseCompressionMethod(uri.endpoint, compression_method),
+        client, uri.bucket, uri.key);
 }
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
@@ -373,7 +355,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         }
 
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
-        UInt64 max_single_part_upload_size = args.local_context.getSettingsRef().s3_max_single_part_upload_size;
 
         String compression_method;
         String format_name;
@@ -395,7 +376,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.table_id,
             format_name,
             min_upload_part_size,
-            max_single_part_upload_size,
             args.columns,
             args.constraints,
             args.context,

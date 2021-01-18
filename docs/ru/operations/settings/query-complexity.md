@@ -297,7 +297,7 @@ FORMAT Null;
 **Смотрите также**
 
 -   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
--   [Движок таблиц Join](../../engines/table-engines/special/join.md)
+-   [Движоy таблиц Join](../../engines/table-engines/special/join.md)
 
 ## max_partitions_per_insert_block {#max-partitions-per-insert-block}
 

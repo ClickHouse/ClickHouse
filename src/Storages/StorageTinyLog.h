@@ -44,6 +44,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
 protected:
     StorageTinyLog(
         DiskPtr disk_,
@@ -69,7 +71,7 @@ private:
     Files files;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     Poco::Logger * log;
 

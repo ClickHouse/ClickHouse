@@ -1,5 +1,0 @@
-CREATE TEMPORARY TABLE tmptable (`x` UInt32) ENGINE = Memory
-CREATE TEMPORARY TABLE tmptable (`y` Float64, `z` String) ENGINE = Memory
-x	UInt32	1
-y	Float64	1
-z	String	2

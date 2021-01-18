@@ -10,7 +10,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -29,7 +28,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -139,22 +137,11 @@ void DistributedBlockOutputStream::write(const Block & block)
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
-    const Settings & settings = context.getSettingsRef();
-    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
+    if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
+        return writeSplitAsync(block);
 
-    if (random_shard_insert)
-    {
-        writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
-    }
-    else
-    {
-
-        if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-            return writeSplitAsync(block);
-
-        writeAsyncImpl(block);
-        ++inserted_blocks;
-    }
+    writeAsyncImpl(block);
+    ++inserted_blocks;
 }
 
 
@@ -187,18 +174,18 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
+void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
-    size_t num_shards = end - start;
+    size_t num_shards = shards_info.size();
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
     per_shard_jobs.resize(shards_info.size());
 
-    for (size_t shard_index : ext::range(start, end))
+    for (size_t shard_index : ext::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
@@ -254,11 +241,10 @@ void DistributedBlockOutputStream::waitForJobs()
 }
 
 
-ThreadPool::Job
-DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards)
+ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
     auto thread_group = CurrentThread::getGroup();
-    return [this, thread_group, &job, &current_block, num_shards]()
+    return [this, thread_group, &job, &current_block]()
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -275,6 +261,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
         });
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
+        size_t num_shards = cluster->getShardsInfo().size();
         auto & shard_job = per_shard_jobs[job.shard_index];
         const auto & addresses = cluster->getShardsAddresses();
 
@@ -299,10 +286,6 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
         const Settings & settings = context.getSettingsRef();
-
-        /// Do not initiate INSERT for empty block.
-        if (shard_block.rows() == 0)
-            return;
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
@@ -372,20 +355,12 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 {
     const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
-    bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
-    size_t start = 0;
-    size_t end = shards_info.size();
-    if (random_shard_insert)
-    {
-        start = storage.getRandomShardIndex(shards_info);
-        end = start + 1;
-    }
-    size_t num_shards = end - start;
+    size_t num_shards = shards_info.size();
 
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block, start, end);
+        initWritingJobs(block);
 
         pool.emplace(remote_jobs_count + local_jobs_count);
 
@@ -418,7 +393,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : ext::range(0, shards_info.size()))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block));
     }
     catch (...)
     {
@@ -589,10 +564,6 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     const auto & settings = context.getSettingsRef();
-    const auto & distributed_settings = storage.getDistributedSettingsRef();
-
-    bool fsync = distributed_settings.fsync_after_insert;
-    bool dir_fsync = distributed_settings.fsync_directories;
 
     std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
     std::optional<int> compression_level;
@@ -608,26 +579,14 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     std::string first_file_tmp_path{};
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
-    const auto disk = reservation->getDisk();
-    auto disk_path = disk->getPath();
+    auto disk = reservation->getDisk()->getPath();
     auto data_path = storage.getRelativeDataPath();
-
-    auto make_directory_sync_guard = [&](const std::string & current_path)
-    {
-        std::unique_ptr<DirectorySyncGuard> guard;
-        if (dir_fsync)
-        {
-            const std::string relative_path(data_path + current_path);
-            guard = std::make_unique<DirectorySyncGuard>(disk, relative_path);
-        }
-        return guard;
-    };
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
     /// hardlinking to ensure the inode is not freed until we're done
     {
-        const std::string path(disk_path + data_path + *it);
+        const std::string path(disk + data_path + *it);
         Poco::File(path).createDirectory();
 
         const std::string tmp_path(path + "/tmp/");
@@ -639,8 +598,6 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         /// Write batch to temporary location
         {
-            auto tmp_dir_sync_guard = make_directory_sync_guard(*it + "/tmp/");
-
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
@@ -653,13 +610,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().write(header_buf);
             context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
-            writeVarUInt(block.rows(), header_buf);
-            writeVarUInt(block.bytes(), header_buf);
-            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
-            /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
             const StringRef header = header_buf.stringRef();
@@ -670,28 +623,22 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
-
-            out.finalize();
-            if (fsync)
-                out.sync();
         }
 
         // Create hardlink here to reuse increment number
         const std::string block_file_path(path + '/' + file_name);
         createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
     ++it;
 
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(disk_path + data_path + *it);
+        const std::string path(disk + data_path + *it);
         Poco::File(path).createDirectory();
-
         const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+
         createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads

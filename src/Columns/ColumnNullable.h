@@ -101,7 +101,6 @@ public:
         const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;

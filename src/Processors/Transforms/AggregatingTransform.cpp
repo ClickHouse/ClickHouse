@@ -379,7 +379,6 @@ private:
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
-            /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
                     params, data, shared_data, arena);

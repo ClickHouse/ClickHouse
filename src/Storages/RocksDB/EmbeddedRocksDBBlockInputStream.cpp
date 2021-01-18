@@ -56,7 +56,7 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
     finished = !iterator->Valid();
     if (!iterator->status().ok())
     {
-        throw Exception("Engine " + getName() + " got error while seeking key value data: " + iterator->status().ToString(),
+        throw Exception("Engine " + getName() + " got error while seeking key value datas: " + iterator->status().ToString(),
             ErrorCodes::ROCKSDB_ERROR);
     }
     return sample_block.cloneWithColumns(std::move(columns));

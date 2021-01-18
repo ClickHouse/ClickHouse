@@ -13,7 +13,6 @@ toc_title: Client Libraries
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
-    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)

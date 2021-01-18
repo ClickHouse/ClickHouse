@@ -28,23 +28,10 @@ bool ReadBufferFromPocoSocket::nextImpl()
     ssize_t bytes_read = 0;
     Stopwatch watch;
 
-    int flags = 0;
-    if (async_callback)
-        flags |= MSG_DONTWAIT;
-
     /// Add more details to exceptions.
     try
     {
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
-
-        /// If async_callback is specified, and read is blocking, run async_callback and try again later.
-        /// It is expected that file descriptor may be polled externally.
-        /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (bytes_read < 0 && async_callback && errno == EAGAIN)
-        {
-            async_callback(socket);
-            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
-        }
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)
     {

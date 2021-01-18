@@ -32,7 +32,7 @@ public:
     virtual void createForShard(
             const Cluster::ShardInfo & shard_info,
             const String & query, const ASTPtr & query_ast,
-            const std::shared_ptr<Context> & context_ptr, const ThrottlerPtr & throttler,
+            const Context & context, const ThrottlerPtr & throttler,
             const SelectQueryInfo & query_info,
             std::vector<QueryPlanPtr> & res,
             Pipes & remote_pipes,

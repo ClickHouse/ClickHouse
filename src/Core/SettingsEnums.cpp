@@ -12,7 +12,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_JOIN;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
-    extern const int UNKNOWN_UNION;
 }
 
 
@@ -96,10 +95,5 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64}})
-
-IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
-    {{"",         UnionMode::Unspecified},
-     {"ALL",      UnionMode::ALL},
-     {"DISTINCT", UnionMode::DISTINCT}})
 
 }

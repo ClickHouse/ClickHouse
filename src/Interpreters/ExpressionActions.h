@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 
 #include <variant>
@@ -62,7 +63,7 @@ public:
 
     using Actions = std::vector<Action>;
 
-    /// This map helps to find input position by it's name.
+    /// This map helps to find input position bu it's name.
     /// Key is a view to input::result_name.
     /// Result is a list because it is allowed for inputs to have same names.
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
@@ -87,7 +88,6 @@ public:
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
-    const ColumnNumbers & getResultPositions() const { return result_positions; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;
