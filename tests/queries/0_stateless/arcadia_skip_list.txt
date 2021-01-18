@@ -186,3 +186,4 @@
 01644_distributed_async_insert_fsync_smoke
 01552_impl_aggfunc_cloneresize
 01651_bugs_from_15889
+01655_agg_if_nullable
