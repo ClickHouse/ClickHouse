@@ -54,6 +54,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingPipelineExecutor.h>
+
 namespace DB
 {
 
@@ -317,13 +319,14 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    auto stream = interpreter_subquery->execute().getInputStream();
+    auto io = interpreter_subquery->execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(stream->getHeader());
+    set->setHeader(executor.getHeader());
 
-    stream->readPrefix();
-    while (Block block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -331,7 +334,6 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
