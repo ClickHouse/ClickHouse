@@ -53,6 +53,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingPipelineExecutor.h>
+
 namespace DB
 {
 
@@ -318,13 +320,14 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    auto stream = interpreter_subquery->execute().getInputStream();
+    auto io = interpreter_subquery->execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(stream->getHeader());
+    set->setHeader(executor.getHeader());
 
-    stream->readPrefix();
-    while (Block block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -332,7 +335,6 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -1487,23 +1489,6 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
         {
             if (step.can_remove_required_output[i])
                 columns_to_remove.insert(step.required_output[i]);
-        }
-
-        if (!columns_to_remove.empty())
-        {
-            auto columns = prewhere_info->prewhere_actions->getResultColumns();
-
-            auto remove_actions = std::make_shared<ActionsDAG>();
-            for (const auto & column : columns)
-            {
-                if (columns_to_remove.count(column.name))
-                {
-                    remove_actions->addInput(column);
-                    remove_actions->removeColumn(column.name);
-                }
-            }
-
-            prewhere_info->remove_columns_actions = std::move(remove_actions);
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);

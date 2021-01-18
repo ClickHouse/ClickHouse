@@ -26,7 +26,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -429,7 +428,6 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -493,7 +491,6 @@ Context Context::createGlobal(ContextShared * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(*this);
-    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
