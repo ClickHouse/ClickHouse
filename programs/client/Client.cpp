@@ -670,15 +670,14 @@ private:
                     actual_client_error = e.code();
                     if (!actual_client_error || actual_client_error != expected_client_error)
                     {
-                    std::cerr << std::endl
-                        << "Exception on client:" << std::endl
-                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
 
-                    if (config().getBool("stacktrace", false))
-                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
 
-                    std::cerr << std::endl;
-
+                        std::cerr << std::endl;
                     }
 
                     /// Client-side exception during query execution can result in the loss of
