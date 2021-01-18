@@ -1,5 +1,5 @@
 ---
-title: Is it possible to delete old records from a ClickHouse table?
+title: Возможно ли удалить старые записи из таблицы ClickHouse?
 toc_hidden: true
 toc_priority: 20
 ---
