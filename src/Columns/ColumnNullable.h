@@ -6,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-class Collator;
 
 namespace DB
 {
@@ -93,15 +92,10 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutationWithCollation(
-        const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
+    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
@@ -135,7 +129,6 @@ public:
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
     bool onlyNull() const override { return nested_column->isDummy(); }
-    bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
 
     /// Return the column that represents values.
@@ -171,13 +164,6 @@ private:
 
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);
-
-    int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
-
-    void getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
-
-    void updatePermutationImpl(
-        bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);

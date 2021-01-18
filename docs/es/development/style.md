@@ -356,7 +356,7 @@ En todos los demás casos, use un nombre que describa el significado.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Nombres de `define`s y las constantes globales usan ALL_CAPS con guiones bajos.
+**9.** Nombres de `define`s y las constantes globales usan ALL\_CAPS con guiones bajos.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ El sufijo de subrayado se puede omitir si el argumento no se usa en el cuerpo de
 timer (not m_timer)
 ```
 
-**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
+**14.** Para las constantes en un `enum`, usar CamelCase con una letra mayúscula. ALL\_CAPS también es aceptable. Si el `enum` no es local, utilice un `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -579,7 +579,7 @@ Si una función captura la propiedad de un objeto creado en el montón, cree el 
 
 **14.** Valores devueltos.
 
-En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `return std::move(res)`.
+En la mayoría de los casos, sólo tiene que utilizar `return`. No escribir `[return std::move(res)]{.strike}`.
 
 Si la función asigna un objeto en el montón y lo devuelve, use `shared_ptr` o `unique_ptr`.
 
@@ -673,7 +673,7 @@ Utilice siempre `#pragma once` en lugar de incluir guardias.
 **24.** No use `trailing return type` para funciones a menos que sea necesario.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Declaración e inicialización de variables.
@@ -709,7 +709,7 @@ Se utiliza la biblioteca estándar (`libc++`).
 
 **4.**OS: Linux Ubuntu, no más viejo que Precise.
 
-**5.**El código está escrito para la arquitectura de CPU x86_64.
+**5.**El código está escrito para la arquitectura de CPU x86\_64.
 
 El conjunto de instrucciones de CPU es el conjunto mínimo admitido entre nuestros servidores. Actualmente, es SSE 4.2.
 

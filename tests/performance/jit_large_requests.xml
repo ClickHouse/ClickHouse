@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.3">
     <create_query>
         CREATE TABLE jit_test (
             a UInt64,
@@ -29,7 +29,7 @@
                 number
             FROM
                 system.numbers
-            LIMIT 100000000
+            LIMIT 10000000
     </fill_query>
     <query>
         SELECT

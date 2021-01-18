@@ -36,7 +36,7 @@ Exemple:
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-La création d'un ‘merge.hits_buffer’ table avec la même structure que ‘merge.hits’ et en utilisant le moteur tampon. Lors de l'écriture dans cette table, les données sont mises en mémoire tampon dans la RAM ‘merge.hits’ table. 16 tampons sont créés. Les données dans chacun d'entre eux est rincé si 100 secondes sont écoulées, ou un million de lignes ont été écrites, ou 100 MO de données ont été écrits; ou si, simultanément, 10 secondes et 10 000 lignes et 10 MO de données ont été écrites. Par exemple, si une ligne a été écrite, après 100 secondes, il sera vidé, n'importe quoi. Mais si plusieurs lignes ont été écrites, les données seront vidées plus tôt.
+La création d'un ‘merge.hits\_buffer’ table avec la même structure que ‘merge.hits’ et en utilisant le moteur tampon. Lors de l'écriture dans cette table, les données sont mises en mémoire tampon dans la RAM ‘merge.hits’ table. 16 tampons sont créés. Les données dans chacun d'entre eux est rincé si 100 secondes sont écoulées, ou un million de lignes ont été écrites, ou 100 MO de données ont été écrits; ou si, simultanément, 10 secondes et 10 000 lignes et 10 MO de données ont été écrites. Par exemple, si une ligne a été écrite, après 100 secondes, il sera vidé, n'importe quoi. Mais si plusieurs lignes ont été écrites, les données seront vidées plus tôt.
 
 Lorsque le serveur est arrêté, avec DROP TABLE ou DETACH TABLE, les données du tampon sont également vidées vers la table de destination.
 
@@ -58,7 +58,7 @@ FINAL et SAMPLE ne fonctionnent pas correctement pour les tables tampon. Ces con
 
 Lors de l'ajout de données à un Tampon, un des tampons est verrouillé. Cela entraîne des retards si une opération de lecture est effectuée simultanément à partir de la table.
 
-Les données insérées dans une table tampon peuvent se retrouver dans la table subordonnée dans un ordre différent et dans des blocs différents. Pour cette raison, une table tampon est difficile à utiliser pour écrire correctement dans un CollapsingMergeTree. Pour éviter les problèmes, vous pouvez définir ‘num_layers’ 1.
+Les données insérées dans une table tampon peuvent se retrouver dans la table subordonnée dans un ordre différent et dans des blocs différents. Pour cette raison, une table tampon est difficile à utiliser pour écrire correctement dans un CollapsingMergeTree. Pour éviter les problèmes, vous pouvez définir ‘num\_layers’ 1.
 
 Si la table de destination est répliquée, certaines caractéristiques attendues des tables répliquées sont perdues lors de l'écriture dans une table tampon. Les modifications aléatoires apportées à l'ordre des lignes et des tailles des parties de données provoquent l'arrêt de la déduplication des données, ce qui signifie qu'il n'est pas possible d'avoir un ‘exactly once’ Ecrire dans des tables répliquées.
 

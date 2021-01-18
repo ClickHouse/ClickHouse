@@ -201,7 +201,7 @@ Paramètre `format_template_resultset` spécifie le chemin d'accès au fichier, 
 -   `min` est la ligne avec des valeurs minimales dans `format_template_row` format (lorsque les extrêmes sont définis sur 1)
 -   `max` est la ligne avec des valeurs maximales en `format_template_row` format (lorsque les extrêmes sont définis sur 1)
 -   `rows` le nombre total de lignes de sortie
--   `rows_before_limit` est le nombre minimal de lignes qu'il y aurait eu sans limite. Sortie uniquement si la requête contient LIMIT. Si la requête contient GROUP BY, rows_before_limit_at_least est le nombre exact de lignes qu'il y aurait eu sans limite.
+-   `rows_before_limit` est le nombre minimal de lignes qu'il y aurait eu sans limite. Sortie uniquement si la requête contient LIMIT. Si la requête contient GROUP BY, rows\_before\_limit\_at\_least est le nombre exact de lignes qu'il y aurait eu sans limite.
 -   `time` est le temps d'exécution de la requête en secondes
 -   `rows_read` est le nombre de lignes a été lu
 -   `bytes_read` est le nombre d'octets (non compressé) a été lu
@@ -352,21 +352,21 @@ L'analyse permet la présence du champ supplémentaire `tskv` sans le signe éga
 
 Format des valeurs séparées par des virgules ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-Lors du formatage, les lignes sont entourées de guillemets doubles. Un guillemet double à l'intérieur d'une chaîne est affiché sous la forme de deux guillemets doubles dans une rangée. Il n'y a pas d'autres règles pour échapper les caractères. Date et date-heure sont entre guillemets. Les nombres sont produits sans guillemets. Les valeurs sont séparées par un caractère délimiteur, qui est `,` par défaut. Le caractère délimiteur est défini dans le paramètre [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Les lignes sont séparées à L'aide du saut de ligne Unix (LF). Les tableaux sont sérialisés au format CSV comme suit: tout d'abord, le tableau est sérialisé en une chaîne comme au format TabSeparated, puis la chaîne résultante est sortie au format CSV entre guillemets doubles. Les Tuples au format CSV sont sérialisés en tant que colonnes séparées (c'est-à-dire que leur imbrication dans le tuple est perdue).
+Lors du formatage, les lignes sont entourées de guillemets doubles. Un guillemet double à l'intérieur d'une chaîne est affiché sous la forme de deux guillemets doubles dans une rangée. Il n'y a pas d'autres règles pour échapper les caractères. Date et date-heure sont entre guillemets. Les nombres sont produits sans guillemets. Les valeurs sont séparées par un caractère délimiteur, qui est `,` par défaut. Le caractère délimiteur est défini dans le paramètre [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Les lignes sont séparées à L'aide du saut de ligne Unix (LF). Les tableaux sont sérialisés au format CSV comme suit: tout d'abord, le tableau est sérialisé en une chaîne comme au format TabSeparated, puis la chaîne résultante est sortie au format CSV entre guillemets doubles. Les Tuples au format CSV sont sérialisés en tant que colonnes séparées (c'est-à-dire que leur imbrication dans le tuple est perdue).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-\*Par défaut, le délimiteur est `,`. Voir la [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) réglage pour plus d'informations.
+\*Par défaut, le délimiteur est `,`. Voir la [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) réglage pour plus d'informations.
 
 Lors de l'analyse, toutes les valeurs peuvent être analysés avec ou sans guillemets. Les guillemets doubles et simples sont pris en charge. Les lignes peuvent également être organisées sans guillemets. Dans ce cas, ils sont analysés jusqu'au caractère délimiteur ou au saut de ligne (CR ou LF). En violation de la RFC, lors de l'analyse des lignes sans guillemets, les espaces et les onglets de début et de fin sont ignorés. Pour le saut de ligne, les types Unix (LF), Windows (CR LF) et Mac OS Classic (CR LF) sont tous pris en charge.
 
 Les valeurs d'entrée non cotées vides sont remplacées par des valeurs par défaut pour les colonnes respectives, si
-[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
+[input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 est activé.
 
-`NULL` est formaté en tant qu' `\N` ou `NULL` ou une chaîne vide non cotée (voir paramètres [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) et [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` est formaté en tant qu' `\N` ou `NULL` ou une chaîne vide non cotée (voir paramètres [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) et [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 Le format CSV prend en charge la sortie des totaux et des extrêmes de la même manière que `TabSeparated`.
 
@@ -451,12 +451,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-Le JSON est compatible avec JavaScript. Pour ce faire, certains caractères sont en outre échappés: la barre oblique `/` s'est échappée comme l' `\/`; sauts de ligne alternatifs `U+2028` et `U+2029`, qui cassent certains navigateurs, sont échappés comme `\uXXXX`. Les caractères de contrôle ASCII sont échappés: retour arrière, flux de formulaire, saut de ligne, retour chariot et tabulation horizontale sont remplacés par `\b`, `\f`, `\n`, `\r`, `\t` , ainsi que les octets restants dans la plage 00-1F en utilisant `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) à 0.
+Le JSON est compatible avec JavaScript. Pour ce faire, certains caractères sont en outre échappés: la barre oblique `/` s'est échappée comme l' `\/`; sauts de ligne alternatifs `U+2028` et `U+2029`, qui cassent certains navigateurs, sont échappés comme `\uXXXX`. Les caractères de contrôle ASCII sont échappés: retour arrière, flux de formulaire, saut de ligne, retour chariot et tabulation horizontale sont remplacés par `\b`, `\f`, `\n`, `\r`, `\t` , ainsi que les octets restants dans la plage 00-1F en utilisant `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) à 0.
 
 `rows` – The total number of output rows.
 
 `rows_before_limit_at_least` Le nombre minimal de lignes aurait été sans limite. Sortie uniquement si la requête contient LIMIT.
-Si la requête contient GROUP BY, rows_before_limit_at_least est le nombre exact de lignes qu'il y aurait eu sans limite.
+Si la requête contient GROUP BY, rows\_before\_limit\_at\_least est le nombre exact de lignes qu'il y aurait eu sans limite.
 
 `totals` – Total values (when using WITH TOTALS).
 
@@ -543,7 +543,7 @@ ClickHouse ignore les espaces entre les éléments et les virgules après les ob
 
 Clickhouse remplace les valeurs omises par les valeurs par défaut pour le [types de données](../sql-reference/data-types/index.md).
 
-Si `DEFAULT expr` clickhouse utilise différentes règles de substitution en fonction de [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) paramètre.
+Si `DEFAULT expr` clickhouse utilise différentes règles de substitution en fonction de [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) paramètre.
 
 Considérons le tableau suivant:
 
@@ -586,7 +586,7 @@ Contrairement à l' [JSON](#json) format, il n'y a pas de substitution de séque
 
 ### Utilisation de Structures imbriquées {#jsoneachrow-nested}
 
-Si vous avez une table avec [Imbriqué](../sql-reference/data-types/nested-data-structures/nested.md) colonnes de type de données, vous pouvez insérer des données JSON avec la même structure. Activer cette fonctionnalité avec le [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) paramètre.
+Si vous avez une table avec [Imbriqué](../sql-reference/data-types/nested-data-structures/nested.md) colonnes de type de données, vous pouvez insérer des données JSON avec la même structure. Activer cette fonctionnalité avec le [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) paramètre.
 
 Par exemple, considérez le tableau suivant:
 
@@ -600,7 +600,7 @@ Comme vous pouvez le voir dans la `Nested` description du type de données, Clic
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-Pour insérer des données en tant qu'objet JSON hiérarchique, définissez [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+Pour insérer des données en tant qu'objet JSON hiérarchique, définissez [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
 ``` json
 {
@@ -782,7 +782,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 C'est le format qui est utilisé dans `INSERT INTO t VALUES ...`, mais vous pouvez également l'utiliser pour le formatage des résultats de requête.
 
-Voir aussi: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) et [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) paramètre.
+Voir aussi: [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) et [input\_format\_values\_deduce\_templates\_of\_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) paramètre.
 
 ## Vertical {#vertical}
 
@@ -1045,7 +1045,7 @@ Les noms de colonnes doivent:
 -   commencer avec `[A-Za-z_]`
 -   par la suite contenir uniquement `[A-Za-z0-9_]`
 
-Sortie Avro fichier de compression et sync intervalle peut être configuré avec [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) et [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectivement.
+Sortie Avro fichier de compression et sync intervalle peut être configuré avec [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) et [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectivement.
 
 ## AvroConfluent {#data-format-avro-confluent}
 
@@ -1055,7 +1055,7 @@ Chaque message Avro intègre un id de schéma qui peut être résolu dans le sch
 
 Les schémas sont mis en cache une fois résolus.
 
-L'URL du registre de schéma est configurée avec [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+L'URL du registre de schéma est configurée avec [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### Types De Données Correspondant {#data_types-matching-1}
 
@@ -1198,13 +1198,13 @@ peut contenir un chemin absolu, soit un chemin relatif au répertoire courant su
 Si vous utilisez le client dans le [mode batch](../interfaces/cli.md#cli_usage), le chemin d'accès au schéma doit être relatif pour des raisons de sécurité.
 
 Si vous entrez ou sortez des données via le [Interface HTTP](../interfaces/http.md) le nom de fichier spécifié dans le format de schéma
-doit être situé dans le répertoire spécifié dans [format_schema_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+doit être situé dans le répertoire spécifié dans [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 dans la configuration du serveur.
 
 ## Sauter Les Erreurs {#skippingerrors}
 
-Certains formats tels que `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` et `Protobuf` pouvez ignorer brisé ligne si erreur d'analyse s'est produite et poursuivre l'analyse à partir du début de la ligne suivante. Voir [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) et
-[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) paramètre.
+Certains formats tels que `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` et `Protobuf` pouvez ignorer brisé ligne si erreur d'analyse s'est produite et poursuivre l'analyse à partir du début de la ligne suivante. Voir [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) et
+[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) paramètre.
 Limitation:
 - En cas d'erreur d'analyse `JSONEachRow` ignore toutes les données jusqu'à la nouvelle ligne (ou EOF), donc les lignes doivent être délimitées par `\n` pour compter les erreurs correctement.
 - `Template` et `CustomSeparated` utilisez delimiter après la dernière colonne et delimiter entre les lignes pour trouver le début de la ligne suivante, donc sauter les erreurs ne fonctionne que si au moins l'une d'entre elles n'est pas vide.

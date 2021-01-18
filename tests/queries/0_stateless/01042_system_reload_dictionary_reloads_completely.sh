@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 set -e -o pipefail
@@ -20,7 +19,7 @@ CREATE DICTIONARY dictdb.dict
   insert_time DateTime
 )
 PRIMARY KEY x
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table' DB 'dictdb' UPDATE_FIELD 'insert_time'))
 LAYOUT(FLAT())
 LIFETIME(1);
 EOF

@@ -195,7 +195,7 @@ Templates:
 
 - [Function](_description_templates/template-function.md)
 - [Setting](_description_templates/template-setting.md)
-- [Database or Table engine](_description_templates/template-engine.md)
+- [Table engine](_description_templates/template-table-engine.md)
 - [System table](_description_templates/template-system-table.md)
 
 

@@ -89,7 +89,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         }
     }
 
-    throw ParsingException("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    throw Exception("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
@@ -130,7 +130,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     /// If the key is not found, skip the value.
-                    NullOutput sink;
+                    NullSink sink;
                     readEscapedStringInto(sink, in);
                 }
                 else
@@ -157,7 +157,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
             if (in.eof())
             {
-                throw ParsingException("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             else if (*in.position() == '\t')
             {

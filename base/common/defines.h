@@ -61,20 +61,6 @@
 #    endif
 #endif
 
-#if defined(ADDRESS_SANITIZER)
-#    define BOOST_USE_ASAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-#if defined(THREAD_SANITIZER)
-#    define BOOST_USE_TSAN 1
-#    define BOOST_USE_UCONTEXT 1
-#endif
-
-#if defined(ARCADIA_BUILD) && defined(BOOST_USE_UCONTEXT)
-#    undef BOOST_USE_UCONTEXT
-#endif
-
 /// TODO: Strange enough, there is no way to detect UB sanitizer.
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
@@ -90,8 +76,12 @@
 #    define NO_SANITIZE_THREAD
 #endif
 
-/// A template function for suppressing warnings about unused variables or function results.
-template <typename... Args>
-constexpr void UNUSED(Args &&... args [[maybe_unused]])
-{
-}
+#if defined __GNUC__ && !defined __clang__
+#    define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+#    define OPTIMIZE(x)
+#endif
+
+/// A macro for suppressing warnings about unused variables or function results.
+/// Useful for structured bindings which have no standard way to declare this.
+#define UNUSED(...) (void)(__VA_ARGS__)
