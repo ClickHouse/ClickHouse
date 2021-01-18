@@ -28,24 +28,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Box = boost::geometry::model::box<Point>;
-
-
-class FunctionPolygonPerimeter : public IFunction
+template <typename Derived>
+class FunctionPolygonPerimeterBase : public IFunction
 {
 public:
-    static inline const char * name = "polygonPerimeter";
+    static inline const char * name = Derived::name;
 
-    explicit FunctionPolygonPerimeter() = default;
+    explicit FunctionPolygonPerimeterBase() = default;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPolygonPerimeter>();
+        return std::make_shared<FunctionPolygonPerimeterBase>();
     }
 
     String getName() const override
@@ -68,14 +61,25 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = block.getByPosition(arguments[i]);
-            return makeGeometryFromColumnParser(polygon);
-        };
+        return static_cast<const Derived*>(this)->executeImplementation(arguments, result_type, input_rows_count);
+    }
 
-        auto parser = get_parser(0);
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+};
+
+class FunctionPolygonPerimeterCartesian : public FunctionPolygonPerimeterBase<FunctionPolygonPerimeterCartesian>
+{
+public:
+    static inline const char * name = "polygonPerimeterCartesian";
+
+    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+    {
+        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
         auto container = createContainer(parser);
 
         auto res_column = ColumnFloat64::create();
@@ -85,24 +89,52 @@ public:
             get(parser, container, i);
 
             Float64 perimeter = boost::geometry::perimeter(
-                boost::get<Float64MultiPolygon>(container));
+                boost::get<CartesianMultiPolygon>(container));
 
             res_column->insertValue(perimeter);
         }
 
-        block.getByPosition(result).column = std::move(res_column);
-    }
-
-    bool useDefaultImplementationForConstants() const override
-    {
-        return true;
+        return res_column;
     }
 };
 
 
-void registerFunctionPolygonPerimeter(FunctionFactory & factory)
+class FunctionPolygonPerimeterGeographic : public FunctionPolygonPerimeterBase<FunctionPolygonPerimeterGeographic>
 {
-    factory.registerFunction<FunctionPolygonPerimeter>();
+public:
+    static inline const char * name = "polygonPerimeterGeographic";
+
+    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+    {
+        auto parser = makeGeographicGeometryFromColumnParser(arguments[0]);
+        auto container = createContainer(parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(parser, container, i);
+
+            Float64 perimeter = boost::geometry::perimeter(
+                boost::get<GeographicMultiPolygon>(container));
+
+            res_column->insertValue(perimeter);
+        }
+
+        return res_column;
+    }
+};
+
+
+
+void registerFunctionPolygonPerimeterCartesian(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonPerimeterCartesian>();
+}
+
+void registerFunctionPolygonPerimeterGeographic(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionPolygonPerimeterGeographic>();
 }
 
 }

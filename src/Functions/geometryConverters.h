@@ -26,49 +26,89 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-using Float64Point = boost::geometry::model::d2::point_xy<Float64>;
-using Float64Ring = boost::geometry::model::ring<Float64Point>;
-using Float64Polygon = boost::geometry::model::polygon<Float64Point>;
-using Float64MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Float64Geometry = boost::variant<Float64Point, Float64Ring, Float64Polygon, Float64MultiPolygon>;
+namespace bg = boost::geometry;
+using CartesianPoint = bg::model::d2::point_xy<Float64>;
+using CartesianRing = bg::model::ring<CartesianPoint>;
+using CartesianPolygon = bg::model::polygon<CartesianPoint>;
+using CartesianMultiPolygon = bg::model::multi_polygon<CartesianPolygon>;
+using CartesianGeometry = boost::variant<CartesianPoint, CartesianRing, CartesianPolygon, CartesianMultiPolygon>;
 
-class Float64PointFromColumnParser
+using GeographicPoint = bg::model::point<Float64, 2, bg::cs::geographic<bg::degree>>;
+using GeographicRing = bg::model::ring<GeographicPoint>;
+using GeographicPolygon = bg::model::polygon<GeographicPoint>;
+using GeographicMultiPolygon = bg::model::multi_polygon<GeographicPolygon>;
+using GeographicGeometry = boost::variant<GeographicPoint, GeographicRing, GeographicPolygon, GeographicMultiPolygon>;
+
+/**
+ * Class which takes some boost type and returns a pair of numbers. 
+ * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of geographic.  
+*/
+template <typename PointType>
+class PointFromColumnParser
 {
 public:
-    Float64PointFromColumnParser(ColumnPtr col_)
-        : col(col_)
+    PointFromColumnParser(ColumnPtr col_) : col(col_)
     {
         const auto & tuple = static_cast<const ColumnTuple &>(*col_);
         const auto & tuple_columns = tuple.getColumns();
 
+#ifndef NDEBUG
+        size = tuple.size();
+#endif
         const auto & x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]);
-        x = x_data.getData().data();
+        first = x_data.getData().data();
 
         const auto & y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]);
-        y = y_data.getData().data();
+        second = y_data.getData().data();
     }
 
-
-    Float64Geometry createContainer() const
+    template<class Q = PointType>
+    typename std::enable_if_t<std::is_same_v<Q, CartesianPoint>, CartesianGeometry> createContainer() const
     {
-        return Float64Point();
+        return CartesianPoint();
     }
 
-    void get(Float64Geometry & container, size_t i) const
+    template<class Q = PointType>
+    typename std::enable_if_t<std::is_same_v<Q, GeographicPoint>, GeographicGeometry> createContainer() const
     {
-        get(boost::get<Float64Point>(container), i);
+        return GeographicPoint();
     }
 
-    void get(Float64Point & container, size_t i) const
+    template<class Q = PointType>
+    void get(std::enable_if_t<std::is_same_v<Q, CartesianPoint>, CartesianGeometry> & container, size_t i) const
     {
-        boost::geometry::set<0>(container, x[i]);
-        boost::geometry::set<1>(container, y[i]);
+#ifndef NDEBUG
+        assert(i < size);
+#endif
+        get(boost::get<PointType>(container), i);
     }
+
+    template<class Q = PointType>
+    void get(std::enable_if_t<std::is_same_v<Q, GeographicPoint>, GeographicGeometry> & container, size_t i) const
+    {
+#ifndef NDEBUG
+        assert(i < size);
+#endif
+        get(boost::get<PointType>(container), i);
+    }
+
+    void get(PointType & container, size_t i) const
+    {
+#ifndef NDEBUG
+        assert(i < size);
+#endif
+        boost::geometry::set<0>(container, first[i]);
+        boost::geometry::set<1>(container, second[i]);
+    }
+
 private:
+    /// Note, this is needed to prevent use-after-free.
     ColumnPtr col;
-
-    const Float64 * x;
-    const Float64 * y;
+#ifndef NDEBUG
+    size_t size;
+#endif
+    const Float64 * first;
+    const Float64 * second;
 };
 
 template<class Geometry, class RingType, class PointParser>
@@ -142,8 +182,6 @@ public:
 
         ringParser.get(container.outer(), l);
 
-        LOG_FATAL(&Poco::Logger::get("geoconv"), "polygon: l = {}, r = {}", l, r);
-
         container.inners().resize(r - l - 1);
         for (size_t j = l + 1; j < r; j++)
         {
@@ -176,8 +214,6 @@ public:
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
-        LOG_FATAL(&Poco::Logger::get("geoconv"), "multipolygon: l = {}, r = {}", l, r);
-
         multi_polygon.resize(r - l);
         for (size_t j = l; j < r; j++)
         {
@@ -190,43 +226,65 @@ private:
     const PolygonParser polygonParser;
 };
 
-using Float64RingFromColumnParser = RingFromColumnParser<Float64Geometry, Float64Ring, Float64PointFromColumnParser>;
-using Float64PolygonFromColumnParser = PolygonFromColumnParser<Float64Geometry, Float64Polygon, Float64RingFromColumnParser>;
-using Float64MultiPolygonFromColumnParser = MultiPolygonFromColumnParser<Float64Geometry, Float64MultiPolygon, Float64PolygonFromColumnParser>;
+/// Cartesian coordinates
 
-using GeometryFromColumnParser = boost::variant<
-    Float64PointFromColumnParser,
-    Float64RingFromColumnParser,
-    Float64PolygonFromColumnParser,
-    Float64MultiPolygonFromColumnParser
+using CartesianRingFromColumnParser = RingFromColumnParser<CartesianGeometry, CartesianRing, PointFromColumnParser<CartesianPoint>>;
+using CartesianPolygonFromColumnParser = PolygonFromColumnParser<CartesianGeometry, CartesianPolygon, CartesianRingFromColumnParser>;
+using CartesianMultiPolygonFromColumnParser = MultiPolygonFromColumnParser<CartesianGeometry, CartesianMultiPolygon, CartesianPolygonFromColumnParser>;
+
+using CartesianGeometryFromColumnParser = boost::variant<
+    PointFromColumnParser<CartesianPoint>,
+    CartesianRingFromColumnParser,
+    CartesianPolygonFromColumnParser,
+    CartesianMultiPolygonFromColumnParser
 >;
 
-Float64Geometry createContainer(const GeometryFromColumnParser & parser);
+CartesianGeometry createContainer(const CartesianGeometryFromColumnParser & parser);
 
-void get(const GeometryFromColumnParser & parser, Float64Geometry & container, size_t i);
+void get(const CartesianGeometryFromColumnParser & parser, CartesianGeometry & container, size_t i);
 
-GeometryFromColumnParser makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+CartesianGeometryFromColumnParser makeCartesianGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
-class Float64PointSerializerVisitor : public boost::static_visitor<void>
+/// Geographic coordinates 
+
+using GeographicRingFromColumnParser = RingFromColumnParser<GeographicGeometry, GeographicRing, PointFromColumnParser<GeographicPoint>>;
+using GeographicPolygonFromColumnParser = PolygonFromColumnParser<GeographicGeometry, GeographicPolygon, GeographicRingFromColumnParser>;
+using GeographicMultiPolygonFromColumnParser = MultiPolygonFromColumnParser<GeographicGeometry, GeographicMultiPolygon, GeographicPolygonFromColumnParser>;
+
+using GeographicGeometryFromColumnParser = boost::variant<
+    PointFromColumnParser<GeographicPoint>,
+    GeographicRingFromColumnParser,
+    GeographicPolygonFromColumnParser,
+    GeographicMultiPolygonFromColumnParser
+>;
+
+GeographicGeometry createContainer(const GeographicGeometryFromColumnParser & parser);
+
+void get(const GeographicGeometryFromColumnParser & parser, GeographicGeometry & container, size_t i);
+
+GeographicGeometryFromColumnParser makeGeographicGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+
+
+class CartesianPointSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    Float64PointSerializerVisitor()
+    CartesianPointSerializerVisitor()
         : x(ColumnFloat64::create())
         , y(ColumnFloat64::create())
     {}
 
-    Float64PointSerializerVisitor(size_t n)
+    CartesianPointSerializerVisitor(size_t n)
         : x(ColumnFloat64::create(n))
         , y(ColumnFloat64::create(n))
     {}
 
-    void operator()(const Float64Point & point)
+    void operator()(const CartesianPoint & point)
     {
-        x->insertValue(point.x());
-        y->insertValue(point.y());
+        x->insertValue(point.get<0>());
+        y->insertValue(point.get<0>());
     }
 
-    void operator()(const Float64Ring & ring)
+    void operator()(const CartesianRing & ring)
     {
         if (ring.size() != 1) {
             throw Exception("Unable to write ring of size " + toString(ring.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -234,7 +292,7 @@ public:
         (*this)(ring[0]);
     }
 
-    void operator()(const Float64Polygon & polygon)
+    void operator()(const CartesianPolygon & polygon)
     {
         if (polygon.inners().size() != 0) {
             throw Exception("Unable to write polygon with holes to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -242,7 +300,7 @@ public:
         (*this)(polygon.outer());
     }
 
-    void operator()(const Float64MultiPolygon & multi_polygon)
+    void operator()(const CartesianMultiPolygon & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -264,18 +322,18 @@ private:
     ColumnFloat64::MutablePtr y;
 };
 
-class Float64RingSerializerVisitor : public boost::static_visitor<void>
+class CartesianRingSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    Float64RingSerializerVisitor()
+    CartesianRingSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    Float64RingSerializerVisitor(size_t n)
+    CartesianRingSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Float64Point & point)
+    void operator()(const CartesianPoint & point)
     {
         size++;
         offsets->insertValue(size);
@@ -283,7 +341,7 @@ public:
         pointSerializer(point);
     }
 
-    void operator()(const Float64Ring & ring)
+    void operator()(const CartesianRing & ring)
     {
         size += ring.size();
         offsets->insertValue(size);
@@ -293,7 +351,7 @@ public:
         }
     }
 
-    void operator()(const Float64Polygon & polygon)
+    void operator()(const CartesianPolygon & polygon)
     {
         if (polygon.inners().size() != 0) {
             throw Exception("Unable to write polygon with holes to ring column", ErrorCodes::BAD_ARGUMENTS);
@@ -301,7 +359,7 @@ public:
         (*this)(polygon.outer());
     }
 
-    void operator()(const Float64MultiPolygon & multi_polygon)
+    void operator()(const CartesianMultiPolygon & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to ring column", ErrorCodes::BAD_ARGUMENTS);
@@ -316,36 +374,36 @@ public:
 
 private:
     size_t size = 0;
-    Float64PointSerializerVisitor pointSerializer;
+    CartesianPointSerializerVisitor pointSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
-class Float64PolygonSerializerVisitor : public boost::static_visitor<void>
+class CartesianPolygonSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    Float64PolygonSerializerVisitor()
+    CartesianPolygonSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    Float64PolygonSerializerVisitor(size_t n)
+    CartesianPolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Float64Point & point)
+    void operator()(const CartesianPoint & point)
     {
         size++;
         offsets->insertValue(size);
         ringSerializer(point);
     }
 
-    void operator()(const Float64Ring & ring)
+    void operator()(const CartesianRing & ring)
     {
         size++;
         offsets->insertValue(size);
         ringSerializer(ring);
     }
 
-    void operator()(const Float64Polygon & polygon)
+    void operator()(const CartesianPolygon & polygon)
     {
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
@@ -356,7 +414,7 @@ public:
         }
     }
 
-    void operator()(const Float64MultiPolygon & multi_polygon)
+    void operator()(const CartesianMultiPolygon & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to polygon column", ErrorCodes::BAD_ARGUMENTS);
@@ -371,43 +429,43 @@ public:
 
 private:
     size_t size = 0;
-    Float64RingSerializerVisitor ringSerializer;
+    CartesianRingSerializerVisitor ringSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
-class Float64MultiPolygonSerializerVisitor : public boost::static_visitor<void>
+class CartesianMultiPolygonSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    Float64MultiPolygonSerializerVisitor()
+    CartesianMultiPolygonSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    Float64MultiPolygonSerializerVisitor(size_t n)
+    CartesianMultiPolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const Float64Point & point)
+    void operator()(const CartesianPoint & point)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(point);
     }
 
-    void operator()(const Float64Ring & ring)
+    void operator()(const CartesianRing & ring)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(ring);
     }
 
-    void operator()(const Float64Polygon & polygon)
+    void operator()(const CartesianPolygon & polygon)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(polygon);
     }
 
-    void operator()(const Float64MultiPolygon & multi_polygon)
+    void operator()(const CartesianMultiPolygon & multi_polygon)
     {
         size += multi_polygon.size();
         offsets->insertValue(size);
@@ -424,7 +482,7 @@ public:
 
 private:
     size_t size = 0;
-    Float64PolygonSerializerVisitor polygonSerializer;
+    CartesianPolygonSerializerVisitor polygonSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
@@ -445,9 +503,9 @@ private:
     Visitor visitor;
 };
 
-using Float64PointSerializer = GeometrySerializer<Float64Geometry, Float64PointSerializerVisitor>;
-using Float64RingSerializer = GeometrySerializer<Float64Geometry, Float64RingSerializerVisitor>;
-using Float64PolygonSerializer = GeometrySerializer<Float64Geometry, Float64PolygonSerializerVisitor>;
-using Float64MultiPolygonSerializer = GeometrySerializer<Float64Geometry, Float64MultiPolygonSerializerVisitor>;
+using CartesianPointSerializer = GeometrySerializer<CartesianGeometry, CartesianPointSerializerVisitor>;
+using CartesianRingSerializer = GeometrySerializer<CartesianGeometry, CartesianRingSerializerVisitor>;
+using CartesianPolygonSerializer = GeometrySerializer<CartesianGeometry, CartesianPolygonSerializerVisitor>;
+using CartesianMultiPolygonSerializer = GeometrySerializer<CartesianGeometry, CartesianMultiPolygonSerializerVisitor>;
 
 }

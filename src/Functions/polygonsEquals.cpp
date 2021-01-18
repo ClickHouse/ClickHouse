@@ -30,14 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using MultiPolygon = boost::geometry::model::multi_polygon<Float64Polygon>;
-using Box = boost::geometry::model::box<Point>;
-
-
 class FunctionPolygonsEquals : public IFunction
 {
 public:
@@ -70,17 +62,17 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto get_parser = [&block, &arguments] (size_t i) {
+        auto get_parser = [&arguments] (size_t i) {
             const auto * const_col =
-                checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+                checkAndGetColumn<ColumnConst>(arguments[i].column.get());
 
             bool is_const = static_cast<bool>(const_col);
 
-            return std::pair<bool, GeometryFromColumnParser>{is_const, is_const ?
-                makeGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), block.getByPosition(arguments[i]).type, block.getByPosition(arguments[i]).name)) :
-                makeGeometryFromColumnParser(block.getByPosition(arguments[i]))};
+            return std::pair<bool, CartesianGeometryFromColumnParser>{is_const, is_const ?
+                makeCartesianGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[i].type, arguments[i].name)) :
+                makeCartesianGeometryFromColumnParser(arguments[i])};
         };
 
         auto [is_first_polygon_const, first_parser] = get_parser(0);
@@ -99,13 +91,13 @@ public:
                 get(second_parser, second_container, i);
 
             bool equals = boost::geometry::equals(
-                boost::get<Float64MultiPolygon>(first_container),
-                boost::get<Float64MultiPolygon>(second_container));
+                boost::get<CartesianMultiPolygon>(first_container),
+                boost::get<CartesianMultiPolygon>(second_container));
 
             res_column->insertValue(equals);
         }
 
-        block.getByPosition(result).column = std::move(res_column);
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override
