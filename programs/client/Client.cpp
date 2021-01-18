@@ -670,14 +670,14 @@ private:
                     actual_client_error = e.code();
                     if (!actual_client_error || actual_client_error != expected_client_error)
                     {
-                        std::cerr << std::endl
-                            << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    std::cerr << std::endl
+                        << "Exception on client:" << std::endl
+                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
 
-                        if (config().getBool("stacktrace", false))
-                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+                    if (config().getBool("stacktrace", false))
+                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
 
-                        std::cerr << std::endl;
+                    std::cerr << std::endl;
 
                     }
 
@@ -845,8 +845,59 @@ private:
         return processMultiQuery(text);
     }
 
+    // Consumes trailing semicolons and tries to consume the same-line trailing
+    // comment.
+    static void adjustQueryEnd(const char *& this_query_end,
+        const char * all_queries_end, int max_parser_depth)
+    {
+        // We have to skip the trailing semicolon that might be left
+        // after VALUES parsing or just after a normal semicolon-terminated query.
+        Tokens after_query_tokens(this_query_end, all_queries_end);
+        IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth);
+        while (after_query_iterator.isValid()
+           && after_query_iterator->type == TokenType::Semicolon)
+        {
+            this_query_end = after_query_iterator->end;
+            ++after_query_iterator;
+        }
+
+        // Now we have to do some extra work to add the trailing
+        // same-line comment to the query, but preserve the leading
+        // comments of the next query. The trailing comment is important
+        // because the test hints are usually written this way, e.g.:
+        // select nonexistent_column; -- { serverError 12345 }.
+        // The token iterator skips comments and whitespace, so we have
+        // to find the newline in the string manually. If it's earlier
+        // than the next significant token, it means that the text before
+        // newline is some trailing whitespace or comment, and we should
+        // add it to our query. There are also several special cases
+        // that are described below.
+        const auto * newline = find_first_symbols<'\n'>(this_query_end,
+            all_queries_end);
+        const char * next_query_begin = after_query_iterator->begin;
+
+        // We include the entire line if the next query starts after
+        // it. This is a generic case of trailing in-line comment.
+        // The "equals" condition is for case of end of input (they both equal
+        // all_queries_end);
+        if (newline <= next_query_begin)
+        {
+            assert(newline >= this_query_end);
+            this_query_end = newline;
+        }
+        else
+        {
+            // Many queries on one line, can't do anything. By the way, this
+            // syntax is probably going to work as expected:
+            // select nonexistent /* { serverError 12345 } */; select 1
+        }
+    }
+
     bool processMultiQuery(const String & all_queries_text)
     {
+        // It makes sense not to base any control flow on this, so that it is
+        // the same in tests and in normal usage. The only difference is that in
+        // normal mode we ignore the test hints.
         const bool test_mode = config().has("testmode");
 
         {
@@ -871,35 +922,31 @@ private:
 
         while (this_query_begin < all_queries_end)
         {
-            // Use the token iterator to skip any whitespace, semicolons and
-            // comments at the beginning of the query. An example from regression
-            // tests:
-            //      insert into table t values ('invalid'); -- { serverError 469 }
-            //      select 1
-            // Here the test hint comment gets parsed as a part of second query.
-            // We parse the `INSERT VALUES` up to the semicolon, and the rest
-            // looks like a two-line query:
-            //      -- { serverError 469 }
-            //      select 1
-            // and we expect it to fail with error 469, but this hint is actually
-            // for the previous query. Test hints should go after the query, so
-            // we can fix this by skipping leading comments. Token iterator skips
-            // comments and whitespace by itself, so we only have to check for
-            // semicolons.
-            // The code block is to limit visibility of `tokens` because we have
-            // another such variable further down the code, and get warnings for
-            // that.
+            // Remove leading empty newlines and other whitespace, because they
+            // are annoying to filter in query log. This is mostly relevant for
+            // the tests.
+            while (this_query_begin < all_queries_end
+                 && isWhitespaceASCII(*this_query_begin))
+            {
+                ++this_query_begin;
+            }
+            if (this_query_begin >= all_queries_end)
+            {
+                break;
+            }
+
+            // If there are only comments left until the end of file, we just
+            // stop. The parser can't handle this situation because it always
+            // expects that there is some query that it can parse.
+            // We can get into this situation because the parser also doesn't
+            // skip the trailing comments after parsing a query. This is because
+            // they may as well be the leading comments for the next query,
+            // and it makes more sense to treat them as such.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens,
                     context.getSettingsRef().max_parser_depth);
-                while (token_iterator->type == TokenType::Semicolon
-                        && token_iterator.isValid())
-                {
-                    ++token_iterator;
-                }
-                this_query_begin = token_iterator->begin;
-                if (this_query_begin >= all_queries_end)
+                if (!token_iterator.isValid())
                 {
                     break;
                 }
@@ -913,14 +960,23 @@ private:
             }
             catch (Exception & e)
             {
-                if (!test_mode)
-                    throw;
+                // Try to find test hint for syntax error. We don't know where
+                // the query ends because we failed to parse it, so we consume
+                // the entire line.
+                this_query_end = find_first_symbols<'\n'>(this_query_end,
+                    all_queries_end);
 
-                /// Try find test hint for syntax error
-                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
-                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
-                if (hint.serverError()) /// Syntax errors are considered as client errors
+                TestHint hint(test_mode,
+                    String(this_query_begin, this_query_end - this_query_begin));
+
+                if (hint.serverError())
+                {
+                    // Syntax errors are considered as client errors
+                    e.addMessage("\nExpected server error '{}'.",
+                        hint.serverError());
                     throw;
+                }
+
                 if (hint.clientError() != e.code())
                 {
                     if (hint.clientError())
@@ -929,7 +985,7 @@ private:
                 }
 
                 /// It's expected syntax error, skip the line
-                this_query_begin = end_of_line;
+                this_query_begin = this_query_end;
                 continue;
             }
 
@@ -956,10 +1012,14 @@ private:
             // The VALUES format needs even more handling -- we also allow the
             // data to be delimited by semicolon. This case is handled later by
             // the format parser itself.
+            // We can't do multiline INSERTs with inline data, because most
+            // row input formats (e.g. TSV) can't tell when the input stops,
+            // unlike VALUES.
             auto * insert_ast = parsed_query->as<ASTInsertQuery>();
             if (insert_ast && insert_ast->data)
             {
-                this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+                this_query_end = find_first_symbols<'\n'>(insert_ast->data,
+                    all_queries_end);
                 insert_ast->end = this_query_end;
                 query_to_send = all_queries_text.substr(
                     this_query_begin - all_queries_text.data(),
@@ -972,10 +1032,29 @@ private:
                     this_query_end - this_query_begin);
             }
 
-            // full_query is the query + inline INSERT data.
+            // Try to include the trailing comment with test hints. It is just
+            // a guess for now, because we don't yet know where the query ends
+            // if it is an INSERT query with inline data. We will do it again
+            // after we have processed the query. But even this guess is
+            // beneficial so that we see proper trailing comments in "echo" and
+            // server log.
+            adjustQueryEnd(this_query_end, all_queries_end,
+                context.getSettingsRef().max_parser_depth);
+
+            // full_query is the query + inline INSERT data + trailing comments
+            // (the latter is our best guess for now).
             full_query = all_queries_text.substr(
                 this_query_begin - all_queries_text.data(),
                 this_query_end - this_query_begin);
+
+            if (query_fuzzer_runs)
+            {
+                if (!processWithFuzzing(full_query))
+                    return false;
+
+                this_query_begin = this_query_end;
+                continue;
+            }
 
             // Look for the hint in the text of query + insert data, if any.
             // e.g. insert into t format CSV 'a' -- { serverError 123 }.
@@ -983,50 +1062,45 @@ private:
             expected_client_error = test_hint.clientError();
             expected_server_error = test_hint.serverError();
 
-            if (query_fuzzer_runs)
+            try
             {
-                if (!processWithFuzzing(full_query))
-                    return false;
+                processParsedSingleQuery();
+
+                if (insert_ast && insert_ast->data)
+                {
+                    // For VALUES format: use the end of inline data as reported
+                    // by the format parser (it is saved in sendData()). This
+                    // allows us to handle queries like:
+                    //   insert into t values (1); select 1
+                    //, where the inline data is delimited by semicolon and not
+                    // by a newline.
+                    this_query_end = parsed_query->as<ASTInsertQuery>()->end;
+
+                    adjustQueryEnd(this_query_end, all_queries_end,
+                        context.getSettingsRef().max_parser_depth);
+                }
             }
-            else
+            catch (...)
             {
-                try
-                {
-                    processParsedSingleQuery();
+                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                actual_client_error = last_exception_received_from_server->code();
+                if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                    std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
+                received_exception_from_server = true;
+            }
 
-                    if (insert_ast && insert_ast->data)
-                    {
-                        // For VALUES format: use the end of inline data as reported
-                        // by the format parser (it is saved in sendData()). This
-                        // allows us to handle queries like:
-                        //   insert into t values (1); select 1
-                        //, where the inline data is delimited by semicolon and not
-                        // by a newline.
-                        this_query_end = parsed_query->as<ASTInsertQuery>()->end;
-                    }
-                }
-                catch (...)
-                {
-                    last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                    actual_client_error = last_exception_received_from_server->code();
-                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
-                    received_exception_from_server = true;
-                }
+            if (!test_hint.checkActual(
+                actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
+            {
+                connection->forceConnected(connection_parameters.timeouts);
+            }
 
-                if (!test_hint.checkActual(
-                    actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
-                {
-                    connection->forceConnected(connection_parameters.timeouts);
-                }
-
-                if (received_exception_from_server && !ignore_error)
-                {
-                    if (is_interactive)
-                        break;
-                    else
-                        return false;
-                }
+            if (received_exception_from_server && !ignore_error)
+            {
+                if (is_interactive)
+                    break;
+                else
+                    return false;
             }
 
             this_query_begin = this_query_end;
