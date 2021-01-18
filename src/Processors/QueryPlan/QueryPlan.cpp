@@ -454,11 +454,11 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
     /// No actions can be moved before ARRAY JOIN.
-    if (!split_actions)
+    if (split_actions.first->empty())
         return;
 
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (expression->empty())
+    if (split_actions.second->empty())
     {
         auto expected_header = parent->getOutputStream().header;
 
@@ -468,10 +468,10 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
 
         if (expression_step)
             child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                     std::move(split_actions));
+                                                     std::move(split_actions.first));
         else
             child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions),
+                                                 std::move(split_actions.first),
                                                  filter_step->getFilterColumnName(),
                                                  filter_step->removesFilterColumn());
 
@@ -487,10 +487,14 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions));
+                                                 std::move(split_actions.first));
     array_join_step->updateInputStream(node.step->getOutputStream(), {});
-    expression_step ? expression_step->updateInputStream(array_join_step->getOutputStream(), true)
-                    : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
+
+    if (expression_step)
+        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
+    else
+        parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
+                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 }
 
 static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)

@@ -1004,183 +1004,69 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
     return {std::move(first_actions), std::move(second_actions)};
 }
 
-ActionsDAGPtr ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns)
+std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
-    /// Split DAG into two parts.
-    /// (this_nodes, this_index) is a part which depends on ARRAY JOIN and stays here.
-    /// (split_nodes, split_index) is a part which will be moved before ARRAY JOIN.
-    std::list<Node> this_nodes;
-    std::list<Node> split_nodes;
-    Index this_index;
-    Index split_index;
-    Inputs new_inputs;
 
     struct Frame
     {
-        Node * node;
+        const Node * node;
         size_t next_child_to_visit = 0;
     };
 
-    struct Data
-    {
-        bool depend_on_array_join = false;
-        bool visited = false;
-        bool used_in_result = false;
-
-        /// Copies of node in one of the DAGs.
-        /// For COLUMN and INPUT both copies may exist.
-        Node * to_this = nullptr;
-        Node * to_split = nullptr;
-    };
+    std::unordered_set<const Node *> split_nodes;
+    std::unordered_set<const Node *> visited_nodes;
 
     std::stack<Frame> stack;
-    std::unordered_map<Node *, Data> data;
 
-    for (const auto & node : index)
-        data[node].used_in_result = true;
-
-    /// DFS. Decide if node depends on ARRAY JOIN and move it to one of the DAGs.
-    for (auto & node : nodes)
+    /// DFS. Decide if node depends on ARRAY JOIN.
+    for (const auto & node : nodes)
     {
-        if (!data[&node].visited)
-            stack.push({.node = &node});
+        if (visited_nodes.count(&node))
+            continue;
+
+        visited_nodes.insert(&node);
+        stack.push({.node = &node});
 
         while (!stack.empty())
         {
             auto & cur = stack.top();
-            auto & cur_data = data[cur.node];
 
             /// At first, visit all children. We depend on ARRAY JOIN if any child does.
             while (cur.next_child_to_visit < cur.node->children.size())
             {
                 auto * child = cur.node->children[cur.next_child_to_visit];
-                auto & child_data = data[child];
 
-                if (!child_data.visited)
+                if (visited_nodes.count(child) == 0)
                 {
+                    visited_nodes.insert(child);
                     stack.push({.node = child});
                     break;
                 }
 
                 ++cur.next_child_to_visit;
-                if (child_data.depend_on_array_join)
-                    cur_data.depend_on_array_join = true;
             }
 
-            /// Make a copy part.
             if (cur.next_child_to_visit == cur.node->children.size())
             {
+                bool depend_on_array_join = false;
                 if (cur.node->type == ActionType::INPUT && array_joined_columns.count(cur.node->result_name))
-                    cur_data.depend_on_array_join = true;
+                    depend_on_array_join = true;
 
-                cur_data.visited = true;
+                for (const auto * child : cur.node->children)
+                {
+                    if (split_nodes.count(child) == 0)
+                        depend_on_array_join = true;
+                }
+
+                if (!depend_on_array_join)
+                    split_nodes.insert(cur.node);
+
                 stack.pop();
-
-                if (cur_data.depend_on_array_join)
-                {
-                    auto & copy = this_nodes.emplace_back(*cur.node);
-                    cur_data.to_this = &copy;
-
-                    /// Replace children to newly created nodes.
-                    for (auto & child : copy.children)
-                    {
-                        auto & child_data = data[child];
-
-                        /// If children is not created, int may be from split part.
-                        if (!child_data.to_this)
-                        {
-                            if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
-                            {
-                                child_data.to_this = &this_nodes.emplace_back(*child);
-                            }
-                            else
-                            {
-                                /// Node from split part is added as new input.
-                                Node input_node;
-                                input_node.type = ActionType::INPUT;
-                                input_node.result_type = child->result_type;
-                                input_node.result_name = child->result_name; // getUniqueNameForIndex(index, child->result_name);
-                                child_data.to_this = &this_nodes.emplace_back(std::move(input_node));
-
-                                if (child->type != ActionType::INPUT)
-                                    new_inputs.push_back(child_data.to_this);
-
-                                /// This node is needed for current action, so put it to index also.
-                                split_index.replace(child_data.to_split);
-                            }
-                        }
-
-                        child = child_data.to_this;
-                    }
-                }
-                else
-                {
-                    auto & copy = split_nodes.emplace_back(*cur.node);
-                    cur_data.to_split = &copy;
-
-                    /// Replace children to newly created nodes.
-                    for (auto & child : copy.children)
-                    {
-                        child = data[child].to_split;
-                        assert(child != nullptr);
-                    }
-
-                    if (cur_data.used_in_result)
-                    {
-                        split_index.replace(&copy);
-
-                        /// If this node is needed in result, add it as input.
-                        Node input_node;
-                        input_node.type = ActionType::INPUT;
-                        input_node.result_type = node.result_type;
-                        input_node.result_name = node.result_name;
-                        cur_data.to_this = &this_nodes.emplace_back(std::move(input_node));
-
-                        if (copy.type != ActionType::INPUT)
-                            new_inputs.push_back(cur_data.to_this);
-                    }
-                }
             }
         }
     }
 
-    for (auto * node : index)
-        this_index.insert(data[node].to_this);
-
-    /// Consider actions are empty if all nodes are constants or inputs.
-    bool split_actions_are_empty = true;
-    for (const auto & node : split_nodes)
-        if (!node.children.empty())
-            split_actions_are_empty = false;
-
-    if (split_actions_are_empty)
-        return {};
-
-    Inputs this_inputs;
-    Inputs split_inputs;
-
-    for (auto * input : inputs)
-    {
-        const auto & cur = data[input];
-        if (cur.to_this)
-            this_inputs.push_back(cur.to_this);
-        if (cur.to_split)
-            split_inputs.push_back(cur.to_split);
-    }
-
-    this_inputs.insert(this_inputs.end(), new_inputs.begin(), new_inputs.end());
-
-    index.swap(this_index);
-    nodes.swap(this_nodes);
-    inputs.swap(this_inputs);
-
-    auto split_actions = cloneEmpty();
-    split_actions->nodes.swap(split_nodes);
-    split_actions->index.swap(split_index);
-    split_actions->inputs.swap(split_inputs);
-    split_actions->settings.project_input = false;
-
-    return split_actions;
+    return split(split_nodes);
 }
 
 }

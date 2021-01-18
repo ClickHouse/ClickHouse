@@ -215,9 +215,8 @@ public:
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
-    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
-    /// Returns nullptr if no actions may be moved before ARRAY JOIN.
-    ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
+    /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
+    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
