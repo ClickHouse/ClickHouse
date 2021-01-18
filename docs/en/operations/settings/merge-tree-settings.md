@@ -132,7 +132,7 @@ During startup ClickHouse checks the integrity of the parts.
 If the merged part is damaged ClickHouse returns the inactive parts to the active list, and later merges them again. Then the damaged part is renamed (the `broken_` prefix is added) and moved to the `detached` folder.
 If the merged part is not damaged, then the original inactive parts are renamed (the `ignored_` prefix is added) and moved to the `detached` folder.
 
-The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 seconds (the maximum time that written data is stored only in RAM), but under heavy loads on the disk system, data can be written much later. Experimentally, a value of 480 seconds was chosen for `old_parts_lifetime`, during which a new part is guaranteed to be written to disk.
+The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 seconds (the maximum time that written data is stored only in RAM), but under heavy loads on the disk system data can be written much later. Experimentally, a value of 480 seconds was chosen for `old_parts_lifetime`, during which a new part is guaranteed to be written to disk.
 
 ## max_bytes_to_merge_at_max_space_in_pool {#max-bytes-to-merge-at-max-space-in-pool}
 
@@ -159,8 +159,8 @@ Possible values:
 
 Default value: 1048576 (1 MB)
 
-`max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of parts which can be merged, despite the lack of available disk space. This is necessary to reduce the number of small parts and the chance of `Too many parts` errors.
-Merges book disk space by doubling the total source parts sizes in the merge. Thus, with a small amount of free disk space, a situation may happen that there is free space, but this space is already booked by ongoing merges, so other merges unable to start, and the number of small parts grows with every insert.
+`max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of parts which can be merged despite the lack of available disk space (in pool). This is necessary to reduce the number of small parts and the chance of `Too many parts` errors.
+Merges book disk space by doubling the total merged parts sizes. Thus, with a small amount of free disk space, a situation may happen that there is free space, but this space is already booked by ongoing merges, so other merges unable to start, and the number of small parts grows with every insert.
 
 ## merge_max_block_size {#merge-max-block-size}
 
@@ -184,6 +184,6 @@ Possible values:
 
 Default value: auto (number of CPU cores).
 
-During startup ClickHouse reads all parts of all tables (reads files with metadata of parts) to build a list of all parts in memory. In some systems with a large number of parts, this process can take a long time, and this time might be shortened by increasing `max_part_loading_threads` (if this process is not CPU and disk bound).
+During startup ClickHouse reads all parts of all tables (reads files with metadata of parts) to build a list of all parts in memory. In some systems with a large number of parts this process can take a long time, and this time might be shortened by increasing `max_part_loading_threads` (if this process is not CPU and disk I/O bound).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->
