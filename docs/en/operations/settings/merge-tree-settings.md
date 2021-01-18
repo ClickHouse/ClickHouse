@@ -112,7 +112,7 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated_deduplication_window), `replicated_deduplication_window_seconds` specifies how long to store hash-sums of blocks for insert deduplication. Hashes older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash-sums of blocks for insert deduplication. Hashes older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
 
 ## old_parts_lifetime {#old-parts-lifetime}
 
