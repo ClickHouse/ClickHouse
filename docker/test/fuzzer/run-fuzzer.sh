@@ -22,6 +22,7 @@ function clone
     git init
     git remote add origin https://github.com/ClickHouse/ClickHouse
     git fetch --depth=1 origin "$SHA_TO_TEST"
+    git fetch --depth=1 origin master # Used to obtain the list of modified or added tests
 
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
