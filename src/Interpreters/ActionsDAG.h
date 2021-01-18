@@ -106,6 +106,8 @@ public:
         std::list<Node *>::iterator end() { return list.end(); }
         std::list<Node *>::const_iterator begin() const { return list.begin(); }
         std::list<Node *>::const_iterator end() const { return list.end(); }
+        std::list<Node *>::const_reverse_iterator rbegin() const { return list.rbegin(); }
+        std::list<Node *>::const_reverse_iterator rend() const { return list.rend(); }
         std::list<Node *>::const_iterator find(std::string_view key) const
         {
             auto it = map.find(key);
@@ -119,6 +121,7 @@ public:
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
         void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
+        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
 
         /// If node with same name exists in index, replace it. Otherwise insert new node to index.
         void replace(Node * node)

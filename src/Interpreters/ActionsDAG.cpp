@@ -692,7 +692,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
-    /// merge: x (1), x (2), x (3), y =(first)=> x (3), y, x (2), z, x (4) =(second)=> y, z, x (4), x (2), x (3)
+    /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
 
     /// Will store merged result in `first`.
 
@@ -775,8 +775,8 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             }
         }
 
-        for (auto * node : second.index)
-            first.index.insert(node);
+        for (auto it = second.index.rbegin(); it != second.index.rend(); ++it)
+            first.index.prepend(*it);
     }
 
 
