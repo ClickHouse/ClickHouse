@@ -19,7 +19,7 @@ Aliases:
 -   `Float32` — `FLOAT`.
 -   `Float64` — `DOUBLE`.
 
-When creating tables, numeric parameters for float numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
+When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
 ## Using Floating-point Numbers {#using-floating-point-numbers}
 
