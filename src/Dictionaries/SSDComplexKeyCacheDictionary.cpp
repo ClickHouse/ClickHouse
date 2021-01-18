@@ -22,6 +22,8 @@
 #include <numeric>
 #include <filesystem>
 #include <city.h>
+#include <fcntl.h>
+
 
 namespace ProfileEvents
 {
@@ -1642,6 +1644,8 @@ void SSDComplexKeyCacheDictionary::has(
     const DataTypes & key_types,
     PaddedPODArray<UInt8> & out) const
 {
+    dict_struct.validateKeyTypes(key_types);
+
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;

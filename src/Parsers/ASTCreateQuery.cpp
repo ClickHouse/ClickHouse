@@ -241,7 +241,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             action = "REPLACE";
 
         String what = "TABLE";
-        if (is_view)
+        if (is_ordinary_view)
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";

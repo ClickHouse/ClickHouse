@@ -576,6 +576,35 @@ For more information, see the MergeTreeSettings.h header file.
 </merge_tree>
 ```
 
+## metric_log {#metric_log}
+
+It is enabled by default. If it`s not, you can do this manually.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Disabling**
+
+To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
+</yandex>
+```
+
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
