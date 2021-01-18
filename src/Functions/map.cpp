@@ -139,15 +139,17 @@ public:
 };
 
 
+struct NameMapContains { static constexpr auto name = "mapContains"; };
+
 class FunctionMapContains : public IFunction
 {
 public:
-    static constexpr auto name = "mapContains";
+    static constexpr auto name = NameMapContains::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapContains>(); }
 
     String getName() const override
     {
-        return name;
+        return NameMapContains::name;
     }
 
     size_t getNumberOfArguments() const override { return 2; }
