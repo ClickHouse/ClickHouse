@@ -93,7 +93,7 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
-When dictionary with `Local file` source is created via DDL command (`CREATE DICTIONARY ...`), source of the dictionary have to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
+When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
@@ -167,7 +167,7 @@ Setting fields:
 -   `name` – Identifiant name used for the header send on the request.
 -   `value` – Value set for a specific identifiant name.
 
-When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries checked with the `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
+When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
