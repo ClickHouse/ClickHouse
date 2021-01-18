@@ -13,7 +13,7 @@ ClickHouse server works as MySQL replica. It reads binlog and performs DDL and D
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...];
+ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
 **Engine Parameters**
