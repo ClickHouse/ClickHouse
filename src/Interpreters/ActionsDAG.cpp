@@ -929,6 +929,15 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
 
                         child = child_data.to_second;
                     }
+
+                    /// Input from second DAG should also be in the first.
+                    if (copy.type == ActionType::INPUT)
+                    {
+                        auto & input_copy = first_nodes.emplace_back(*cur.node);
+                        assert(cur_data.to_first == nullptr);
+                        cur_data.to_first = &input_copy;
+                        new_inputs.push_back(cur.node);
+                    }
                 }
                 else
                 {
