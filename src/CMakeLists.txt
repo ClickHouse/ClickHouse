@@ -80,6 +80,11 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Databases/PostgreSQL)
+    add_headers_and_sources(dbms Storages/PostgreSQL)
+endif()
+
 if (USE_ROCKSDB)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
@@ -439,6 +444,11 @@ endif ()
 if (USE_ROCKSDB)
     dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
+endif()
+
+if (USE_LIBPQXX)
+    dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
 endif()
 
 dbms_target_link_libraries(PRIVATE _boost_context)

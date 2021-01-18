@@ -39,6 +39,7 @@ SRCS(
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
+    RemoteQueryExecutorReadContext.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
