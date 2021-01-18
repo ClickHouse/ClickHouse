@@ -7,9 +7,9 @@
 
 #include <Core/Field.h>
 
-#include <mutex>
+//#include <mutex>
 #include <memory>
-#include <boost/smart_ptr/atomic_shared_ptr.hpp>
+//#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 
 namespace DB
 {
@@ -25,8 +25,7 @@ private:
     friend class COWHelper<IColumn, ColumnMap>;
 
     WrappedPtr nested;
-    mutable boost::atomic_shared_ptr<IIndex> key_index;
-    mutable std::mutex key_index_mutex;
+    mutable std::shared_ptr<IIndex> key_index;
 
     explicit ColumnMap(MutableColumnPtr && nested_);
     ColumnMap(const ColumnMap &);
@@ -96,13 +95,20 @@ public:
     bool structureEquals(const IColumn & rhs) const override;
 
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
-    ColumnArray & getNestedColumn();
-
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
-    ColumnTuple & getNestedData();
+
+    /// In order for findAll to continue to work, make sure you call rebuildIndex() after modifying column's contents from outside.
+    ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
+    ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
+
+    // Rebuilds and index for finaAll(), non thread-safe.
+    void rebuildIndex();
 
     // Find all keys from `keys` column and return equally sized Column of values.
     ColumnPtr findAll(const IColumn & keys, size_t rows_count) const;
+
+private:
+    bool rebuildIndexDueToCOW();
 };
 
 }

@@ -100,6 +100,7 @@ void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteB
 void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     nested->deserializeBinary(extractNestedColumn(column), istr);
+    assert_cast<ColumnMap &>(column).rebuildIndex();
 }
 
 
@@ -186,6 +187,8 @@ void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool 
 
         offsets.push_back(offsets.back() + size);
         assertChar('}', istr);
+
+        column_map.rebuildIndex();
     }
     catch (...)
     {
@@ -322,6 +325,7 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state) const
 {
     nested->deserializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), limit, settings, state);
+    assert_cast<ColumnMap &>(column).rebuildIndex();
 }
 
 void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
@@ -332,6 +336,7 @@ void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, Prot
 void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
+    assert_cast<ColumnMap &>(column).rebuildIndex();
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

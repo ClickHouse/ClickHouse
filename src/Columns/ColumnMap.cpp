@@ -47,7 +47,8 @@ public:
 
     // updates the index with N last rows of the key/value columns.
     virtual void afterAppend(size_t N) = 0;
-    virtual void beforeRemove(size_t N) = 0;
+    virtual void afterRemove(size_t N) = 0;
+    virtual bool needsRebuild(const IColumn & keys, const IColumn & values, const ColumnArray::Offsets & offsets) const = 0;
 
     // Completely rebuilds an index.
     virtual void rebuild() = 0;
@@ -81,7 +82,7 @@ class ColumnMapIndex : public ColumnMap::IIndex
 
     const KeyColumnType & keys_column;
     const IColumn & values_column;
-    const ColumnArray::Offsets & offsets;
+    const ColumnArray::Offsets & row_offsets;
 
     // One hashtables per row is much more performant (less collisions)
     // than one huge HT and much more convenient in terms of building keys - no need to mess with
@@ -106,9 +107,9 @@ public:
     ColumnMapIndex(const KeyColumnType & keys_column_, const IColumn & values_column_, const ColumnArray::Offsets & offsets_)
         : keys_column(keys_column_)
         , values_column(values_column_)
-        , offsets(offsets_)
+        , row_offsets(offsets_)
     {
-        addRowsToIndex(0, offsets.size());
+        addRowsToIndex(0, row_offsets.size());
     }
 
     ~ColumnMapIndex() override
@@ -147,16 +148,21 @@ public:
     }
 
     // updates the index with N last rows of the key/value columns.
-    void afterAppend(size_t number_of_items) override
+    void afterAppend(size_t number_of_rows) override
     {
-        addRowsToIndex(offsets.size() - number_of_items, offsets.size());
-        items_added += number_of_items;
+        addRowsToIndex(row_offsets.size() - number_of_rows, row_offsets.size());
+        items_added += number_of_rows;
     }
 
-    void beforeRemove(size_t number_of_items) override
+    void afterRemove(size_t number_of_rows) override
     {
-        hash_tables.erase(hash_tables.end() - number_of_items, hash_tables.end());
-        items_removed += number_of_items;
+        hash_tables.erase(hash_tables.end() - number_of_rows, hash_tables.end());
+        items_removed += number_of_rows;
+    }
+
+    bool needsRebuild(const IColumn & keys, const IColumn & values, const ColumnArray::Offsets & offsets_) const override
+    {
+        return &keys != &keys_column || &values != &values_column || &offsets_ != &row_offsets;
     }
 
     // Completely rebuilds an index.
@@ -165,7 +171,7 @@ public:
         Stopwatch stopwatch;
         stopwatch.start();
 
-        addRowsToIndex(0, offsets.size());
+        addRowsToIndex(0, row_offsets.size());
 
         index_rebuilds_microseconds += stopwatch.elapsedMicroseconds();
         ++index_rebuilds;
@@ -185,12 +191,12 @@ public:
         hash_tables.reserve(hash_tables.size() + end_row - start_row);
 
         // Build an index, store global key offset as mapped values since that greatly simplifies value extraction.
-        size_t starting_offset = start_row == 0 ? 0 : offsets[start_row - 1];
+        size_t starting_offset = start_row == 0 ? 0 : row_offsets[start_row - 1];
         size_t total_items = 0;
 
         for (size_t row = start_row; row < end_row; ++row)
         {
-            const size_t final_offset = offsets[row];
+            const size_t final_offset = row_offsets[row];
 
             HashMapType map;
 
@@ -346,60 +352,62 @@ public:
     }
 };
 
-boost::shared_ptr<ColumnMap::IIndex> makeIndex(const IColumn & keys, const IColumn & values_column, const ColumnArray::Offsets & offsets)
+const IColumn & stripNullable(const IColumn & col)
 {
-    const IColumn * keys_column = &keys;
-    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(keys))
-    {
-        keys_column = &nullable_keys->getNestedColumn();
-    }
+    if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(col))
+        return nullable_keys->getNestedColumn();
 
-    switch (keys_column->getDataType())
+    return col;
+}
+
+std::shared_ptr<ColumnMap::IIndex> makeIndex(const IColumn & keys_column, const IColumn & values_column, const ColumnArray::Offsets & offsets)
+{
+    switch (keys_column.getDataType())
     {
         case TypeIndex::UInt8:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<UInt8>, UInt64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<UInt8>, UInt64>>(keys_column, values_column, offsets);
         case TypeIndex::UInt16:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<UInt16>, UInt64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<UInt16>, UInt64>>(keys_column, values_column, offsets);
         case TypeIndex::UInt32:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<UInt32>, UInt64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<UInt32>, UInt64>>(keys_column, values_column, offsets);
         case TypeIndex::UInt64:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<UInt64>, UInt64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<UInt64>, UInt64>>(keys_column, values_column, offsets);
 ////        case TypeIndex::UInt128:
-////            return boost::make_shared<ColumnMapIndex<ColumnVector<UInt128>, UInt128>>(*keys_column, values_column, offsets);
+////            return std::make_shared<ColumnMapIndex<ColumnVector<UInt128>, UInt128>>(keys_column, values_column, offsets);
 ////        case TypeIndex::UInt256:
         case TypeIndex::Int8:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(keys_column, values_column, offsets);
         case TypeIndex::Int16:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(keys_column, values_column, offsets);
         case TypeIndex::Int32:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int32>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int32>, Int64>>(keys_column, values_column, offsets);
         case TypeIndex::Int64:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int64>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int64>, Int64>>(keys_column, values_column, offsets);
 ////        case TypeIndex::Int128:
 ////        case TypeIndex::Int256:
 // TODO: since most of Floats are not going to be binary equal, it might not make any sense to store those in a hashmap
 //        case TypeIndex::Float32:
-//            return boost::make_shared<ColumnMapIndex<ColumnVector<Float32>, Float64>>(*keys_column, values_column, offsets);
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Float32>, Float64>>(keys_column, values_column, offsets);
 //        case TypeIndex::Float64:
-//            return boost::make_shared<ColumnMapIndex<ColumnVector<Float64>, Float64>>(*keys_column, values_column, offsets);
+//            return std::make_shared<ColumnMapIndex<ColumnVector<Float64>, Float64>>(keys_column, values_column, offsets);
 ////        case TypeIndex::Date:
 ////        case TypeIndex::DateTime:
 ////        case TypeIndex::DateTime64:
         case TypeIndex::String:
-            return boost::make_shared<ColumnMapIndex<ColumnString, StringRef>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnString, StringRef>>(keys_column, values_column, offsets);
         case TypeIndex::FixedString:
-            return boost::make_shared<ColumnMapIndex<ColumnFixedString, StringRef>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnFixedString, StringRef>>(keys_column, values_column, offsets);
         case TypeIndex::Enum8:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int8>, Int64>>(keys_column, values_column, offsets);
         case TypeIndex::Enum16:
-            return boost::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(*keys_column, values_column, offsets);
+            return std::make_shared<ColumnMapIndex<ColumnVector<Int16>, Int64>>(keys_column, values_column, offsets);
 ////        case TypeIndex::Decimal32:
 ////        case TypeIndex::Decimal64:
 ////        case TypeIndex::Decimal128:
 ////        case TypeIndex::Decimal256:
 ////        case TypeIndex::UUID:
     default:
-        throw Exception("Unsupported KEY column of Map " + keys_column->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Unsupported KEY column of Map " + keys_column.getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 }
 
@@ -419,8 +427,7 @@ std::string ColumnMap::getName() const
 }
 
 ColumnMap::ColumnMap(MutableColumnPtr && nested_)
-    : nested(std::move(nested_)),
-      key_index(nullptr)
+    : nested(std::move(nested_))
 {
     const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
@@ -436,12 +443,14 @@ ColumnMap::ColumnMap(MutableColumnPtr && nested_)
     for (const auto & column : column_tuple->getColumns())
         if (isColumnConst(*column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnMap cannot have ColumnConst as its element");
+
+    rebuildIndex();
 }
 
 ColumnMap::ColumnMap(const ColumnMap & other)
     : Base(other),
       nested(other.nested),
-      key_index(nullptr)
+      key_index(other.key_index) // share an index and re-build it when nested columns changed by COW.
 {}
 
 ColumnMap::~ColumnMap() = default;
@@ -490,25 +499,25 @@ void ColumnMap::insert(const Field & x)
     const auto & map = DB::get<const Map &>(x);
     nested->insert(Array(map.begin(), map.end()));
 
-    if (auto index = key_index.load())
-        index->afterAppend(1);
+    if (!rebuildIndexDueToCOW())
+        key_index->afterAppend(1);
 }
 
 void ColumnMap::insertDefault()
 {
     nested->insertDefault();
 
-    if (auto index = key_index.load())
-        index->afterAppend(1);
+    if (!rebuildIndexDueToCOW())
+        key_index->afterAppend(1);
 }
 
 void ColumnMap::popBack(size_t n)
 {
     LOG_DEBUG(logger(), "{} : {}", reinterpret_cast<const void*>(this), __FUNCTION__);
-    if (auto index = key_index.load())
-        index->beforeRemove(n);
-
     nested->popBack(n);
+
+    if (!rebuildIndexDueToCOW())
+        key_index->afterRemove(n);
 }
 
 StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -519,7 +528,7 @@ StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
     const char * result = nested->deserializeAndInsertFromArena(pos);
-    key_index.store(nullptr);
+    rebuildIndex();
 
     return result;
 }
@@ -545,8 +554,8 @@ void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length
         assert_cast<const ColumnMap &>(src).getNestedColumn(),
         start, length);
 
-    if (auto index = key_index.load())
-        index->afterAppend(length);
+    if (!rebuildIndexDueToCOW())
+        key_index->afterAppend(length);
 }
 
 ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -611,7 +620,7 @@ void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_
 void ColumnMap::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
-    key_index.store(nullptr);
+    key_index->rebuild();
 }
 
 void ColumnMap::reserve(size_t n)
@@ -647,8 +656,9 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
     nested->forEachSubcolumn(callback);
-
-    key_index.store(nullptr);
+    // NOTE: ICOlumn::dumpStructure() would cause a full index rebuild and hence tanks the performance,
+    // but since it is a debugging tool we don't care much.
+    rebuildIndex();
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
@@ -658,34 +668,35 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-ColumnArray & ColumnMap::getNestedColumn()
+void ColumnMap::rebuildIndex()
 {
-    key_index.store(nullptr);
-    return assert_cast<ColumnArray &>(*nested);
+    // Since this usually called after modifying columns from outside, it is safer to assume that caller
+    // might have replaced keys and values columns with something else, hence do a full-reset.
+    const auto & kv_tuple = getNestedData();
+    key_index = makeIndex(stripNullable(kv_tuple.getColumn(0)), kv_tuple.getColumn(1), getNestedColumn().getOffsets());
 }
 
-ColumnTuple & ColumnMap::getNestedData()
+bool ColumnMap::rebuildIndexDueToCOW()
 {
-    key_index.store(nullptr);
-    return assert_cast<ColumnTuple &>(getNestedColumn().getData());
-}
+    // Rebuilds index if shared key or value columns were cloned on modification by COWHelper,
+    // hence index now refers to the wrong columns internally.
 
+    const auto & kv_tuple = getNestedData();
+    if (key_index->needsRebuild(stripNullable(kv_tuple.getColumn(0)), kv_tuple.getColumn(1), getNestedColumn().getOffsets()))
+    {
+        rebuildIndex();
+        return true;
+    }
+
+    return false;
+}
 
 ColumnPtr ColumnMap::findAll(const IColumn & keys, size_t rows_count) const
 {
     if (unlikely(rows_count > nested->size() || rows_count > keys.size()))
         throw Exception("Too many rows for ColumnMap", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (key_index.load() == nullptr)
-    {
-        std::lock_guard lock(key_index_mutex);
-        if (key_index.load() == nullptr)
-        {
-            key_index.store(makeIndex(getNestedData().getColumn(0), getNestedData().getColumn(1), getNestedColumn().getOffsets()));
-        }
-    }
-
-    return key_index.load()->findAll(keys, rows_count);
+    return key_index->findAll(keys, rows_count);
 }
 
 }
