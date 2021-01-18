@@ -252,11 +252,23 @@ void DiskCacheWrapper::copyFile(const String & from_path, const String & to_path
     DiskDecorator::copyFile(from_path, to_path);
 }
 
-void DiskCacheWrapper::remove(const String & path)
+void DiskCacheWrapper::removeFile(const String & path)
+{
+    cache_disk->removeFileIfExists(path);
+    DiskDecorator::removeFile(path);
+}
+
+void DiskCacheWrapper::removeFileIfExists(const String & path)
+{
+    cache_disk->removeFileIfExists(path);
+    DiskDecorator::removeFileIfExists(path);
+}
+
+void DiskCacheWrapper::removeDirectory(const String & path)
 {
     if (cache_disk->exists(path))
-        cache_disk->remove(path);
-    DiskDecorator::remove(path);
+        cache_disk->removeDirectory(path);
+    DiskDecorator::removeDirectory(path);
 }
 
 void DiskCacheWrapper::removeRecursive(const String & path)
