@@ -70,9 +70,6 @@ private:
 };
 
 
-std::string getExceptionStackTraceString(const std::exception & e);
-
-
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.
 class ErrnoException : public Exception
 {
