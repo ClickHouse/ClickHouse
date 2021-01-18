@@ -1104,7 +1104,104 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+Принимает состояние агрегатной функции. Возвращает результат агрегирования (или конечное состояние при использовании комбинатора [-State](../../sql-reference/aggregate-functions/combinators.md#state)).
+
+**Синтаксис** 
+
+``` sql
+finalizeAggregation(state)
+```
+
+**Параметры**
+
+-   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+
+**Возвращаемые значения**
+
+-   Значения, которые были агрегированы.
+
+Тип: соответствует типу агрегируемых значений.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery16)─┐
+│                               10 │
+└──────────────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(_subquery20)─┐
+│                               45 │
+└──────────────────────────────────┘
+```
+
+Обратите внимание, что значения `NULL` игнорируются. 
+
+Запрос:
+
+```sql
+SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
+```
+
+Результат:
+
+```text
+┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
+│                                                          2 │
+└────────────────────────────────────────────────────────────┘
+```
+
+Комбинированный пример:
+
+Запрос:
+
+```sql
+WITH initializeAggregation('sumState', number) AS one_row_sum_state
+SELECT
+    number,
+    finalizeAggregation(one_row_sum_state) AS one_row_sum,
+    runningAccumulate(one_row_sum_state) AS cumulative_sum
+FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─one_row_sum─┬─cumulative_sum─┐
+│      0 │           0 │              0 │
+│      1 │           1 │              1 │
+│      2 │           2 │              3 │
+│      3 │           3 │              6 │
+│      4 │           4 │             10 │
+│      5 │           5 │             15 │
+│      6 │           6 │             21 │
+│      7 │           7 │             28 │
+│      8 │           8 │             36 │
+│      9 │           9 │             45 │
+└────────┴─────────────┴────────────────┘
+```
+
+**Смотрите также**
+
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1588,5 +1685,65 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 ``` text
 10	10	19	19	39	39
 ```
+
+## errorCodeToName {#error-code-to-name}
+
+**Возвращаемое значение**
+
+-   Название переменной для кода ошибки.
+
+Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
+
+**Синтаксис**
+
+``` sql
+errorCodeToName(1)
+```
+
+Результат:
+
+``` text
+UNSUPPORTED_METHOD
+```
+
+## tcpPort {#tcpPort}
+
+Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
+
+**Синтаксис**
+
+``` sql
+tcpPort()
+```
+
+**Параметры**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Номер TCP порта.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tcpPort();
+```
+
+Результат:
+
+``` text
+┌─tcpPort()─┐
+│      9000 │
+└───────────┘
+```
+
+**Смотрите также**
+
+-   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

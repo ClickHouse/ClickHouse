@@ -1,5 +1,5 @@
-clickhouse (20.13.1.1) unstable; urgency=low
+clickhouse (21.1.0) unstable; urgency=low
 
   * Modified source code
 
- -- clickhouse-release <clickhouse-release@yandex-team.ru>  Mon, 23 Nov 2020 10:29:24 +0300
+ -- Alexey Milovidov <milovidov@yandex-team.ru>  Mon, 11 Jan 2021 03:51:08 +0300

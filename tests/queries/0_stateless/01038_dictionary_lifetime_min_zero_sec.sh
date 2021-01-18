@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS db_01038"
@@ -26,7 +27,7 @@ CREATE DICTIONARY db_01038.dict_with_zero_min_lifetime
     value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'db_01038'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'db_01038'))
 LIFETIME(1)
 LAYOUT(FLAT())"
 

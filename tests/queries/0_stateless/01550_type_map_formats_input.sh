@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS map_formats_input"
@@ -19,3 +20,5 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM map_formats_input"
 
 $CLICKHOUSE_CLIENT -q 'SELECT * FROM map_formats_input FORMAT Native' | $CLICKHOUSE_CLIENT -q "INSERT INTO map_formats_input FORMAT Native"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM map_formats_input"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE map_formats_input"
