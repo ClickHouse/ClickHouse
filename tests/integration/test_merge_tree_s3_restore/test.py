@@ -142,7 +142,7 @@ def test_full_restore(cluster):
 
     node.stop_clickhouse()
     create_restore_file(node)
-    node.start_clickhouse()
+    node.start_clickhouse(10)
 
     assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -170,7 +170,7 @@ def test_restore_another_bucket_path(cluster):
 
     node_another_bucket.stop_clickhouse()
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -181,7 +181,7 @@ def test_restore_another_bucket_path(cluster):
 
     node_another_bucket_path.stop_clickhouse()
     create_restore_file(node_another_bucket_path, bucket="root2", path="data")
-    node_another_bucket_path.start_clickhouse()
+    node_another_bucket_path.start_clickhouse(10)
 
     assert node_another_bucket_path.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node_another_bucket_path.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -223,7 +223,7 @@ def test_restore_different_revisions(cluster):
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
     create_restore_file(node_another_bucket, revision=revision1, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 2)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -234,7 +234,7 @@ def test_restore_different_revisions(cluster):
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
     create_restore_file(node_another_bucket, revision=revision2, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -245,7 +245,7 @@ def test_restore_different_revisions(cluster):
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
     create_restore_file(node_another_bucket, revision=revision3, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -277,7 +277,7 @@ def test_restore_mutations(cluster):
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
     create_restore_file(node_another_bucket, revision=revision_before_mutation, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 2)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -288,7 +288,7 @@ def test_restore_mutations(cluster):
     drop_s3_metadata(node_another_bucket)
     purge_s3(cluster, cluster.minio_bucket_2)
     create_restore_file(node_another_bucket, revision=revision_after_mutation, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 2)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
@@ -302,7 +302,7 @@ def test_restore_mutations(cluster):
     purge_s3(cluster, cluster.minio_bucket_2)
     revision = (revision_before_mutation + revision_after_mutation) // 2
     create_restore_file(node_another_bucket, revision=revision, bucket="root")
-    node_another_bucket.start_clickhouse()
+    node_another_bucket.start_clickhouse(10)
 
     # Wait for unfinished mutation completion.
     time.sleep(3)
