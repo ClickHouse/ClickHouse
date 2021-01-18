@@ -253,6 +253,8 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    std::pair<ActionsDAGPtr, ActionsDAGPtr> split(std::unordered_set<const Node *> split_nodes) const;
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);
