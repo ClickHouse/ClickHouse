@@ -10,8 +10,8 @@ toc_title: "\u0422\u0430\u0431\u043b\u0438\u0446\u0430"
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -43,6 +43,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
+
+## Модификаторы NULL или NOT NULL {#null-modifiers}
+
+Модификаторы `NULL` and `NOT NULL` после установления типа данных в определении столбца позволяют или не позволяют ему быть типом [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
+
+Если тип не `Nullable` и указан модификатор `NULL`, то столбец будет иметь тип `Nullable`; если `NOT NULL`, то не `Nullable`. Например, `INT NULL` то же, что и `Nullable(INT)`. Если тип `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, то будет вызвано исключение.
+
+Смотрите также настройку [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable).
 
 ### Значения по умолчанию {#create-default-values}
 
