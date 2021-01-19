@@ -3,9 +3,16 @@
 
 #include <common/logger_useful.h>
 
-namespace DB {
+namespace DB
+{
 
-namespace {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
 
 size_t getArrayDepth(DataTypePtr data_type, size_t max_depth)
 {
