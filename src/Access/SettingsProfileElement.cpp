@@ -28,6 +28,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         if (id_mode)
             return parse<UUID>(name_);
         assert(manager);
+        /// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
         return manager->getID<SettingsProfile>(name_);
     };
 
