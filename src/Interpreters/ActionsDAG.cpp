@@ -454,6 +454,36 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
     return false;
 }
 
+void ActionsDAG::removeUnusedInput(const std::string & column_name)
+{
+    auto it = inputs.begin();
+    for (; it != inputs.end(); ++it)
+        if ((*it)->result_name == column_name)
+            break;
+
+    if (it == inputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found input {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+    auto * input = *it;
+    for (const auto & node : nodes)
+        for (const auto * child : node.children)
+            if (input == child)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot remove input {} because it has dependent nodes in ActionsDAG\n{}",
+                                column_name, dumpDAG());
+
+    for (auto jt = index.begin(); jt != index.end(); ++jt)
+    {
+        if (*jt == input)
+        {
+            index.remove(jt);
+            break;
+        }
+    }
+
+    inputs.erase(it);
+}
+
 ActionsDAGPtr ActionsDAG::clone() const
 {
     auto actions = cloneEmpty();
@@ -1065,6 +1095,18 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin
     /// Do not remove array joined columns if they are not used.
     res.first->settings.project_input = false;
     return res;
+}
+
+std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::splitActionsForFilter(const std::string & column_name) const
+{
+    auto it = index.find(column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
+                        column_name, dumpDAG());
+
+    std::unordered_set<const Node *> split_nodes = {*it};
+    return split(split_nodes);
 }
 
 }
