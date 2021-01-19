@@ -185,7 +185,7 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , server(server_)
     , log(&Poco::Logger::get("TestKeeperTCPHandler"))
     , global_context(server.context())
-    , test_keeper_storage_dispatcher(global_context.getTestKeeperStorage())
+    , test_keeper_storage_dispatcher(global_context.getTestKeeperStorageDispatcher())
     , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , session_id(test_keeper_storage_dispatcher->getSessionID())

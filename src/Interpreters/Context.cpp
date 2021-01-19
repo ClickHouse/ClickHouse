@@ -305,8 +305,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage;
+    mutable std::mutex test_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -447,7 +447,7 @@ struct ContextShared
         /// Stop zookeeper connection
         zookeeper.reset();
         /// Stop test_keeper storage
-        test_keeper_storage.reset();
+        test_keeper_storage_dispatcher.reset();
     }
 
     bool hasTraceCollector() const
@@ -1531,13 +1531,13 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorage() const
+std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->test_keeper_storage_mutex);
-    if (!shared->test_keeper_storage)
-        shared->test_keeper_storage = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    if (!shared->test_keeper_storage_dispatcher)
+        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage;
+    return shared->test_keeper_storage_dispatcher;
 }
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
