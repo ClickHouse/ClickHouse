@@ -646,7 +646,7 @@ TestKeeperStorage::ResponsesForSessions TestKeeperStorage::processRequest(const 
         auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
         response->xid = zk_request->xid;
         response->zxid = getZXID();
-        results.push_front(ResponseForSession{session_id, response});
+        results.push_back(ResponseForSession{session_id, response});
     }
     else
     {
@@ -690,7 +690,7 @@ TestKeeperStorage::ResponsesForSessions TestKeeperStorage::processRequest(const 
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
-        results.push_front(ResponseForSession{session_id, response});
+        results.push_back(ResponseForSession{session_id, response});
     }
 
     return results;

@@ -298,7 +298,7 @@ void TestKeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout);
-            if (result.has_requests)
+            if (result.has_requests && !close_received)
             {
                 do
                 {
@@ -308,6 +308,8 @@ void TestKeeperTCPHandler::runImpl()
                     {
                         LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
                         close_xid = received_xid;
+                        close_received = true;
+                        break;
                     }
                     else if (received_op == Coordination::OpNum::Heartbeat)
                     {
@@ -325,8 +327,8 @@ void TestKeeperTCPHandler::runImpl()
                 {
                     if (response->xid == close_xid)
                     {
-                        close_received = true;
-                        break;
+                        LOG_DEBUG(log, "Session #{} successfuly closed", session_id);
+                        return;
                     }
 
                     if (response->error == Coordination::Error::ZOK)
@@ -336,9 +338,6 @@ void TestKeeperTCPHandler::runImpl()
                     /// skipping bad response for watch
                 }
             }
-
-            if (close_received)
-                break;
 
             if (result.error)
                 throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
