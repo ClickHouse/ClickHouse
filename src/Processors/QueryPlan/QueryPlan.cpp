@@ -457,6 +457,8 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     if (split_actions.first->empty())
         return;
 
+    auto description = parent->getStepDescription();
+
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
     if (split_actions.second->empty())
     {
@@ -475,6 +477,8 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
                                                  filter_step->getFilterColumnName(),
                                                  filter_step->removesFilterColumn());
 
+        child->setStepDescription(std::move(description));
+
         array_join_step->updateInputStream(child->getOutputStream(), expected_header);
         return;
     }
@@ -488,6 +492,7 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
                                                  std::move(split_actions.first));
+    node.step->setStepDescription(description);
     array_join_step->updateInputStream(node.step->getOutputStream(), {});
 
     if (expression_step)
@@ -495,6 +500,8 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     else
         parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
                                               filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+
+    parent->setStepDescription(description + " [split]");
 }
 
 /// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
@@ -577,6 +584,10 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
             filter_step->removesFilterColumn());
 
     node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+
+    filter_node.step->setStepDescription(filter_step->getStepDescription() + " [split]");
+    node->step->setStepDescription(filter_step->getStepDescription() + " [split]");
+
     return true;
 }
 
