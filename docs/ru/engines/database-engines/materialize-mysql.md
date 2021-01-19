@@ -25,8 +25,8 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 
 ## Виртуальные столбцы {#virtual-columns}
 
-При работе с движком баз данных `MaterializeMySQL` таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) используются с виртуальными столбцами `_sign` и `_version`.
- 
+При работе с движком баз данных `MaterializeMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
+
 - `_version` — счетчик транзакций. Тип [UInt64](../../sql-reference/data-types/int-uint.md).
 - `_sign` — метка удаления. Тип [Int8](../../sql-reference/data-types/int-uint.md). Возможные значения:
     - `1` — строка не удалена, 
@@ -51,7 +51,7 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 
-Другие типы не поддерживаются. Если таблица MySQL содержит столбец такого типа, ClickHouse выдаст исключение "необработанный тип данных" и остановит репликацию.
+Другие типы не поддерживаются. Если таблица MySQL содержит столбец другого типа, ClickHouse выдаст исключение "Неподдерживаемый тип данных" ("Unhandled data type") и остановит репликацию.
 
 Тип [Nullable](../../sql-reference/data-types/nullable.md) поддерживается.
 
@@ -59,38 +59,38 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 
 ### DDL-запросы {#ddl-queries}
 
-DDL-запросы в MySQL конвертируются в соответствующие DDL-запросы в ClickHouse ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). Если ClickHouse не может спарсить какой-либо DDL-запрос, то он игнорируется.
+DDL-запросы в MySQL конвертируются в соответствующие DDL-запросы в ClickHouse ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). Если ClickHouse не может конвертировать какой-либо DDL-запрос, он его игнорирует.
 
 ### Репликация данных {#data-replication}
 
 Движок MaterializeMySQL не поддерживает прямые запросы `INSERT`, `DELETE` и `UPDATE`. Однако они поддерживаются с точки зрения репликации данных:
 
-- Запрос `INSERT` в MySQL конвертируется в `INSERT` с `_sign=1`.
+- Запрос `INSERT` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=1`.
 
-- Запрос `DELETE` в MySQL конвертируется в `INSERT` с `_sign=-1`.
+- Запрос `DELETE` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=-1`.
 
-- Запрос `UPDATE` в MySQL конвертируется в `INSERT` с `_sign=-1` и `INSERT` с `_sign=1`.
+- Запрос `UPDATE` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=-1` и `INSERT` с `_sign=1`.
 
 ### Выборка из таблиц движка MaterializeMySQL {#select}
 
 Запрос `SELECT` из таблиц движка MaterializeMySQL имеет некоторую специфику:
 
-- Если `_version` не указан в запросе `SELECT`, то используется модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final). Таким образом, выбираются только строки с `MAX(_version)`.
+- Если в запросе `SELECT` напрямую не указан столбец `_version`, то используется модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final). Таким образом, выбираются только строки с `MAX(_version)`.
 
-- Если `_sign` не указан в запросе `SELECT`, то по умолчанию используется `WHERE _sign=1`. Таким образом, удаленные строки не включаются в результирующий набор. 
+- Если в запросе `SELECT` напрямую не указан столбец `_sign`, то по умолчанию используется `WHERE _sign=1`. Таким образом, удаленные строки не включаются в результирующий набор. 
 
-### Индекс конверсии {#index-conversion}
+### Конвертация индексов {#index-conversion}
 
 Секции `PRIMARY KEY` и `INDEX` в MySQL конвертируются в кортежи `ORDER BY` в таблицах ClickHouse.
 
-ClickHouse имеет только один физический порядок, который определяется секцией `ORDER BY`. Чтобы создать новый физический порядок, используйте [материализованные представления](../../sql-reference/statements/create/view.md#materialized).
+В таблицах ClickHouse данные физически хранятся в том порядке, который определяется секцией `ORDER BY`. Чтобы физически перегруппировать данные, используйте [материализованные представления](../../sql-reference/statements/create/view.md#materialized).
 
 **Примечание**
 
 - Строки с `_sign=-1` физически не удаляются из таблиц.
 - Каскадные запросы `UPDATE/DELETE` не поддерживаются движком `MaterializeMySQL`.
 - Репликация может быть легко нарушена.
-- Операции вручную с базами данных и таблицами запрещены.
+- Прямые операции изменения данных в таблицах и базах данных `MaterializeMySQL` запрещены.
 
 ## Примеры использования {#examples-of-use}
 
