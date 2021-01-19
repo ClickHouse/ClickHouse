@@ -570,7 +570,7 @@ def main(args):
     if not check_server_started(args.client, args.server_check_retries):
         raise Exception(
             "Server is not responding. Cannot execute 'SELECT 1' query. \
-            Note: if you are using unbundled mode, you also have to specify -c option.")
+            Note: if you are using split build, you may have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
     if args.antlr:
@@ -848,10 +848,10 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', help='Path to tmp dir')
 
     parser.add_argument('-b', '--binary', default='clickhouse',
-        help='Path to clickhouse (if bundled, clickhouse-server otherwise) binary or name of binary in PATH')
+        help='Path to clickhouse (if monolithic build, clickhouse-server otherwise) binary or name of binary in PATH')
 
     parser.add_argument('-c', '--client',
-        help='Path to clickhouse-client (if unbundled, useless otherwise) binary of name of binary in PATH')
+        help='Path to clickhouse-client (if split build, useless otherwise) binary of name of binary in PATH')
 
     parser.add_argument('--extract_from_config', help='extract-from-config program')
     parser.add_argument('--configclient', help='Client config (if you use not default ports)')
@@ -932,11 +932,11 @@ if __name__ == '__main__':
         if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
 
-            print("Using " + args.client + " as client program (expecting unbundled mode)")
+            print("Using " + args.client + " as client program (expecting split build)")
         elif find_binary(args.binary):
             args.client = args.binary + ' client'
 
-            print("Using " + args.client + " as client program (expecting bundled mode)")
+            print("Using " + args.client + " as client program (expecting monolithic build)")
         else:
             print("No 'clickhouse' or 'clickhouse-client' client binary found", file=sys.stderr)
             parser.print_help()
