@@ -6,7 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <unordered_map>
 #include <unordered_set>
-#include <deque>
+#include <vector>
 
 namespace zkutil
 {
