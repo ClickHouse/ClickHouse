@@ -64,53 +64,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
-            default_database.empty() ? "(not specified)" : default_database,
-            user,
-            static_cast<bool>(secure) ? ". Secure" : "",
-            static_cast<bool>(compression) ? "" : ". Uncompressed");
-
-        if (static_cast<bool>(secure))
-        {
-#if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
-            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
-            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
-            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
-#else
-            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-        }
-
-        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
-
-        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        socket->connect(*current_resolved_address, connection_timeout);
-        socket->setReceiveTimeout(timeouts.receive_timeout);
-        socket->setSendTimeout(timeouts.send_timeout);
-        socket->setNoDelay(true);
-        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
-        {
-            socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP,
-#if defined(TCP_KEEPALIVE)
-                TCP_KEEPALIVE
-#else
-                TCP_KEEPIDLE  // __APPLE__
-#endif
-                , timeouts.tcp_keep_alive_timeout);
-        }
-
-        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-
-        connected = true;
+        prepare(timeouts);
 
         sendHello();
         receiveHello();
@@ -144,6 +98,57 @@ void Connection::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
+}
+
+void Connection::prepare(const ConnectionTimeouts & timeouts)
+{
+    LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+              default_database.empty() ? "(not specified)" : default_database,
+              user,
+              static_cast<bool>(secure) ? ". Secure" : "",
+              static_cast<bool>(compression) ? "" : ". Uncompressed");
+
+    if (static_cast<bool>(secure))
+    {
+#if USE_SSL
+        socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+        /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+        /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+        /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+        static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+#else
+        throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    }
+    else
+    {
+        socket = std::make_unique<Poco::Net::StreamSocket>();
+    }
+
+    current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+
+    const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+    socket->connect(*current_resolved_address, connection_timeout);
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
+    socket->setNoDelay(true);
+    if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+    {
+        socket->setKeepAlive(true);
+        socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+            TCP_KEEPALIVE
+#else
+                          TCP_KEEPIDLE  // __APPLE__
+#endif
+            , timeouts.tcp_keep_alive_timeout);
+    }
+
+    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+    out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
+
+    connected = true;
 }
 
 
@@ -334,8 +339,6 @@ void Connection::sendClusterNameAndSalt()
 
 bool Connection::ping()
 {
-    // LOG_TRACE(log_wrapper.get(), "Ping");
-
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
@@ -379,10 +382,21 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
+    sendTablesStatusRequest(request);
+    TablesStatusResponse response = receiveTablesStatusResponse();
+
+    return response;
+}
+
+void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
+{
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
     out->next();
+}
 
+TablesStatusResponse Connection::receiveTablesStatusResponse()
+{
     UInt64 response_type = 0;
     readVarUInt(response_type, *in);
 
@@ -395,7 +409,6 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     response.read(*in, server_revision);
     return response;
 }
-
 
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
@@ -742,7 +755,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket(AsyncCallback async_callback)
 {
     in->setAsyncCallback(std::move(async_callback));
     SCOPE_EXIT(in->setAsyncCallback({}));

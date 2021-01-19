@@ -42,7 +42,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// Note that receive timeout is not checked here. External code should check it while polling.
         while (bytes_read < 0 && async_callback && errno == EAGAIN)
         {
-            async_callback(socket);
+            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), "socket (" + socket.peerAddress().toString() + ")");
             bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
         }
     }

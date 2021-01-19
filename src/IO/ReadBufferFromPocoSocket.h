@@ -8,6 +8,8 @@
 namespace DB
 {
 
+using AsyncCallback = std::function<void(int, const Poco::Timespan &, const std::string &)>;
+
 /** Works with the ready Poco::Net::Socket. Blocking operations.
   */
 class ReadBufferFromPocoSocket : public BufferWithOwnMemory<ReadBuffer>
@@ -28,10 +30,10 @@ public:
 
     bool poll(size_t timeout_microseconds);
 
-    void setAsyncCallback(std::function<void(Poco::Net::Socket &)> async_callback_) { async_callback = std::move(async_callback_); }
+    void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
 private:
-    std::function<void(Poco::Net::Socket &)> async_callback;
+    AsyncCallback async_callback;
 };
 
 }

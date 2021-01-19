@@ -55,6 +55,10 @@ class IColumn;
     M(Seconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "", 0) \
     M(Seconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC, "", 0) \
     M(Seconds, tcp_keep_alive_timeout, 0, "The time in seconds the connection needs to remain idle before TCP starts sending keepalive probes", 0) \
+    M(Seconds, receive_hello_timeout, DBMS_DEFAULT_RECEIVE_HELLO_TIMEOUT_SEC, "Connection timeout for receiving hello from replica", 0) \
+    M(Seconds, receive_tables_status_timeout, DBMS_DEFAULT_RECEIVE_TABLES_STATUS_TIMEOUT_SEC, "Connection timeout for receiving tables status from replica", 0) \
+    M(Seconds, receive_data_timeout, DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_SEC, "Connection timeout for receiving first packet of data from replica", 0) \
+    M(Bool, use_hedged_requests, true, "Use hedged requests for distributed queries", 0) \
     M(Milliseconds, queue_max_wait_ms, 0, "The wait time in the request queue, if the number of concurrent requests exceeds the maximum.", 0) \
     M(Milliseconds, connection_pool_max_wait_ms, 0, "The wait time when the connection pool is full.", 0) \
     M(Milliseconds, replace_running_query_max_wait_ms, 5000, "The wait time for running query with the same query_id to finish when setting 'replace_running_query' is active.", 0) \
@@ -214,6 +218,11 @@ class IColumn;
     M(Int64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.", 0) \
     M(Milliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.", 0) \
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
+    \
+    /** Settings for testing hedged requests */ \
+    M(Int64, sleep_before_send_hello, 0, "Time to sleep before sending hello in TCPHandler", 0) \
+    M(Int64, sleep_before_send_tables_status, 0, "Time to sleep before sending tables status response in TCPHandler", 0) \
+    M(Int64, sleep_before_send_data, 0, "Time to sleep before sending data in TCPHandler", 0) \
     \
     M(Bool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.", 0) \
     M(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.", 0) \

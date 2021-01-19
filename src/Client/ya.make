@@ -12,6 +12,8 @@ PEERDIR(
 SRCS(
     Connection.cpp
     ConnectionPoolWithFailover.cpp
+    GetHedgedConnections.cpp
+    HedgedConnections.cpp
     MultiplexedConnections.cpp
     TimeoutSetter.cpp
 
