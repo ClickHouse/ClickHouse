@@ -43,10 +43,10 @@ public:
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
-    StackTrace(const ucontext_t & signal_context);
+    explicit StackTrace(const ucontext_t & signal_context);
 
     /// Creates empty object for deferred initialization
-    StackTrace(NoCapture);
+    explicit StackTrace(NoCapture);
 
     size_t getSize() const;
     size_t getOffset() const;
@@ -57,6 +57,7 @@ public:
     static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
 
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;
+
 protected:
     void tryCapture();
 

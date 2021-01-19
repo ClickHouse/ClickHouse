@@ -311,7 +311,8 @@ private:
         if (stack_trace.getSize())
         {
             /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+            /// NOTE: This still require memory allocations and mutex lock inside logger.
+            ///       BTW we can also print it to stderr using write syscalls.
 
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
@@ -324,7 +325,7 @@ private:
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
