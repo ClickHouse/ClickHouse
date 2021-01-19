@@ -4,6 +4,10 @@
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/LoggerWrapper.h>
+#include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Coordination/ReadBufferFromNuraftBuffer.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
 #include <libnuraft/nuraft.hxx>
 #include <thread>
@@ -24,6 +28,39 @@ TEST(CoordinationTest, BuildTest)
     DB::InMemoryStateManager state_manager(1, "localhost:12345");
     DB::SummingStateMachine machine;
     EXPECT_EQ(1, 1);
+}
+
+TEST(CoordinationTest, BufferSerde)
+{
+    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Get);
+    request->xid = 3;
+    dynamic_cast<Coordination::ZooKeeperGetRequest *>(request.get())->path = "/path/value";
+
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    request->write(wbuf);
+    auto nuraft_buffer = wbuf.getBuffer();
+    EXPECT_EQ(nuraft_buffer->size(), 28);
+
+    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+
+    int32_t length;
+    Coordination::read(length, rbuf);
+    EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
+
+    int32_t xid;
+    Coordination::read(xid, rbuf);
+    EXPECT_EQ(xid, request->xid);
+
+    Coordination::OpNum opnum;
+    Coordination::read(opnum, rbuf);
+
+    Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_read->xid = xid;
+    request_read->readImpl(rbuf);
+
+    EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
+    EXPECT_EQ(request_read->xid, 3);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest *>(request_read.get())->path, "/path/value");
 }
 
 struct SummingRaftServer
