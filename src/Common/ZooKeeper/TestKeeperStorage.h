@@ -37,7 +37,7 @@ public:
         Coordination::ZooKeeperResponsePtr response;
     };
 
-    using ResponsesForSessions = std::deque<ResponseForSession>;
+    using ResponsesForSessions = std::vector<ResponseForSession>;
 
     struct RequestForSession
     {
@@ -45,7 +45,7 @@ public:
         Coordination::ZooKeeperRequestPtr request;
     };
 
-    using RequestsForSessions = std::deque<RequestForSession>;
+    using RequestsForSessions = std::vector<RequestForSession>;
 
     using Container = std::map<std::string, Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<String>>;
