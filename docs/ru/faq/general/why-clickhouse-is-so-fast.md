@@ -19,45 +19,45 @@ toc_priority: 8
 Сжатие данных
 :   Хранение различных значений одной и той же колонки вместе часто ведет к лучшим пропорциям сжатия (по сравнению со стандартными ориентированными на строки системами). Причина тому — в реальности столбец данных часто имеет такие же или не слишком различные значения для соседних строк. А в дополнение к универсальному сжатию ClickHouse поддерживает [специализированные кодеки](../../sql-reference/statements/create/table.md#create-query-specialized-codecs), которые могут ужать данные еще больше. 
 
-Vectorized query execution
+Выполнение векторизованного запроса
 :   ClickHouse не только хранит данные в столбцах, но также обрабатывает их. А это приводит к улучшению использования кеша процессора и позволяет использовать инструкции [SIMD](https://en.wikipedia.org/wiki/SIMD).
 
 Масштабируемость
-:   ClickHouse can leverage all available CPU cores and disks to execute even a single query. Not only on a single server but all CPU cores and disks of a cluster as well.
+:   ClickHouse может использовать все доступные ядра процессоров, а также диски, чтобы выполнить даже одиночный запрос. Не только на отдельном сервере, но на всех процессорных ядрах и дисках целого кластера.
 
-But many other database management systems use similar techniques. What really makes ClickHouse stand out is **attention to low-level details**. Most programming languages provide implementations for most common algorithms and data structures, but they tend to be too generic to be effective. Every task can be considered as a landscape with various characteristics, instead of just throwing in random implementation. For example, if you need a hash table, here are some key questions to consider:
+Похожие техники используют и многие другие СУБД. **Внимание к низкоуровневым деталям** — вот, что делает ClickHouse по-настоящему особенным. Большинство языков программирования предоставляют реализации для большинства распространенных алгоритмов и структур данных, но в целом они слишком общие (поверхностные), чтобы быть эффективными. Каждую задачу можно рассмотреть как пейзах с различными характеристиками вместо того, чтобы просто взять случайную реализацию. К примеру, если вам нужна таблица хешей, вот несколько ключевых вопросов к размышлению:
 
--   Which hash function to choose?
--   Collision resolution algorithm: [open addressing](https://en.wikipedia.org/wiki/Open_addressing) vs [chaining](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)?
--   Memory layout: one array for keys and values or separate arrays? Will it store small or large values?
--   Fill factor: when and how to resize? How to move values around on resize?
--   Will values be removed and which algorithm will work better if they will?
--   Will we need fast probing with bitmaps, inline placement of string keys, support for non-movable values, prefetch, and batching?
+-   Какую функцию следует выбрать?
+-   Алгоритм разрешения противоречий: [открытая адресация](https://en.wikipedia.org/wiki/Open_addressing) против [связывания](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)?
+-   Схема памяти: один массив для ключей и значений или отдельные массивы? Будут ли хранится маленькие или большие значения?
+-   Фактор заполнения: когда и как менять размер? Как перемещать значения при изменении размера?
+-   Будут ли значения перемещаться и какой алгоритм сработает лучше при этом?
+-   Понадобится ли нам Will we need быстрое зондирование с растровыми изображениями, вхождение строчных ключей, поддержка неперемещаемых значений, предварительная выборка и пакетирование?
 
-Hash table is a key data structure for `GROUP BY` implementation and ClickHouse automatically chooses one of [30+ variations](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Aggregator.h) for each specific query.
+Хеш-таблица — ключевая структура данных для реализации `GROUP BY` и ClickHouse автоматически выбирает одну из [более, чем 30-ти вариаций](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Aggregator.h) для каждого специфического запроса.
 
-The same goes for algorithms, for example, in sorting you might consider:
+Аналогично происходит для алгоритмов, например, при сортировки вы могли бы подумать о:
 
--   What will be sorted: an array of numbers, tuples, strings, or structures?
--   Is all data available completely in RAM?
--   Do we need a stable sort?
--   Do we need a full sort? Maybe partial sort or n-th element will suffice?
--   How to implement comparisons?
--   Are we sorting data that has already been partially sorted?
+-   Что будет сортироваться: массив чисел, кортежи, строки или структуры?
+-   Все ли данные полностью доступны в RAM?
+-   Нужна ли стабильная сортировка?
+-   Нужна ли нам полная сортировка? Будет ли достаточно частичной сортировки некоторого количества элементов?
+-   Как реализовать сравнения?
+-   Сортируем ли мы данные, которые уже частично сортировали?
 
-Algorithms that they rely on characteristics of data they are working with can often do better than their generic counterparts. If it is not really known in advance, the system can try various implementations and choose the one that works best in runtime. For example, see an [article on how LZ4 decompression is implemented in ClickHouse](https://habr.com/en/company/yandex/blog/457612/).
+Алгоритмы, которые основываются на характеристиках данных, с которыми они работают, справляются лучше, чем их более общие аналоги. Если заранее неизвестно, система может попробовать различные реализации и выбрать ту, которая лучше всего показала себя во время выполнения. К примеру, загляните в [статью о том, как распаковка LZ4 реализуется в ClickHouse](https://habr.com/en/company/yandex/blog/457612/). 
 
-Last but not least, the ClickHouse team always monitors the Internet on people claiming that they came up with the best implementation, algorithm, or data structure to do something and tries it out. Those claims mostly appear to be false, but from time to time you’ll indeed find a gem.
+Ну и самое последнее, но тем не менее важное: команда ClickHouse всегда мониторит сообщения пользователей в Интернете о том, что еще стоит попробовать, тчобы улучшить имплементацию, алгоритм, или структуру данных. Иногда в этом потоке можно найти очень ценные идеи.
 
-!!! info "Tips for building your own high-performance software"
+!!! info "Советы о том, как создать собственное высокопроизводительное ПО"
 
 
-    -   Keep in mind low-level details when designing your system.
-    -   Design based on hardware capabilities.
-    -   Choose data structures and abstractions based on the needs of the task.
-    -   Provide specializations for special cases.
-    -   Try new, “best” algorithms, that you read about yesterday.
-    -   Choose an algorithm in runtime based on statistics.
-    -   Benchmark on real datasets.
-    -   Test for performance regressions in CI.
-    -   Measure and observe everything.
+    -   Помните о низкоуровневых деталях уже на этапе проектирования системы.
+    -   Учитывайте возможности аппаратного обеспечения.
+    -   Выбирайте структуры данных и абстракции по требованиям задачи.
+    -   Для особых случаев разрабатывайте специализированные решения.
+    -   Пробуйте новые алгоритмы, которые будут лучше. Современные — о которых еще вчера вы только слышали.
+    -   Выбирайте алгоритм по статистике во время работы.
+    -   Ориентируйтесь на реальные датасеты.
+    -   Проводите тестирование на снижение производительности в CI.
+    -   Измеряйте и наблюдайте все, что только возможно.
