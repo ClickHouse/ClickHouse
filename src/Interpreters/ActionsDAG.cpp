@@ -481,6 +481,15 @@ void ActionsDAG::removeUnusedInput(const std::string & column_name)
         }
     }
 
+    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
+    {
+        if (&(*jt) == input)
+        {
+            nodes.erase(jt);
+            break;
+        }
+    }
+
     inputs.erase(it);
 }
 
