@@ -1,7 +1,7 @@
 #pragma once
 
 #include <common/logger_useful.h>
-#include <Storages/StoragePostgreSQL.h>
+#include "PostgreSQLConnection.h"
 #include "pqxx/pqxx"
 
 

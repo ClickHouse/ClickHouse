@@ -35,11 +35,11 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     /// Used commands require a specific transaction isolation mode.
     replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
 
-    /// Non temporary replication slot should be the same at restart.
+    /// Non temporary replication slot. Should be the same at restart.
     if (replication_slot.empty())
         replication_slot = fmt::format("{}_{}_ch_replication_slot", database_name, table_name);
 
-    /// Temporary replication slot is used to determine a start lsn position and to acquire a snapshot for initial table synchronization.
+    /// Temporary replication slot is used to acquire a snapshot for initial table synchronization and to determine starting lsn position.
     temp_replication_slot = replication_slot + "_temp";
 }
 
@@ -51,6 +51,8 @@ void PostgreSQLReplicationHandler::startup()
     {
         publication_name = fmt::format("{}_{}_ch_publication", database_name, table_name);
 
+        /// Publication defines what tables are included into replication stream. Should be deleted only if MaterializePostgreSQL
+        /// table is dropped.
         if (!isPublicationExist())
             createPublication();
     }
@@ -70,6 +72,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist()
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx->exec(query_str)};
+    assert(!result.empty());
     bool publication_exists = (result[0][0].as<std::string>() == "t");
 
     if (publication_exists)
@@ -81,11 +84,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist()
 
 void PostgreSQLReplicationHandler::createPublication()
 {
-    /* * It is also important that change replica identity for this table to be able to receive old values of updated rows:
-     *   ALTER TABLE pgbench_accounts REPLICA IDENTITY FULL;
-     * * TRUNCATE and DDL are not included in PUBLICATION.
-     * * 'ONLY' means just a table, without descendants.
-     */
+    /// 'ONLY' means just a table, without descendants.
     std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, table_name);
     try
     {
@@ -96,6 +95,10 @@ void PostgreSQLReplicationHandler::createPublication()
     {
         throw Exception(fmt::format("PostgreSQL table {}.{} does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
     }
+
+    /// TODO: check replica identity
+    /// Requires changed replica identity for included table to be able to receive old values of updated rows.
+    /// (ALTER TABLE table_name REPLICA IDENTITY FULL)
 }
 
 
@@ -103,7 +106,7 @@ void PostgreSQLReplicationHandler::startReplication()
 {
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
-    /// But it should not actually exist. May exist if failed to drop it before.
+    /// Normally temporary replication slot should not exist.
     if (isReplicationSlotExist(ntx, temp_replication_slot))
         dropReplicationSlot(ntx, temp_replication_slot, true);
 
@@ -116,10 +119,9 @@ void PostgreSQLReplicationHandler::startReplication()
 
     /// Do not need this replication slot anymore (snapshot loaded and start lsn determined, will continue replication protocol
     /// with another slot, which should be the same at restart (and reused) to minimize memory usage)
-    /// Non temporary replication slot should be deleted with drop table only.
-    LOG_DEBUG(log, "Dropping temporaty replication slot");
     dropReplicationSlot(ntx, temp_replication_slot, true);
 
+    /// Non temporary replication slot should be deleted with drop table only.
     if (!isReplicationSlotExist(ntx, replication_slot))
         createReplicationSlot(ntx);
 
@@ -203,6 +205,8 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, st
         work.exec(query_str);
         work.commit();
     }
+
+    LOG_TRACE(log, "Replication slot {} is dropped", slot_name);
 }
 
 
