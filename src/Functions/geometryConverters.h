@@ -63,7 +63,7 @@ class PointFromColumnParser
 public:
     PointFromColumnParser(ColumnPtr col_) : col(col_)
     {
-        const auto & tuple = static_cast<const ColumnTuple &>(*col_);
+        const auto & tuple = dynamic_cast<const ColumnTuple &>(*col_);
         const auto & tuple_columns = tuple.getColumns();
 
 #ifndef NDEBUG
@@ -116,7 +116,7 @@ public:
     }
 
 private:
-    /// Note, this is needed to prevent use-after-free.
+    /// To prevent use-after-free and increase column lifetime.
     ColumnPtr col;
 #ifndef NDEBUG
     size_t size;
@@ -130,8 +130,9 @@ class RingFromColumnParser
 {
 public:
     RingFromColumnParser(ColumnPtr col_)
-        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , point_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        : col(col_)
+        , offsets(dynamic_cast<const ColumnArray &>(*col_).getOffsets())
+        , point_parser(dynamic_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
@@ -165,6 +166,8 @@ public:
     }
 
 private:
+    /// To prevent use-after-free and increase column lifetime.
+    ColumnPtr col;
     const IColumn::Offsets & offsets;
     const PointFromColumnParser<Point> point_parser;
 };
@@ -174,7 +177,8 @@ class PolygonFromColumnParser
 {
 public:
     PolygonFromColumnParser(ColumnPtr col_)
-        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
+        : col(col_)
+        , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
         , ring_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
@@ -203,6 +207,8 @@ public:
     }
 
 private:
+    /// To prevent use-after-free and increase column lifetime.
+    ColumnPtr col;
     const IColumn::Offsets & offsets;
     const RingFromColumnParser<Point> ring_parser;
 };
@@ -212,7 +218,8 @@ class MultiPolygonFromColumnParser
 {
 public:
     MultiPolygonFromColumnParser(ColumnPtr col_)
-        : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
+        : col(col_)
+        , offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
         , polygon_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
@@ -235,6 +242,8 @@ public:
     }
 
 private:
+    /// To prevent use-after-free and increase column lifetime.
+    ColumnPtr col;
     const IColumn::Offsets & offsets;
     const PolygonFromColumnParser<Point> polygon_parser;
 };
