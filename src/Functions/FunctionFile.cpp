@@ -32,7 +32,7 @@ namespace DB
     public:
         static constexpr auto name = "file";
         static FunctionPtr create(const Context &context) { return std::make_shared<FunctionFile>(context); }
-        explicit FunctionFile(const Context &context_) : context(context_) {};
+        explicit FunctionFile(const Context &context_) : context(context_) {}
 
         String getName() const override { return name; }
 
