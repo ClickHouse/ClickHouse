@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 struct PollResult
 {
-    std::vector<size_t> ready_responses;
+    bool has_responses;
     bool has_requests;
     bool error;
 };
@@ -162,10 +162,10 @@ struct SocketInterruptablePollWrapper
                     {
                         do
                         {
-                            size_t response_position;
-                            readIntBinary(response_position, response_in);
-                            result.ready_responses.push_back(response_position);
-                        } while (response_in.available());
+                            UInt8 response_byte;
+                            readIntBinary(response_byte, response_in);
+                            result.has_responses = true;
+                        } while (response_in.available()); /// Just to drain all of them
                     }
                 }
             }
@@ -186,11 +186,12 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , server(server_)
     , log(&Poco::Logger::get("TestKeeperTCPHandler"))
     , global_context(server.context())
-    , test_keeper_storage(global_context.getTestKeeperStorage())
+    , test_keeper_storage_dispatcher(global_context.getTestKeeperStorage())
     , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
-    , session_id(test_keeper_storage->getSessionID())
+    , session_id(test_keeper_storage_dispatcher->getSessionID())
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
+    , responses(1000)
 {
 }
 
@@ -278,6 +279,16 @@ void TestKeeperTCPHandler::runImpl()
     }
 
     sendHandshake();
+
+    auto response_fd = poll_wrapper->getResponseFD();
+    auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
+    {
+        responses.push(response);
+        UInt8 single_byte = 1;
+        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
+    };
+    test_keeper_storage_dispatcher->registerSession(session_id, response_callback);
+
     session_stopwatch.start();
     bool close_received = false;
     try
@@ -291,27 +302,12 @@ void TestKeeperTCPHandler::runImpl()
             {
                 do
                 {
-                    Coordination::OpNum received_op = receiveRequest();
+                    auto [received_op, received_xid] = receiveRequest();
 
                     if (received_op == Coordination::OpNum::Close)
                     {
-                        auto last_response = responses.find(response_id_counter - 1);
-                        if (last_response == responses.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Just inserted response #{} not found in responses", response_id_counter - 1);
-                        LOG_DEBUG(log, "Received close request for session #{}", session_id);
-                        if (last_response->second.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
-                        {
-                            LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
-                        }
-                        else
-                        {
-                            LOG_DEBUG(log, "Sent close for session #{}", session_id);
-                            last_response->second.get()->write(*out);
-                        }
-
-                        close_received = true;
-
-                        break;
+                        LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
+                        close_xid = received_xid;
                     }
                     else if (received_op == Coordination::OpNum::Heartbeat)
                     {
@@ -322,31 +318,27 @@ void TestKeeperTCPHandler::runImpl()
                 while (in->available());
             }
 
+            if (result.has_responses)
+            {
+                Coordination::ZooKeeperResponsePtr response;
+                while (responses.tryPop(response))
+                {
+                    if (response->xid == close_xid)
+                    {
+                        close_received = true;
+                        break;
+                    }
+
+                    if (response->error == Coordination::Error::ZOK)
+                        response->write(*out);
+                    else if (response->xid != Coordination::WATCH_XID)
+                        response->write(*out);
+                    /// skipping bad response for watch
+                }
+            }
+
             if (close_received)
                 break;
-
-            for (size_t response_id : result.ready_responses)
-            {
-                auto response_future = responses.find(response_id);
-                if (response_future == responses.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get unknown response #{}", response_id);
-
-                if (response_future->second.wait_for(0s) != std::future_status::ready)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Response #{} was market as ready but corresponding future not ready yet", response_id);
-
-                auto response = response_future->second.get();
-                if (response->error == Coordination::Error::ZOK)
-                {
-                    response->write(*out);
-                }
-                else
-                {
-                    /// TODO Get rid of this
-                    if (!dynamic_cast<Coordination::ZooKeeperWatchResponse *>(response.get()))
-                        response->write(*out);
-                }
-                responses.erase(response_future);
-            }
 
             if (result.error)
                 throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
@@ -354,12 +346,8 @@ void TestKeeperTCPHandler::runImpl()
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
                 LOG_DEBUG(log, "Session #{} expired", session_id);
-                auto response = putCloseRequest();
-                if (response.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+                if (!finish())
                     LOG_DEBUG(log, "Cannot sent close for expired session #{}", session_id);
-                else
-                    response.get()->write(*out);
-
                 break;
             }
         }
@@ -367,29 +355,33 @@ void TestKeeperTCPHandler::runImpl()
     catch (const Exception & ex)
     {
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
-        auto response = putCloseRequest();
-        if (response.wait_for(std::chrono::microseconds(operation_timeout.totalMicroseconds())) != std::future_status::ready)
+        if (!finish())
             LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
-        else
-            response.get()->write(*out);
     }
 
 }
 
-zkutil::TestKeeperStorage::AsyncResponse TestKeeperTCPHandler::putCloseRequest()
+bool TestKeeperTCPHandler::finish()
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
-    request->xid = Coordination::CLOSE_XID;
-    auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-    zkutil::ResponseCallback callback = [promise] (const Coordination::ZooKeeperResponsePtr & response)
+    request->xid = close_xid;
+    test_keeper_storage_dispatcher->putRequest(request, session_id);
+
+    Coordination::ZooKeeperResponsePtr response;
+    bool finished = false;
+    while (responses.tryPop(response, operation_timeout.totalMilliseconds()))
     {
-        promise->set_value(response);
-    };
-    test_keeper_storage->putRequest(request, session_id, callback);
-    return promise->get_future();
+        if (response->xid == close_xid)
+        {
+            finished = true;
+            response->write(*out);
+            break;
+        }
+    }
+    return finished;
 }
 
-Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
+std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveRequest()
 {
     int32_t length;
     Coordination::read(length, *in);
@@ -402,47 +394,9 @@ Coordination::OpNum TestKeeperTCPHandler::receiveRequest()
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
     request->readImpl(*in);
-    auto promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-    if (opnum != Coordination::OpNum::Close)
-    {
-        int response_fd = poll_wrapper->getResponseFD();
-        size_t response_num = response_id_counter++;
-        zkutil::ResponseCallback callback = [response_fd, promise, response_num] (const Coordination::ZooKeeperResponsePtr & response)
-        {
-            promise->set_value(response);
-            [[maybe_unused]] int result = write(response_fd, &response_num, sizeof(response_num));
-        };
 
-        if (request->has_watch)
-        {
-            auto watch_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
-            size_t watch_response_num = response_id_counter++;
-            zkutil::ResponseCallback watch_callback = [response_fd, watch_promise, watch_response_num] (const Coordination::ZooKeeperResponsePtr & response)
-            {
-                watch_promise->set_value(response);
-                [[maybe_unused]] int result = write(response_fd, &watch_response_num, sizeof(watch_response_num));
-            };
-            test_keeper_storage->putRequest(request, session_id, callback, watch_callback);
-            responses.try_emplace(response_num, promise->get_future());
-            responses.try_emplace(watch_response_num, watch_promise->get_future());
-        }
-        else
-        {
-            test_keeper_storage->putRequest(request, session_id, callback);
-            responses.try_emplace(response_num, promise->get_future());
-        }
-    }
-    else
-    {
-        zkutil::ResponseCallback callback = [promise] (const Coordination::ZooKeeperResponsePtr & response)
-        {
-            promise->set_value(response);
-        };
-        test_keeper_storage->putRequest(request, session_id, callback);
-        responses.try_emplace(response_id_counter++, promise->get_future());
-    }
-
-    return opnum;
+    test_keeper_storage_dispatcher->putRequest(request, session_id);
+    return std::make_pair(opnum, xid);
 }
 
 }

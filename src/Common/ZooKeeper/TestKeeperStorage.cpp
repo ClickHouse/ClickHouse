@@ -39,8 +39,9 @@ static String baseName(const String & path)
     return path.substr(rslash_pos + 1);
 }
 
-static void processWatchesImpl(const String & path, TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches, Coordination::Event event_type)
+static TestKeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
+    TestKeeperStorage::ResponsesForSessions result;
     auto it = watches.find(path);
     if (it != watches.end())
     {
@@ -50,9 +51,8 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
         watch_response->zxid = -1;
         watch_response->type = event_type;
         watch_response->state = Coordination::State::CONNECTED;
-        for (auto & watcher : it->second)
-            if (watcher.watch_callback)
-                watcher.watch_callback(watch_response);
+        for (auto watcher_session : it->second)
+            result.push_back(TestKeeperStorage::ResponseForSession{watcher_session, watch_response});
 
         watches.erase(it);
     }
@@ -67,19 +67,17 @@ static void processWatchesImpl(const String & path, TestKeeperStorage::Watches &
         watch_list_response->zxid = -1;
         watch_list_response->type = Coordination::Event::CHILD;
         watch_list_response->state = Coordination::State::CONNECTED;
-        for (auto & watcher : it->second)
-            if (watcher.watch_callback)
-                watcher.watch_callback(watch_list_response);
+        for (auto watcher_session : it->second)
+            result.push_back(TestKeeperStorage::ResponseForSession{watcher_session, watch_list_response});
 
         list_watches.erase(it);
     }
+    return result;
 }
 
 TestKeeperStorage::TestKeeperStorage()
 {
     container.emplace("/", Node());
-
-    processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
 
 using Undo = std::function<void()>;
@@ -92,7 +90,7 @@ struct TestKeeperStorageRequest
         : zk_request(zk_request_)
     {}
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, TestKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const = 0;
-    virtual void processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const {}
+    virtual TestKeeperStorage::ResponsesForSessions processWatches(TestKeeperStorage::Watches & /*watches*/, TestKeeperStorage::Watches & /*list_watches*/) const { return {}; }
 
     virtual ~TestKeeperStorageRequest() = default;
 };
@@ -111,9 +109,9 @@ struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
 {
     using TestKeeperStorageRequest::TestKeeperStorageRequest;
 
-    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    TestKeeperStorage::ResponsesForSessions processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
+        return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(TestKeeperStorage::Container & container, TestKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
@@ -271,9 +269,9 @@ struct TestKeeperStorageRemoveRequest final : public TestKeeperStorageRequest
         return { response_ptr, undo };
     }
 
-    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    TestKeeperStorage::ResponsesForSessions processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
+        return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
     }
 };
 
@@ -344,9 +342,9 @@ struct TestKeeperStorageSetRequest final : public TestKeeperStorageRequest
         return { response_ptr, undo };
     }
 
-    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    TestKeeperStorage::ResponsesForSessions processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
-        processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
+        return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
 
 };
@@ -502,10 +500,15 @@ struct TestKeeperStorageMultiRequest final : public TestKeeperStorageRequest
         }
     }
 
-    void processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
+    TestKeeperStorage::ResponsesForSessions processWatches(TestKeeperStorage::Watches & watches, TestKeeperStorage::Watches & list_watches) const override
     {
+        TestKeeperStorage::ResponsesForSessions result;
         for (const auto & generic_request : concrete_requests)
-            generic_request->processWatches(watches, list_watches);
+        {
+            auto responses = generic_request->processWatches(watches, list_watches);
+            result.insert(result.end(), responses.begin(), responses.end());
+        }
+        return result;
     }
 };
 
@@ -518,160 +521,49 @@ struct TestKeeperStorageCloseRequest final : public TestKeeperStorageRequest
     }
 };
 
-void TestKeeperStorage::processingThread()
+TestKeeperStorage::ResponsesForSessions TestKeeperStorage::finalize(const RequestsForSessions & expired_requests)
 {
-    setThreadName("TestKeeperSProc");
+    if (finalized)
+        throw DB::Exception("Testkeeper storage already finalized", ErrorCodes::LOGICAL_ERROR);
 
-    try
+    finalized = true;
+
+    ResponsesForSessions finalize_results;
+    auto finish_watch = [] (const auto & watch_pair) -> ResponsesForSessions
     {
-        while (!shutdown)
-        {
-            RequestInfo info;
+        ResponsesForSessions results;
+        std::shared_ptr<Coordination::ZooKeeperWatchResponse> response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        response->type = Coordination::SESSION;
+        response->state = Coordination::EXPIRED_SESSION;
+        response->error = Coordination::Error::ZSESSIONEXPIRED;
 
-            UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+        for (auto & watcher_session : watch_pair.second)
+            results.push_back(ResponseForSession{watcher_session, response});
+        return results;
+    };
 
-            if (requests_queue.tryPop(info, max_wait))
-            {
-                if (shutdown)
-                    break;
-
-                auto zk_request = info.request->zk_request;
-                if (zk_request->getOpNum() == Coordination::OpNum::Close)
-                {
-                    auto it = ephemerals.find(info.session_id);
-                    if (it != ephemerals.end())
-                    {
-                        for (const auto & ephemeral_path : it->second)
-                        {
-                            container.erase(ephemeral_path);
-                            processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
-                        }
-                        ephemerals.erase(it);
-                    }
-                    clearDeadWatches(info.session_id);
-
-                    /// Finish connection
-                    auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
-                    response->xid = zk_request->xid;
-                    response->zxid = getZXID();
-                    info.response_callback(response);
-                }
-                else
-                {
-                    auto [response, _] = info.request->process(container, ephemerals, zxid, info.session_id);
-
-                    if (info.watch_callback)
-                    {
-                        if (response->error == Coordination::Error::ZOK)
-                        {
-                            auto & watches_type = zk_request->getOpNum() == Coordination::OpNum::List || zk_request->getOpNum() == Coordination::OpNum::SimpleList
-                                ? list_watches
-                                : watches;
-
-                            watches_type[zk_request->getPath()].emplace_back(Watcher{info.session_id, info.watch_callback});
-                            sessions_and_watchers[info.session_id].emplace(zk_request->getPath());
-                        }
-                        else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
-                        {
-                            watches[zk_request->getPath()].emplace_back(Watcher{info.session_id, info.watch_callback});
-                            sessions_and_watchers[info.session_id].emplace(zk_request->getPath());
-                        }
-                        else
-                        {
-                            std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                            watch_response->path = zk_request->getPath();
-                            watch_response->xid = -1;
-                            watch_response->error = response->error;
-                            watch_response->type = Coordination::Event::NOTWATCHING;
-                            info.watch_callback(watch_response);
-                        }
-                    }
-
-                    if (response->error == Coordination::Error::ZOK)
-                        info.request->processWatches(watches, list_watches);
-
-                    response->xid = zk_request->xid;
-                    response->zxid = getZXID();
-
-                    info.response_callback(response);
-                }
-            }
-        }
-    }
-    catch (...)
+    for (auto & path_watch : watches)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize();
-    }
-}
-
-
-void TestKeeperStorage::finalize()
-{
-    {
-        std::lock_guard lock(push_request_mutex);
-
-        if (shutdown)
-            return;
-
-        shutdown = true;
-
-        if (processing_thread.joinable())
-            processing_thread.join();
+        auto watch_responses = finish_watch(path_watch);
+        finalize_results.insert(finalize_results.end(), watch_responses.begin(), watch_responses.end());
     }
 
-    try
+    watches.clear();
+    for (auto & path_watch : list_watches)
     {
-        {
-            auto finish_watch = [] (const auto & watch_pair)
-            {
-                Coordination::ZooKeeperWatchResponse response;
-                response.type = Coordination::SESSION;
-                response.state = Coordination::EXPIRED_SESSION;
-                response.error = Coordination::Error::ZSESSIONEXPIRED;
+        auto list_watch_responses = finish_watch(path_watch);
+        finalize_results.insert(finalize_results.end(), list_watch_responses.begin(), list_watch_responses.end());
+    }
+    list_watches.clear();
+    sessions_and_watchers.clear();
 
-                for (auto & watcher : watch_pair.second)
-                {
-                    if (watcher.watch_callback)
-                    {
-                        try
-                        {
-                            watcher.watch_callback(std::make_shared<Coordination::ZooKeeperWatchResponse>(response));
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
-                        }
-                    }
-                }
-            };
-            for (auto & path_watch : watches)
-                finish_watch(path_watch);
-            watches.clear();
-            for (auto & path_watch : list_watches)
-                finish_watch(path_watch);
-            list_watches.clear();
-            sessions_and_watchers.clear();
-        }
-        RequestInfo info;
-        while (requests_queue.tryPop(info))
-        {
-            auto response = info.request->zk_request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            try
-            {
-                info.response_callback(response);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    }
-    catch (...)
+    for (const auto & [session_id, zk_request] : expired_requests)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        auto response = zk_request->makeResponse();
+        response->error = Coordination::Error::ZSESSIONEXPIRED;
+        finalize_results.push_back(ResponseForSession{session_id, response});
     }
+    return finalize_results;
 }
 
 
@@ -731,54 +623,79 @@ TestKeeperWrapperFactory::TestKeeperWrapperFactory()
     registerTestKeeperRequestWrapper<Coordination::OpNum::Multi, TestKeeperStorageMultiRequest>(*this);
 }
 
-void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback)
+
+TestKeeperStorage::ResponsesForSessions TestKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id)
 {
-    TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
-    RequestInfo request_info;
-    request_info.time = clock::now();
-    request_info.request = storage_request;
-    request_info.session_id = session_id;
-    request_info.response_callback = callback;
-
-    std::lock_guard lock(push_request_mutex);
-    /// Put close requests without timeouts
-    if (request->getOpNum() == Coordination::OpNum::Close)
-        requests_queue.push(std::move(request_info));
-    else if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-
-}
-
-void TestKeeperStorage::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, ResponseCallback callback, ResponseCallback watch_callback)
-{
-    TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(request);
-    RequestInfo request_info;
-    request_info.time = clock::now();
-    request_info.request = storage_request;
-    request_info.session_id = session_id;
-    request_info.response_callback = callback;
-    if (request->has_watch)
-        request_info.watch_callback = watch_callback;
-
-    std::lock_guard lock(push_request_mutex);
-    /// Put close requests without timeouts
-    if (request->getOpNum() == Coordination::OpNum::Close)
-        requests_queue.push(std::move(request_info));
-    else if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
-}
-
-TestKeeperStorage::~TestKeeperStorage()
-{
-    try
+    TestKeeperStorage::ResponsesForSessions results;
+    if (zk_request->getOpNum() == Coordination::OpNum::Close)
     {
-        finalize();
+        auto it = ephemerals.find(session_id);
+        if (it != ephemerals.end())
+        {
+            for (const auto & ephemeral_path : it->second)
+            {
+                container.erase(ephemeral_path);
+                auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
+                results.insert(results.end(), responses.begin(), responses.end());
+            }
+            ephemerals.erase(it);
+        }
+        clearDeadWatches(session_id);
+
+        /// Finish connection
+        auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        response->xid = zk_request->xid;
+        response->zxid = getZXID();
+        results.push_front(ResponseForSession{session_id, response});
     }
-    catch (...)
+    else
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        TestKeeperStorageRequestPtr storage_request = TestKeeperWrapperFactory::instance().get(zk_request);
+        auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
+
+        if (zk_request->has_watch)
+        {
+            if (response->error == Coordination::Error::ZOK)
+            {
+                auto & watches_type = zk_request->getOpNum() == Coordination::OpNum::List || zk_request->getOpNum() == Coordination::OpNum::SimpleList
+                    ? list_watches
+                    : watches;
+
+                watches_type[zk_request->getPath()].emplace_back(session_id);
+                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+            }
+            else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
+            {
+                watches[zk_request->getPath()].emplace_back(session_id);
+                sessions_and_watchers[session_id].emplace(zk_request->getPath());
+            }
+            else
+            {
+                std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+                watch_response->path = zk_request->getPath();
+                watch_response->xid = -1;
+                watch_response->error = response->error;
+                watch_response->type = Coordination::Event::NOTWATCHING;
+                results.push_back(ResponseForSession{session_id, watch_response});
+            }
+        }
+
+        if (response->error == Coordination::Error::ZOK)
+        {
+            auto watch_responses = storage_request->processWatches(watches, list_watches);
+            results.insert(results.end(), watch_responses.begin(), watch_responses.end());
+        }
+
+        response->xid = zk_request->xid;
+        response->zxid = getZXID();
+
+        results.push_front(ResponseForSession{session_id, response});
     }
+
+    return results;
 }
+
 
 void TestKeeperStorage::clearDeadWatches(int64_t session_id)
 {
@@ -793,7 +710,7 @@ void TestKeeperStorage::clearDeadWatches(int64_t session_id)
                 auto & watches_for_path = watch->second;
                 for (auto w_it = watches_for_path.begin(); w_it != watches_for_path.end();)
                 {
-                    if (w_it->session_id == session_id)
+                    if (*w_it == session_id)
                         w_it = watches_for_path.erase(w_it);
                     else
                         ++w_it;
@@ -808,7 +725,7 @@ void TestKeeperStorage::clearDeadWatches(int64_t session_id)
                 auto & list_watches_for_path = list_watch->second;
                 for (auto w_it = list_watches_for_path.begin(); w_it != list_watches_for_path.end();)
                 {
-                    if (w_it->session_id == session_id)
+                    if (*w_it == session_id)
                         w_it = list_watches_for_path.erase(w_it);
                     else
                         ++w_it;
