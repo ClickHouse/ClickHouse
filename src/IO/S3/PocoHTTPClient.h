@@ -56,6 +56,7 @@ private:
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
+    unsigned int max_connections;
 };
 
 }
