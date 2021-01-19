@@ -141,6 +141,8 @@ private:
 
     /// If not empty, queries will be read from these files
     std::vector<std::string> queries_files;
+    /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<std::string> interleave_queries_files;
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String full_query; /// Current query as it was given to the client.
@@ -796,13 +798,22 @@ private:
 
         if (!queries_files.empty())
         {
-            for (const auto & queries_file : queries_files)
+            auto process_file = [&](const std::string & file)
             {
                 connection->setDefaultDatabase(connection_parameters.default_database);
-                ReadBufferFromFile in(queries_file);
+                ReadBufferFromFile in(file);
                 readStringUntilEOF(text, in);
-                if (!processMultiQuery(text))
-                    break;
+                return processMultiQuery(text);
+            };
+
+            for (const auto & queries_file : queries_files)
+            {
+                for (const auto & interleave_file : interleave_queries_files)
+                    if (!process_file(interleave_file))
+                        return;
+
+                if (!process_file(queries_file))
+                    return;
             }
             return;
         }
@@ -945,6 +956,7 @@ private:
 
                     continue;
                 }
+
                 return true;
             }
 
@@ -2271,7 +2283,9 @@ public:
             ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-            ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
+            ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
+            ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
+                "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
@@ -2386,6 +2400,8 @@ public:
             config().setString("query", options["query"].as<std::string>());
         if (options.count("queries-file"))
             queries_files = options["queries-file"].as<std::vector<std::string>>();
+        if (options.count("interleave-queries-file"))
+            interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
