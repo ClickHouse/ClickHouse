@@ -66,23 +66,53 @@ const auto * logger()
     return &logger;
 }
 
+template <typename SharedAllocator>
+struct ShareableAllocator
+{
+    SharedAllocator * shared_allocator = nullptr;
+
+    inline void * alloc(size_t size, size_t /*alignment*/ = 0)
+    {
+        return shared_allocator->alloc(size);
+//        LOG_DEBUG(logger(), "arena allocated 0x{} ({} bytes)", reinterpret_cast<const void*>(res), size);
+//        return res;
+    }
+
+    /// Free memory range.
+    inline void free(void * buf, size_t size)
+    {
+        shared_allocator->free(reinterpret_cast<char *>(buf), size);
+//        LOG_DEBUG(logger(), "arena freed 0x{} ({} bytes)", buf, size);
+    }
+
+    inline void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
+    {
+        return shared_allocator->realloc(buf, old_size, new_size, alignment);
+//        LOG_DEBUG(logger(), "arena re-allocated 0x{} ({} bytes) into 0x{} ({} bytes)", buf, old_size, res, new_size);
+//        return res;
+    }
+};
+
 template <typename KeyColumnType, typename KeyStorageType>
 class ColumnMapIndex : public ColumnMap::IIndex
 {
     // Columns are max 0xFFFF items, so array on each row is max 0xFFFF items long, which is more than enough.
     using MappedType = UInt32;
 
-    template <typename KeyType>
+    template <typename KeyType, typename AllocatorType>
     using HashMapTypeSelector = std::conditional_t<std::is_same_v<KeyType, StringRef>,
-        StringHashMap<MappedType>,
-        HashMap<KeyStorageType, MappedType, DefaultHash<KeyStorageType>, HashTableGrower<>>
+        StringHashMap<MappedType, AllocatorType>,
+        HashMap<KeyStorageType, MappedType, DefaultHash<KeyStorageType>, HashTableGrower<>, AllocatorType>
     >;
 
-    using HashMapType = HashMapTypeSelector<typename KeyColumnType::ValueType>;
+    using ArenaAllocator = GenericArenaWithFreeLists<true, true>;
+    using ShareableAllocator = ShareableAllocator<ArenaAllocator>;
+    using HashMapType = HashMapTypeSelector<typename KeyColumnType::ValueType, ShareableAllocator>;
 
     const KeyColumnType & keys_column;
     const IColumn & values_column;
     const ColumnArray::Offsets & row_offsets;
+    ArenaAllocator arena;
 
     // One hashtables per row is much more performant (less collisions)
     // than one huge HT and much more convenient in terms of building keys - no need to mess with
@@ -99,6 +129,10 @@ class ColumnMapIndex : public ColumnMap::IIndex
     mutable std::atomic<size_t> items_removed = 0;
 
 public:
+    static constexpr size_t min_arena_size = 4096;
+    // Memory pre-allocated for an Arena = (total required memory for all keys and hashtable cells) * arena_size_factor.
+    // arbitrary value > 1 (since HashTables operate good only when there is substantial free memory).
+    static constexpr auto arena_size_factor = 2;
 
     ColumnMapIndex(const IColumn & keys_column_, const IColumn & values_column_, const ColumnArray::Offsets & offsets_)
         : ColumnMapIndex(*assert_cast<const KeyColumnType*>(&keys_column_), values_column_, offsets_)
@@ -108,13 +142,18 @@ public:
         : keys_column(keys_column_)
         , values_column(values_column_)
         , row_offsets(offsets_)
+        , arena(std::max<size_t>(min_arena_size, (keys_column.size() * sizeof(typename HashMapType::cell_type) + keys_column_.byteSize()) * arena_size_factor))
     {
+        LOG_DEBUG(logger(), "Index({} => {}) 0x{} Constructing index, initial arena size: {}"
+                , keys_column.getName(), values_column.getName(), static_cast<const void*>(this)
+                , arena.size());
+
         addRowsToIndex(0, row_offsets.size());
     }
 
     ~ColumnMapIndex() override
     {
-        if (hash_tables.empty() || find_queries > 0)
+        if (!hash_tables.empty() || find_queries > 0)
         {
             LOG_DEBUG(logger(), "Index({} => {}) 0x{} Destroying index, final stats"
                     "\n\thashtables                  : {}"
@@ -183,10 +222,10 @@ public:
 //                  "\n\tkeys col: {}, vals col: {}, offsets: {}"
 //                  , keys_column.getName(), values_column.getName(), static_cast<const void*>(this)
 //                  , start_row, end_row
-//                  , keys_column.size(), values_column.size(), offsets.size()
+//                  , keys_column.size(), values_column.size(), row_offsets.size()
 //                  , reinterpret_cast<const void*>(&keys_column)
 //                  , reinterpret_cast<const void*>(&values_column)
-//                  , reinterpret_cast<const void*>(&offsets));
+//                  , reinterpret_cast<const void*>(&row_offsets));
 
         hash_tables.reserve(hash_tables.size() + end_row - start_row);
 
@@ -198,7 +237,7 @@ public:
         {
             const size_t final_offset = row_offsets[row];
 
-            HashMapType map;
+            HashMapType map(ShareableAllocator{&arena});
 
             if constexpr (!std::is_same_v<KeyStorageType, StringRef>)
             {

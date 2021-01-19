@@ -73,6 +73,7 @@ struct StringHashSetCell<StringRef> : public HashSetCellWithSavedHash<StringRef,
 template <typename Allocator>
 struct StringHashSetSubMaps
 {
+    using AllocatorType = Allocator;
     using T0 = StringHashTableEmpty<StringHashSetCell<StringRef>>;
     using T1 = HashSetTable<StringKey8, StringHashSetCell<StringKey8>, StringHashTableHash, StringHashTableGrower<>, Allocator>;
     using T2 = HashSetTable<StringKey16, StringHashSetCell<StringKey16>, StringHashTableHash, StringHashTableGrower<>, Allocator>;

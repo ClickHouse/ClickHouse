@@ -1,18 +1,15 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Core/Field.h>
-
-//#include <mutex>
 #include <memory>
-//#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 
 namespace DB
 {
+
+class Field;
 
 /** Column, that stores a nested Array(Tuple(key, value)) column.
  */

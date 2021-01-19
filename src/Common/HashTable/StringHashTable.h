@@ -179,6 +179,8 @@ struct StringHashTableLookupResult
 template <typename SubMaps>
 class StringHashTable : private boost::noncopyable
 {
+    using Allocator = typename SubMaps::AllocatorType;
+
 protected:
     static constexpr size_t NUM_MAPS = 5;
     // Map for storing empty string
@@ -212,26 +214,31 @@ public:
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
 
-    StringHashTable() = default;
+    StringHashTable(const Allocator & allocator = Allocator())
+        : m1{allocator}
+        , m2{allocator}
+        , m3{allocator}
+        , ms{allocator}
+    {}
 
-    StringHashTable(size_t reserve_for_num_elements)
-        : m1{reserve_for_num_elements / 4}
-        , m2{reserve_for_num_elements / 4}
-        , m3{reserve_for_num_elements / 4}
-        , ms{reserve_for_num_elements / 4}
+    StringHashTable(size_t reserve_for_num_elements, const Allocator & allocator = Allocator())
+        : m1{reserve_for_num_elements / 4, allocator}
+        , m2{reserve_for_num_elements / 4, allocator}
+        , m3{reserve_for_num_elements / 4, allocator}
+        , ms{reserve_for_num_elements / 4, allocator}
     {
     }
 
     StringHashTable(StringHashTable && rhs)
-        : m1(std::move(rhs.m1))
+        : m0(std::move(rhs.m0))
+        , m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
         , ms(std::move(rhs.ms))
-    {
-    }
+    {}
 
     StringHashTable & operator=(StringHashTable && rhs)
-     {
+    {
         std::swap(m0, rhs.m0);
         std::swap(m1, rhs.m1);
         std::swap(m2, rhs.m2);

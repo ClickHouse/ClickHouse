@@ -610,7 +610,24 @@ public:
         alloc(grower);
     }
 
+    HashTable(const Allocator & allocator)
+        : Allocator(allocator)
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+        alloc(grower);
+    }
+
     HashTable(size_t reserve_for_num_elements)
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+        grower.set(reserve_for_num_elements);
+        alloc(grower);
+    }
+
+    HashTable(size_t reserve_for_num_elements, const Allocator & allocator)
+        : Allocator(allocator)
     {
         if (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();

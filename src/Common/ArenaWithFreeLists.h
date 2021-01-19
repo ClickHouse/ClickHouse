@@ -11,6 +11,11 @@
 namespace DB
 {
 
+template <bool clear_memory_, bool mmap_populate>
+class GenericArenaWithFreeLists;
+
+using ArenaWithFreeLists = GenericArenaWithFreeLists<false, false>;
+
 
 /** Unlike Arena, allows you to release (for later re-use)
   *  previously allocated (not necessarily just recently) chunks of memory.
@@ -21,9 +26,12 @@ namespace DB
   * When allocating, we take the head of the list of free blocks,
   *  or, if the list is empty - allocate a new block using Arena.
   */
-class ArenaWithFreeLists : private Allocator<false>, private boost::noncopyable
+template <bool clear_memory_ = false, bool mmap_populate = false>
+class GenericArenaWithFreeLists : private Allocator<clear_memory_, mmap_populate>, private boost::noncopyable
 {
 private:
+    using TheAllocator = Allocator<clear_memory_, mmap_populate>;
+    static constexpr auto clear_memory = clear_memory_;
     /// If the block is free, then the pointer to the next free block is stored at its beginning, or nullptr, if there are no more free blocks.
     /// If the block is used, then some data is stored in it.
     union Block
@@ -47,19 +55,25 @@ private:
     /// Lists of free blocks. Each element points to the head of the corresponding list, or is nullptr.
     /// The first two elements are not used, but are intended to simplify arithmetic.
     Block * free_lists[16] {};
+//    bool return_to_free_list = true;
 
 public:
-    ArenaWithFreeLists(
+    GenericArenaWithFreeLists(
         const size_t initial_size = 4096, const size_t growth_factor = 2,
         const size_t linear_growth_threshold = 128 * 1024 * 1024)
         : pool{initial_size, growth_factor, linear_growth_threshold}
     {
     }
 
+//    void stopReturningToFreeList()
+//    {
+//        return_to_free_list = false;
+//    }
+
     char * alloc(const size_t size)
     {
         if (size > max_fixed_block_size)
-            return static_cast<char *>(Allocator<false>::alloc(size));
+            return static_cast<char *>(TheAllocator::alloc(size));
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -76,17 +90,24 @@ public:
 
             const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
+            if constexpr (clear_memory)
+                memset(res, 0, size);
+
             return res;
         }
 
         /// no block of corresponding size, allocate a new one
-        return pool.alloc(1ULL << (list_idx + 1));
+        const auto res = pool.alloc(1ULL << (list_idx + 1));
+        if constexpr (clear_memory)
+            memset(res, 0, size);
+
+        return res;
     }
 
     void free(char * ptr, const size_t size)
     {
-        if (size > max_fixed_block_size)
-            return Allocator<false>::free(ptr, size);
+        if (/*!return_to_free_list ||*/ size > max_fixed_block_size)
+            return TheAllocator::free(ptr, size);
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -111,7 +132,35 @@ public:
     {
         return pool.size();
     }
-};
 
+    void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0)
+    {
+        if (old_size <= max_fixed_block_size && new_size <= max_fixed_block_size && findFreeListIndex(old_size) == findFreeListIndex(new_size))
+        {
+            if (new_size > old_size)
+            {
+                // We allocate memory in blocks bigger than reqiested size (rounded up to a next power of two)
+                // so there is a chance that we can reuse previously unused space of the current block.
+                ASAN_UNPOISON_MEMORY_REGION(reinterpret_cast<char *>(buf) + old_size, new_size - old_size);
+                if constexpr (clear_memory)
+                    memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+            }
+            else if (new_size < old_size)
+            {
+                ASAN_POISON_MEMORY_REGION(reinterpret_cast<char *>(buf) + new_size, old_size - new_size);
+            }
+
+            return buf;
+        }
+        else if (old_size > max_fixed_block_size && new_size > max_fixed_block_size)
+            return TheAllocator::realloc(buf, old_size, new_size, alignment);
+
+        auto result = alloc(new_size);
+        memcpy(result, buf, old_size);
+        free(reinterpret_cast<char *>(buf), old_size);
+
+        return result;
+    }
+};
 
 }
