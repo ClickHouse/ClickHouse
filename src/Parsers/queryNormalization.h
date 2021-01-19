@@ -10,7 +10,7 @@
 
 namespace DB
 {
-template <bool with_names>
+template <bool keep_names>
 inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char * end)
 {
     SipHash hash;
@@ -62,8 +62,8 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char *
             /// By the way, there is padding in columns and pointer dereference is Ok.
             || (token.type == TokenType::BareWord && *token.end != '('))
         {
-            /// Explicitly ask to normalize with identifier names
-            if constexpr (with_names)
+            /// Explicitly ask to keep identifier names
+            if constexpr (keep_names)
             {
                 hash.update(token.begin, token.size());
             }
@@ -108,14 +108,14 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char *
     return hash.get64();
 }
 
-template <bool with_names>
+template <bool keep_names>
 inline UInt64 ALWAYS_INLINE normalizedQueryHash(const String & query)
 {
-    return normalizedQueryHash<with_names>(query.data(), query.data() + query.size());
+    return normalizedQueryHash<keep_names>(query.data(), query.data() + query.size());
 }
 
 
-template <bool with_names>
+template <bool keep_names>
 inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArray<UInt8> & res_data)
 {
     Lexer lexer(begin, end);
@@ -191,7 +191,7 @@ inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const cha
             || (token.type == TokenType::BareWord && *token.end != '('))
         {
             /// Explicitly ask to normalize with identifier names
-            if constexpr (with_names)
+            if constexpr (keep_names)
             {
                 res_data.insert(token.begin, token.end);
             }
