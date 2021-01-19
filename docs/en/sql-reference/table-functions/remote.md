@@ -22,13 +22,14 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 
 - `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. 
    
-   The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. 
+    The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. 
    
-   The port is the TCP port on the remote server. If the port is omitted, it uses  [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) from the server’s config file in `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) in `remoteSecure` (by default, 9440). 
+    The port is the TCP port on the remote server. If the port is omitted, it uses  [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) from the server’s config file in `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) in `remoteSecure` (by default, 9440). 
 
-   The port is required for an IPv6 address.
+    The port is required for an IPv6 address.
 
-   Type: [String](../../sql-reference/data-types/string.md).
+    Type: [String](../../sql-reference/data-types/string.md).
+
 - `db` - Database name. Type: [String](../../sql-reference/data-types/string.md).
 - `table` - Table name. Type: [String](../../sql-reference/data-types/string.md).
 - `user` - User name. If the user is not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).
