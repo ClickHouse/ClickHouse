@@ -81,8 +81,6 @@ public:
     {
         return session_id_counter.fetch_add(1);
     }
-
-
 };
 
 }
