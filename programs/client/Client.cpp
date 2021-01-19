@@ -669,6 +669,8 @@ private:
                 }
                 catch (const Exception & e)
                 {
+                    // We don't need to handle the test hints in the interactive
+                    // mode.
                     std::cerr << std::endl
                         << "Exception on client:" << std::endl
                         << "Code: " << e.code() << ". " << e.displayText() << std::endl;
