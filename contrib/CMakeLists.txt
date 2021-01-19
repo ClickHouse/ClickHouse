@@ -119,12 +119,6 @@ if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
-# Should go before:
-# - mariadb-connector-c
-# - aws-s3-cmake
-# - sentry-native
-add_subdirectory (curl-cmake)
-
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
@@ -142,6 +136,7 @@ function(mysql_support)
         set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
         set(WITH_EXTERNAL_ZLIB ON)
     endif()
+    set(WITH_CURL OFF)
     add_subdirectory (mariadb-connector-c)
 endfunction()
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -287,6 +282,10 @@ endif()
 if (USE_CASSANDRA)
     add_subdirectory (cassandra)
 endif()
+
+# Should go before:
+# - sentry-native
+add_subdirectory (curl-cmake)
 
 if (USE_SENTRY)
     add_subdirectory (sentry-native)
