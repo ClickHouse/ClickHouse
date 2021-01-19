@@ -278,34 +278,34 @@ void DataTypeMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const 
 }
 
 
-void DataTypeMap::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     nested->enumerateStreams(callback, path);
 }
 
-void DataTypeMap::serializeBinaryBulkStatePrefix(
+void DataTypeMap::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     nested->serializeBinaryBulkStatePrefix(settings, state);
 }
 
-void DataTypeMap::serializeBinaryBulkStateSuffix(
+void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
     nested->serializeBinaryBulkStateSuffix(settings, state);
 }
 
-void DataTypeMap::deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
+void DataTypeMap::deserializeBinaryBulkStatePrefixImpl(
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
 {
     nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
 
 
-void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
+void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -315,13 +315,15 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreams(
     nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
 }
 
-void DataTypeMap::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
-    nested->deserializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), limit, settings, state);
+    auto & column_map = assert_cast<ColumnMap &>(column);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
 }
 
 void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const

@@ -186,7 +186,7 @@ private:
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
-    ThreadPool worker_pool;
+    std::unique_ptr<ThreadPool> worker_pool;
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     Int64 cleanup_delay_period = 60; // minute (in seconds)
