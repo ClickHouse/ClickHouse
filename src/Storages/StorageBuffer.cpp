@@ -95,7 +95,7 @@ public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(
             metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names(column_names_.begin(), column_names_.end())
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names_))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -115,10 +115,16 @@ protected:
             return res;
 
         Columns columns;
-        columns.reserve(column_names.size());
+        columns.reserve(column_names_and_types.size());
 
-        for (const auto & name : column_names)
-            columns.push_back(buffer.data.getByName(name).column);
+        for (const auto & elem : column_names_and_types)
+        {
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);
@@ -127,7 +133,7 @@ protected:
     }
 
 private:
-    Names column_names;
+    NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
     bool has_been_read = false;
 };
@@ -188,8 +194,8 @@ void StorageBuffer::read(
         {
             const auto & dest_columns = destination_metadata_snapshot->getColumns();
             const auto & our_columns = metadata_snapshot->getColumns();
-            return dest_columns.hasPhysical(column_name) &&
-                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
+            return dest_columns.hasPhysicalOrSubcolumn(column_name) &&
+                   dest_columns.getPhysicalOrSubcolumn(column_name).type->equals(*our_columns.getPhysicalOrSubcolumn(column_name).type);
         });
 
         if (dst_has_same_structure)
@@ -387,7 +393,7 @@ static void appendBlock(const Block & from, Block & to)
     MutableColumnPtr last_col;
     try
     {
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
@@ -779,7 +785,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;

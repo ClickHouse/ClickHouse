@@ -4652,7 +4652,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };
-    constexpr auto event_wait_timeout_ms = 1000;
+
+    /// Don't recheck ZooKeeper too often
+    constexpr auto event_wait_timeout_ms = 3000;
 
     if (startsWith(entry.znode_name, "log-"))
     {
@@ -4673,10 +4675,11 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 break;
 
-            if (wait_for_non_active)
-                event->wait();
-            else
-                event->tryWait(event_wait_timeout_ms);
+            /// Wait with timeout because we can be already shut down, but not dropped.
+            /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+            /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+            /// but the query will never finish because the drop already shut down the table.
+            event->tryWait(event_wait_timeout_ms);
         }
     }
     else if (startsWith(entry.znode_name, "queue-"))
@@ -4721,10 +4724,11 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
                 if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
                     break;
 
-                if (wait_for_non_active)
-                    event->wait();
-                else
-                    event->tryWait(event_wait_timeout_ms);
+                /// Wait with timeout because we can be already shut down, but not dropped.
+                /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+                /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+                /// but the query will never finish because the drop already shut down the table.
+                event->tryWait(event_wait_timeout_ms);
             }
         }
     }
