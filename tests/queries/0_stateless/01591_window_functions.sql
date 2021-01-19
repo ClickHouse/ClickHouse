@@ -92,3 +92,15 @@ from numbers(10)
 window
     w1 as (partition by intDiv(number, 3))
 ;
+
+-- ROWS frame
+select
+    sum(number)
+        over (order by number rows between unbounded preceding and current row)
+from numbers(3);
+
+
+select
+    sum(number)
+        over (order by number groups between unbounded preceding and current row)
+from numbers(3);
