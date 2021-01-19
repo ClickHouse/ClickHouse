@@ -358,7 +358,8 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 ### Syntax {#show-cluster-syntax}
 
 ``` sql
-SHOW (CLUSTER '<name>') | (CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]);
+SHOW CLUSTER '<name>'
+SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
 ```
 ### Examples 
 
