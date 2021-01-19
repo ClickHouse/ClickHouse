@@ -7,7 +7,7 @@ toc_title: url
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
-`url` function can be used in `SELECT` and `INSERT` queries on data in [URL](../../engines/table-engines/special/url.md) tables.
+`url` function may be used in `SELECT` and `INSERT` queries on data in [URL](../../engines/table-engines/special/url.md) tables.
 
 **Syntax**
 
