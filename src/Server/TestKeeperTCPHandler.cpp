@@ -326,7 +326,7 @@ void TestKeeperTCPHandler::runImpl()
                 {
                     if (response->xid == close_xid)
                     {
-                        LOG_DEBUG(log, "Session #{} successfuly closed", session_id);
+                        LOG_DEBUG(log, "Session #{} successfully closed", session_id);
                         return;
                     }
 
