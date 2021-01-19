@@ -50,14 +50,14 @@ private:
     }
 
     /// Arena is used to allocate blocks that are not too large.
-    Arena pool;
+    GenericArena<clear_memory_, mmap_populate> pool;
 
     /// Lists of free blocks. Each element points to the head of the corresponding list, or is nullptr.
     /// The first two elements are not used, but are intended to simplify arithmetic.
     Block * free_lists[16] {};
-//    bool return_to_free_list = true;
 
 public:
+
     GenericArenaWithFreeLists(
         const size_t initial_size = 4096, const size_t growth_factor = 2,
         const size_t linear_growth_threshold = 128 * 1024 * 1024)
@@ -65,10 +65,13 @@ public:
     {
     }
 
-//    void stopReturningToFreeList()
-//    {
-//        return_to_free_list = false;
-//    }
+    inline void clearMemory(void * buf, size_t size)
+    {
+        if constexpr (clear_memory)
+        {
+            memset(buf, 0, size);
+        }
+    }
 
     char * alloc(const size_t size)
     {
@@ -90,24 +93,21 @@ public:
 
             const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
-            if constexpr (clear_memory)
-                memset(res, 0, size);
+            clearMemory(res, size);
 
             return res;
         }
 
         /// no block of corresponding size, allocate a new one
-        const auto res = pool.alloc(1ULL << (list_idx + 1));
-        if constexpr (clear_memory)
-            memset(res, 0, size);
-
-        return res;
+        return pool.alloc(1ULL << (list_idx + 1)); // no need to clear the memory, it is done by Arena
     }
 
     void free(char * ptr, const size_t size)
     {
-        if (/*!return_to_free_list ||*/ size > max_fixed_block_size)
+        if (size > max_fixed_block_size)
+        {
             return TheAllocator::free(ptr, size);
+        }
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -142,8 +142,7 @@ public:
                 // We allocate memory in blocks bigger than reqiested size (rounded up to a next power of two)
                 // so there is a chance that we can reuse previously unused space of the current block.
                 ASAN_UNPOISON_MEMORY_REGION(reinterpret_cast<char *>(buf) + old_size, new_size - old_size);
-                if constexpr (clear_memory)
-                    memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+                clearMemory(reinterpret_cast<char *>(buf) + old_size, new_size - old_size);
             }
             else if (new_size < old_size)
             {

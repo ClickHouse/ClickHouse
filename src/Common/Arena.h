@@ -22,6 +22,8 @@ namespace ProfileEvents
 namespace DB
 {
 
+template <bool clear_memory_, bool mmap_populate>
+class GenericArena;
 
 /** Memory pool to append something. For example, short strings.
   * Usage scenario:
@@ -31,14 +33,16 @@ namespace DB
   * - memory is allocated and freed by large MemoryChunks;
   * - freeing parts of data is not possible (but look at ArenaWithFreeLists if you need);
   */
-class Arena : private boost::noncopyable
+template <bool clear_memory_ = false, bool mmap_populate = false>
+class GenericArena : private boost::noncopyable
 {
 private:
+    using TheAllocator = Allocator<clear_memory_, mmap_populate>;
     /// Padding allows to use 'memcpySmallAllowReadWriteOverflow15' instead of 'memcpy'.
     static constexpr size_t pad_right = 15;
 
     /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization
+    struct alignas(16) MemoryChunk : private TheAllocator    /// empty base optimization
     {
         char * begin;
         char * pos;
@@ -51,7 +55,7 @@ private:
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
-            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
+            begin = reinterpret_cast<char *>(TheAllocator::alloc(size_));
             pos = begin;
             end = begin + size_ - pad_right;
             prev = prev_;
@@ -67,7 +71,7 @@ private:
             /// asan, it will correctly poison the memory by itself.
             ASAN_UNPOISON_MEMORY_REGION(begin, size());
 
-            Allocator<false>::free(begin, size());
+            TheAllocator::free(begin, size());
 
             if (prev)
                 delete prev;
@@ -128,14 +132,17 @@ private:
     template <size_t> friend class AlignedArenaAllocator;
 
 public:
-    Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
+    GenericArena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
         : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
         head(new MemoryChunk(initial_size_, nullptr)), size_in_bytes(head->size()),
         page_size(static_cast<size_t>(::getPageSize()))
     {
     }
 
-    ~Arena()
+    GenericArena(const GenericArena &) = delete;
+    GenericArena& operator=(const GenericArena &) = delete;
+
+    ~GenericArena()
     {
         delete head;
     }
@@ -314,6 +321,13 @@ public:
     {
         return head->remaining();
     }
+};
+
+class Arena : public GenericArena<false, false>
+{
+public:
+    using Base = GenericArena<false, false>;
+    using Base::Base;
 };
 
 using ArenaPtr = std::shared_ptr<Arena>;
