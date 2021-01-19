@@ -504,6 +504,7 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
 
     /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
+    auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
 
     if (parent_expr && child_expr)
@@ -523,6 +524,24 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
         expr->setStepDescription(parent_expr->getStepDescription() + " + " + child_expr->getStepDescription());
 
         parent_node->step = std::move(expr);
+        parent_node->children.swap(child_node->children);
+        return true;
+    }
+    else if (parent_filter && child_expr)
+    {
+        const auto & child_actions = child_expr->getExpression();
+        const auto & parent_actions = parent_filter->getExpression();
+
+        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
+            return false;
+
+        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
+
+        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(), merged,
+                                                   parent_filter->getFilterColumnName(), parent_filter->removesFilterColumn());
+        filter->setStepDescription(parent_filter->getStepDescription() + " + " + child_expr->getStepDescription());
+
+        parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
         return true;
     }
