@@ -44,9 +44,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
 
-## Модификаторы NULL или NOT NULL {#null-modifiers}
+## Модификатор NULL или NOT NULL {#null-modifiers}
 
-Модификаторы `NULL` and `NOT NULL` после установления типа данных в определении столбца позволяют или не позволяют ему быть типом [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
+Модификатор `NULL` или `NOT NULL`, указанный после типа данных в определении столбца, позволяет или не позволяет типу данных быть [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
 
 Если тип не `Nullable` и указан модификатор `NULL`, то столбец будет иметь тип `Nullable`; если `NOT NULL`, то не `Nullable`. Например, `INT NULL` то же, что и `Nullable(INT)`. Если тип `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, то будет вызвано исключение.
 

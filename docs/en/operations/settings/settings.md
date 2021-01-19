@@ -2530,12 +2530,12 @@ See examples in [UNION](../../sql-reference/statements/select/union.md).
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
-Allows data type without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
 
 Possible values:
 
-- 1 — The data type in column definition is set to `Nullable` by default.
-- 0 — The data type in column definition is set to not `Nullable` by default.
+- 1 — The data types in column definitions are set to `Nullable` by default.
+- 0 — The data types in column definitions are set to not `Nullable` by default.
 
 Default value: `0`.
 
