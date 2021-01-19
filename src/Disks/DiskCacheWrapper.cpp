@@ -146,7 +146,7 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
                 auto tmp_path = path + ".tmp";
                 {
                     auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
-                    auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite, estimated_size, aio_threshold);
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
@@ -175,10 +175,10 @@ DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimate
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
+        return DiskDecorator::writeFile(path, buf_size, mode);
 
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write file {} to cache", backQuote(path));
 
@@ -187,12 +187,12 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         cache_disk->createDirectories(dir_path);
 
     return std::make_unique<CompletionAwareWriteBuffer>(
-        cache_disk->writeFile(path, buf_size, mode, estimated_size, aio_threshold),
-        [this, path, buf_size, mode, estimated_size, aio_threshold]()
+        cache_disk->writeFile(path, buf_size, mode),
+        [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, 0);
-            auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode, estimated_size, aio_threshold);
+            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0);
+            auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();
         },
@@ -252,11 +252,23 @@ void DiskCacheWrapper::copyFile(const String & from_path, const String & to_path
     DiskDecorator::copyFile(from_path, to_path);
 }
 
-void DiskCacheWrapper::remove(const String & path)
+void DiskCacheWrapper::removeFile(const String & path)
+{
+    cache_disk->removeFileIfExists(path);
+    DiskDecorator::removeFile(path);
+}
+
+void DiskCacheWrapper::removeFileIfExists(const String & path)
+{
+    cache_disk->removeFileIfExists(path);
+    DiskDecorator::removeFileIfExists(path);
+}
+
+void DiskCacheWrapper::removeDirectory(const String & path)
 {
     if (cache_disk->exists(path))
-        cache_disk->remove(path);
-    DiskDecorator::remove(path);
+        cache_disk->removeDirectory(path);
+    DiskDecorator::removeDirectory(path);
 }
 
 void DiskCacheWrapper::removeRecursive(const String & path)

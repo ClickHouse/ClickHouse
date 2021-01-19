@@ -187,6 +187,8 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
+    bool isSettingsAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;

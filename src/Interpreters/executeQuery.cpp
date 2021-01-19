@@ -180,7 +180,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
@@ -351,7 +351,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 #if !defined(ARCADIA_BUILD)
         if (settings.use_antlr_parser)
         {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context.getCurrentDatabase());
         }
         else
         {

@@ -77,6 +77,7 @@ public:
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
+    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
@@ -84,6 +85,9 @@ public:
 
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
     ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
+
+    const ColumnPtr & getNestedColumnPtr() const { return nested; }
+    ColumnPtr & getNestedColumnPtr() { return nested; }
 
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
