@@ -28,17 +28,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Derived>
-class FunctionPolygonPerimeterBase : public IFunction
+template <typename Point>
+class FunctionPolygonPerimeter : public IFunction
 {
 public:
-    static inline const char * name = Derived::name;
+    static const char * name;
 
-    explicit FunctionPolygonPerimeterBase() = default;
+    explicit FunctionPolygonPerimeter() = default;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPolygonPerimeterBase>();
+        return std::make_shared<FunctionPolygonPerimeter>();
     }
 
     String getName() const override
@@ -61,9 +61,24 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        return static_cast<const Derived*>(this)->executeImplementation(arguments, result_type, input_rows_count);
+        auto parser = makeGeometryFromColumnParser<Point>(arguments[0]);
+        auto container = createContainer(parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(parser, container, i);
+
+            Float64 perimeter = boost::geometry::perimeter(
+                boost::get<MultiPolygon<Point>>(container));
+
+            res_column->insertValue(perimeter);
+        }
+
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -72,69 +87,18 @@ public:
     }
 };
 
-class FunctionPolygonPerimeterCartesian : public FunctionPolygonPerimeterBase<FunctionPolygonPerimeterCartesian>
+template <>
+const char * FunctionPolygonPerimeter<CartesianPoint>::name = "polygonPerimeterCartesian";
+
+template <>
+const char * FunctionPolygonPerimeter<GeographicPoint>::name = "polygonPerimeterGeographic";
+
+
+void registerFunctionPolygonPerimeter(FunctionFactory & factory)
 {
-public:
-    static inline const char * name = "polygonPerimeterCartesian";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
-        auto container = createContainer(parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            get(parser, container, i);
-
-            Float64 perimeter = boost::geometry::perimeter(
-                boost::get<CartesianMultiPolygon>(container));
-
-            res_column->insertValue(perimeter);
-        }
-
-        return res_column;
-    }
-};
-
-
-class FunctionPolygonPerimeterGeographic : public FunctionPolygonPerimeterBase<FunctionPolygonPerimeterGeographic>
-{
-public:
-    static inline const char * name = "polygonPerimeterGeographic";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto parser = makeGeographicGeometryFromColumnParser(arguments[0]);
-        auto container = createContainer(parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            get(parser, container, i);
-
-            Float64 perimeter = boost::geometry::perimeter(
-                boost::get<GeographicMultiPolygon>(container));
-
-            res_column->insertValue(perimeter);
-        }
-
-        return res_column;
-    }
-};
-
-
-
-void registerFunctionPolygonPerimeterCartesian(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonPerimeterCartesian>();
+    factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonPerimeter<GeographicPoint>>();
 }
 
-void registerFunctionPolygonPerimeterGeographic(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonPerimeterGeographic>();
-}
 
 }

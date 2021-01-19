@@ -38,7 +38,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
+        auto parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
         auto res_column = ColumnString::create();
 
         auto container = createContainer(parser);

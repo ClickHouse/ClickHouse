@@ -30,11 +30,11 @@ public:
     }
 };
 
-template <typename Geometry>
+template <typename Point>
 class Getter : public boost::static_visitor<void>
 {
 public:
-    constexpr Getter(Geometry & container_, size_t i_)
+    constexpr Getter(Geometry<Point> & container_, size_t i_)
         : container(container_)
         , i(i_)
     {}
@@ -46,7 +46,7 @@ public:
     }
 
 private:
-    Geometry & container;
+    Geometry<Point> & container;
     size_t i;
 };
 
@@ -64,52 +64,41 @@ Parser makeParser(const ColumnWithTypeAndName & col)
 
 }
 
-CartesianGeometryFromColumnParser makeCartesianGeometryFromColumnParser(const ColumnWithTypeAndName & col)
+template <typename Point>
+Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser)
+{
+    static ContainerCreator<Geometry<Point>> creator;
+    return boost::apply_visitor(creator, parser);
+}
+
+template <typename Point>
+void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i)
+{
+    boost::apply_visitor(Getter<Point>(container, i), parser);
+}
+
+template <typename Point>
+GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col)
 {
     switch (getArrayDepth(col.type, 3))
     {
-        case 0: return makeParser<DataTypeCustomPointSerialization, PointFromColumnParser<CartesianPoint>>(col);
-        case 1: return makeParser<DataTypeCustomRingSerialization, CartesianRingFromColumnParser>(col);
-        case 2: return makeParser<DataTypeCustomPolygonSerialization, CartesianPolygonFromColumnParser>(col);
-        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygonFromColumnParser>(col);
+        case 0: return makeParser<DataTypeCustomPointSerialization, PointFromColumnParser<Point>>(col);
+        case 1: return makeParser<DataTypeCustomRingSerialization, RingFromColumnParser<Point>>(col);
+        case 2: return makeParser<DataTypeCustomPolygonSerialization, PolygonFromColumnParser<Point>>(col);
+        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization, MultiPolygonFromColumnParser<Point>>(col);
         default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
                 + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
     }
 }
 
-CartesianGeometry createContainer(const CartesianGeometryFromColumnParser & parser)
-{
-    static ContainerCreator<CartesianGeometry> creator;
-    return boost::apply_visitor(creator, parser);
-}
+/// Explicit instantiations to avoid linker errors.
 
-void get(const CartesianGeometryFromColumnParser & parser, CartesianGeometry & container, size_t i)
-{
-    boost::apply_visitor(Getter(container, i), parser);
-}
+template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> &);
+template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> &);
+template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
+template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
+template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
-GeographicGeometryFromColumnParser makeGeographicGeometryFromColumnParser(const ColumnWithTypeAndName & col)
-{
-    switch (getArrayDepth(col.type, 3))
-    {
-        case 0: return makeParser<DataTypeCustomPointSerialization, PointFromColumnParser<GeographicPoint>>(col);
-        case 1: return makeParser<DataTypeCustomRingSerialization, GeographicRingFromColumnParser>(col);
-        case 2: return makeParser<DataTypeCustomPolygonSerialization, GeographicPolygonFromColumnParser>(col);
-        case 3: return makeParser<DataTypeCustomMultiPolygonSerialization, GeographicMultiPolygonFromColumnParser>(col);
-        default: throw Exception("Cannot parse geometry from column with type " + col.type->getName()
-                + ", array depth is too big", ErrorCodes::ILLEGAL_COLUMN);
-    }
-}
-
-GeographicGeometry createContainer(const GeographicGeometryFromColumnParser & parser)
-{
-    static ContainerCreator<GeographicGeometry> creator;
-    return boost::apply_visitor(creator, parser);
-}
-
-void get(const GeographicGeometryFromColumnParser & parser, GeographicGeometry & container, size_t i)
-{
-    boost::apply_visitor(Getter(container, i), parser);
-}
 
 }

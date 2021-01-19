@@ -65,8 +65,8 @@ public:
         const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
 
         auto parser = const_col ?
-            makeCartesianGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[0].type, arguments[0].name)) :
-            makeCartesianGeometryFromColumnParser(arguments[0]);
+            makeGeometryFromColumnParser<CartesianPoint>(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[0].type, arguments[0].name)) :
+            makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
 
         bool geo_column_is_const = static_cast<bool>(const_col);
 

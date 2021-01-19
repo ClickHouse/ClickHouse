@@ -28,17 +28,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Derived>
-class FunctionPolygonAreaBase : public IFunction
+template <typename Point>
+class FunctionPolygonArea : public IFunction
 {
 public:
-    static inline const char * name = Derived::name;
+    static inline const char * name;
 
-    explicit FunctionPolygonAreaBase() = default;
+    explicit FunctionPolygonArea() = default;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPolygonAreaBase>();
+        return std::make_shared<FunctionPolygonArea>();
     }
 
     String getName() const override
@@ -61,9 +61,24 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        return static_cast<const Derived*>(this)->executeImplementation(arguments, result_type, input_rows_count);
+        auto parser = makeGeometryFromColumnParser<Point>(arguments[0]);
+        auto container = createContainer(parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(parser, container, i);
+
+            Float64 area = boost::geometry::area(
+                boost::get<MultiPolygon<Point>>(container));
+
+            res_column->insertValue(area);
+        }
+
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -72,68 +87,18 @@ public:
     }
 };
 
+template <>
+const char * FunctionPolygonArea<CartesianPoint>::name = "polygonAreaCartesian";
 
-class FunctionPolygonAreaCartesian : public FunctionPolygonAreaBase<FunctionPolygonAreaCartesian>
+template <>
+const char * FunctionPolygonArea<GeographicPoint>::name = "polygonAreaGeographic";
+
+
+void registerFunctionPolygonArea(FunctionFactory & factory)
 {
-public:
-    static inline const char * name = "polygonAreaCartesian";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto parser = makeCartesianGeometryFromColumnParser(arguments[0]);
-        auto container = createContainer(parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            get(parser, container, i);
-
-            Float64 area = boost::geometry::area(
-                boost::get<CartesianMultiPolygon>(container));
-
-            res_column->insertValue(area);
-        }
-
-        return res_column;
-    }
-};
-
-class FunctionPolygonAreaGeographic : public FunctionPolygonAreaBase<FunctionPolygonAreaGeographic>
-{
-public:
-    static inline const char * name = "polygonAreaGeographic";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto parser = makeGeographicGeometryFromColumnParser(arguments[0]);
-        auto container = createContainer(parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            get(parser, container, i);
-
-            Float64 area = boost::geometry::area(
-                boost::get<GeographicMultiPolygon>(container));
-
-            res_column->insertValue(area);
-        }
-
-        return res_column;
-    }
-};
-
-
-void registerFunctionPolygonAreaCartesian(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonAreaCartesian>();
+    factory.registerFunction<FunctionPolygonArea<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonArea<GeographicPoint>>();
 }
 
-void registerFunctionPolygonAreaGeographic(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonAreaGeographic>();
-}
 
 }
