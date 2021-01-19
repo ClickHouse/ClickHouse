@@ -48,10 +48,10 @@ public:
         {
             throw Exception("Too many arguments", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
-        if (arguments.size() == 0) {
+        else if (arguments.empty()) {
             throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
-        if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
+        else if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
         {
             throw Exception("Second argument should be String",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

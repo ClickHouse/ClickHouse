@@ -281,7 +281,7 @@ public:
     void operator()(const CartesianPoint & point)
     {
         x->insertValue(point.get<0>());
-        y->insertValue(point.get<0>());
+        y->insertValue(point.get<1>());
     }
 
     void operator()(const CartesianRing & ring)
