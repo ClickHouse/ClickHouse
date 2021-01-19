@@ -13,7 +13,7 @@
 * Prohibit toUnixTimestamp(Date()) (before it just returns UInt16 representation of Date). [#17376](https://github.com/ClickHouse/ClickHouse/pull/17376) ([Azat Khuzhin](https://github.com/azat)).
 * Allow using extended integer types (`Int128`, `Int256`, `UInt256`) in `avg` and `avgWeighted` functions. Also allow using different types (integer, decimal, floating point) for value and for weight in `avgWeighted` function. This is a backward-incompatible change: now the `avg` and `avgWeighted` functions always return `Float64` (as documented). Before this change the return type for `Decimal` arguments was also `Decimal`. [#15419](https://github.com/ClickHouse/ClickHouse/pull/15419) ([Mike](https://github.com/myrrc)).
 * Expression `toUUID(N)` no longer works. Replace with `toUUID('00000000-0000-0000-0000-000000000000')`. This change is motivated by non-obvious results of `toUUID(N)` where N is non zero.
-* SSL Certificated with incorrect "key usage" are rejected. In previous versions they are used to work.
+* SSL Certificates with incorrect "key usage" are rejected. In previous versions they are used to work.
 
 #### New Feature
 
