@@ -588,7 +588,7 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
-    node->step->setStepDescription(filter_step->getStepDescription());
+    node->step->setStepDescription(description);
 
     return true;
 }
