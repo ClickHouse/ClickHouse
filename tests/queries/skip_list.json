@@ -162,7 +162,6 @@
         "01039_test_setting_parse",
         "01042_system_reload_dictionary_reloads_completely",
         "01045_dictionaries_restrictions",
-        "01048_exists_query",
         "01055_compact_parts_1",
         "01056_create_table_as",
         "01066_bit_count",
@@ -197,7 +196,6 @@
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
         "01192_rename_database_zookeeper",
-        "01210_drop_view",
         "01213_alter_rename_column",
         "01232_untuple",
         "01244_optimize_distributed_group_by_sharding_key",
@@ -209,7 +207,6 @@
         "01269_create_with_null",
         "01271_show_privileges",
         "01272_offset_without_limit",
-        "01275_parallel_mv",
         "01277_alter_rename_column_constraint_zookeeper",
         "01278_min_insert_block_size_rows_for_materialized_views",
         "01280_min_map_max_map",
@@ -309,7 +306,8 @@
         "01632_max_partitions_to_read",
         "01638_div_mod_ambiguities",
         "01642_if_nullable_regression",
-        "01643_system_suspend"
+        "01643_system_suspend",
+        "01475_read_subcolumns_storages"
     ],
     "parallel":
     [

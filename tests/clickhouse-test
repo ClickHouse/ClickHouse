@@ -293,6 +293,8 @@ def run_tests_array(all_tests_with_params):
         try:
             sys.stdout.flush()
             sys.stdout.write("{0:72}".format(name + ": "))
+            # This flush is needed so you can see the test name of the long running test before it will finish.
+            sys.stdout.flush()
 
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
