@@ -5,7 +5,11 @@ toc_title: file
 
 # file {#file}
 
-Creates a table from a file. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [hdfs](../../sql-reference/table-functions/hdfs.md) ones.
+Creates a table from a file. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [hdfs](../../sql-reference/table-functions/hdfs.md) ones. 
+
+`file` function can be used in `SELECT` and `INSERT` queries on data in [File](../../engines/table-engines/special/file.md) tables.
+
+**Syntax**
 
 ``` sql
 file(path, format, structure)
@@ -21,7 +25,7 @@ file(path, format, structure)
 
 A table with the specified structure for reading or writing data in the specified file.
 
-**Example**
+**Examples**
 
 Setting `user_files_path` and the contents of the file `test.csv`:
 
@@ -39,8 +43,8 @@ Table from`test.csv` and selection of the first two rows from it:
 
 ``` sql
 SELECT *
-FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
-LIMIT 2
+FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+LIMIT 2;
 ```
 
 ``` text
@@ -52,8 +56,24 @@ LIMIT 2
 
 ``` sql
 -- getting the first 10 lines of a table that contains 3 columns of UInt32 type from a CSV file
-SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10
+SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10;
 ```
+
+Inserting data from a file into a table:
+
+``` sql
+CREATE TABLE file_engine_table (column1 UInt32, column2 UInt32, column3 UInt32) ENGINE=File(CSV);
+INSERT INTO file_engine_table FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+SELECT * FROM file_engine_table;
+```
+
+``` text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
 
 **Globs in path**
 
@@ -116,4 +136,4 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 -   [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/file/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/file/) <!--hide-->

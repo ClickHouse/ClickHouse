@@ -5,20 +5,40 @@ toc_title: url
 
 # url {#url}
 
-`url(URL, format, structure)` - returns a table created from the `URL` with given
-`format` and `structure`.
+`url` function creates a table from the `URL` with given `format` and `structure`.
 
-URL - HTTP or HTTPS server address, which can accept `GET` and/or `POST` requests.
+`url` function can be used in `SELECT` and `INSERT` queries on data in [URL](../../engines/table-engines/special/url.md) tables.
 
-format - [format](../../interfaces/formats.md#formats) of the data.
-
-structure - table structure in `'UserID UInt64, Name String'` format. Determines column names and types.
-
-**Example**
+**Syntax**
 
 ``` sql
--- getting the first 3 lines of a table that contains columns of String and UInt32 type from HTTP-server which answers in CSV format.
-SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3
+url(URL, format, structure)
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/url/) <!--hide-->
+**Input parameters**
+
+- `URL` - HTTP or HTTPS server address, which can accept `GET` and/or `POST` requests. Type: [String](../../sql-reference/data-types/string.md).
+- `format` - [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
+- `structure` - Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+A table with the specified format and structure and with data from the defined URL.
+
+**Examples**
+
+Getting the first 3 lines of a table that contains columns of `String` and `UInt32` type from HTTP-server which answers in `CSV` format.
+
+``` sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3;
+```
+
+Inserting data from a URL into a table:
+
+``` sql
+CREATE TABLE url_engine_table (column1 String, column2 UInt32) ENGINE=URL('http://127.0.0.1:12345/', CSV);
+INSERT INTO url_engine_table FROM url('http://127.0.0.1:12345/', 'CSV', 'column1 String, column2 UInt32');
+SELECT * FROM url_engine_table;
+```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/url/) <!--hide-->
