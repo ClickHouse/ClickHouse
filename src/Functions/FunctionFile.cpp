@@ -6,7 +6,6 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 namespace DB
@@ -15,7 +14,6 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
-        extern const int TOO_LARGE_STRING_SIZE;
         extern const int NOT_IMPLEMENTED;
         extern const int FILE_DOESNT_EXIST;
         extern const int CANNOT_OPEN_FILE;
