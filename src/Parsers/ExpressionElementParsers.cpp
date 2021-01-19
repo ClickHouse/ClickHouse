@@ -504,6 +504,65 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return parser_definition.parse(pos, function->window_definition, expected);
 }
 
+static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
+    Expected & expected)
+{
+    ParserKeyword keyword_rows("ROWS");
+    ParserKeyword keyword_groups("GROUPS");
+    ParserKeyword keyword_range("RANGE");
+
+    if (keyword_rows.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Rows;
+    }
+    else if (keyword_groups.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Groups;
+    }
+    else if (keyword_range.ignore(pos, expected))
+    {
+        node->frame.type = WindowFrame::FrameType::Range;
+    }
+    else
+    {
+        /* No frame clause. */
+        return true;
+    }
+
+    ParserKeyword keyword_between("BETWEEN");
+    ParserKeyword keyword_unbounded("UNBOUNDED");
+    ParserKeyword keyword_preceding("PRECEDING");
+    ParserKeyword keyword_and("AND");
+    ParserKeyword keyword_current_row("CURRENT ROW");
+
+    if (!keyword_between.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    if (!keyword_unbounded.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    if (!keyword_preceding.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    if (!keyword_and.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    if (!keyword_current_row.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto result = std::make_shared<ASTWindowDefinition>();
@@ -546,6 +605,12 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         {
             return false;
         }
+    }
+
+    if (!tryParseFrameDefinition(result.get(), pos, expected))
+    {
+        /* Broken frame definition. */
+        return false;
     }
 
     ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
