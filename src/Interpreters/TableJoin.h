@@ -124,6 +124,7 @@ public:
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
+    bool hasJoinedStorage() const { return joined_storage != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;

@@ -188,7 +188,8 @@ bool isCastJoinKeysAllowed(const Block & left_block, const Block & right_block, 
         && !isLeft(table_join.kind())
         && !isInner(table_join.kind())
         && !isRight(table_join.kind());
-    if (!left_block || !right_block || !key_names_match || using_forbidden)
+    bool is_storage_join = table_join.hasJoinedStorage();
+    if (!left_block || !right_block || !key_names_match || using_forbidden || is_storage_join)
         return false;
 
     auto check_type_of_keys = [](const Names & names, const Block & block)
