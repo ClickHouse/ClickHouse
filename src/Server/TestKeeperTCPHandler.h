@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
-#include <future>
 
 namespace DB
 {
