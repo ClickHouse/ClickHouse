@@ -18,10 +18,10 @@ services:
     entrypoint: bash -c "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
     healthcheck:
       test: clickhouse client --query='select 1'
-      interval: 3s
-      timeout: 2s
-      retries: 40
-      start_period: 2s
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
     cap_add:
       - SYS_PTRACE
     security_opt:
