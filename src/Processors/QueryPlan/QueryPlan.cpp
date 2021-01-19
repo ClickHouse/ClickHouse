@@ -573,6 +573,8 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     if (filter_step->removesFilterColumn())
         split.second->removeUnusedInput(filter_step->getFilterColumnName());
 
+    auto description = filter_step->getStepDescription();
+
     auto & filter_node = nodes.emplace_back();
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
@@ -585,7 +587,7 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
     node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
 
-    filter_node.step->setStepDescription("(" + filter_step->getStepDescription() + ")[split]");
+    filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(filter_step->getStepDescription());
 
     return true;
