@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Client/ConnectionPool.h>
-#include <Client/MultiplexedConnections.h>
+#include <Client/IConnections.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
@@ -40,7 +41,7 @@ public:
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections,
+        std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, const Context & context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
@@ -100,8 +101,8 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
-    std::unique_ptr<MultiplexedConnections> multiplexed_connections;
+    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::unique_ptr<IConnections> connections;
 
     const String query;
     String query_id = "";

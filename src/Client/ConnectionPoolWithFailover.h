@@ -2,6 +2,7 @@
 
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
+#include <Common/Epoll.h>
 
 #include <chrono>
 #include <vector>
@@ -29,6 +30,55 @@ enum class PoolMode
     GET_MANY,
     /// Return a connection from each nested pool.
     GET_ALL
+};
+
+/// Class for establishing connection with replica without blocking.
+class TryGetConnection
+{
+public:
+    enum Stage
+    {
+        CONNECT = 0,
+        RECEIVE_HELLO = 1,
+        START_CHECK_TABLE = 2,
+        RECEIVE_TABLES_STATUS = 3,
+        FINISHED = 4,
+        FAILED = 5,
+    };
+
+    using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
+
+    TryGetConnection(IConnectionPool * pool_,
+                     const ConnectionTimeouts * timeouts_,
+                     const Settings * settings_,
+                     std::shared_ptr<QualifiedTableName> table_to_check = nullptr,
+                     Poco::Logger * log_ = nullptr);
+
+    /// Continue connecting to replica from previous stage. Initial stage is CONNECT.
+    void run();
+
+    void resetResult();
+
+    /// Reset class to initial stage.
+    void reset();
+
+    /// If connection is failed and epoll is set, before disconnecting
+    /// socket will be removed from epoll.
+    void setEpoll(Epoll * epoll_) { epoll = epoll_; }
+
+    /// Process fail connection.
+    void processFail(bool add_description = false);
+
+    IConnectionPool * pool;
+    const ConnectionTimeouts * timeouts;
+    std::string fail_message;
+    const Settings * settings;
+    std::shared_ptr<QualifiedTableName> table_to_check;
+    Poco::Logger * log;
+    TryResult result;
+    Stage stage;
+    int socket_fd;
+    Epoll * epoll = nullptr;
 };
 
 class ConnectionPoolWithFailover : public IConnectionPool, private PoolWithFailoverBase<IConnectionPool>
@@ -80,6 +130,15 @@ public:
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings * settings);
+
+    size_t getMaxErrorCup() const { return Base::max_error_cap; }
+
+    void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
+    {
+        Base::updateSharedErrorCounts(shuffled_pools);
+    }
+
 private:
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
@@ -96,6 +155,8 @@ private:
             std::string & fail_message,
             const Settings * settings,
             const QualifiedTableName * table_to_check = nullptr);
+
+    GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
 private:
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.

@@ -3,7 +3,7 @@
 #include <DataStreams/RemoteQueryExecutorReadContext.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
-#include <Client/MultiplexedConnections.h>
+#include <Client/IConnections.h>
 #include <sys/epoll.h>
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 
 struct RemoteQueryExecutorRoutine
 {
-    MultiplexedConnections & connections;
+    IConnections & connections;
     RemoteQueryExecutorReadContext & read_context;
 
     struct ReadCallback
@@ -19,15 +19,15 @@ struct RemoteQueryExecutorRoutine
         RemoteQueryExecutorReadContext & read_context;
         Fiber & fiber;
 
-        void operator()(Poco::Net::Socket & socket)
+        void operator()(int fd, const Poco::Timespan & timeout = 0, const std::string fd_description = "")
         {
             try
             {
-                read_context.setSocket(socket);
+                read_context.setConnectionFD(fd, timeout, fd_description);
             }
             catch (DB::Exception & e)
             {
-                e.addMessage(" while reading from socket ({})", socket.peerAddress().toString());
+                e.addMessage(" while reading from {}", fd_description);
                 throw;
             }
 
@@ -70,60 +70,38 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(MultiplexedConnections & connections_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(IConnections & connections_)
     : connections(connections_)
 {
-    epoll_fd = epoll_create(2);
-    if (-1 == epoll_fd)
-        throwFromErrno("Cannot create epoll descriptor", ErrorCodes::CANNOT_OPEN_FILE);
 
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
 
     {
-        epoll_event socket_event;
-        socket_event.events = EPOLLIN | EPOLLPRI;
-        socket_event.data.fd = pipe_fd[0];
-
-        if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fd[0], &socket_event))
-            throwFromErrno("Cannot add pipe descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+        epoll.add(pipe_fd[0]);
     }
 
     {
-        epoll_event timer_event;
-        timer_event.events = EPOLLIN | EPOLLPRI;
-        timer_event.data.fd = timer.getDescriptor();
-
-        if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, timer_event.data.fd, &timer_event))
-            throwFromErrno("Cannot add timer descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
+        epoll.add(timer.getDescriptor());
     }
 
     auto routine = RemoteQueryExecutorRoutine{connections, *this};
     fiber = boost::context::fiber(std::allocator_arg_t(), stack, std::move(routine));
 }
 
-void RemoteQueryExecutorReadContext::setSocket(Poco::Net::Socket & socket)
+void RemoteQueryExecutorReadContext::setConnectionFD(int fd, const Poco::Timespan & timeout, const std::string & fd_description)
 {
-    int fd = socket.impl()->sockfd();
-    if (fd == socket_fd)
+    if (fd == connection_fd)
         return;
 
-    epoll_event socket_event;
-    socket_event.events = EPOLLIN | EPOLLPRI;
-    socket_event.data.fd = fd;
+    if (connection_fd != -1)
+        epoll.remove(connection_fd);
 
-    if (socket_fd != -1)
-    {
-        if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_DEL, socket_fd, &socket_event))
-            throwFromErrno("Cannot remove socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
-    }
+    connection_fd = fd;
+    epoll.add(connection_fd);
 
-    socket_fd = fd;
-
-    if (-1 == epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &socket_event))
-        throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
-
-    receive_timeout = socket.impl()->getReceiveTimeout();
+    receive_timeout = timeout;
+    connection_fd_description = fd_description;
 }
 
 bool RemoteQueryExecutorReadContext::checkTimeout() const
@@ -142,21 +120,16 @@ bool RemoteQueryExecutorReadContext::checkTimeout() const
 
 bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
 {
-    epoll_event events[3];
-    events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
-
-    /// Wait for epoll_fd will not block if it was polled externally.
-    int num_events = epoll_wait(epoll_fd, events, 3, 0);
-    if (num_events == -1)
-        throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+    /// Wait for epoll will not block if it was polled externally.
+    std::vector<epoll_event> events = epoll.getManyReady(epoll.size(), /* blocking = */ false);
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
     bool has_timer_alarm = false;
 
-    for (int i = 0; i < num_events; ++i)
+    for (size_t i = 0; i < events.size(); ++i)
     {
-        if (events[i].data.fd == socket_fd)
+        if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
         if (events[i].data.fd == timer.getDescriptor())
             has_timer_alarm = true;
@@ -225,9 +198,7 @@ void RemoteQueryExecutorReadContext::cancel()
 
 RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
-    /// socket_fd is closed by Poco::Net::Socket
-    if (epoll_fd != -1)
-        close(epoll_fd);
+    /// connection_fd is closed by Poco::Net::Socket
     if (pipe_fd[0] != -1)
         close(pipe_fd[0]);
     if (pipe_fd[1] != -1)

@@ -173,7 +173,7 @@ public:
 
     /// Receive packet from server.
     /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
+    Packet receivePacket(AsyncCallback async_callback = {});
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -191,6 +191,19 @@ public:
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
+
+    /// Make preparation before sending Hello in connect
+    void prepare(const ConnectionTimeouts & timeouts);
+
+    void sendHello();
+
+    void receiveHello();
+
+    void sendTablesStatusRequest(const TablesStatusRequest & request);
+
+    TablesStatusResponse receiveTablesStatusResponse();
+
+    Poco::Net::Socket * getSocket() { return socket.get(); }
 
 private:
     String host;
@@ -280,8 +293,6 @@ private:
     LoggerWrapper log_wrapper;
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello();
-    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();

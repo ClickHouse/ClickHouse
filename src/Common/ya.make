@@ -40,6 +40,7 @@ SRCS(
     DirectorySyncGuard.cpp
     Dwarf.cpp
     Elf.cpp
+    Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp

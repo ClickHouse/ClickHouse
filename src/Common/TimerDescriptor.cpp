@@ -74,7 +74,7 @@ void TimerDescriptor::setRelative(const Poco::Timespan & timespan) const
     spec.it_interval.tv_nsec = 0;
     spec.it_interval.tv_sec = 0;
     spec.it_value.tv_sec = timespan.totalSeconds();
-    spec.it_value.tv_nsec = timespan.useconds();
+    spec.it_value.tv_nsec = timespan.useconds() * 1000;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
         throwFromErrno("Cannot set time for timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
