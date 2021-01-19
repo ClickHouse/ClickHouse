@@ -120,7 +120,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
 -   `--format, -f` – Use the specified default format to output the result.
--   `--vertical, -E` – If specified, use the [Vertical format](../formats#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+-   `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 -   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
