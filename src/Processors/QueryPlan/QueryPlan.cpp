@@ -617,9 +617,12 @@ void QueryPlan::optimize()
         }
         else
         {
-            trySplitFilter(frame.node, nodes);
+            if (frame.node->children.size() == 1)
+            {
+                while (tryMergeExpressions(frame.node, frame.node->children.front()));
 
-            while (tryMergeExpressions(frame.node, frame.node->children.front()));
+                trySplitFilter(frame.node, nodes);
+            }
 
             stack.pop();
         }
