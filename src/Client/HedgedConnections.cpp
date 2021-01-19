@@ -29,7 +29,7 @@ HedgedConnections::HedgedConnections(
         if (replicas.second_replica->isNotReady())
             epoll.add(get_hedged_connections.getFileDescriptor());
 
-        auto set_throttler = [this, throttler_](ReplicaStatePtr replica)
+        auto set_throttler = [throttler_](ReplicaStatePtr replica)
         {
             replica->connection->setThrottler(throttler_);
         };
