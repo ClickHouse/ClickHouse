@@ -53,6 +53,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingPipelineExecutor.h>
+
 namespace DB
 {
 
@@ -318,13 +320,14 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    auto stream = interpreter_subquery->execute().getInputStream();
+    auto io = interpreter_subquery->execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(stream->getHeader());
+    set->setHeader(executor.getHeader());
 
-    stream->readPrefix();
-    while (Block block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -332,7 +335,6 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -970,7 +972,9 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     // 1) Add actions for window functions and their arguments;
-    // 2) Mark the columns that are really required.
+    // 2) Mark the columns that are really required. We have to mark them as
+    //    required because we finish the expression chain before processing the
+    //    window functions.
     for (const auto & [_, w] : window_descriptions)
     {
         for (const auto & f : w.window_functions)
@@ -981,41 +985,14 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
             getRootActionsNoMakeSet(f.function_node->clone(),
                 true /* no_subqueries */, step.actions());
 
-            // 1.2) result of window function: an empty INPUT.
-            // It is an aggregate function, so it won't be added by getRootActions.
-            // This is something of a hack. Other options:
-            //  a] do it like aggregate function -- break the chain of actions
-            //     and manually add window functions to the starting list of
-            //     input columns. Logically this is similar to what we're doing
-            //     now, but would require to split the window function processing
-            //     into a full-fledged step after plain functions. This would be
-            //     somewhat cumbersome. With INPUT hack we can avoid a separate
-            //     step and pretend that window functions are almost "normal"
-            //     select functions. The limitation of both these ways is that
-            //     we can't reference window functions in other SELECT
-            //     expressions.
-            //  b] add a WINDOW action type, then sort, then split the chain on
-            //     each WINDOW action and insert the Window pipeline between the
-            //     Expression pipelines. This is a "proper" way that would allow
-            //     us to depend on window functions in other functions. But it's
-            //     complicated so I avoid doing it for now.
-            ColumnWithTypeAndName col;
-            col.type = f.aggregate_function->getReturnType();
-            col.column = col.type->createColumn();
-            col.name = f.column_name;
-
-            step.actions()->addInput(col);
-
+            // 2.1) function arguments;
             for (const auto & a : f.function_node->arguments->children)
             {
-                // 2.1) function arguments;
                 step.required_output.push_back(a->getColumnName());
             }
-            // 2.2) function result;
-            step.required_output.push_back(f.column_name);
         }
 
-        // 2.3) PARTITION BY and ORDER BY columns.
+        // 2.1) PARTITION BY and ORDER BY columns.
         for (const auto & c : w.full_sort_description)
         {
             step.required_output.push_back(c.column_name);
@@ -1048,6 +1025,15 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 
     for (const auto & child : select_query->select()->children)
     {
+        if (const auto * function = typeid_cast<const ASTFunction *>(child.get());
+            function
+            && function->is_window_function)
+        {
+            // Skip window function columns here -- they are calculated after
+            // other SELECT expressions by a special step.
+            continue;
+        }
+
         step.required_output.push_back(child->getColumnName());
     }
 }
@@ -1421,11 +1407,54 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
 
-        query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+        // Window functions are processed in a separate expression chain after
+        // the main SELECT, similar to what we do for aggregate functions.
+        if (has_window)
+        {
+            query_analyzer.appendWindowFunctionsArguments(chain, only_types || !first_stage);
+
+            // Build a list of output columns of the window step.
+            // 1) We need the columns that are the output of ExpressionActions.
+            for (const auto & x : chain.getLastActions()->getNamesAndTypesList())
+            {
+                query_analyzer.columns_after_window.push_back(x);
+            }
+            // 2) We also have to manually add the output of the window function
+            // to the list of the output columns of the window step, because the
+            // window functions are not in the ExpressionActions.
+            for (const auto & [_, w] : query_analyzer.window_descriptions)
+            {
+                for (const auto & f : w.window_functions)
+                {
+                    query_analyzer.columns_after_window.push_back(
+                        {f.column_name, f.aggregate_function->getReturnType()});
+                }
+            }
+
+            before_window = chain.getLastActions();
+            finalize_chain(chain);
+
+            auto & step = chain.lastStep(query_analyzer.columns_after_window);
+
+            // The output of this expression chain is the result of
+            // SELECT (before "final projection" i.e. renaming the columns), so
+            // we have to mark the expressions that are required in the output,
+            // again. We did it for the previous expression chain ("select w/o
+            // window functions") earlier, in appendSelect(). But that chain also
+            // produced the expressions required to calculate window functions.
+            // They are not needed in the final SELECT result. Knowing the correct
+            // list of columns is important when we apply SELECT DISTINCT later.
+            const auto * select_query = query_analyzer.getSelectQuery();
+            for (const auto & child : select_query->select()->children)
+            {
+                step.required_output.push_back(child->getColumnName());
+            }
+        }
 
         selected_columns = chain.getLastStep().required_output;
+
         has_order_by = query.orderBy() != nullptr;
-        before_order_and_select = query_analyzer.appendOrderBy(
+        before_order_by = query_analyzer.appendOrderBy(
                 chain,
                 only_types || (need_aggregate ? !second_stage : !first_stage),
                 optimize_read_in_order,
@@ -1460,23 +1489,6 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
         {
             if (step.can_remove_required_output[i])
                 columns_to_remove.insert(step.required_output[i]);
-        }
-
-        if (!columns_to_remove.empty())
-        {
-            auto columns = prewhere_info->prewhere_actions->getResultColumns();
-
-            auto remove_actions = std::make_shared<ActionsDAG>();
-            for (const auto & column : columns)
-            {
-                if (columns_to_remove.count(column.name))
-                {
-                    remove_actions->addInput(column);
-                    remove_actions->removeColumn(column.name);
-                }
-            }
-
-            prewhere_info->remove_columns_actions = std::move(remove_actions);
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
@@ -1572,9 +1584,9 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "before_window " << before_window->dumpDAG() << "\n";
     }
 
-    if (before_order_and_select)
+    if (before_order_by)
     {
-        ss << "before_order_and_select " << before_order_and_select->dumpDAG() << "\n";
+        ss << "before_order_by " << before_order_by->dumpDAG() << "\n";
     }
 
     if (before_limit_by)
@@ -1585,6 +1597,20 @@ std::string ExpressionAnalysisResult::dump() const
     if (final_projection)
     {
         ss << "final_projection " << final_projection->dumpDAG() << "\n";
+    }
+
+    if (!selected_columns.empty())
+    {
+        ss << "selected_columns ";
+        for (size_t i = 0; i < selected_columns.size(); i++)
+        {
+            if (i > 0)
+            {
+                ss << ", ";
+            }
+            ss << backQuote(selected_columns[i]);
+        }
+        ss << "\n";
     }
 
     return ss.str();

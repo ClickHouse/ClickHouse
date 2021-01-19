@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -29,6 +30,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -426,6 +428,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     }
 }
 
+
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -445,6 +448,8 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
             for (auto & arg : node->arguments->children)
             {
                 assertNoAggregates(arg, "inside another aggregate function");
+                // We also can't have window functions inside aggregate functions,
+                // because the window functions are calculated later.
                 assertNoWindows(arg, "inside an aggregate function");
             }
         }
@@ -454,7 +459,9 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 
 std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
 {
-    /// There can not be window functions inside the WHERE and PREWHERE.
+    /// There can not be window functions inside the WHERE, PREWHERE and HAVING
+    if (select_query.having())
+        assertNoWindows(select_query.having(), "in HAVING");
     if (select_query.where())
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
@@ -463,15 +470,32 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
 
-    /// There can not be other window functions within the aggregate functions.
+    /// Window functions cannot be inside aggregates or other window functions.
+    /// Aggregate functions can be inside window functions because they are
+    /// calculated earlier.
     for (const ASTFunction * node : data.window_functions)
     {
         if (node->arguments)
         {
             for (auto & arg : node->arguments->children)
             {
-                assertNoAggregates(arg, "inside a window function");
                 assertNoWindows(arg, "inside another window function");
+            }
+        }
+
+        if (node->window_partition_by)
+        {
+            for (auto & arg : node->window_partition_by->children)
+            {
+                assertNoWindows(arg, "inside PARTITION BY of a window");
+            }
+        }
+
+        if (node->window_order_by)
+        {
+            for (auto & arg : node->window_order_by->children)
+            {
+                assertNoWindows(arg, "inside ORDER BY of a window");
             }
         }
     }
@@ -502,7 +526,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        NamesAndTypesList columns_from_storage;
+        if (storage->supportsSubcolumns())
+            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
+        else
+            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -566,11 +595,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 required.insert(column_name_type.name);
     }
 
-    /// You need to read at least one column to find the number of rows.
-    if (is_select && required.empty())
+    /// Figure out if we're able to use the trivial count optimization.
+    has_explicit_columns = !required.empty();
+    if (is_select && !has_explicit_columns)
     {
         optimize_trivial_count = true;
 
+        /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
@@ -708,6 +739,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     required_source_columns.swap(source_columns);
 }
 
+NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
+{
+    NameSet forbidden_columns;
+    for (const auto & elem : array_join_result_to_source)
+        forbidden_columns.insert(elem.first);
+    return forbidden_columns;
+}
 
 TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
@@ -770,6 +808,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                         result.analyzed_join->table_join);
     collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+
+    /// rewrite filters for select query, must go after getArrayJoinedColumns
+    if (settings.optimize_respect_aliases && result.metadata_snapshot)
+    {
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
+    }
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);

@@ -19,7 +19,6 @@
 #include <Dictionaries/BucketCache.h>
 #include <ext/scope_guard.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferAIO.h>
 #include <list>
 #include <pcg_random.hpp>
 #include <Poco/Logger.h>

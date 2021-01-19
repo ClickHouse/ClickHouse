@@ -18,7 +18,11 @@ if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
   separate_arguments(WITHOUT_COVERAGE_LIST)
   # disable coverage for contib files and build with optimisations
-  add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  if (COMPILER_CLANG)
+      add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
+  endif()
 endif()
 
 if (SANITIZE STREQUAL "undefined")
@@ -31,7 +35,6 @@ set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
-add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
 add_subdirectory (FastMemcpy)
@@ -116,12 +119,6 @@ if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
-# Should go before:
-# - mariadb-connector-c
-# - aws-s3-cmake
-# - sentry-native
-add_subdirectory (curl-cmake)
-
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
@@ -139,6 +136,7 @@ function(mysql_support)
         set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
         set(WITH_EXTERNAL_ZLIB ON)
     endif()
+    set(WITH_CURL OFF)
     add_subdirectory (mariadb-connector-c)
 endfunction()
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -285,6 +283,10 @@ if (USE_CASSANDRA)
     add_subdirectory (cassandra)
 endif()
 
+# Should go before:
+# - sentry-native
+add_subdirectory (curl-cmake)
+
 if (USE_SENTRY)
     add_subdirectory (sentry-native)
 endif()
@@ -305,6 +307,11 @@ endif()
 
 if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
+endif()
+
+if (USE_LIBPQXX)
+    add_subdirectory (libpq-cmake)
+    add_subdirectory (libpqxx-cmake)
 endif()
 
 if (USE_NURAFT)
