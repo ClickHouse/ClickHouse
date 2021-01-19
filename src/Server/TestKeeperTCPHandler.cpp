@@ -27,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int SYSTEM_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-    extern const int LOGICAL_ERROR;
 }
 
 struct PollResult
