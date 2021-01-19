@@ -5,7 +5,7 @@ toc_title: Multiword Type Names
 
 # Multiword Types {#multiword-types}
 
-When creating tables, you can also use data types with a name consisting of several words. This is necessary for better SQL compatibility.
+When creating tables, you can use data types with a name consisting of several words. This is implemented for better SQL compatibility.
 
 ## Multiword Types Support {#multiword-types-support}
 
