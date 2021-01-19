@@ -617,6 +617,10 @@ void QueryPlan::optimize()
         }
         else
         {
+            trySplitFilter(frame.node, nodes);
+
+            while (tryMergeExpressions(frame.node, frame.node->children.front()));
+
             stack.pop();
         }
     }
