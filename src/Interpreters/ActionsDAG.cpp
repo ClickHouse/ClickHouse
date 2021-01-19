@@ -1108,7 +1108,11 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin
 
 std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
-    auto it = index.find(column_name);
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == column_name)
+            break;
+
     if (it == index.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
