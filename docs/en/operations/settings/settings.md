@@ -2134,6 +2134,21 @@ Default value: `1`.
 
 -   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
 
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `GROUP BY` optimization is disabled.
+-   1 — `GROUP BY` optimization is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [GROUP BY optimization](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
+
 ## mutations_sync {#mutations_sync}
 
 Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
