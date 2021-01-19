@@ -497,12 +497,13 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
                                               filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 }
 
+/// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
+/// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
 {
     auto & parent = parent_node->step;
     auto & child = child_node->step;
 
-    /// TODO: FilterStep
     auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
     auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
     auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
@@ -549,6 +550,36 @@ static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node *
     return false;
 }
 
+/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
+static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
+{
+    auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter_step)
+        return false;
+
+    const auto & expr = filter_step->getExpression();
+    auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
+
+    if (split.second->empty())
+        return false;
+
+    if (filter_step->removesFilterColumn())
+        split.second->removeUnusedInput(filter_step->getFilterColumnName());
+
+    auto & filter_node = nodes.emplace_back();
+    node->children.swap(filter_node.children);
+    node->children.push_back(&filter_node);
+
+    filter_node.step = std::make_unique<FilterStep>(
+            filter_node.children.at(0)->step->getOutputStream(),
+            std::move(split.first),
+            filter_step->getFilterColumnName(),
+            filter_step->removesFilterColumn());
+
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+    return true;
+}
+
 void QueryPlan::optimize()
 {
     struct Frame
@@ -566,12 +597,16 @@ void QueryPlan::optimize()
 
         if (frame.next_child == 0)
         {
-            /// First entrance, try push down.
             if (frame.node->children.size() == 1)
             {
                 tryPushDownLimit(frame.node->step, frame.node->children.front());
 
                 while (tryMergeExpressions(frame.node, frame.node->children.front()));
+
+                if (frame.node->children.size() == 1)
+                    tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
+
+                trySplitFilter(frame.node, nodes);
             }
         }
 
@@ -582,10 +617,6 @@ void QueryPlan::optimize()
         }
         else
         {
-            /// Last entrance, try lift up.
-            if (frame.node->children.size() == 1)
-                tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
-
             stack.pop();
         }
     }
