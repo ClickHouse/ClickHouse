@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Data preparation
 # When run with client mode on different machine to the server, the data-file creation maybe implemented in SQL. Now we just make it simple
-mkidr -p /var/lib/clickhouse/user_files/
+mkdir -p /var/lib/clickhouse/user_files/
 echo -n aaaaaaaaa > /var/lib/clickhouse/user_files/a.txt
 echo -n bbbbbbbbb > /var/lib/clickhouse/user_files/b.txt
 echo -n ccccccccc > /var/lib/clickhouse/user_files/c.txt
