@@ -18,11 +18,11 @@
 
 #include <common/logger_useful.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -54,8 +54,8 @@ using GeographicMultiPolygon = MultiPolygon<GeographicPoint>;
 using GeographicGeometry = Geometry<GeographicPoint>;
 
 /**
- * Class which takes some boost type and returns a pair of numbers. 
- * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of geographic.  
+ * Class which takes some boost type and returns a pair of numbers.
+ * They are (x,y) in case of cartesian coordinated and (lon,lat) in case of geographic.
 */
 template <typename PointType>
 class PointFromColumnParser
@@ -154,9 +154,8 @@ public:
         container.reserve(r - l + 1);
         container.resize(r - l);
 
-        for (size_t j = l; j < r; j++) {
+        for (size_t j = l; j < r; j++)
             point_parser.get(container[j - l], j);
-        }
 
         // make ring closed
         if (!boost::geometry::equals(container[0], container.back()))
@@ -289,25 +288,25 @@ public:
 
     void operator()(const Ring<Point> & ring)
     {
-        if (ring.size() != 1) {
+        if (ring.size() != 1)
             throw Exception("Unable to write ring of size " + toString(ring.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(ring[0]);
     }
 
     void operator()(const Polygon<Point> & polygon)
     {
-        if (polygon.inners().size() != 0) {
+        if (polygon.inners().size() != 0)
             throw Exception("Unable to write polygon with holes to point column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(polygon.outer());
     }
 
     void operator()(const MultiPolygon<Point> & multi_polygon)
     {
-        if (multi_polygon.size() != 1) {
+        if (multi_polygon.size() != 1)
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(multi_polygon[0]);
     }
 
@@ -357,17 +356,17 @@ public:
 
     void operator()(const Polygon<Point> & polygon)
     {
-        if (polygon.inners().size() != 0) {
+        if (polygon.inners().size() != 0)
             throw Exception("Unable to write polygon with holes to ring column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(polygon.outer());
     }
 
     void operator()(const MultiPolygon<Point> & multi_polygon)
     {
-        if (multi_polygon.size() != 1) {
+        if (multi_polygon.size() != 1)
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to ring column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(multi_polygon[0]);
     }
 
@@ -421,9 +420,9 @@ public:
 
     void operator()(const MultiPolygon<Point> & multi_polygon)
     {
-        if (multi_polygon.size() != 1) {
+        if (multi_polygon.size() != 1)
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to polygon column", ErrorCodes::BAD_ARGUMENTS);
-        }
+
         (*this)(multi_polygon[0]);
     }
 

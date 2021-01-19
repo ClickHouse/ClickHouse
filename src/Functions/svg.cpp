@@ -10,7 +10,9 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
@@ -48,7 +50,8 @@ public:
         {
             throw Exception("Too many arguments", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
-        else if (arguments.empty()) {
+        else if (arguments.empty())
+        {
             throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
         else if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
@@ -75,13 +78,13 @@ public:
 
         bool has_style = arguments.size() > 1;
         ColumnPtr style;
-        if (has_style) {
+        if (has_style)
             style = arguments[1].column;
-        }
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            std::stringstream str;
+            /// FIXME
+            std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             if (!geo_column_is_const || i == 0)
                 get(parser, container, i);
 
