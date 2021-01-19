@@ -28,10 +28,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+template <typename Point>
 class FunctionPolygonConvexHull : public IFunction
 {
 public:
-    static inline const char * name = "polygonConvexHull";
+    static const char * name;
 
     explicit FunctionPolygonConvexHull() = default;
 
@@ -62,27 +63,22 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto get_parser = [&arguments] (size_t i) {
-            const ColumnWithTypeAndName polygon = arguments[i];
-            return makeCartesianGeometryFromColumnParser(polygon);
-        };
-
-        auto parser = get_parser(0);
+        auto parser = makeGeometryFromColumnParser<Point>(arguments[0]);
         auto container = createContainer(parser);
 
-        CartesianPolygonSerializer serializer;
+        PolygonSerializer<Point> serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
             get(parser, container, i);
 
-            CartesianGeometry convex_hull = CartesianPolygon({{{}}});
+            Geometry<Point> convex_hull = Polygon<Point>({{{}}});
             boost::geometry::convex_hull(
-                boost::get<CartesianMultiPolygon>(container),
-                boost::get<CartesianPolygon>(convex_hull));
+                boost::get<MultiPolygon<Point>>(container),
+                boost::get<Polygon<Point>>(convex_hull));
 
-            boost::get<CartesianPolygon>(convex_hull).outer().erase(
-                boost::get<CartesianPolygon>(convex_hull).outer().begin());
+            boost::get<Polygon<Point>>(convex_hull).outer().erase(
+                boost::get<Polygon<Point>>(convex_hull).outer().begin());
 
             serializer.add(convex_hull);
         }
@@ -97,9 +93,17 @@ public:
 };
 
 
+template <>
+const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
+
+// template <>
+// const char * FunctionPolygonConvexHull<GeographicPoint>::name = "polygonConvexHullGeographic";
+
+
 void registerFunctionPolygonConvexHull(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonConvexHull>();
+    factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
+    // factory.registerFunction<FunctionPolygonConvexHull<GeographicPoint>>();
 }
 
 }

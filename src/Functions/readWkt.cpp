@@ -62,7 +62,7 @@ public:
     }
 };
 
-class FunctionReadWktPoint : public FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, CartesianPointSerializer>
+class FunctionReadWktPoint : public FunctionReadWkt<DataTypeCustomPointSerialization, CartesianPoint, PointSerializer<CartesianPoint>>
 {
 public:
     static inline const char * name = "readWktPoint";
@@ -76,7 +76,7 @@ public:
     }
 };
 
-class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, CartesianPolygonSerializer>
+class FunctionReadWktPolygon : public FunctionReadWkt<DataTypeCustomPolygonSerialization, CartesianPolygon, PolygonSerializer<CartesianPoint>>
 {
 public:
     static inline const char * name = "readWktPolygon";
@@ -90,7 +90,7 @@ public:
     }
 };
 
-class FunctionReadWktMultiPolygon : public FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, CartesianMultiPolygonSerializer>
+class FunctionReadWktMultiPolygon : public FunctionReadWkt<DataTypeCustomMultiPolygonSerialization, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>>
 {
 public:
     static inline const char * name = "readWktMultiPolygon";

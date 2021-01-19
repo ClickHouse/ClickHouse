@@ -30,17 +30,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Derived>
-class FunctionPolygonsDistanceBase : public IFunction
+template <typename Point>
+class FunctionPolygonsDistance : public IFunction
 {
 public:
-    static inline const char * name = Derived::name;
+    static inline const char * name;
 
-    explicit FunctionPolygonsDistanceBase() = default;
+    explicit FunctionPolygonsDistance() = default;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionPolygonsDistanceBase>();
+        return std::make_shared<FunctionPolygonsDistance>();
     }
 
     String getName() const override
@@ -63,9 +63,29 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        return static_cast<const Derived*>(this)->executeImplementation(arguments, result_type, input_rows_count);
+        auto first_parser = makeGeometryFromColumnParser<Point>(arguments[0]);
+        auto first_container = createContainer(first_parser);
+
+        auto second_parser = makeGeometryFromColumnParser<Point>(arguments[1]);
+        auto second_container = createContainer(second_parser);
+
+        auto res_column = ColumnFloat64::create();
+
+        for (size_t i = 0; i < input_rows_count; i++)
+        {
+            get(first_parser, first_container, i);
+            get(second_parser, second_container, i);
+
+            Float64 distance = boost::geometry::distance(
+                    boost::get<MultiPolygon<Point>>(first_container),
+                    boost::get<MultiPolygon<Point>>(second_container));
+
+            res_column->insertValue(distance);
+        }
+
+        return res_column;
     }
 
     bool useDefaultImplementationForConstants() const override
@@ -74,73 +94,18 @@ public:
     }
 };
 
+template <>
+const char * FunctionPolygonsDistance<CartesianPoint>::name = "polygonsDistanceCartesian";
 
-class FunctionPolygonsDistanceCartesian : public FunctionPolygonsDistanceBase<FunctionPolygonsDistanceCartesian>
+template <>
+const char * FunctionPolygonsDistance<GeographicPoint>::name = "polygonsDistanceGeographic";
+
+
+void registerFunctionPolygonsDistance(FunctionFactory & factory)
 {
-public:
-    static inline const char * name = "polygonsDistanceCartesian";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto first_parser = makeCartesianGeometryFromColumnParser(arguments[0]);
-        auto first_container = createContainer(first_parser);
-
-        auto second_parser = makeCartesianGeometryFromColumnParser(arguments[1]);
-        auto second_container = createContainer(second_parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            Float64 distance = boost::geometry::distance(
-                    boost::get<CartesianMultiPolygon>(first_container),
-                    boost::get<CartesianMultiPolygon>(second_container));
-
-            res_column->insertValue(distance);
-        }
-
-        return res_column;
-    }
-};
-
-
-class FunctionPolygonsDistanceGeographic : public FunctionPolygonsDistanceBase<FunctionPolygonsDistanceGeographic>
-{
-public:
-    static inline const char * name = "polygonsDistanceGeographic";
-
-    ColumnPtr executeImplementation(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
-    {
-        auto first_parser = makeGeographicGeometryFromColumnParser(arguments[0]);
-        auto first_container = createContainer(first_parser);
-
-        auto second_parser = makeGeographicGeometryFromColumnParser(arguments[1]);
-        auto second_container = createContainer(second_parser);
-
-        auto res_column = ColumnFloat64::create();
-
-        for (size_t i = 0; i < input_rows_count; i++)
-        {
-            Float64 distance = boost::geometry::distance(
-                    boost::get<GeographicMultiPolygon>(first_container),
-                    boost::get<GeographicMultiPolygon>(second_container));
-
-            res_column->insertValue(distance);
-        }
-
-        return res_column;
-    }
-};
-
-
-void registerFunctionPolygonsDistanceCartesian(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonsDistanceCartesian>();
+    factory.registerFunction<FunctionPolygonsDistance<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsDistance<GeographicPoint>>();
 }
 
-void registerFunctionPolygonsDistanceGeographic(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionPolygonsDistanceGeographic>();
-}
 
 }

@@ -27,17 +27,31 @@ namespace ErrorCodes
 }
 
 namespace bg = boost::geometry;
+
+template <typename Point>
+using Ring = bg::model::ring<Point>;
+
+template <typename Point>
+using Polygon = bg::model::polygon<Point>;
+
+template <typename Point>
+using MultiPolygon = bg::model::multi_polygon<Polygon<Point>>;
+
+template <typename Point>
+using Geometry = boost::variant<Point, Ring<Point>, Polygon<Point>, MultiPolygon<Point>>;
+
+
 using CartesianPoint = bg::model::d2::point_xy<Float64>;
-using CartesianRing = bg::model::ring<CartesianPoint>;
-using CartesianPolygon = bg::model::polygon<CartesianPoint>;
-using CartesianMultiPolygon = bg::model::multi_polygon<CartesianPolygon>;
-using CartesianGeometry = boost::variant<CartesianPoint, CartesianRing, CartesianPolygon, CartesianMultiPolygon>;
+using CartesianRing = Ring<CartesianPoint>;
+using CartesianPolygon = Polygon<CartesianPoint>;
+using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
+using CartesianGeometry = Geometry<CartesianPoint>;
 
 using GeographicPoint = bg::model::point<Float64, 2, bg::cs::geographic<bg::degree>>;
-using GeographicRing = bg::model::ring<GeographicPoint>;
-using GeographicPolygon = bg::model::polygon<GeographicPoint>;
-using GeographicMultiPolygon = bg::model::multi_polygon<GeographicPolygon>;
-using GeographicGeometry = boost::variant<GeographicPoint, GeographicRing, GeographicPolygon, GeographicMultiPolygon>;
+using GeographicRing = Ring<GeographicPoint>;
+using GeographicPolygon = Polygon<GeographicPoint>;
+using GeographicMultiPolygon = MultiPolygon<GeographicPoint>;
+using GeographicGeometry = Geometry<GeographicPoint>;
 
 /**
  * Class which takes some boost type and returns a pair of numbers. 
@@ -111,27 +125,27 @@ private:
     const Float64 * second;
 };
 
-template<class Geometry, class RingType, class PointParser>
+template<class Point>
 class RingFromColumnParser
 {
 public:
     RingFromColumnParser(ColumnPtr col_)
         : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , pointParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        , point_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {
     }
 
-    Geometry createContainer() const
+    Geometry<Point> createContainer() const
     {
-        return RingType();
+        return Ring<Point>();
     }
 
-    void get(Geometry & container, size_t i) const
+    void get(Geometry<Point> & container, size_t i) const
     {
-        get(boost::get<RingType>(container), i);
+        get(boost::get<Ring<Point>>(container), i);
     }
 
-    void get(RingType & container, size_t i) const
+    void get(Ring<Point> & container, size_t i) const
     {
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
@@ -141,7 +155,7 @@ public:
         container.resize(r - l);
 
         for (size_t j = l; j < r; j++) {
-            pointParser.get(container[j - l], j);
+            point_parser.get(container[j - l], j);
         }
 
         // make ring closed
@@ -153,138 +167,127 @@ public:
 
 private:
     const IColumn::Offsets & offsets;
-    const PointParser pointParser;
+    const PointFromColumnParser<Point> point_parser;
 };
 
-template<class Geometry, class PolygonType, class RingParser>
+template<class Point>
 class PolygonFromColumnParser
 {
 public:
     PolygonFromColumnParser(ColumnPtr col_)
         : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , ringParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        , ring_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    Geometry createContainer() const
+    Geometry<Point> createContainer() const
     {
-        return PolygonType();
+        return Polygon<Point>();
     }
 
-    void get(Geometry & container, size_t i) const
+    void get(Geometry<Point> & container, size_t i) const
     {
-        get(boost::get<PolygonType>(container), i);
+        get(boost::get<Polygon<Point>>(container), i);
     }
 
-    void get(PolygonType & container, size_t i) const
+    void get(Polygon<Point> & container, size_t i) const
     {
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
-        ringParser.get(container.outer(), l);
+        ring_parser.get(container.outer(), l);
 
         container.inners().resize(r - l - 1);
         for (size_t j = l + 1; j < r; j++)
         {
-            ringParser.get(container.inners()[j - l - 1], j);
+            ring_parser.get(container.inners()[j - l - 1], j);
         }
     }
 
 private:
     const IColumn::Offsets & offsets;
-    const RingParser ringParser;
+    const RingFromColumnParser<Point> ring_parser;
 };
 
-template<class Geometry, class MultiPolygonType, class PolygonParser>
+template<class Point>
 class MultiPolygonFromColumnParser
 {
 public:
     MultiPolygonFromColumnParser(ColumnPtr col_)
         : offsets(static_cast<const ColumnArray &>(*col_).getOffsets())
-        , polygonParser(static_cast<const ColumnArray &>(*col_).getDataPtr())
+        , polygon_parser(static_cast<const ColumnArray &>(*col_).getDataPtr())
     {}
 
-    Geometry createContainer() const
+    Geometry<Point> createContainer() const
     {
-        return MultiPolygonType();
+        return MultiPolygon<Point>();
     }
 
-    void get(Geometry & container, size_t i) const
+    void get(Geometry<Point> & container, size_t i) const
     {
-        MultiPolygonType & multi_polygon = boost::get<MultiPolygonType>(container);
+        auto & multi_polygon = boost::get<MultiPolygon<Point>>(container);
         size_t l = offsets[i - 1];
         size_t r = offsets[i];
 
         multi_polygon.resize(r - l);
         for (size_t j = l; j < r; j++)
         {
-            polygonParser.get(multi_polygon[j - l], j);
+            polygon_parser.get(multi_polygon[j - l], j);
         }
     }
 
 private:
     const IColumn::Offsets & offsets;
-    const PolygonParser polygonParser;
+    const PolygonFromColumnParser<Point> polygon_parser;
 };
 
-/// Cartesian coordinates
-
-using CartesianRingFromColumnParser = RingFromColumnParser<CartesianGeometry, CartesianRing, PointFromColumnParser<CartesianPoint>>;
-using CartesianPolygonFromColumnParser = PolygonFromColumnParser<CartesianGeometry, CartesianPolygon, CartesianRingFromColumnParser>;
-using CartesianMultiPolygonFromColumnParser = MultiPolygonFromColumnParser<CartesianGeometry, CartesianMultiPolygon, CartesianPolygonFromColumnParser>;
-
-using CartesianGeometryFromColumnParser = boost::variant<
-    PointFromColumnParser<CartesianPoint>,
-    CartesianRingFromColumnParser,
-    CartesianPolygonFromColumnParser,
-    CartesianMultiPolygonFromColumnParser
+template <typename Point>
+using GeometryFromColumnParser = boost::variant<
+    PointFromColumnParser<Point>,
+    RingFromColumnParser<Point>,
+    PolygonFromColumnParser<Point>,
+    MultiPolygonFromColumnParser<Point>
 >;
 
-CartesianGeometry createContainer(const CartesianGeometryFromColumnParser & parser);
+template <typename Point>
+Geometry<Point> createContainer(const GeometryFromColumnParser<Point> & parser);
 
-void get(const CartesianGeometryFromColumnParser & parser, CartesianGeometry & container, size_t i);
+extern template Geometry<CartesianPoint> createContainer(const GeometryFromColumnParser<CartesianPoint> & parser);
+extern template Geometry<GeographicPoint> createContainer(const GeometryFromColumnParser<GeographicPoint> & parser);
 
-CartesianGeometryFromColumnParser makeCartesianGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+template <typename Point>
+void get(const GeometryFromColumnParser<Point> & parser, Geometry<Point> & container, size_t i);
 
-/// Geographic coordinates 
+extern template void get(const GeometryFromColumnParser<CartesianPoint> & parser, Geometry<CartesianPoint> & container, size_t i);
+extern template void get(const GeometryFromColumnParser<GeographicPoint> & parser, Geometry<GeographicPoint> & container, size_t i);
 
-using GeographicRingFromColumnParser = RingFromColumnParser<GeographicGeometry, GeographicRing, PointFromColumnParser<GeographicPoint>>;
-using GeographicPolygonFromColumnParser = PolygonFromColumnParser<GeographicGeometry, GeographicPolygon, GeographicRingFromColumnParser>;
-using GeographicMultiPolygonFromColumnParser = MultiPolygonFromColumnParser<GeographicGeometry, GeographicMultiPolygon, GeographicPolygonFromColumnParser>;
+template <typename Point>
+GeometryFromColumnParser<Point> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
-using GeographicGeometryFromColumnParser = boost::variant<
-    PointFromColumnParser<GeographicPoint>,
-    GeographicRingFromColumnParser,
-    GeographicPolygonFromColumnParser,
-    GeographicMultiPolygonFromColumnParser
->;
+extern template GeometryFromColumnParser<CartesianPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
+extern template GeometryFromColumnParser<GeographicPoint> makeGeometryFromColumnParser(const ColumnWithTypeAndName & col);
 
-GeographicGeometry createContainer(const GeographicGeometryFromColumnParser & parser);
-
-void get(const GeographicGeometryFromColumnParser & parser, GeographicGeometry & container, size_t i);
-
-GeographicGeometryFromColumnParser makeGeographicGeometryFromColumnParser(const ColumnWithTypeAndName & col);
-
-
-class CartesianPointSerializerVisitor : public boost::static_visitor<void>
+/// To serialize Geographic or Cartesian point (a pair of numbers in both cases).
+template <typename Point>
+class PointSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    CartesianPointSerializerVisitor()
-        : x(ColumnFloat64::create())
-        , y(ColumnFloat64::create())
+    PointSerializerVisitor()
+        : first(ColumnFloat64::create())
+        , second(ColumnFloat64::create())
     {}
 
-    CartesianPointSerializerVisitor(size_t n)
-        : x(ColumnFloat64::create(n))
-        , y(ColumnFloat64::create(n))
+    PointSerializerVisitor(size_t n)
+        : first(ColumnFloat64::create(n))
+        , second(ColumnFloat64::create(n))
     {}
 
-    void operator()(const CartesianPoint & point)
+    void operator()(const Point & point)
     {
-        x->insertValue(point.get<0>());
-        y->insertValue(point.get<1>());
+        first->insertValue(point.template get<0>());
+        second->insertValue(point.template get<1>());
     }
 
-    void operator()(const CartesianRing & ring)
+    void operator()(const Ring<Point> & ring)
     {
         if (ring.size() != 1) {
             throw Exception("Unable to write ring of size " + toString(ring.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -292,7 +295,7 @@ public:
         (*this)(ring[0]);
     }
 
-    void operator()(const CartesianPolygon & polygon)
+    void operator()(const Polygon<Point> & polygon)
     {
         if (polygon.inners().size() != 0) {
             throw Exception("Unable to write polygon with holes to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -300,7 +303,7 @@ public:
         (*this)(polygon.outer());
     }
 
-    void operator()(const CartesianMultiPolygon & multi_polygon)
+    void operator()(const MultiPolygon<Point> & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to point column", ErrorCodes::BAD_ARGUMENTS);
@@ -311,29 +314,30 @@ public:
     ColumnPtr finalize()
     {
         Columns columns(2);
-        columns[0] = std::move(x);
-        columns[1] = std::move(y);
+        columns[0] = std::move(first);
+        columns[1] = std::move(second);
 
         return ColumnTuple::create(columns);
     }
 
 private:
-    ColumnFloat64::MutablePtr x;
-    ColumnFloat64::MutablePtr y;
+    ColumnFloat64::MutablePtr first;
+    ColumnFloat64::MutablePtr second;
 };
 
-class CartesianRingSerializerVisitor : public boost::static_visitor<void>
+template <typename Point>
+class RingSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    CartesianRingSerializerVisitor()
+    RingSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    CartesianRingSerializerVisitor(size_t n)
+    RingSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const CartesianPoint & point)
+    void operator()(const Point & point)
     {
         size++;
         offsets->insertValue(size);
@@ -341,7 +345,7 @@ public:
         pointSerializer(point);
     }
 
-    void operator()(const CartesianRing & ring)
+    void operator()(const Ring<Point> & ring)
     {
         size += ring.size();
         offsets->insertValue(size);
@@ -351,7 +355,7 @@ public:
         }
     }
 
-    void operator()(const CartesianPolygon & polygon)
+    void operator()(const Polygon<Point> & polygon)
     {
         if (polygon.inners().size() != 0) {
             throw Exception("Unable to write polygon with holes to ring column", ErrorCodes::BAD_ARGUMENTS);
@@ -359,7 +363,7 @@ public:
         (*this)(polygon.outer());
     }
 
-    void operator()(const CartesianMultiPolygon & multi_polygon)
+    void operator()(const MultiPolygon<Point> & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to ring column", ErrorCodes::BAD_ARGUMENTS);
@@ -374,36 +378,37 @@ public:
 
 private:
     size_t size = 0;
-    CartesianPointSerializerVisitor pointSerializer;
+    PointSerializerVisitor<Point> pointSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
-class CartesianPolygonSerializerVisitor : public boost::static_visitor<void>
+template <typename Point>
+class PolygonSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    CartesianPolygonSerializerVisitor()
+    PolygonSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    CartesianPolygonSerializerVisitor(size_t n)
+    PolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const CartesianPoint & point)
+    void operator()(const Point & point)
     {
         size++;
         offsets->insertValue(size);
         ringSerializer(point);
     }
 
-    void operator()(const CartesianRing & ring)
+    void operator()(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
         ringSerializer(ring);
     }
 
-    void operator()(const CartesianPolygon & polygon)
+    void operator()(const Polygon<Point> & polygon)
     {
         size += 1 + polygon.inners().size();
         offsets->insertValue(size);
@@ -414,7 +419,7 @@ public:
         }
     }
 
-    void operator()(const CartesianMultiPolygon & multi_polygon)
+    void operator()(const MultiPolygon<Point> & multi_polygon)
     {
         if (multi_polygon.size() != 1) {
             throw Exception("Unable to write multi-polygon of size " + toString(multi_polygon.size()) + " != 1 to polygon column", ErrorCodes::BAD_ARGUMENTS);
@@ -429,43 +434,44 @@ public:
 
 private:
     size_t size = 0;
-    CartesianRingSerializerVisitor ringSerializer;
+    RingSerializerVisitor<Point> ringSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
-class CartesianMultiPolygonSerializerVisitor : public boost::static_visitor<void>
+template <typename Point>
+class MultiPolygonSerializerVisitor : public boost::static_visitor<void>
 {
 public:
-    CartesianMultiPolygonSerializerVisitor()
+    MultiPolygonSerializerVisitor()
         : offsets(ColumnUInt64::create())
     {}
 
-    CartesianMultiPolygonSerializerVisitor(size_t n)
+    MultiPolygonSerializerVisitor(size_t n)
         : offsets(ColumnUInt64::create(n))
     {}
 
-    void operator()(const CartesianPoint & point)
+    void operator()(const Point & point)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(point);
     }
 
-    void operator()(const CartesianRing & ring)
+    void operator()(const Ring<Point> & ring)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(ring);
     }
 
-    void operator()(const CartesianPolygon & polygon)
+    void operator()(const Polygon<Point> & polygon)
     {
         size++;
         offsets->insertValue(size);
         polygonSerializer(polygon);
     }
 
-    void operator()(const CartesianMultiPolygon & multi_polygon)
+    void operator()(const MultiPolygon<Point> & multi_polygon)
     {
         size += multi_polygon.size();
         offsets->insertValue(size);
@@ -482,7 +488,7 @@ public:
 
 private:
     size_t size = 0;
-    CartesianPolygonSerializerVisitor polygonSerializer;
+    PolygonSerializerVisitor<Point> polygonSerializer;
     ColumnUInt64::MutablePtr offsets;
 };
 
@@ -503,9 +509,16 @@ private:
     Visitor visitor;
 };
 
-using CartesianPointSerializer = GeometrySerializer<CartesianGeometry, CartesianPointSerializerVisitor>;
-using CartesianRingSerializer = GeometrySerializer<CartesianGeometry, CartesianRingSerializerVisitor>;
-using CartesianPolygonSerializer = GeometrySerializer<CartesianGeometry, CartesianPolygonSerializerVisitor>;
-using CartesianMultiPolygonSerializer = GeometrySerializer<CartesianGeometry, CartesianMultiPolygonSerializerVisitor>;
+template <typename Point>
+using PointSerializer = GeometrySerializer<Geometry<Point>, PointSerializerVisitor<Point>>;
+
+template <typename Point>
+using RingSerializer = GeometrySerializer<Geometry<Point>, RingSerializerVisitor<Point>>;
+
+template <typename Point>
+using PolygonSerializer = GeometrySerializer<Geometry<Point>, PolygonSerializerVisitor<Point>>;
+
+template <typename Point>
+using MultiPolygonSerializer = GeometrySerializer<Geometry<Point>, MultiPolygonSerializerVisitor<Point>>;
 
 }

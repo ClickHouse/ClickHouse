@@ -70,9 +70,9 @@ public:
 
             bool is_const = static_cast<bool>(const_col);
 
-            return std::pair<bool, CartesianGeometryFromColumnParser>{is_const, is_const ?
-                makeCartesianGeometryFromColumnParser(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[i].type, arguments[i].name)) :
-                makeCartesianGeometryFromColumnParser(arguments[i])};
+            return std::pair<bool, GeometryFromColumnParser<CartesianPoint>>{is_const, is_const ?
+                makeGeometryFromColumnParser<CartesianPoint>(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[i].type, arguments[i].name)) :
+                makeGeometryFromColumnParser<CartesianPoint>(arguments[i])};
         };
 
         auto [is_first_polygon_const, first_parser] = get_parser(0);

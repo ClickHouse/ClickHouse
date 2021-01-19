@@ -63,13 +63,13 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto first_parser = makeCartesianGeometryFromColumnParser(arguments[0]);
+        auto first_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
         auto first_container = createContainer(first_parser);
 
-        auto second_parser = makeCartesianGeometryFromColumnParser(arguments[1]);
+        auto second_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[1]);
         auto second_container = createContainer(second_parser);
 
-        CartesianMultiPolygonSerializer serializer;
+        MultiPolygonSerializer<CartesianPoint> serializer;
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
