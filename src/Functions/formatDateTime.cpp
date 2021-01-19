@@ -272,6 +272,11 @@ private:
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
         }
+
+        static void quarter(char * target, Time source, const DateLUTImpl & timezone)
+        {
+            *target += ToQuarterImpl::execute(source, timezone);
+        }
     };
 
 public:
@@ -619,6 +624,12 @@ public:
                     case 'Y':
                         instructions.emplace_back(&Action<T>::year4, 4);
                         result.append("0000");
+                        break;
+
+                    // Quarter (1-4)
+                    case 'Q':
+                        instructions.template emplace_back(&Action<T>::quarter, 1);
+                        result.append("0");
                         break;
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
