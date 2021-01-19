@@ -74,6 +74,7 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
+    PolygonsUnion.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -378,6 +379,14 @@ SRCS(
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
+    polygonArea.cpp
+    polygonConvexHull.cpp
+    polygonPerimeter.cpp
+    polygonsDistance.cpp
+    polygonsEquals.cpp
+    polygonsIntersection.cpp
+    polygonsSymDifference.cpp
+    polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
@@ -390,9 +399,9 @@ SRCS(
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
+    readWkt.cpp
     regexpQuoteMeta.cpp
     registerFunctions.cpp
-    readWkt.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
     registerFunctionsConditional.cpp
