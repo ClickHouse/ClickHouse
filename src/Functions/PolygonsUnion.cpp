@@ -68,6 +68,7 @@ public:
             get<CartesianPoint>(second_parser, second_container, i);
 
             Geometry<CartesianPoint> polygons_union = CartesianMultiPolygon({{{{}}}});
+            /// NOLINTNEXTLINE
             boost::geometry::union_(
                 boost::get<CartesianMultiPolygon>(first_container),
                 boost::get<CartesianMultiPolygon>(second_container),
