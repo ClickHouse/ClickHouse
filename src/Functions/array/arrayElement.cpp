@@ -231,7 +231,7 @@ struct ArrayElementNumImpl
                 if (builder)
                     builder.update(j);
             }
-            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
+            else if (index < 0 && static_cast<size_t>(-(index + 1)) < array_size)
             {
                 size_t j = offsets[i] + index;
                 result[i] = data[j];
