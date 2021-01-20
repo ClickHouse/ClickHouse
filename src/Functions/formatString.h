@@ -248,7 +248,6 @@ struct FormatImpl
         /// Strings without null termination.
         for (size_t i = 1; i < substrings.size(); ++i)
         {
-            /// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
             final_size += data[index_positions[i - 1]]->size();
             /// Fixed strings do not have zero terminating character.
             if (offsets[index_positions[i - 1]])

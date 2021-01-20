@@ -171,7 +171,6 @@ void StorageSystemQuotaUsage::fillDataImpl(
         for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
         {
             const auto & type_info = ResourceTypeInfo::get(resource_type);
-            /// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
             addValue(*column_max[resource_type], *column_max_null_map[resource_type], interval->max[resource_type], type_info);
             addValue(*column_usage[resource_type], *column_usage_null_map[resource_type], interval->used[resource_type], type_info);
         }
