@@ -10,6 +10,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -74,6 +76,13 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
             low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
 
         return get("LowCardinality", low_cardinality_params);
+    }
+
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo("DataType", family_name);
     }
 
     return findCreatorByName(family_name)(parameters);

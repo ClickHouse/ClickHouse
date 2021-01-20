@@ -189,6 +189,10 @@ StoragePtr StorageFactory::get(
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
+
+    if (local_context.hasQueryContext() && context.getSettingsRef().log_queries)
+        local_context.getQueryContext().addQueryFactoriesInfo("Storage", name);
+
     return res;
 }
 

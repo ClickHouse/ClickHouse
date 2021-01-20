@@ -58,6 +58,15 @@ struct QueryLogElement
     std::set<String> query_tables;
     std::set<String> query_columns;
 
+    std::set<String> factory_aggregate_functions;
+    std::set<String> factory_databases;
+    std::set<String> factory_data_types;
+    std::set<String> factory_dictionaries;
+    std::set<String> factory_formats;
+    std::set<String> factory_functions;
+    std::set<String> factory_storages;
+    std::set<String> factory_table_functions;
+
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;

@@ -1,0 +1,13 @@
+1	100
+aggreagte_functions	table_functions	functions
+['count','uniq']	['numbers']	['addDays','plus','toDate']
+
+\N
+\N
+functions	data_types
+['cast','toTypeName']	['Nullable','UInt8']
+
+data_types	databases	storages
+[]	['Atomic']	[]
+['DateTime','String']	[]	['Memory']
+
