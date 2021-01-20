@@ -148,15 +148,18 @@ public:
 
     void get(Ring<Point> & container, size_t i) const
     {
-        size_t l = offsets[i - 1];
-        size_t r = offsets[i];
+        size_t left = i == 0 ? 0 : offsets[i - 1];
+        size_t right = offsets[i];
+
+        if (left == right)
+            throw Exception("Empty polygons are not allowed in line " + toString(i), ErrorCodes::BAD_ARGUMENTS);
 
         // reserve extra point for case when polygon is open
-        container.reserve(r - l + 1);
-        container.resize(r - l);
+        container.reserve(right - left + 1);
+        container.resize(right - left);
 
-        for (size_t j = l; j < r; j++)
-            point_parser.get(container[j - l], j);
+        for (size_t j = left; j < right; j++)
+            point_parser.get(container[j - left], j);
 
         // make ring closed
         if (!boost::geometry::equals(container[0], container.back()))
