@@ -72,15 +72,10 @@ SKIP_LIST = [
     "01558_ttest_scipy",
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
-    "01586_storage_join_low_cardinality_key",
     "01591_window_functions",  # problem with global echo-mode
-    "01599_multiline_input_and_singleline_comments",
-    "01600_benchmark_query",
+    "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
-    "01601_proxy_protocol",
-    "01606_git_import",
     "01610_client_spawn_editor",
-    "01621_clickhouse_compressor",
 ]
 
 
@@ -119,6 +114,7 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map={}):
         'CLICKHOUSE_DATABASE': database,
         'CLICKHOUSE_PORT_TCP': str(server.tcp_port),
         'CLICKHOUSE_PORT_TCP_SECURE': str(server.tcps_port),
+        'CLICKHOUSE_PORT_TCP_WITH_PROXY': str(server.proxy_port),
         'CLICKHOUSE_PORT_HTTP': str(server.http_port),
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
         'CLICKHOUSE_TMP': server.tmp_dir,

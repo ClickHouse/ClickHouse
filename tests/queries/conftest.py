@@ -25,6 +25,8 @@ def bin_prefix(cmdopts):
     prefix = 'clickhouse'
     if cmdopts['builddir'] is not None:
         prefix = os.path.join(cmdopts['builddir'], 'programs', prefix)
+    if not os.path.isabs(prefix):
+        prefix = os.path.abspath(prefix)
     return prefix
 
 

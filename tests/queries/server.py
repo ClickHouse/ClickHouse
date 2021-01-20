@@ -37,6 +37,7 @@ class ServerThread(threading.Thread):
         self.tcps_port = port_base + 4
         self.https_port = port_base + 5
         self.odbc_port = port_base + 6
+        self.proxy_port = port_base + 7
 
         self._args = [
             '--config-file={config_path}'.format(config_path=self.server_config),
@@ -44,6 +45,7 @@ class ServerThread(threading.Thread):
             '--tcp_port={tcp_port}'.format(tcp_port=self.tcp_port),
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
+            '--tcp_with_proxy_port={proxy_port}'.format(proxy_port=self.proxy_port),
             # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
