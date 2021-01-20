@@ -63,7 +63,7 @@ class Dwarf final
     // be live for as long as the passed-in Elf is live.
 public:
     /** Create a DWARF parser around an ELF file. */
-    explicit Dwarf(const Elf & elf);
+    explicit Dwarf(const std::shared_ptr<Elf> & elf);
 
     /**
      * More than one location info may exist if current frame is an inline
@@ -78,7 +78,7 @@ public:
     class Path
     {
     public:
-        Path() {}
+        Path() = default;
 
         Path(std::string_view baseDir, std::string_view subDir, std::string_view file);
 
@@ -156,7 +156,7 @@ public:
         // Mangled symbol name. Use `folly::demangle()` to demangle it.
         const char * name = nullptr;
         LocationInfo location;
-        std::shared_ptr<Elf> file;
+        std::shared_ptr<const Elf> file;
 
         void clear() { *this = SymbolizedFrame(); }
     };
@@ -171,7 +171,7 @@ private:
 
     void init();
 
-    const Elf * elf_;
+    std::shared_ptr<const Elf> elf_;
 
     // DWARF section made up of chunks, each prefixed with a length header.
     // The length indicates whether the chunk is DWARF-32 or DWARF-64, which

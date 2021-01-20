@@ -111,7 +111,7 @@ private:
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            auto dwarf_it = cache.dwarfs.try_emplace(object->name, *object->elf).first;
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
 

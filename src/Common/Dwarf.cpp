@@ -98,7 +98,7 @@ namespace ErrorCodes
 }
 
 
-Dwarf::Dwarf(const Elf & elf) : elf_(&elf)
+Dwarf::Dwarf(const std::shared_ptr<Elf> & elf) : elf_(elf)
 {
     init();
 }
@@ -176,7 +176,7 @@ uint64_t readOffset(std::string_view & sp, bool is64Bit)
 // Read "len" bytes
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
-    SAFE_CHECK(len >= sp.size(), "invalid string length");
+    SAFE_CHECK(len <= sp.size(), "invalid string length: " + std::to_string(len) + " vs. " + std::to_string(sp.size()));
     std::string_view ret(sp.data(), len);
     sp.remove_prefix(len);
     return ret;
@@ -382,7 +382,7 @@ void Dwarf::init()
         || !getSection(".debug_line", &line_)
         || !getSection(".debug_str", &strings_))
     {
-        elf_ = nullptr;
+        elf_.reset();
         return;
     }
 
@@ -795,6 +795,7 @@ bool Dwarf::findLocation(
     {
         // Re-get the compilation unit with abbreviation cached.
         cu.abbr_cache.clear();
+        cu.abbr_cache.resize(kMaxAbbreviationEntries);
         readCompilationUnitAbbrs(abbrev_, cu);
 
         // Find the subprogram that matches the given address.

@@ -217,7 +217,7 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
             current_frame.object = object->name;
             if (std::filesystem::exists(current_frame.object.value()))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
                 std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
@@ -332,6 +332,7 @@ static void toStringEveryLineImpl(
 
     for (size_t i = offset; i < size; ++i)
     {
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         const void * virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -343,10 +344,9 @@ static void toStringEveryLineImpl(
         {
             if (std::filesystem::exists(object->name))
             {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;  // TODO: mix with StackTrace frames
                 auto mode = fatal ? DB::Dwarf::LocationInfoMode::FULL_WITH_INLINE : DB::Dwarf::LocationInfoMode::FAST;
                 if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
                     out << location.file.toString() << ":" << location.line << ": ";
@@ -364,6 +364,14 @@ static void toStringEveryLineImpl(
 
         out << " @ " << physical_addr;
         out << " in " << (object ? object->name : "?");
+
+        for (size_t j = 0; j < inline_frames.size(); ++j)
+        {
+            const auto & frame = inline_frames[j];
+            int status = 0;
+            callback(fmt::format("{}.{}. inlined from {}:{}: {}",
+                     i, j+1, frame.location.file.toString(), frame.location.line, demangle(frame.name, status)));
+        }
 
         callback(out.str());
         out.str({});

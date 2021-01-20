@@ -47,7 +47,7 @@ int main(int argc, char ** argv)
         std::cerr << "dladdr: Not found\n";
 
     const auto * object = symbol_index.findObject(getAddress());
-    Dwarf dwarf(*object->elf);
+    Dwarf dwarf(object->elf);
 
     Dwarf::LocationInfo location;
     std::vector<Dwarf::SymbolizedFrame> frames;
