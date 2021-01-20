@@ -319,7 +319,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(b
 {
     LOG_DEBUG(log, "process epoll events");
     int event_fd;
-    ReplicaStatePtr replica;
+    ReplicaStatePtr replica = nullptr;
     bool finish = false;
     while (!finish)
     {
