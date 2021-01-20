@@ -375,7 +375,7 @@ def run_tests_array(all_tests_with_params):
                             failures_chain += 1
                             status += MSG_FAIL
                             status += print_test_time(total_time)
-                            status += f' - return code {proc.returncode}\n'
+                            status += ' - return code {}\n'.format(proc.returncode)
 
                             if stderr:
                                 status += stderr
