@@ -37,7 +37,7 @@ public:
             const Block & output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
-                window_function_descriptions);
+                functions);
 
     ~WindowTransform() override;
 
@@ -49,7 +49,7 @@ public:
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
     /*
-     * (former) Implemetation of ISimpleTransform.
+     * (former) Implementation of ISimpleTransform.
      */
     void transform(Chunk & chunk) /*override*/;
 
