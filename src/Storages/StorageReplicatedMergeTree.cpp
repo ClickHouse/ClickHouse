@@ -1498,11 +1498,28 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         {
             auto zookeeper = getZooKeeper();
             String zookeeper_node = zookeeper_path + "/zero_copy_s3/merged/" + entry.new_part_name;
-            zookeeper->createAncestors(zookeeper_node);
-            auto code = zookeeper->tryCreate(zookeeper_node, "lock", zkutil::CreateMode::Ephemeral);
-            /// Someone else created or started create this merge
-            if (code == Coordination::Error::ZNODEEXISTS)
-                return false;
+
+            /// In rare case other replica can remove path between createAncestors and tryCreate
+            /// So we make up to 5 attempts to make a lock
+            for (int attempts = 5; attempts > 0; --attempts)
+            {
+                try
+                {
+                    zookeeper->createAncestors(zookeeper_node);
+                    auto code = zookeeper->tryCreate(zookeeper_node, "lock", zkutil::CreateMode::Ephemeral);
+                    /// Someone else created or started create this merge
+                    if (code == Coordination::Error::ZNODEEXISTS)
+                        return false;
+                    if (code != Coordination::Error::ZNONODE)
+                        break;
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    if (e.code == Coordination::Error::ZNONODE)
+                        continue;
+                    throw;
+                }
+            }
         }
     }
 
@@ -1930,7 +1947,7 @@ bool StorageReplicatedMergeTree::executeFetchShared(ReplicatedMergeTreeLogEntry 
 
     try
     {
-        if (!fetchPart(entry.new_part_name, metadata_snapshot, zookeeper_path + "/replicas/" + entry.source_replica, false, entry.quorum, 
+        if (!fetchPart(entry.new_part_name, metadata_snapshot, zookeeper_path + "/replicas/" + entry.source_replica, false, entry.quorum,
                 nullptr, true, entry.disk, entry.path))
             return false;
     }
@@ -3624,7 +3641,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
             {
                 if (part->volume->getDisk()->getName() != replaced_disk->getName())
                     throw Exception("Part " + part->name + " fetched on wrong disk " + part->volume->getDisk()->getName(), ErrorCodes::LOGICAL_ERROR);
-                replaced_disk->removeIfExists(replaced_part_path);
+                replaced_disk->removeFileIfExists(replaced_part_path);
                 replaced_disk->moveDirectory(part->getFullRelativePath(), replaced_part_path);
             }
             else

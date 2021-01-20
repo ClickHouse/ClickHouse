@@ -9,7 +9,6 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/createWriteBufferFromFileBase.h>
 #include <ext/scope_guard.h>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -619,11 +618,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
 
     DiskPtr disk = disks_s3[0];
 
-    for (const auto & disk_ : disks_s3)
+    for (const auto & disk_s3 : disks_s3)
     {
-        if (disk_->checkUniqueId(part_id))
+        if (disk_s3->checkUniqueId(part_id))
         {
-            disk = disk_;
+            disk = disk_s3;
             break;
         }
     }
@@ -662,7 +661,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         String metadata_file = fullPath(disk, data_path);
 
         {
-            auto file_out = createWriteBufferFromFileBase(metadata_file, 0, 0, DBMS_DEFAULT_BUFFER_SIZE, -1);
+            auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
 
             HashingWriteBuffer hashing_out(*file_out);
 

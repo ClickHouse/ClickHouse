@@ -935,8 +935,6 @@ bool DiskS3::checkUniqueId(const String & id) const
     throwIfError(resp);
     Aws::Vector<Aws::S3::Model::Object> object_list = resp.GetResult().GetContents();
 
-    if (object_list.size() < 1)
-        return false;
     for (const auto & object : object_list)
         if (object.GetKey() == id)
             return true;

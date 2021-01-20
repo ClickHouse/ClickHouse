@@ -1132,7 +1132,9 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
 
     if (disk->getType() == "s3")
     {
-        is_fetched = tryToFetchIfShared(disk, path_to_clone + "/" + name);
+        auto data_settings = storage.getSettings();
+        if (data_settings->allow_s3_zero_copy_replication)
+            is_fetched = tryToFetchIfShared(disk, path_to_clone + "/" + name);
     }
 
     if (!is_fetched)
@@ -1301,8 +1303,23 @@ void IMergeTreeDataPart::lockSharedData() const
 
     LOG_TRACE(storage.log, "Set zookeeper lock {}", zookeeper_node);
 
-    zk.zookeeper->createAncestors(zookeeper_node);
-    zk.zookeeper->createIfNotExists(zookeeper_node, "lock");
+    /// In rare case other replica can remove path between createAncestors and createIfNotExists
+    /// So we make up to 5 attempts
+    for (int attempts = 5; attempts > 0; --attempts)
+    {
+        try
+        {
+            zk.zookeeper->createAncestors(zookeeper_node);
+            zk.zookeeper->createIfNotExists(zookeeper_node, "lock");
+            break;
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (e.code == Coordination::Error::ZNONODE)
+                continue;
+            throw;
+        }
+    }
 }
 
 bool IMergeTreeDataPart::unlockSharedData() const
@@ -1476,7 +1493,7 @@ bool IMergeTreeDataPart::tryToFetchIfShared(const DiskPtr & disk, const String &
     log_entry.disk = disk;
     log_entry.path = path;
 
-    /// TODO: !!! Fix const usage !!!
+    /// TODO: Fix const usage
     StorageReplicatedMergeTree *replicated_storage_nc = const_cast<StorageReplicatedMergeTree *>(replicated_storage);
 
     return replicated_storage_nc->executeFetchShared(log_entry);
