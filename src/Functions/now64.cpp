@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_CLOCK_GETTIME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -44,29 +45,77 @@ Field nowSubsecond(UInt32 scale)
                         scale);
 }
 
-class FunctionNow64 : public IFunction
+/// Get the current time. (It is a constant, it is evaluated once for the entire query.)
+class ExecutableFunctionNow64 : public IExecutableFunctionImpl
+{
+public:
+    explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
+
+    String getName() const override { return "now64"; }
+
+    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumnConst(input_rows_count, time_value);
+    }
+
+private:
+    Field time_value;
+};
+
+class FunctionBaseNow64 : public IFunctionBaseImpl
+{
+public:
+    explicit FunctionBaseNow64(Field time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
+
+    String getName() const override { return "now64"; }
+
+    const DataTypes & getArgumentTypes() const override
+    {
+        static const DataTypes argument_types;
+        return argument_types;
+    }
+
+    const DataTypePtr & getResultType() const override
+    {
+        return return_type;
+    }
+
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    {
+        return std::make_unique<ExecutableFunctionNow64>(time_value);
+    }
+
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
+private:
+    Field time_value;
+    DataTypePtr return_type;
+};
+
+class Now64OverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "now64";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow64>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{0}; }
     bool isDeterministic() const override { return false; }
 
-    // Return type depends on argument value.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<Now64OverloadResolver>(); }
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
 
-        // Type check is similar to the validateArgumentType, trying to keep error codes and messages as close to the said function as possible.
-        if (!arguments.empty())
+        if (arguments.size() > 1)
+        {
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        }
+        if (arguments.size() == 1)
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
@@ -82,10 +131,10 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
     {
         const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_type.get())->getScale();
-        return result_type->createColumnConst(input_rows_count, nowSubsecond(scale));
+        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), result_type);
     }
 };
 
@@ -93,7 +142,7 @@ public:
 
 void registerFunctionNow64(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNow64>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<Now64OverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }
