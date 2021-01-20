@@ -65,25 +65,25 @@ xfails = {
         [(Fail, issue_14674)],
     "views/materialized view/insert on source table privilege granted directly or via role/:":
         [(Fail, issue_14810)],
-    "privileges/alter ttl/table_type=:/user with some privileges":
+    "privileges:/alter ttl/table_type=:/user with some privileges":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/role with some privileges":
+    "privileges:/alter ttl/table_type=:/role with some privileges":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/user with privileges on cluster":
+    "privileges:/alter ttl/table_type=:/user with privileges on cluster":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/user with privileges from user with grant option":
+    "privileges:/alter ttl/table_type=:/user with privileges from user with grant option":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/user with privileges from role with grant option":
+    "privileges:/alter ttl/table_type=:/user with privileges from role with grant option":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/role with privileges from user with grant option":
+    "privileges:/alter ttl/table_type=:/role with privileges from user with grant option":
         [(Fail, issue_14566)],
-    "privileges/alter ttl/table_type=:/role with privileges from role with grant option":
+    "privileges:/alter ttl/table_type=:/role with privileges from role with grant option":
         [(Fail, issue_14566)],
-    "privileges/distributed table/:/special cases/insert with table on source table of materialized view:":
+    "privileges:/distributed table/:/special cases/insert with table on source table of materialized view:":
         [(Fail, issue_14810)],
-    "privileges/distributed table/cluster tests/cluster='sharded*":
+    "privileges:/distributed table/cluster tests/cluster='sharded*":
         [(Fail, issue_15165)],
-    "privileges/distributed table/cluster tests/cluster=:/special cases/insert with table on source table of materialized view privilege granted directly or via role/:":
+    "privileges:/distributed table/cluster tests/cluster=:/special cases/insert with table on source table of materialized view privilege granted directly or via role/:":
         [(Fail, issue_14810)],
     "views/materialized view/select from implicit target table privilege granted directly or via role/select from implicit target table, privilege granted directly":
         [(Fail, ".inner table is not created as expected")],
@@ -97,39 +97,39 @@ xfails = {
         [(Fail, ".inner table is not created as expected")],
     "views/materialized view/select from source table privilege granted directly or via role/select from implicit target table, privilege granted through a role":
         [(Fail, ".inner table is not created as expected")],
-    "privileges/alter move/:/:/:/:/move partition to implicit target table of a materialized view":
+    "privileges:/alter move/:/:/:/:/move partition to implicit target table of a materialized view":
         [(Fail, ".inner table is not created as expected")],
-    "privileges/alter move/:/:/:/:/user without ALTER MOVE PARTITION privilege/":
+    "privileges:/alter move/:/:/:/:/user without ALTER MOVE PARTITION privilege/":
         [(Fail, issue_16403)],
-    "privileges/alter move/:/:/:/:/user with revoked ALTER MOVE PARTITION privilege/":
+    "privileges:/alter move/:/:/:/:/user with revoked ALTER MOVE PARTITION privilege/":
         [(Fail, issue_16403)],
-    "privileges/create table/create with join query privilege granted directly or via role/:":
+    "privileges:/create table/create with join query privilege granted directly or via role/:":
         [(Fail, issue_17653)],
-    "privileges/create table/create with join union subquery privilege granted directly or via role/:":
+    "privileges:/create table/create with join union subquery privilege granted directly or via role/:":
         [(Fail, issue_17653)],
-    "privileges/create table/create with nested tables privilege granted directly or via role/:":
+    "privileges:/create table/create with nested tables privilege granted directly or via role/:":
         [(Fail, issue_17653)],
-    "privileges/kill mutation/no privilege/kill mutation on cluster":
+    "privileges:/kill mutation/no privilege/kill mutation on cluster":
         [(Fail, issue_17146)],
-    "privileges/kill query/privilege granted directly or via role/:/":
+    "privileges:/kill query/privilege granted directly or via role/:/":
         [(Fail, issue_17147)],
-    "privileges/show dictionaries/:/check privilege/:/exists/EXISTS with privilege":
+    "privileges:/show dictionaries/:/check privilege/:/exists/EXISTS with privilege":
         [(Fail, issue_17655)],
-    "privileges/public tables/sensitive tables":
+    "privileges:/public tables/sensitive tables":
         [(Fail, issue_18110)],
-    "privileges/system merges/:/:/:/:/SYSTEM:":
+    "privileges:/system merges/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system ttl merges/:/:/:/:/SYSTEM:":
+    "privileges:/system ttl merges/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system moves/:/:/:/:/SYSTEM:":
+    "privileges:/system moves/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system sends/:/:/:/:/SYSTEM:":
+    "privileges:/system sends/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system fetches/:/:/:/:/SYSTEM:":
+    "privileges:/system fetches/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system restart replica/:/:/:/:/SYSTEM:":
+    "privileges:/system restart replica/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
-    "privileges/system replication queues/:/:/:/:/SYSTEM:":
+    "privileges:/system replication queues/:/:/:/:/SYSTEM:":
         [(Fail, issue_18206)],
 }
 
@@ -161,7 +161,8 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
             self.context.parallel = parallel
 
         Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
+        for i in range(5):
+            Feature(run=load("rbac.tests.privileges.feature", "feature"), name=f"privileges_{i}")
         Feature(run=load("rbac.tests.views.feature", "feature"), flags=TE)
 
 if main():
