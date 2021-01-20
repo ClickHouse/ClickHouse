@@ -85,19 +85,30 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Вы можете определить [первичный ключ](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) при создании таблицы. Первичный ключ может быть указан двумя способами:
 
-- В списке столбцов:
+- в списке столбцов:
 
 ``` sql
-CREATE TABLE db.table_name (name1 type1, name2 type2, ..., PRIMARY KEY (expr1[, expr2,...])]) ENGINE = engine;
+CREATE TABLE db.table_name 
+( 
+    name1 type1, name2 type2, ..., 
+    PRIMARY KEY(expr1[, expr2,...])]
+) 
+ENGINE = engine;
 ```
 
-- Вне списка столбцов:
+- вне списка столбцов:
 
 ``` sql
-CREATE TABLE db.table_name (name1 type1, name2 type2, ...) ENGINE = engine PRIMARY KEY(expr1[, expr2,...]);
+CREATE TABLE db.table_name
+( 
+    name1 type1, name2 type2, ...
+) 
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-Вы не можете сочетать оба способа в одном запросе.
+!!! warning "Предупреждение"
+    Вы не можете сочетать оба способа в одном запросе.
 
 ### Ограничения (constraints) {#constraints}
 
