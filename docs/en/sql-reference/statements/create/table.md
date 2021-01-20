@@ -111,19 +111,30 @@ It is not possible to set default values for elements in nested data structures.
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
 
-- inside the column list
+- Inside the column list
 
 ``` sql
-CREATE TABLE db.table_name (name1 type1, name2 type2, ..., PRIMARY KEY (expr1[, expr2,...])]) ENGINE = engine;
+CREATE TABLE db.table_name 
+( 
+    name1 type1, name2 type2, ..., 
+    PRIMARY KEY(expr1[, expr2,...])]
+) 
+ENGINE = engine;
 ```
 
-- outside the column list
+- Outside the column list
 
 ``` sql
-CREATE TABLE db.table_name (name1 type1, name2 type2, ...) ENGINE = engine PRIMARY KEY(expr1[, expr2,...]);
+CREATE TABLE db.table_name
+( 
+    name1 type1, name2 type2, ...
+) 
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-You can't combine both ways in one query.
+!!! warning "Warning"
+    You can't combine both ways in one query.
 
 ## Constraints {#constraints}
 
