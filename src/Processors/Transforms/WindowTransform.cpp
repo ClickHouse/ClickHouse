@@ -10,15 +10,15 @@ namespace DB
 WindowTransform::WindowTransform(const Block & input_header_,
         const Block & output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & window_function_descriptions
-        )
-    : ISimpleTransform(input_header_, output_header_,
-        false /* skip_empty_chunks */)
+        const std::vector<WindowFunctionDescription> & functions)
+    : IProcessor({input_header_}, {output_header_})
+    , input(inputs.front())
+    , output(outputs.front())
     , input_header(input_header_)
     , window_description(window_description_)
 {
-    workspaces.reserve(window_function_descriptions.size());
-    for (const auto & f : window_function_descriptions)
+    workspaces.reserve(functions.size());
+    for (const auto & f : functions)
     {
         WindowFunctionWorkspace workspace;
         workspace.window_function = f;
@@ -185,5 +185,88 @@ void WindowTransform::transform(Chunk & chunk)
 
     chunk.setColumns(std::move(columns), num_rows);
 }
+
+IProcessor::Status WindowTransform::prepare()
+{
+    /// Check can output.
+    if (output.isFinished())
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    /// Output if has data.
+    if (has_output)
+    {
+        output.pushData(std::move(output_data));
+        has_output = false;
+
+        return Status::PortFull;
+    }
+
+    /// Check can input.
+    if (!has_input)
+    {
+        if (input.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        input.setNeeded();
+
+        if (!input.hasData())
+            return Status::NeedData;
+
+        input_data = input.pullData(true /* set_not_needed */);
+        has_input = true;
+
+        if (input_data.exception)
+        {
+            /// No more data needed. Exception will be thrown (or swallowed) later.
+            input.setNotNeeded();
+        }
+    }
+
+    /// Now transform.
+    return Status::Ready;
+}
+
+void WindowTransform::work()
+{
+    if (input_data.exception)
+    {
+        /// Skip transform in case of exception.
+        output_data = std::move(input_data);
+        has_input = false;
+        has_output = true;
+        return;
+    }
+
+    try
+    {
+        transform(input_data.chunk);
+        output_data.chunk.swap(input_data.chunk);
+    }
+    catch (DB::Exception &)
+    {
+        output_data.exception = std::current_exception();
+        has_output = true;
+        has_input = false;
+        return;
+    }
+
+    has_input = false;
+
+    if (output_data.chunk)
+        has_output = true;
+}
+
 
 }

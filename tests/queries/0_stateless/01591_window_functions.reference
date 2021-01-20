@@ -222,3 +222,11 @@ window
 13	13
 21	21
 9	9
+-- ROWS frame
+select
+    sum(number)
+        over (order by number rows between unbounded preceding and current row)
+from numbers(3);
+0
+1
+3
