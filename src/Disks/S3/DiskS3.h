@@ -88,16 +88,14 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        size_t estimated_size,
-        size_t aio_threshold) override;
+        WriteMode mode) override;
 
-    void remove(const String & path) override { removeShared(path, false); }
-
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
+    void removeFileIfExists(const String & path) override;
+    void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
-    void removeShared(const String & path, bool keep_s3) override;
-
+    void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;

@@ -56,6 +56,13 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 }
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_threads;
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
     std::lock_guard lock(mutex);
@@ -201,6 +208,7 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
@@ -216,7 +224,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = std::move(jobs.top().job);
+                /// std::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+                job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
             }
             else
@@ -230,6 +240,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         {
             try
             {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 

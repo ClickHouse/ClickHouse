@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -54,6 +55,14 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeString>(),                                  "current_database"},
         {std::make_shared<DataTypeString>(),                                  "query"},
+        {std::make_shared<DataTypeUInt64>(),                                  "normalized_query_hash"},
+        {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "query_kind"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "databases"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
         {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
@@ -115,6 +124,29 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insert(normalized_query_hash);
+    columns[i++]->insertData(query_kind.data(), query_kind.size());
+
+    {
+        auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto fill_column = [](const std::set<String> & data, ColumnArray & column)
+        {
+            size_t size = 0;
+            for (const auto & name : data)
+            {
+                column.getData().insertData(name.data(), name.size());
+                ++size;
+            }
+            auto & offsets = column.getOffsets();
+            offsets.push_back(offsets.back() + size);
+        };
+        fill_column(query_databases, column_databases);
+        fill_column(query_tables, column_tables);
+        fill_column(query_columns, column_columns);
+    }
+
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());

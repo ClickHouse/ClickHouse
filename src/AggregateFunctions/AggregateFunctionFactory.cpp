@@ -18,6 +18,7 @@
 #include <Poco/String.h>
 #include "registerAggregateFunctions.h"
 
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -135,12 +136,17 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
+
+    String extra_info;
+    if (FunctionFactory::instance().hasNameOrAlias(name))
+        extra_info = ". There is an ordinary function with the same name, but aggregate function is expected here";
+
     auto hints = this->getHints(name);
     if (!hints.empty())
-        throw Exception(fmt::format("Unknown aggregate function {}. Maybe you meant: {}", name, toString(hints)),
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                        "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
     else
-        throw Exception(fmt::format("Unknown aggregate function {}", name), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 

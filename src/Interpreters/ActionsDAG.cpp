@@ -436,12 +436,6 @@ void ActionsDAG::project(const NamesWithAliases & projection)
     settings.projected_output = true;
 }
 
-void ActionsDAG::removeColumn(const std::string & column_name)
-{
-    auto & node = getNode(column_name);
-    index.remove(&node);
-}
-
 bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 {
     if (index.contains(column_name))
@@ -550,6 +544,11 @@ std::string ActionsDAG::dumpDAG() const
         out << "\n";
     }
 
+    out << "Index:";
+    for (const auto * node : index)
+        out << ' ' << map[node];
+    out << '\n';
+
     return out.str();
 }
 
@@ -624,7 +623,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                    throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                                     ErrorCodes::THERE_IS_NO_COLUMN);
 
                 src_node = actions_dag->inputs[input.front()];
@@ -641,12 +640,12 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                 if (ignore_constant_values)
                    src_node = const_cast<Node *>(&actions_dag->addColumn(res_elem, true));
                 else if (res_const->getField() != src_const->getField())
-                    throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
+                    throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
                                     ErrorCodes::ILLEGAL_COLUMN);
             }
             else
-                throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
+                throw Exception("Cannot convert column " + backQuote(res_elem.name) + " because "
                                 "it is non constant in source stream but must be constant in result",
                                 ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -662,10 +661,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             auto * right_arg = const_cast<Node *>(&actions_dag->addColumn(std::move(column), true));
             auto * left_arg = src_node;
 
-            CastOverloadResolver::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
+            FunctionCast::Diagnostic diagnostic = {src_node->result_name, res_elem.name};
             FunctionOverloadResolverPtr func_builder_cast =
                     std::make_shared<FunctionOverloadResolverAdaptor>(
-                            CastOverloadResolver::createImpl(false, std::move(diagnostic)));
+                            CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic)));
 
             Inputs children = { left_arg, right_arg };
             src_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {}, true);
@@ -698,7 +697,8 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     /// Will store merged result in `first`.
 
     /// This map contains nodes which should be removed from `first` index, cause they are used as inputs for `second`.
-    std::unordered_set<Node *> removed_first_result;
+    /// The second element is the number of removes (cause one node may be repeated several times in result).
+    std::unordered_map<Node *, size_t> removed_first_result;
     /// Map inputs of `second` to nodes of `first`.
     std::unordered_map<Node *, Node *> inputs_map;
 
@@ -723,7 +723,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             else
             {
                 inputs_map[node] = it->second.front();
-                removed_first_result.emplace(it->second.front());
+                removed_first_result[it->second.front()] += 1;
                 it->second.pop_front();
             }
         }
@@ -767,8 +767,12 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             auto cur = it;
             ++it;
 
-            if (removed_first_result.count(*cur))
+            auto jt = removed_first_result.find(*cur);
+            if (jt != removed_first_result.end() && jt->second > 0)
+            {
                 first.index.remove(cur);
+                --jt->second;
+            }
         }
 
         for (auto * node : second.index)
