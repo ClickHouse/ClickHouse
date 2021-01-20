@@ -472,11 +472,11 @@ void TryGetConnection::run()
 
         stage = Stage::FINISHED;
     }
-    catch (Poco::Net::NetException & e)
+    catch (Poco::Net::NetException &)
     {
         processFail(true);
     }
-    catch (Poco::TimeoutException & e)
+    catch (Poco::TimeoutException &)
     {
         processFail(true);
     }
