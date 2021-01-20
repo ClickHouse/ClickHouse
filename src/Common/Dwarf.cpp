@@ -743,7 +743,8 @@ bool Dwarf::findLocation(
     std::optional<std::string_view> main_file_name;
     std::optional<uint64_t> base_addr_cu;
 
-    forEachAttribute(cu, die, [&](const Attribute & attr) {
+    forEachAttribute(cu, die, [&](const Attribute & attr)
+    {
         switch (attr.spec.name)
         {
             case DW_AT_stmt_list:
@@ -875,14 +876,16 @@ bool Dwarf::findLocation(
 void Dwarf::findSubProgramDieForAddress(
     const CompilationUnit & cu, const Die & die, uint64_t address, std::optional<uint64_t> base_addr_cu, Die & subprogram) const
 {
-    forEachChild(cu, die, [&](const Die & child_die) {
+    forEachChild(cu, die, [&](const Die & child_die)
+    {
         if (child_die.abbr.tag == DW_TAG_subprogram)
         {
             std::optional<uint64_t> low_pc;
             std::optional<uint64_t> high_pc;
             std::optional<bool> is_high_pc_addr;
             std::optional<uint64_t> range_offset;
-            forEachAttribute(cu, child_die, [&](const Attribute & attr) {
+            forEachAttribute(cu, child_die, [&](const Attribute & attr)
+            {
                 switch (attr.spec.name)
                 {
                     case DW_AT_ranges:
@@ -942,7 +945,8 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         return;
     }
 
-    forEachChild(cu, die, [&](const Die & child_die) {
+    forEachChild(cu, die, [&](const Die & child_die)
+    {
         // Between a DW_TAG_subprogram and and DW_TAG_inlined_subroutine we might
         // have arbitrary intermediary "nodes", including DW_TAG_common_block,
         // DW_TAG_lexical_block, DW_TAG_try_block, DW_TAG_catch_block and
@@ -966,7 +970,8 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         std::optional<uint64_t> call_file;
         std::optional<uint64_t> call_line;
         std::optional<uint64_t> range_offset;
-        forEachAttribute(cu, child_die, [&](const Attribute & attr) {
+        forEachAttribute(cu, child_die, [&](const Attribute & attr)
+        {
             switch (attr.spec.name)
             {
                 case DW_AT_ranges:
@@ -1028,7 +1033,8 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         location.file = line_vm.getFullFileName(*call_file);
         location.line = *call_line;
 
-        auto get_function_name = [&](const CompilationUnit & srcu, uint64_t die_offset) {
+        auto get_function_name = [&](const CompilationUnit & srcu, uint64_t die_offset)
+        {
             auto decl_die = getDieAtOffset(srcu, die_offset);
             // Jump to the actual function definition instead of declaration for name
             // and line info.
@@ -1037,7 +1043,8 @@ void Dwarf::findInlinedSubroutineDieForAddress(
             std::string_view name;
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
-            forEachAttribute(srcu, def_die, [&](const Attribute & attr) {
+            forEachAttribute(srcu, def_die, [&](const Attribute & attr)
+            {
                 switch (attr.spec.name)
                 {
                     case DW_AT_linkage_name:
@@ -1146,14 +1153,14 @@ bool Dwarf::isAddrInRangeList(uint64_t address, std::optional<uint64_t> base_add
         return false;
     }
 
-    const bool is64BitAddr = addr_size == 8;
+    const bool is_64bit_addr = addr_size == 8;
     std::string_view sp = ranges_;
     sp.remove_prefix(offset);
-    const uint64_t max_addr = is64BitAddr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
+    const uint64_t max_addr = is_64bit_addr ? std::numeric_limits<uint64_t>::max() : std::numeric_limits<uint32_t>::max();
     while (!sp.empty())
     {
-        uint64_t begin = readOffset(sp, is64BitAddr);
-        uint64_t end = readOffset(sp, is64BitAddr);
+        uint64_t begin = readOffset(sp, is_64bit_addr);
+        uint64_t end = readOffset(sp, is_64bit_addr);
         // The range list entry is a base address selection entry.
         if (begin == max_addr)
         {
@@ -1191,10 +1198,10 @@ Dwarf::CompilationUnit Dwarf::findCompilationUnit(std::string_view info, uint64_
         chunk.remove_prefix(offset);
 
         auto initial_length = read<uint32_t>(chunk);
-        auto is64Bit = (initial_length == uint32_t(-1));
-        auto size = is64Bit ? read<uint64_t>(chunk) : initial_length;
+        auto is_64bit = (initial_length == uint32_t(-1));
+        auto size = is_64bit ? read<uint64_t>(chunk) : initial_length;
         SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
-        size += is64Bit ? 12 : 4;
+        size += is_64bit ? 12 : 4;
 
         if (offset + size > targetOffset)
         {

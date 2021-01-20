@@ -377,6 +377,7 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
+    UNUSED(fatal);
     std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 

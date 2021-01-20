@@ -21,6 +21,7 @@
 /** This file was edited for ClickHouse.
   */
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -115,7 +116,7 @@ public:
         std::string_view file_;
     };
 
-    // Indicates inline funtion `name` is called  at `line@file`.
+    // Indicates inline function `name` is called  at `line@file`.
     struct CallLocation
     {
         Path file = {};
@@ -393,7 +394,7 @@ private:
     DIEAbbreviation getAbbreviation(uint64_t code, uint64_t offset) const;
 
     /**
-     * Iterates over all attributes of a debugging info entry,  calling the given
+     * Iterates over all attributes of a debugging info entry, calling the given
      * callable for each. If all attributes are visited, then return the offset of
      * next DIE, or else iteration is stopped early and return size_t(-1) if any
      * of the calls return false.
@@ -419,7 +420,8 @@ private:
     std::optional<T> getAttribute(const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
     {
         std::optional<T> result;
-        forEachAttribute(cu, die, [&](const Attribute & attr) {
+        forEachAttribute(cu, die, [&](const Attribute & attr)
+        {
             if (attr.spec.name == attr_name)
             {
                 result = std::get<T>(attr.attr_value);
