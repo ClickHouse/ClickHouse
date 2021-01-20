@@ -220,7 +220,6 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
         else if (*offsets_i != *offsets)
             throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
-    /// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
     return {nested_columns, offsets->data()};
 }
 

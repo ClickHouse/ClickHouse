@@ -172,7 +172,6 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
 
     auto res = ColumnUInt32::create();
     ColumnUInt32::Container & res_values = res->getData();
-    /// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
     res_values.resize(offsets->size());
 
     if (num_arguments == 1)
