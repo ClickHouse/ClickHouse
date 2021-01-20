@@ -1,4 +1,4 @@
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
+#include <Coordination/TestKeeperStorageDispatcher.h>
 #include <Common/setThreadName.h>
 
 namespace DB

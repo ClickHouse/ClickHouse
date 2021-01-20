@@ -3,6 +3,7 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/SummingStateMachine.h>
+#include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
@@ -12,15 +13,6 @@
 #include <libnuraft/nuraft.hxx>
 #include <thread>
 
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-}
 
 TEST(CoordinationTest, BuildTest)
 {
@@ -63,14 +55,15 @@ TEST(CoordinationTest, BufferSerde)
     EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest *>(request_read.get())->path, "/path/value");
 }
 
-struct SummingRaftServer
+template <typename StateMachine>
+struct SimpliestRaftServer
 {
-    SummingRaftServer(int server_id_, const std::string & hostname_, int port_)
+    SimpliestRaftServer(int server_id_, const std::string & hostname_, int port_)
         : server_id(server_id_)
         , hostname(hostname_)
         , port(port_)
         , endpoint(hostname + ":" + std::to_string(port))
-        , state_machine(nuraft::cs_new<DB::SummingStateMachine>())
+        , state_machine(nuraft::cs_new<StateMachine>())
         , state_manager(nuraft::cs_new<DB::InMemoryStateManager>(server_id, endpoint))
     {
         nuraft::raft_params params;
@@ -118,7 +111,7 @@ struct SummingRaftServer
     std::string endpoint;
 
     // State machine.
-    nuraft::ptr<DB::SummingStateMachine> state_machine;
+    nuraft::ptr<StateMachine> state_machine;
 
     // State manager.
     nuraft::ptr<nuraft::state_mgr> state_manager;
@@ -129,6 +122,8 @@ struct SummingRaftServer
     // Raft server instance.
     nuraft::ptr<nuraft::raft_server> raft_instance;
 };
+
+using SummingRaftServer = SimpliestRaftServer<DB::SummingStateMachine>;
 
 nuraft::ptr<nuraft::buffer> getLogEntry(int64_t number)
 {
@@ -178,7 +173,7 @@ TEST(CoordinationTest, TestSummingRaft3)
         EXPECT_TRUE(false);
     }
 
-    while(s1.raft_instance->get_leader() != 2)
+    while (s1.raft_instance->get_leader() != 2)
     {
         std::cout << "Waiting s1 to join to s2 quorum\n";
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -193,7 +188,7 @@ TEST(CoordinationTest, TestSummingRaft3)
         EXPECT_TRUE(false);
     }
 
-    while(s3.raft_instance->get_leader() != 2)
+    while (s3.raft_instance->get_leader() != 2)
     {
         std::cout << "Waiting s3 to join to s2 quorum\n";
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -261,6 +256,123 @@ TEST(CoordinationTest, TestSummingRaft3)
     EXPECT_EQ(s1.state_machine->getValue(), 78);
     EXPECT_EQ(s2.state_machine->getValue(), 78);
     EXPECT_EQ(s3.state_machine->getValue(), 78);
+
+    s1.launcher.shutdown(5);
+    s2.launcher.shutdown(5);
+    s3.launcher.shutdown(5);
+}
+
+using NuKeeperRaftServer = SimpliestRaftServer<DB::NuKeeperStateMachine>;
+
+
+nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
+{
+    DB::WriteBufferFromNuraftBuffer buf;
+    DB::writeIntBinary(session_id, buf);
+    request->write(buf);
+    return buf.getBuffer();
+}
+
+zkutil::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
+{
+    zkutil::TestKeeperStorage::ResponsesForSessions results;
+    DB::ReadBufferFromNuraftBuffer buf(buffer);
+    while (!buf.eof())
+    {
+        int64_t session_id;
+        DB::readIntBinary(session_id, buf);
+
+        int32_t length;
+        Coordination::XID xid;
+        int64_t zxid;
+        Coordination::Error err;
+
+        Coordination::read(length, buf);
+        Coordination::read(xid, buf);
+        Coordination::read(zxid, buf);
+        Coordination::read(err, buf);
+        auto response = request->makeResponse();
+        response->readImpl(buf);
+        results.push_back(zkutil::TestKeeperStorage::ResponseForSession{session_id, response});
+    }
+    return results;
+}
+
+TEST(CoordinationTest, TestNuKeeperRaft)
+{
+    NuKeeperRaftServer s1(1, "localhost", 44447);
+    NuKeeperRaftServer s2(2, "localhost", 44448);
+    NuKeeperRaftServer s3(3, "localhost", 44449);
+
+    nuraft::srv_config first_config(1, "localhost:44447");
+    auto ret1 = s2.raft_instance->add_srv(first_config);
+
+    EXPECT_TRUE(ret1->get_accepted()) << "failed to add server: " << ret1->get_result_str() << std::endl;
+
+    while (s1.raft_instance->get_leader() != 2)
+    {
+        std::cout << "Waiting s1 to join to s2 quorum\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    nuraft::srv_config third_config(3, "localhost:44449");
+    auto ret3 = s2.raft_instance->add_srv(third_config);
+
+    EXPECT_TRUE(ret3->get_accepted()) << "failed to add server: " << ret3->get_result_str() << std::endl;
+
+    while (s3.raft_instance->get_leader() != 2)
+    {
+        std::cout << "Waiting s3 to join to s2 quorum\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    /// S2 is leader
+    EXPECT_EQ(s1.raft_instance->get_leader(), 2);
+    EXPECT_EQ(s2.raft_instance->get_leader(), 2);
+    EXPECT_EQ(s3.raft_instance->get_leader(), 2);
+
+    int64_t session_id = 34;
+    std::shared_ptr<Coordination::ZooKeeperCreateRequest> create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/hello";
+    create_request->data = "world";
+
+    auto entry1 = getZooKeeperLogEntry(session_id, create_request);
+    auto ret_leader = s2.raft_instance->append_entries({entry1});
+
+    EXPECT_TRUE(ret_leader->get_accepted()) << "failed to replicate create entry:" << ret_leader->get_result_code();
+    EXPECT_EQ(ret_leader->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate create entry:" << ret_leader->get_result_code();
+
+    auto result = ret_leader.get();
+
+    auto responses = getZooKeeperResponses(result->get(), create_request);
+
+    EXPECT_EQ(responses.size(), 1);
+    EXPECT_EQ(responses[0].session_id, 34);
+    EXPECT_EQ(responses[0].response->getOpNum(), Coordination::OpNum::Create);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperCreateResponse *>(responses[0].response.get())->path_created, "/hello");
+
+
+    while (s1.state_machine->getStorage().container.count("/hello") == 0)
+    {
+        std::cout << "Waiting s1 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    while (s2.state_machine->getStorage().container.count("/hello") == 0)
+    {
+        std::cout << "Waiting s2 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    while (s3.state_machine->getStorage().container.count("/hello") == 0)
+    {
+        std::cout << "Waiting s3 to apply entry\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    EXPECT_EQ(s1.state_machine->getStorage().container["/hello"].data, "world");
+    EXPECT_EQ(s2.state_machine->getStorage().container["/hello"].data, "world");
+    EXPECT_EQ(s3.state_machine->getStorage().container["/hello"].data, "world");
 
     s1.launcher.shutdown(5);
     s2.launcher.shutdown(5);

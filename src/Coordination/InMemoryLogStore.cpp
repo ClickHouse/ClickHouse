@@ -6,7 +6,8 @@ namespace DB
 namespace
 {
 using namespace nuraft;
-ptr<log_entry> makeClone(const ptr<log_entry> & entry) {
+ptr<log_entry> makeClone(const ptr<log_entry> & entry)
+{
     ptr<log_entry> clone = cs_new<log_entry>(entry->get_term(), buffer::clone(entry->get_buf()), entry->get_val_type());
     return clone;
 }

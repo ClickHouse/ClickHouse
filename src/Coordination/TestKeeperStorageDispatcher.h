@@ -2,7 +2,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ZooKeeper/TestKeeperStorage.h>
+#include <Coordination/TestKeeperStorage.h>
 #include <functional>
 
 namespace zkutil
