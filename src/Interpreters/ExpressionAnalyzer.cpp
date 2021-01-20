@@ -55,6 +55,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/formatAST.h>
 
 namespace DB
 {
