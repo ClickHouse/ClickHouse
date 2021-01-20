@@ -6,17 +6,18 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Coordination/TestKeeperStorage.h>
+#include <Coordination/TestKeeperStorageDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
-#include <future>
 
 namespace DB
 {
 
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+class ThreadSafeResponseQueue;
+using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
 class TestKeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
@@ -27,15 +28,16 @@ private:
     IServer & server;
     Poco::Logger * log;
     Context global_context;
-    std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
+    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id;
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
 
-    size_t response_id_counter = 0;
-    std::unordered_map<size_t, zkutil::TestKeeperStorage::AsyncResponse> responses;
+    ThreadSafeResponseQueuePtr responses;
+
+    Coordination::XID close_xid = Coordination::CLOSE_XID;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
@@ -46,8 +48,8 @@ private:
     void sendHandshake();
     void receiveHandshake();
 
-    Coordination::OpNum receiveRequest();
-    zkutil::TestKeeperStorage::AsyncResponse putCloseRequest();
+    std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
+    void finish();
 };
 
 }
