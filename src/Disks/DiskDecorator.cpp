@@ -150,9 +150,9 @@ void DiskDecorator::removeRecursive(const String & path)
     delegate->removeRecursive(path);
 }
 
-void DiskDecorator::removeShared(const String & path, bool keep_s3)
+void DiskDecorator::removeSharedFile(const String & path, bool keep_s3)
 {
-    delegate->removeShared(path, keep_s3);
+    delegate->removeSharedFile(path, keep_s3);
 }
 
 void DiskDecorator::removeSharedRecursive(const String & path, bool keep_s3)

@@ -201,10 +201,10 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-    /// Return some uniq string for file, overrided for S3
+    /// Return some uniq string for file, overrode for S3
     virtual String getUniqueId(const String & path) const { return path; }
 
-    /// Check file, overrided for S3 only
+    /// Check file, overrode for S3 only
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Returns executor to perform asynchronous operations.

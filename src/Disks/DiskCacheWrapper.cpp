@@ -278,11 +278,11 @@ void DiskCacheWrapper::removeRecursive(const String & path)
     DiskDecorator::removeRecursive(path);
 }
 
-void DiskCacheWrapper::removeShared(const String & path, bool keep_s3)
+void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeShared(path, keep_s3);
-    DiskDecorator::removeShared(path, keep_s3);
+        cache_disk->removeSharedFile(path, keep_s3);
+    DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
 void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
