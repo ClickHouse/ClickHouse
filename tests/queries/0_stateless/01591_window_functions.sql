@@ -100,7 +100,7 @@ select
 from numbers(3);
 
 
-select
-    sum(number)
-        over (order by number groups between unbounded preceding and current row)
-from numbers(3);
+--select
+--    sum(number)
+--        over (order by number groups between unbounded preceding and current row)
+--from numbers(3);

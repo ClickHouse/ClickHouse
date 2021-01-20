@@ -29,7 +29,7 @@ struct WindowFunctionWorkspace
  * Computes several window functions that share the same window. The input must
  * be sorted correctly for this window (PARTITION BY, then ORDER BY).
  */
-class WindowTransform : public ISimpleTransform
+class WindowTransform : public IProcessor /* public ISimpleTransform */
 {
 public:
     WindowTransform(
@@ -48,9 +48,32 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    void transform(Chunk & chunk) override;
+    /*
+     * (former) Implemetation of ISimpleTransform.
+     */
+    void transform(Chunk & chunk) /*override*/;
+
+    /*
+     * Implementation of IProcessor;
+     */
+    Status prepare() override;
+    void work() override;
 
 public:
+    /*
+     * Data (formerly) inherited from ISimpleTransform.
+     */
+    InputPort & input;
+    OutputPort & output;
+
+    bool has_input = false;
+    Port::Data input_data;
+    bool has_output = false;
+    Port::Data output_data;
+
+    /*
+     * Data for window transform itself.
+     */
     Block input_header;
 
     WindowDescription window_description;
