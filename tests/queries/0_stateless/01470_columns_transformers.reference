@@ -27,9 +27,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     length(toString(j)),
@@ -44,9 +44,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     sum(i + 1 AS i),
@@ -59,9 +59,9 @@ SELECT
     avg(k)
 FROM columns_transformers
 SELECT
-    toDate(any(i)),
-    toDate(any(j)),
-    toDate(any(k))
+    any(toDate(i)),
+    any(toDate(j)),
+    any(toDate(k))
 FROM columns_transformers AS a
 SELECT
     (i + 1) + 1 AS i,

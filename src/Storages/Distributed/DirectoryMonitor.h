@@ -111,9 +111,6 @@ private:
 
     CurrentMetrics::Increment metric_pending_files;
 
-    /// Read insert query and insert settings for backward compatible.
-    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
-
     friend class DirectoryMonitorBlockInputStream;
 };
 
