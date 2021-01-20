@@ -117,7 +117,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### port(URL[, default_port = 0]) {#port}
 
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или возникла ошибка проверки). 
+Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
 
 ### path {#path}
 
