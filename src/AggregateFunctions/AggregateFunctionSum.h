@@ -29,61 +29,74 @@ struct AggregateFunctionSumData
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
-        /// Compiler cannot unroll this loop, do it manually.
-        /// (at least for floats, most likely due to the lack of -fassociative-math)
-
-        /// Something around the number of SSE registers * the number of elements fit in register.
-        constexpr size_t unroll_count = 128 / sizeof(T);
-        T partial_sums[unroll_count]{};
-
         const auto * end = ptr + count;
-        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        while (ptr < unrolled_end)
+        if constexpr (std::is_floating_point_v<T>)
         {
+            /// Compiler cannot unroll this loop, do it manually.
+            /// (at least for floats, most likely due to the lack of -fassociative-math)
+
+            /// Something around the number of SSE registers * the number of elements fit in register.
+            constexpr size_t unroll_count = 128 / sizeof(T);
+            T partial_sums[unroll_count]{};
+
+            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
+
+            while (ptr < unrolled_end)
+            {
+                for (size_t i = 0; i < unroll_count; ++i)
+                    partial_sums[i] += ptr[i];
+                ptr += unroll_count;
+            }
+
             for (size_t i = 0; i < unroll_count; ++i)
-                partial_sums[i] += ptr[i];
-            ptr += unroll_count;
+                sum += partial_sums[i];
         }
 
-        for (size_t i = 0; i < unroll_count; ++i)
-            sum += partial_sums[i];
-
+        /// clang cannot vectorize the loop if accumulator is class member instead of local variable.
+        T local_sum{};
         while (ptr < end)
         {
-            sum += *ptr;
+            local_sum += *ptr;
             ++ptr;
         }
+        sum += local_sum;
     }
 
     template <typename Value>
     void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
-        constexpr size_t unroll_count = 128 / sizeof(T);
-        T partial_sums[unroll_count]{};
-
         const auto * end = ptr + count;
-        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        while (ptr < unrolled_end)
+        if constexpr (std::is_floating_point_v<T>)
         {
+            constexpr size_t unroll_count = 128 / sizeof(T);
+            T partial_sums[unroll_count]{};
+
+            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
+
+            while (ptr < unrolled_end)
+            {
+                for (size_t i = 0; i < unroll_count; ++i)
+                    if (!null_map[i])
+                        partial_sums[i] += ptr[i];
+                ptr += unroll_count;
+                null_map += unroll_count;
+            }
+
             for (size_t i = 0; i < unroll_count; ++i)
-                if (!null_map[i])
-                    partial_sums[i] += ptr[i];
-            ptr += unroll_count;
-            null_map += unroll_count;
+                sum += partial_sums[i];
         }
 
-        for (size_t i = 0; i < unroll_count; ++i)
-            sum += partial_sums[i];
-
+        T local_sum{};
         while (ptr < end)
         {
             if (!*null_map)
-                sum += *ptr;
+                local_sum += *ptr;
             ++ptr;
             ++null_map;
         }
+        sum += local_sum;
     }
 
     void merge(const AggregateFunctionSumData & rhs)
@@ -282,17 +295,41 @@ public:
     }
 
     /// Vectorized version when there is no GROUP BY keys.
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *) const override
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        this->data(place).addMany(column.getData().data(), batch_size);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (flags[i])
+                    add(place, columns, i, arena);
+            }
+        }
+        else
+        {
+            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            this->data(place).addMany(column.getData().data(), batch_size);
+        }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos)
+        const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+                if (!null_map[i] && flags[i])
+                    add(place, columns, i, arena);
+        }
+        else
+        {
+            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
+        }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -7,7 +7,6 @@
 #if USE_MYSQL
 
 #    include <mutex>
-#    include <Core/BackgroundSchedulePool.h>
 #    include <Core/MySQL/MySQLClient.h>
 #    include <DataStreams/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>

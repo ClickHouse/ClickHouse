@@ -109,6 +109,14 @@ String IAST::getColumnName() const
 }
 
 
+String IAST::getColumnNameWithoutAlias() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnNameWithoutAlias(write_buffer);
+    return write_buffer.str();
+}
+
+
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
     switch (identifier_quoting_style)
@@ -159,6 +167,13 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
         if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
         child->dumpTree(ostr, indent + 1);
     }
+}
+
+std::string IAST::dumpTree(size_t indent) const
+{
+    WriteBufferFromOwnString wb;
+    dumpTree(wb, indent);
+    return wb.str();
 }
 
 }

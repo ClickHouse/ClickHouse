@@ -111,13 +111,12 @@ struct Settings;
     M(Bool, allow_s3_zero_copy_replication, true, "Allow Zero-copy replication over S3", 0) \
     M(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm", 0) \
     M(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
-    \
-    /** Settings for testing purposes */ \
-    M(Bool, randomize_part_type, false, "For testing purposes only. Randomizes part type between wide and compact", 0) \
+    M(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited. This setting is the default that can be overridden by the query-level setting with the same name.", 0) \
     \
     /** Obsolete settings. Kept for backward compatibility only. */ \
     M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
     M(UInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
@@ -138,7 +137,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes";
+        return name == "index_granularity" || name == "index_granularity_bytes" || name == "write_final_mark"
+            || name == "enable_mixed_granularity_parts";
     }
 
     static bool isPartFormatSetting(const String & name)

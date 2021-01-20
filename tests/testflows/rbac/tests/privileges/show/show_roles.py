@@ -62,7 +62,7 @@ def check_privilege(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowRoles_Query("1.0"),
+    RQ_SRS_006_RBAC_ShowRoles_RequiredPrivilege("1.0"),
 )
 def show_roles(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW ROLES` when they have the necessary privilege.
@@ -100,7 +100,7 @@ def show_roles(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowCreateRole("1.0"),
+    RQ_SRS_006_RBAC_ShowCreateRole_RequiredPrivilege("1.0"),
 )
 def show_create(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW CREATE ROLE` when they have the necessary privilege.
@@ -148,7 +148,7 @@ def show_create(self, privilege, grant_target_name, user_name, node=None):
 @TestFeature
 @Name("show roles")
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowRoles("1.0"),
+    RQ_SRS_006_RBAC_ShowRoles_Privilege("1.0"),
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW ROLES.
