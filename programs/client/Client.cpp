@@ -141,6 +141,8 @@ private:
 
     /// If not empty, queries will be read from these files
     std::vector<std::string> queries_files;
+    /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<std::string> interleave_queries_files;
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String full_query; /// Current query as it was given to the client.
@@ -193,15 +195,15 @@ private:
     /// Parsed query. Is used to determine some settings (e.g. format, output file).
     ASTPtr parsed_query;
 
-    /// The last exception that was received from the server. Is used for the return code in batch mode.
-    std::unique_ptr<Exception> last_exception_received_from_server;
+    /// The last exception that was received from the server. Is used for the
+    /// return code in batch mode.
+    std::unique_ptr<Exception> server_exception;
+    /// Likewise, the last exception that occurred on the client.
+    std::unique_ptr<Exception> client_exception;
 
-    /// If the last query resulted in exception.
-    bool received_exception_from_server = false;
-    int expected_server_error = 0;
-    int expected_client_error = 0;
-    int actual_server_error = 0;
-    int actual_client_error = 0;
+    /// If the last query resulted in exception. `server_exception` or
+    /// `client_exception` must be set.
+    bool have_error = false;
 
     UInt64 server_revision = 0;
     String server_version;
@@ -667,19 +669,16 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    actual_client_error = e.code();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                    {
-                        std::cerr << std::endl
-                            << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    // We don't need to handle the test hints in the interactive
+                    // mode.
+                    std::cerr << std::endl
+                        << "Exception on client:" << std::endl
+                        << "Code: " << e.code() << ". " << e.displayText() << std::endl;
 
-                        if (config().getBool("stacktrace", false))
-                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+                    if (config().getBool("stacktrace", false))
+                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
 
-                        std::cerr << std::endl;
-
-                    }
+                    std::cerr << std::endl;
 
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
@@ -705,9 +704,20 @@ private:
 
             nonInteractive();
 
-            /// If exception code isn't zero, we should return non-zero return code anyway.
-            if (last_exception_received_from_server)
-                return last_exception_received_from_server->code() != 0 ? last_exception_received_from_server->code() : -1;
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception
+                ? server_exception.get() : client_exception.get();
+            if (exception)
+            {
+                return exception->code() != 0 ? exception->code() : -1;
+            }
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
 
             return 0;
         }
@@ -796,13 +806,22 @@ private:
 
         if (!queries_files.empty())
         {
-            for (const auto & queries_file : queries_files)
+            auto process_file = [&](const std::string & file)
             {
                 connection->setDefaultDatabase(connection_parameters.default_database);
-                ReadBufferFromFile in(queries_file);
+                ReadBufferFromFile in(file);
                 readStringUntilEOF(text, in);
-                if (!processMultiQuery(text))
-                    break;
+                return processMultiQuery(text);
+            };
+
+            for (const auto & queries_file : queries_files)
+            {
+                for (const auto & interleave_file : interleave_queries_files)
+                    if (!process_file(interleave_file))
+                        return;
+
+                if (!process_file(queries_file))
+                    return;
             }
             return;
         }
@@ -845,8 +864,93 @@ private:
         return processMultiQuery(text);
     }
 
+    // Consumes trailing semicolons and tries to consume the same-line trailing
+    // comment.
+    static void adjustQueryEnd(const char *& this_query_end,
+        const char * all_queries_end, int max_parser_depth)
+    {
+        // We have to skip the trailing semicolon that might be left
+        // after VALUES parsing or just after a normal semicolon-terminated query.
+        Tokens after_query_tokens(this_query_end, all_queries_end);
+        IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth);
+        while (after_query_iterator.isValid()
+           && after_query_iterator->type == TokenType::Semicolon)
+        {
+            this_query_end = after_query_iterator->end;
+            ++after_query_iterator;
+        }
+
+        // Now we have to do some extra work to add the trailing
+        // same-line comment to the query, but preserve the leading
+        // comments of the next query. The trailing comment is important
+        // because the test hints are usually written this way, e.g.:
+        // select nonexistent_column; -- { serverError 12345 }.
+        // The token iterator skips comments and whitespace, so we have
+        // to find the newline in the string manually. If it's earlier
+        // than the next significant token, it means that the text before
+        // newline is some trailing whitespace or comment, and we should
+        // add it to our query. There are also several special cases
+        // that are described below.
+        const auto * newline = find_first_symbols<'\n'>(this_query_end,
+            all_queries_end);
+        const char * next_query_begin = after_query_iterator->begin;
+
+        // We include the entire line if the next query starts after
+        // it. This is a generic case of trailing in-line comment.
+        // The "equals" condition is for case of end of input (they both equal
+        // all_queries_end);
+        if (newline <= next_query_begin)
+        {
+            assert(newline >= this_query_end);
+            this_query_end = newline;
+        }
+        else
+        {
+            // Many queries on one line, can't do anything. By the way, this
+            // syntax is probably going to work as expected:
+            // select nonexistent /* { serverError 12345 } */; select 1
+        }
+    }
+
+    void reportQueryError() const
+    {
+        // If we probably have progress bar, we should add additional
+        // newline, otherwise exception may display concatenated with
+        // the progress bar.
+        if (need_render_progress)
+            std::cerr << '\n';
+
+        if (server_exception)
+        {
+            std::string text = server_exception->displayText();
+            auto embedded_stack_trace_pos = text.find("Stack trace");
+            if (std::string::npos != embedded_stack_trace_pos
+                && !config().getBool("stacktrace", false))
+            {
+                text.resize(embedded_stack_trace_pos);
+            }
+            std::cerr << "Received exception from server (version "
+                << server_version << "):" << std::endl << "Code: "
+                << server_exception->code() << ". " << text << std::endl;
+        }
+
+        if (client_exception)
+        {
+            fmt::print(stderr,
+                "Error on processing query '{}':\n{}",
+                full_query, client_exception->message());
+        }
+
+        // A debug check -- at least some exception must be set, if the error
+        // flag is set, and vice versa.
+        assert(have_error == (client_exception || server_exception));
+    }
+
     bool processMultiQuery(const String & all_queries_text)
     {
+        // It makes sense not to base any control flow on this, so that it is
+        // the same in tests and in normal usage. The only difference is that in
+        // normal mode we ignore the test hints.
         const bool test_mode = config().has("testmode");
 
         {
@@ -871,35 +975,31 @@ private:
 
         while (this_query_begin < all_queries_end)
         {
-            // Use the token iterator to skip any whitespace, semicolons and
-            // comments at the beginning of the query. An example from regression
-            // tests:
-            //      insert into table t values ('invalid'); -- { serverError 469 }
-            //      select 1
-            // Here the test hint comment gets parsed as a part of second query.
-            // We parse the `INSERT VALUES` up to the semicolon, and the rest
-            // looks like a two-line query:
-            //      -- { serverError 469 }
-            //      select 1
-            // and we expect it to fail with error 469, but this hint is actually
-            // for the previous query. Test hints should go after the query, so
-            // we can fix this by skipping leading comments. Token iterator skips
-            // comments and whitespace by itself, so we only have to check for
-            // semicolons.
-            // The code block is to limit visibility of `tokens` because we have
-            // another such variable further down the code, and get warnings for
-            // that.
+            // Remove leading empty newlines and other whitespace, because they
+            // are annoying to filter in query log. This is mostly relevant for
+            // the tests.
+            while (this_query_begin < all_queries_end
+                 && isWhitespaceASCII(*this_query_begin))
+            {
+                ++this_query_begin;
+            }
+            if (this_query_begin >= all_queries_end)
+            {
+                break;
+            }
+
+            // If there are only comments left until the end of file, we just
+            // stop. The parser can't handle this situation because it always
+            // expects that there is some query that it can parse.
+            // We can get into this situation because the parser also doesn't
+            // skip the trailing comments after parsing a query. This is because
+            // they may as well be the leading comments for the next query,
+            // and it makes more sense to treat them as such.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens,
                     context.getSettingsRef().max_parser_depth);
-                while (token_iterator->type == TokenType::Semicolon
-                        && token_iterator.isValid())
-                {
-                    ++token_iterator;
-                }
-                this_query_begin = token_iterator->begin;
-                if (this_query_begin >= all_queries_end)
+                if (!token_iterator.isValid())
                 {
                     break;
                 }
@@ -913,14 +1013,23 @@ private:
             }
             catch (Exception & e)
             {
-                if (!test_mode)
-                    throw;
+                // Try to find test hint for syntax error. We don't know where
+                // the query ends because we failed to parse it, so we consume
+                // the entire line.
+                this_query_end = find_first_symbols<'\n'>(this_query_end,
+                    all_queries_end);
 
-                /// Try find test hint for syntax error
-                const char * end_of_line = find_first_symbols<'\n'>(this_query_begin,all_queries_end);
-                TestHint hint(true, String(this_query_end, end_of_line - this_query_end));
-                if (hint.serverError()) /// Syntax errors are considered as client errors
+                TestHint hint(test_mode,
+                    String(this_query_begin, this_query_end - this_query_begin));
+
+                if (hint.serverError())
+                {
+                    // Syntax errors are considered as client errors
+                    e.addMessage("\nExpected server error '{}'.",
+                        hint.serverError());
                     throw;
+                }
+
                 if (hint.clientError() != e.code())
                 {
                     if (hint.clientError())
@@ -929,7 +1038,7 @@ private:
                 }
 
                 /// It's expected syntax error, skip the line
-                this_query_begin = end_of_line;
+                this_query_begin = this_query_end;
                 continue;
             }
 
@@ -945,6 +1054,7 @@ private:
 
                     continue;
                 }
+
                 return true;
             }
 
@@ -956,10 +1066,14 @@ private:
             // The VALUES format needs even more handling -- we also allow the
             // data to be delimited by semicolon. This case is handled later by
             // the format parser itself.
+            // We can't do multiline INSERTs with inline data, because most
+            // row input formats (e.g. TSV) can't tell when the input stops,
+            // unlike VALUES.
             auto * insert_ast = parsed_query->as<ASTInsertQuery>();
             if (insert_ast && insert_ast->data)
             {
-                this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+                this_query_end = find_first_symbols<'\n'>(insert_ast->data,
+                    all_queries_end);
                 insert_ast->end = this_query_end;
                 query_to_send = all_queries_text.substr(
                     this_query_begin - all_queries_text.data(),
@@ -972,60 +1086,158 @@ private:
                     this_query_end - this_query_begin);
             }
 
-            // full_query is the query + inline INSERT data.
+            // Try to include the trailing comment with test hints. It is just
+            // a guess for now, because we don't yet know where the query ends
+            // if it is an INSERT query with inline data. We will do it again
+            // after we have processed the query. But even this guess is
+            // beneficial so that we see proper trailing comments in "echo" and
+            // server log.
+            adjustQueryEnd(this_query_end, all_queries_end,
+                context.getSettingsRef().max_parser_depth);
+
+            // full_query is the query + inline INSERT data + trailing comments
+            // (the latter is our best guess for now).
             full_query = all_queries_text.substr(
                 this_query_begin - all_queries_text.data(),
                 this_query_end - this_query_begin);
-
-            // Look for the hint in the text of query + insert data, if any.
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            TestHint test_hint(test_mode, full_query);
-            expected_client_error = test_hint.clientError();
-            expected_server_error = test_hint.serverError();
 
             if (query_fuzzer_runs)
             {
                 if (!processWithFuzzing(full_query))
                     return false;
+
+                this_query_begin = this_query_end;
+                continue;
+            }
+
+            try
+            {
+                processParsedSingleQuery();
+            }
+            catch (...)
+            {
+                // Surprisingly, this is a client error. A server error would
+                // have been reported w/o throwing (see onReceiveSeverException()).
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                have_error = true;
+            }
+
+            // For INSERTs with inline data: use the end of inline data as
+            // reported by the format parser (it is saved in sendData()).
+            // This allows us to handle queries like:
+            //   insert into t values (1); select 1
+            // , where the inline data is delimited by semicolon and not by a
+            // newline.
+            if (insert_ast && insert_ast->data)
+            {
+                this_query_end = insert_ast->end;
+                adjustQueryEnd(this_query_end, all_queries_end,
+                    context.getSettingsRef().max_parser_depth);
+            }
+
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin,
+                this_query_end - this_query_begin));
+
+            // Check whether the error (or its absence) matches the test hints
+            // (or their absence).
+            bool error_matches_hint = true;
+            if (have_error)
+            {
+                if (test_hint.serverError())
+                {
+                    if (!server_exception)
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected server error code '{}' but got no server error.\n",
+                            test_hint.serverError());
+                    }
+                    else if (server_exception->code() != test_hint.serverError())
+                    {
+                        error_matches_hint = false;
+                        std::cerr << "Expected server error code: " <<
+                            test_hint.serverError() << " but got: " <<
+                            server_exception->code() << "." << std::endl;
+                    }
+                }
+
+                if (test_hint.clientError())
+                {
+                    if (!client_exception)
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got no client error.\n",
+                            test_hint.clientError());
+                    }
+                    else if (client_exception->code() != test_hint.clientError())
+                    {
+                        error_matches_hint = false;
+                        fmt::print(stderr,
+                            "Expected client error code '{}' but got '{}'.\n",
+                            test_hint.clientError(),
+                            client_exception->code());
+                    }
+                }
+
+                if (!test_hint.clientError() && !test_hint.serverError())
+                {
+                    // No error was expected but it still occurred. This is the
+                    // default case w/o test hint, doesn't need additional
+                    // diagnostics.
+                    error_matches_hint = false;
+                }
             }
             else
             {
-                try
+                if (test_hint.clientError())
                 {
-                    processParsedSingleQuery();
-
-                    if (insert_ast && insert_ast->data)
-                    {
-                        // For VALUES format: use the end of inline data as reported
-                        // by the format parser (it is saved in sendData()). This
-                        // allows us to handle queries like:
-                        //   insert into t values (1); select 1
-                        //, where the inline data is delimited by semicolon and not
-                        // by a newline.
-                        this_query_end = parsed_query->as<ASTInsertQuery>()->end;
-                    }
-                }
-                catch (...)
-                {
-                    last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                    actual_client_error = last_exception_received_from_server->code();
-                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << full_query << std::endl << last_exception_received_from_server->message();
-                    received_exception_from_server = true;
+                    fmt::print(stderr,
+                        "The query succeeded but the client error '{}' was expected.\n",
+                        test_hint.clientError());
+                    error_matches_hint = false;
                 }
 
-                if (!test_hint.checkActual(
-                    actual_server_error, actual_client_error, received_exception_from_server, last_exception_received_from_server))
+                if (test_hint.serverError())
                 {
-                    connection->forceConnected(connection_parameters.timeouts);
+                    fmt::print(stderr,
+                        "The query succeeded but the server error '{}' was expected.\n",
+                        test_hint.serverError());
+                    error_matches_hint = false;
                 }
+            }
 
-                if (received_exception_from_server && !ignore_error)
+            // If the error is expected, force reconnect and ignore it.
+            if (have_error && error_matches_hint)
+            {
+                client_exception.reset();
+                server_exception.reset();
+                have_error = false;
+                connection->forceConnected(connection_parameters.timeouts);
+            }
+
+            // Report error.
+            if (have_error)
+            {
+                reportQueryError();
+            }
+
+            // Stop processing queries if needed.
+            if (have_error && !ignore_error)
+            {
+                if (is_interactive)
                 {
-                    if (is_interactive)
-                        break;
-                    else
-                        return false;
+                    break;
+                }
+                else
+                {
+                    return false;
                 }
             }
 
@@ -1134,15 +1346,20 @@ private:
                 // Some functions (e.g. protocol parsers) don't throw, but
                 // set last_exception instead, so we'll also do it here for
                 // uniformity.
-                last_exception_received_from_server = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-                received_exception_from_server = true;
+                // Surprisingly, this is a client exception, because we get the
+                // server exception w/o throwing (see onReceiveException()).
+                client_exception = std::make_unique<Exception>(
+                    getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                have_error = true;
             }
 
-            if (received_exception_from_server)
+            if (have_error)
             {
+                const auto * exception = server_exception
+                    ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n",
                     ast_to_process->formatForErrorMessage(),
-                    last_exception_received_from_server->message());
+                    exception->message());
             }
 
             if (!connection->isConnected())
@@ -1155,13 +1372,14 @@ private:
 
             // The server is still alive so we're going to continue fuzzing.
             // Determine what we're going to use as the starting AST.
-            if (received_exception_from_server)
+            if (have_error)
             {
                 // Query completed with error, keep the previous starting AST.
                 // Also discard the exception that we now know to be non-fatal,
                 // so that it doesn't influence the exit code.
-                last_exception_received_from_server.reset(nullptr);
-                received_exception_from_server = false;
+                server_exception.reset();
+                client_exception.reset();
+                have_error = false;
             }
             else if (ast_to_process->formatForErrorMessage().size() > 500)
             {
@@ -1205,6 +1423,11 @@ private:
         }
 
         processParsedSingleQuery();
+
+        if (have_error)
+        {
+            reportQueryError();
+        }
     }
 
     // Parameters are in global variables:
@@ -1215,8 +1438,9 @@ private:
     void processParsedSingleQuery()
     {
         resetOutput();
-        last_exception_received_from_server.reset();
-        received_exception_from_server = false;
+        client_exception.reset();
+        server_exception.reset();
+        have_error = false;
 
         if (echo_queries)
         {
@@ -1281,7 +1505,7 @@ private:
         }
 
         /// Do not change context (current DB, settings) in case of an exception.
-        if (!received_exception_from_server)
+        if (!have_error)
         {
             if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
@@ -1692,8 +1916,7 @@ private:
                 return true;
 
             case Protocol::Server::Exception:
-                onReceiveExceptionFromServer(*packet.exception);
-                last_exception_received_from_server = std::move(packet.exception);
+                onReceiveExceptionFromServer(std::move(packet.exception));
                 return false;
 
             case Protocol::Server::Log:
@@ -1725,8 +1948,7 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onReceiveExceptionFromServer(std::move(packet.exception));
                     return false;
 
                 case Protocol::Server::Log:
@@ -1759,8 +1981,7 @@ private:
                     return true;
 
                 case Protocol::Server::Exception:
-                    onReceiveExceptionFromServer(*packet.exception);
-                    last_exception_received_from_server = std::move(packet.exception);
+                    onReceiveExceptionFromServer(std::move(packet.exception));
                     return false;
 
                 case Protocol::Server::Log:
@@ -2069,32 +2290,11 @@ private:
     }
 
 
-    void onReceiveExceptionFromServer(const Exception & e)
+    void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
     {
+        have_error = true;
+        server_exception = std::move(e);
         resetOutput();
-        received_exception_from_server = true;
-
-        actual_server_error = e.code();
-        if (expected_server_error)
-        {
-            if (actual_server_error == expected_server_error)
-                return;
-            std::cerr << "Expected error code: " << expected_server_error << " but got: " << actual_server_error << "." << std::endl;
-        }
-
-        std::string text = e.displayText();
-
-        auto embedded_stack_trace_pos = text.find("Stack trace");
-        if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
-            text.resize(embedded_stack_trace_pos);
-
-        /// If we probably have progress bar, we should add additional newline,
-        /// otherwise exception may display concatenated with the progress bar.
-        if (need_render_progress)
-            std::cerr << '\n';
-
-        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-            << "Code: " << e.code() << ". " << text << std::endl;
     }
 
 
@@ -2271,7 +2471,9 @@ public:
             ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-            ("query-fuzzer-runs", po::value<int>()->default_value(0), "query fuzzer runs")
+            ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
+            ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
+                "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
@@ -2386,6 +2588,8 @@ public:
             config().setString("query", options["query"].as<std::string>());
         if (options.count("queries-file"))
             queries_files = options["queries-file"].as<std::vector<std::string>>();
+        if (options.count("interleave-queries-file"))
+            interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
         if (options.count("database"))
             config().setString("database", options["database"].as<std::string>());
         if (options.count("pager"))
