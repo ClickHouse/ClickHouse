@@ -22,7 +22,7 @@ class FunctionSvg : public IFunction
 public:
     static inline const char * name = "svg";
 
-    explicit FunctionSvg() {}
+    explicit FunctionSvg() = default;
 
     static FunctionPtr create(const Context &)
     {
