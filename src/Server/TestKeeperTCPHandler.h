@@ -3,7 +3,6 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -17,6 +16,8 @@ namespace DB
 
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
+class ThreadSafeResponseQueue;
+using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
 class TestKeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
@@ -33,7 +34,9 @@ private:
     int64_t session_id;
     Stopwatch session_stopwatch;
     SocketInterruptablePollWrapperPtr poll_wrapper;
-    ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr> responses;
+
+    ThreadSafeResponseQueuePtr responses;
+
     Coordination::XID close_xid = Coordination::CLOSE_XID;
 
     /// Streams for reading/writing from/to client connection socket.
@@ -46,7 +49,7 @@ private:
     void receiveHandshake();
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
-    bool finish();
+    void finish();
 };
 
 }
