@@ -187,3 +187,4 @@
 01552_impl_aggfunc_cloneresize
 01650_fetch_patition_with_macro_in_zk_path
 01651_bugs_from_15889
+01655_agg_if_nullable
