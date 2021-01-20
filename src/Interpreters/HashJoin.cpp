@@ -148,6 +148,8 @@ HashJoin::HashJoin(
     bool can_cast_key_columns = JoinCommon::isCastJoinKeysAllowed(left_sample_block, right_sample_block, *table_join);
     if (can_cast_key_columns)
     {
+        /// Key columns from right table will be converted to types from left table in addJoinedBlock
+        /// Type of left and right columns should be known here, so no type conversion performed for StorageJoin
         cast_keys_info = JoinCommon::getJoinColumnsNeedCast(
             right_sample_block, key_names_right,
             left_sample_block, key_names_left);
@@ -158,7 +160,6 @@ HashJoin::HashJoin(
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
-
 
     /// We will join only keys, where all components are not NULL
     bool remove_nullability = true;
@@ -1079,6 +1080,7 @@ void HashJoin::joinBlockImpl(
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
 
+            /// Values in right and left key coulumns are same, but types may differs, cast if necessary
             DataTypePtr right_type = makeNullable(recursiveRemoveLowCardinality(right_key.type));
             ColumnPtr right_key_col = castColumnAccurateOrNull(col, right_type);
             if (!right_key.type->isNullable() && col.type->isNullable())

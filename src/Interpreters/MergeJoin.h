@@ -76,6 +76,7 @@ private:
     Block right_sample_block;
     Block right_table_keys;
 
+    /// Mapping from left key column names to corresponding names and types from right
     using KeyNamesMapping = std::unordered_map<std::string, NameAndTypePair>;
     KeyNamesMapping left_key_names_mapping;
 

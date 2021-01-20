@@ -440,6 +440,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & left_
     bool cast_allowed = JoinCommon::isCastJoinKeysAllowed(left_sample_block, right_sample_block, *table_join);
     if (cast_allowed)
     {
+        /// Left key columns will be converted to types from right if it isn't match
         auto cols_to_convert = JoinCommon::getJoinColumnsNeedCast(
             left_sample_block, table_join->keyNamesLeft(), right_sample_block, key_names_right);
 
@@ -447,11 +448,15 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & left_
         String uuid_string = UUIDHelpers::generateV4().toUnderType().toHexString();
         for (const auto & [name, type] : cols_to_convert)
         {
-            std::string new_name = "--" + uuid_string + "-" + name;
+            /// TODO (@vdimir): maybe it's better to create name like `cast(old_name, NewType)` as conversion was in query ?
+            /// Actually this columns will be removed at the end of joinBlock function, so this names isn't visible outside (e.g. in plan)
+            /// Main concern is column names duplication.
+            std::string new_name = uuid_string + "-" + name;
             left_key_names_mapping[name] = NameAndTypePair(new_name, type);
 
             if (unlikely(left_sample_block.has(new_name)))
-                throw DB::Exception("Randomly generated column name is not unique", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Randomly generated column '{}' name is not unique in {}",
+                                    new_name, left_sample_block.dumpStructure());
         }
     }
 

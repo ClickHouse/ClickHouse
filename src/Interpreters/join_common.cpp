@@ -296,6 +296,7 @@ void restoreLowCardinalityInplace(Block & block)
     }
 }
 
+/// @return columns used for join converting types if necessary
 Columns extractKeysForJoin(const Block & block, const Names & key_names, const NameToTypeMap & cast_columns, bool remove_nullability)
 {
     size_t keys_size = key_names.size();
@@ -343,6 +344,9 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
     }
 }
 
+/// @return mapping from `names` to `types`.
+/// `names` is got from `block_converted` columns that don't match with corresponding columns in `block_unchanged`
+/// `types` is corresponding type from `block_unchanged`
 NameToTypeMap getJoinColumnsNeedCast(const Block & block_converted, const Names & key_names_converted,
                                      const Block & block_unchanged, const Names & key_names_unchanged)
 {

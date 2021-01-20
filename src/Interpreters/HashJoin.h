@@ -368,7 +368,9 @@ private:
     /// Block with key columns right-side table keys that are needed in result (would be attached after joined columns).
     Block required_right_keys;
 
-    std::unordered_map<String, DataTypePtr> cast_keys_info;
+    /// Mapping from right key names to types of corresponding left columns
+    using NameToTypeMapping = std::unordered_map<String, DataTypePtr>;
+    NameToTypeMapping cast_keys_info;
 
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;

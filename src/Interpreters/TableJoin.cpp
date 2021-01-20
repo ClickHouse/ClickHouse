@@ -230,6 +230,8 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns) const
 {
+    /// Types of key columns can be changed in joinBlock
+    /// so we need to correct it to match with actual type
     JoinCommon::NameToTypeMap left_name_to_remap_type;
     if (!hasJoinedStorage() && isRight(kind()))
         left_name_to_remap_type = JoinCommon::getLeftKeysToRemapType(*this, columns_from_joined_table);

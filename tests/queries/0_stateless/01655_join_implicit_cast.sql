@@ -1,3 +1,6 @@
+CREATE DATABASE IF NOT EXISTS test_01655;
+USE test_01655;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -130,15 +133,8 @@ SELECT '--- non-convertable values ---';
 CREATE TABLE t1 (a Nullable(Int32), b String) ENGINE = Memory;
 CREATE TABLE t2 (a UInt8, b String) ENGINE = Memory;
 
-INSERT INTO t1 VALUES (-1, 'a');
-INSERT INTO t1 VALUES (1, 'b');
-INSERT INTO t1 VALUES (NULL, 'c');
-INSERT INTO t1 VALUES (0, 'd');
-INSERT INTO t1 VALUES (301, '11');
-
-INSERT INTO t2 VALUES (1, '10');
-INSERT INTO t2 VALUES (1, '11');
-INSERT INTO t2 VALUES (2, '20');
+INSERT INTO t1 VALUES (-1, 'a'), (1, 'b'), (NULL, 'c'), (0, 'd'), (301, '11');
+INSERT INTO t2 VALUES (1, '10'), (1, '11'), (2, '20');
 
 SELECT '- full -';
 SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON t1.a == t2.a ORDER BY (t1.b, t2.b);
@@ -266,14 +262,21 @@ SELECT * FROM t2 FULL JOIN t1 ON t1.a = t2.a AND t1.b = t2.b AND t1.c = t2.c ORD
 
 SET join_algorithm = 'auto';
 
+-- throws error 'type mismatch':
+
+-- conversion of non-nullable types not supported
 SELECT * FROM ( SELECT [1] as a ) AS t1 JOIN ( SELECT ['1'] as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 SELECT * FROM ( SELECT [1] as a ) AS t1 JOIN ( SELECT 1 as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 SELECT * FROM ( SELECT 1 as a ) AS t1 JOIN ( SELECT [1] as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 SELECT * FROM ( SELECT toLowCardinality('1') as a ) AS t1 JOIN ( SELECT 1 as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 SELECT * FROM ( SELECT 1 as a ) AS t1 JOIN ( SELECT toLowCardinality('1') as a ) AS t2 ON t1.a == t2.a; -- { serverError 53 }
 
+-- engine = Join doesn't support type conversion
+CREATE TABLE join_any_left (s String, k UInt64) ENGINE = Join(ANY, LEFT, k);
+SELECT joinGet('join_any_left', 's', '1'); -- { serverError 53 }
+SELECT * FROM (SELECT toString(number) as k from numbers(3)) AS t1 ANY LEFT JOIN join_any_left USING (k); -- { serverError 53 }
+
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-
-
-
+DROP DATABASE test_01655;
