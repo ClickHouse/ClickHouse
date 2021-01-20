@@ -75,7 +75,7 @@ function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     cd ch
-    NEW_TESTS=$(git diff --name-only master | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
+    NEW_TESTS=$(git diff --name-only master "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
     cd ..
     if [[ -n "$NEW_TESTS" ]]
     then
