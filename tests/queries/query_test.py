@@ -14,7 +14,6 @@ SKIP_LIST = [
     "00987_distributed_stack_overflow",
 
     # just fail
-    "00463_long_sessions_in_http_interface",
     "00505_secure",
     "00505_shard_secure",
     "00646_url_engine",
