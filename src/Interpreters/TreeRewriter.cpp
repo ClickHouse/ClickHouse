@@ -466,6 +466,8 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
         assertNoWindows(select_query.prewhere(), "in PREWHERE");
+    if (select_query.window())
+        assertNoWindows(select_query.window(), "in WINDOW");
 
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
@@ -483,20 +485,9 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
             }
         }
 
-        if (node->window_partition_by)
+        if (node->window_definition)
         {
-            for (auto & arg : node->window_partition_by->children)
-            {
-                assertNoWindows(arg, "inside PARTITION BY of a window");
-            }
-        }
-
-        if (node->window_order_by)
-        {
-            for (auto & arg : node->window_order_by->children)
-            {
-                assertNoWindows(arg, "inside ORDER BY of a window");
-            }
+            assertNoWindows(node->window_definition, "inside window definition");
         }
     }
 
