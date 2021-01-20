@@ -201,6 +201,20 @@ private:
 
     QueryAccessInfo query_access_info;
 
+    struct QueryFactoriesInfo
+    {
+        std::set<std::string> aggregate_functions;
+        std::set<std::string> databases;
+        std::set<std::string> data_types;
+        std::set<std::string> dictionaries;
+        std::set<std::string> formats;
+        std::set<std::string> functions;
+        std::set<std::string> storages;
+        std::set<std::string> table_functions;
+    };
+
+    mutable QueryFactoriesInfo query_factories_info;
+
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
@@ -368,6 +382,9 @@ public:
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+
+    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    void addQueryFactoriesInfo(String factory_type, const String & created_object) const;
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 

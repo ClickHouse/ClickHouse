@@ -734,6 +734,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
+                const auto & factories_info = context.getQueryFactoriesInfo();
+                elem.factory_aggregate_functions = factories_info.aggregate_functions;
+                elem.factory_databases = factories_info.databases;
+                elem.factory_data_types = factories_info.data_types;
+                elem.factory_dictionaries = factories_info.dictionaries;
+                elem.factory_formats = factories_info.formats;
+                elem.factory_functions = factories_info.functions;
+                elem.factory_storages = factories_info.storages;
+                elem.factory_table_functions = factories_info.table_functions;
+
                 if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
                     if (auto query_log = context.getQueryLog())

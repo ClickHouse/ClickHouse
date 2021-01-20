@@ -44,6 +44,10 @@ TableFunctionPtr TableFunctionFactory::get(
     }
 
     res->parseArguments(ast_function, context);
+
+    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
+        context.getQueryContext().addQueryFactoriesInfo("TableFunction", table_function->name);
+
     return res;
 }
 

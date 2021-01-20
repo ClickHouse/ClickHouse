@@ -4,8 +4,9 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"
-
+#include <Interpreters/Context.h>
 #include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -45,6 +46,9 @@ DictionaryPtr DictionaryFactory::create(
     DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(
         name, config, config_prefix + ".source", dict_struct, context, config.getString(config_prefix + ".database", ""), check_source_config);
     LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
+
+    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
+        context.getQueryContext().addQueryFactoriesInfo("Dictionary", name);
 
     const auto & layout_type = keys.front();
 

@@ -58,6 +58,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
         else
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
     }
+
     return res;
 }
 
@@ -74,6 +75,9 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
+    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
+        context.getQueryContext().addQueryFactoriesInfo("Function", name);
+
     return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }
 

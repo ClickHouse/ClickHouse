@@ -12,6 +12,7 @@
 #include <Parsers/formatAST.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <Interpreters/Context.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -95,6 +96,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         engine_define->sample_by || (!endsWith(engine_name, "MySQL") && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+
+    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
+        context.getQueryContext().addQueryFactoriesInfo("Database", engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
