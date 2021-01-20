@@ -476,12 +476,15 @@
         "01494_storage_join_persistency",
         "01516_drop_table_stress",
         "01541_max_memory_usage_for_user",
+        "01646_system_restart_replicas_smoke", // system restart replicas is a global query
+        "01600_count_of_parts_metrics", // tests global system metrics
         "attach",
         "ddl_dictionaries",
         "dictionary",
         "limit_memory",
         "live_view",
         "memory_leak",
-        "memory_limit"
+        "memory_limit",
+        "polygon_dicts" // they use an explicitly specified database
     ]
 }
