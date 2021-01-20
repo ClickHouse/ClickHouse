@@ -157,8 +157,15 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
+                if (unlikely(nested_function->doesInsertResultNeedNullableColumn()))
+                {
+                    nested_function->insertResultInto(nestedPlace(place), to_concrete, arena);
+                }
+                else
+                {
+                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(0);
+                }
             }
             else
             {
