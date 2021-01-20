@@ -640,6 +640,8 @@ void QueryPlan::optimize()
                 while (tryMergeExpressions(frame.node, frame.node->children.front()));
 
                 trySplitFilter(frame.node, nodes);
+
+                tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
             }
 
             stack.pop();
