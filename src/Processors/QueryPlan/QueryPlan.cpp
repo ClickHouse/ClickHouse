@@ -565,6 +565,11 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         return false;
 
     const auto & expr = filter_step->getExpression();
+
+    /// Do not split if there are function like runningDifference.
+    if (expr->hasStatefulFunctions())
+        return false;
+
     auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
 
     if (split.second->empty())
