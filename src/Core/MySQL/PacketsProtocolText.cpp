@@ -52,6 +52,7 @@ void ComFieldList::readPayloadImpl(ReadBuffer & payload)
 {
     // Command byte has been already read from payload.
     readNullTerminated(table, payload);
+    payload.ignore();
     readStringUntilEOF(field_wildcard, payload);
 }
 
