@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Interpreters/RewriteSumIfFunctonVisitor.h>
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>

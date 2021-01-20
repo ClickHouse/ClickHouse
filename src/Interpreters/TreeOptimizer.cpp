@@ -28,7 +28,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Interpreters/RewriteSumIfFunctonVisitor.h>
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
