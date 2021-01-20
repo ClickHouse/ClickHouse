@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_MANY_ROWS;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int TOO_MANY_PARTITIONS;
 }
 
 
@@ -705,6 +706,21 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (parts_with_ranges.empty())
         return std::make_unique<QueryPlan>();
+
+    auto max_partitions_to_read
+        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data.getSettings()->max_partitions_to_read;
+    if (max_partitions_to_read > 0)
+    {
+        std::set<String> partitions;
+        for (auto & part_with_ranges : parts_with_ranges)
+            partitions.insert(part_with_ranges.data_part->info.partition_id);
+        if (partitions.size() > size_t(max_partitions_to_read))
+            throw Exception(
+                ErrorCodes::TOO_MANY_PARTITIONS,
+                "Too many partitions to read. Current {}, max {}",
+                partitions.size(),
+                max_partitions_to_read);
+    }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, parts_with_ranges.size());
     ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
