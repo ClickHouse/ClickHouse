@@ -51,7 +51,7 @@ nuraft::ptr<nuraft::buffer> WriteBufferFromNuraftBuffer::getBuffer()
     return buffer;
 }
 
- WriteBufferFromNuraftBuffer::~WriteBufferFromNuraftBuffer()
+WriteBufferFromNuraftBuffer::~WriteBufferFromNuraftBuffer()
 {
     try
     {

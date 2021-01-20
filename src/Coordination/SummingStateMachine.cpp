@@ -49,7 +49,8 @@ nuraft::ptr<nuraft::snapshot> SummingStateMachine::last_snapshot()
     // Just return the latest snapshot.
     std::lock_guard<std::mutex> ll(snapshots_lock);
     auto entry = snapshots.rbegin();
-    if (entry == snapshots.rend()) return nullptr;
+    if (entry == snapshots.rend())
+        return nullptr;
 
     auto ctx = entry->second;
     return ctx->snapshot;
@@ -117,7 +118,8 @@ int SummingStateMachine::read_logical_snp_obj(
     {
         std::lock_guard<std::mutex> ll(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
-        if (entry == snapshots.end()) {
+        if (entry == snapshots.end())
+        {
             // Snapshot doesn't exist.
             data_out = nullptr;
             is_last_obj = true;
