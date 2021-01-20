@@ -20,7 +20,7 @@ template <class DataType, class Geometry, class Serializer>
 class FunctionReadWkt : public IFunction
 {
 public:
-    explicit FunctionReadWkt() {}
+    explicit FunctionReadWkt() = default;
 
     size_t getNumberOfArguments() const override
     {
@@ -40,7 +40,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+        const auto * column_string = checkAndGetColumn<ColumnString>(arguments[0].column.get());
 
         Serializer serializer;
         Geometry geometry;

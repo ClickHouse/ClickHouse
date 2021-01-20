@@ -62,6 +62,7 @@ public:
 
         MultiPolygonSerializer<CartesianPoint> serializer;
 
+        /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; i++)
         {
             get<CartesianPoint>(first_parser, first_container, i);

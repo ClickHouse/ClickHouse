@@ -14,7 +14,7 @@ class FunctionWkt : public IFunction
 public:
     static inline const char * name = "wkt";
 
-    explicit FunctionWkt() {}
+    explicit FunctionWkt() = default;
 
     static FunctionPtr create(const Context &)
     {

@@ -63,12 +63,14 @@ public:
 
         MultiPolygonSerializer<Point> serializer;
 
+        /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; i++)
         {
             get(first_parser, first_container, i);
             get(second_parser, second_container, i);
 
             Geometry<Point> sym_difference = MultiPolygon<Point>({{{{}}}});
+
             boost::geometry::sym_difference(
                 boost::get<MultiPolygon<Point>>(first_container),
                 boost::get<MultiPolygon<Point>>(second_container),
