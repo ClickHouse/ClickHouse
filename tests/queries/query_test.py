@@ -19,6 +19,7 @@ SKIP_LIST = [
     "00505_secure",
     "00505_shard_secure",
     "00646_url_engine",
+    "00725_memory_tracking",  # BROKEN
     "00834_cancel_http_readonly_queries_on_client_close",
     "00933_test_fix_extra_seek_on_compressed_cache",
     "00965_logs_level_bugfix",
