@@ -13,6 +13,8 @@
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <queue>
+#include <mutex>
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -34,6 +36,36 @@ struct PollResult
     bool has_responses;
     bool has_requests;
     bool error;
+};
+
+/// Queue with mutex. As simple as possible.
+class ThreadSafeResponseQueue
+{
+private:
+    mutable std::mutex queue_mutex;
+    std::queue<Coordination::ZooKeeperResponsePtr> queue;
+public:
+    void push(const Coordination::ZooKeeperResponsePtr & response)
+    {
+        std::lock_guard lock(queue_mutex);
+        queue.push(response);
+    }
+    bool tryPop(Coordination::ZooKeeperResponsePtr & response)
+    {
+        std::lock_guard lock(queue_mutex);
+        if (!queue.empty())
+        {
+            response = queue.front();
+            queue.pop();
+            return true;
+        }
+        return false;
+    }
+    size_t size() const
+    {
+        std::lock_guard lock(queue_mutex);
+        return queue.size();
+    }
 };
 
 struct SocketInterruptablePollWrapper
@@ -159,12 +191,10 @@ struct SocketInterruptablePollWrapper
                         result.has_requests = true;
                     else
                     {
-                        do
-                        {
-                            UInt8 response_byte;
-                            readIntBinary(response_byte, response_in);
-                            result.has_responses = true;
-                        } while (response_in.available()); /// Just to drain all of them
+                        /// Skip all of them, we are not interested in exact
+                        /// amount because responses ordered in responses queue.
+                        response_in.ignore();
+                        result.has_responses = true;
                     }
                 }
             }
@@ -190,7 +220,7 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , session_id(test_keeper_storage_dispatcher->getSessionID())
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
-    , responses(1000)
+    , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
 }
 
@@ -282,7 +312,7 @@ void TestKeeperTCPHandler::runImpl()
     auto response_fd = poll_wrapper->getResponseFD();
     auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
     {
-        responses.push(response);
+        responses->push(response);
         UInt8 single_byte = 1;
         [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };
@@ -322,7 +352,7 @@ void TestKeeperTCPHandler::runImpl()
             if (result.has_responses)
             {
                 Coordination::ZooKeeperResponsePtr response;
-                while (responses.tryPop(response))
+                while (responses->tryPop(response))
                 {
                     if (response->xid == close_xid)
                     {
@@ -344,8 +374,7 @@ void TestKeeperTCPHandler::runImpl()
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
                 LOG_DEBUG(log, "Session #{} expired", session_id);
-                if (!finish())
-                    LOG_DEBUG(log, "Cannot sent close for expired session #{}", session_id);
+                finish();
                 break;
             }
         }
@@ -353,30 +382,15 @@ void TestKeeperTCPHandler::runImpl()
     catch (const Exception & ex)
     {
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
-        if (!finish())
-            LOG_DEBUG(log, "Cannot sent close for session #{}", session_id);
+        finish();
     }
-
 }
 
-bool TestKeeperTCPHandler::finish()
+void TestKeeperTCPHandler::finish()
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
     request->xid = close_xid;
     test_keeper_storage_dispatcher->putRequest(request, session_id);
-
-    Coordination::ZooKeeperResponsePtr response;
-    bool finished = false;
-    while (responses.tryPop(response, operation_timeout.totalMilliseconds()))
-    {
-        if (response->xid == close_xid)
-        {
-            finished = true;
-            response->write(*out);
-            break;
-        }
-    }
-    return finished;
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveRequest()
