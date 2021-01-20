@@ -212,7 +212,7 @@ private:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs) 
+        void swap(QueryAccessInfo & rhs)
         {
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
