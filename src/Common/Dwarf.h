@@ -21,6 +21,7 @@
 /** This file was edited for ClickHouse.
   */
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
