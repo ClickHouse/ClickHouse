@@ -9,6 +9,8 @@ Creates ClickHouse database with all the tables existing in MySQL, and all the d
 
 ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
 
+This feature is experimental.
+
 ## Creating a Database {#creating-a-database}
 
 ``` sql
@@ -63,7 +65,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 ### Data Replication {#data-replication}
 
-MaterializeMySQL does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
+`MaterializeMySQL` does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
@@ -73,7 +75,7 @@ MaterializeMySQL does not support direct `INSERT`, `DELETE` and `UPDATE` queries
 
 ### Selecting from MaterializeMySQL Tables {#select}
 
-`SELECT` query form MaterializeMySQL tables has some specifics:
+`SELECT` query from `MaterializeMySQL` tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
