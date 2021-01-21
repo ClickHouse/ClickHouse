@@ -48,12 +48,34 @@ public:
     }
 
 private:
+    struct StorageSnapshot
+    {
+        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const zkutil::TestKeeperStorage & storage_)
+            : snapshot(s)
+            , storage(storage_)
+        {}
+
+        nuraft::ptr<nuraft::snapshot> snapshot;
+        zkutil::TestKeeperStorage storage;
+    };
+
+    using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+    StorageSnapshotPtr createSnapshotInternal(nuraft::snapshot & s);
+
+    StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in) const;
+
+    void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out) const;
+
     zkutil::TestKeeperStorage storage;
-    // Mutex for `snapshots_`.
+    /// Mutex for snapshots
     std::mutex snapshots_lock;
 
+    /// Lock for storage
+    std::mutex storage_lock;
+
     /// Fake snapshot storage
-    std::map<uint64_t, nuraft::ptr<nuraft::snapshot>> snapshots;
+    std::map<uint64_t, StorageSnapshotPtr> snapshots;
 
     /// Last committed Raft log number.
     std::atomic<size_t> last_committed_idx;
