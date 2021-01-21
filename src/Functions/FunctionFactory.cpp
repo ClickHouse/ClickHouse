@@ -76,7 +76,7 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const Context & context) const
 {
     if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo("Function", name);
+        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 
     return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }

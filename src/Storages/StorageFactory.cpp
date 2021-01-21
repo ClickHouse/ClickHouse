@@ -191,7 +191,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (local_context.hasQueryContext() && context.getSettingsRef().log_queries)
-        local_context.getQueryContext().addQueryFactoriesInfo("Storage", name);
+        local_context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;
 }
