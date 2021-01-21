@@ -20,14 +20,14 @@ struct AggregateFunctionSumData
 {
     T sum{};
 
-    void ALWAYS_INLINE add(T value)
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
     {
         sum += value;
     }
 
     /// Vectorized version
     template <typename Value>
-    void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
+    void NO_SANITIZE_UNDEFINED NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
         const auto * end = ptr + count;
 
@@ -64,7 +64,7 @@ struct AggregateFunctionSumData
     }
 
     template <typename Value>
-    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    void NO_SANITIZE_UNDEFINED NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
         const auto * end = ptr + count;
 
@@ -99,7 +99,7 @@ struct AggregateFunctionSumData
         sum += local_sum;
     }
 
-    void merge(const AggregateFunctionSumData & rhs)
+    void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
     {
         sum += rhs.sum;
     }
