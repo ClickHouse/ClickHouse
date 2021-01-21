@@ -780,7 +780,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline time_t addWeeks(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
@@ -812,7 +812,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addMonths(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addMonths(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -836,12 +836,12 @@ public:
         }
     }
 
-    inline time_t addQuarters(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addQuarters(time_t t, Int64 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addQuarters(DayNum d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
