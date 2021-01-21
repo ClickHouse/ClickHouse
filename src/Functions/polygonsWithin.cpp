@@ -68,12 +68,16 @@ public:
         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            get(first_parser, first_container, i);
-            get(second_parser, second_container, i);
+            get<Point>(first_parser, first_container, i);
+            get<Point>(second_parser, second_container, i);
 
-            bool within = boost::geometry::within(
-                boost::get<MultiPolygon<Point>>(first_container),
-                boost::get<MultiPolygon<Point>>(second_container));
+            auto first = boost::get<MultiPolygon<Point>>(first_container);
+            auto second = boost::get<MultiPolygon<Point>>(second_container);
+
+            boost::geometry::correct(first);
+            boost::geometry::correct(second);
+
+            bool within = boost::geometry::within(first, second);
 
             res_column->insertValue(within);
         }
@@ -91,10 +95,14 @@ public:
 template <>
 const char * FunctionPolygonsWithin<CartesianPoint>::name = "polygonsWithinCartesian";
 
+template <>
+const char * FunctionPolygonsWithin<GeographicPoint>::name = "polygonsWithinGeographic";
+
 
 void registerFunctionPolygonsWithin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsWithin<GeographicPoint>>();
 }
 
 }

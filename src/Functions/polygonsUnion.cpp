@@ -20,10 +20,11 @@
 namespace DB
 {
 
+template <typename Point>
 class FunctionPolygonsUnion : public IFunction
 {
 public:
-    static inline const char * name = "polygonsUnion";
+    static inline const char * name;
 
     explicit FunctionPolygonsUnion() = default;
 
@@ -54,29 +55,33 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto first_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
+        auto first_parser = makeGeometryFromColumnParser<Point>(arguments[0]);
         auto first_container = createContainer(first_parser);
 
-        auto second_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[1]);
+        auto second_parser = makeGeometryFromColumnParser<Point>(arguments[1]);
         auto second_container = createContainer(second_parser);
 
-        MultiPolygonSerializer<CartesianPoint> serializer;
+        MultiPolygonSerializer<Point> serializer;
 
+        /// We are not interested in some pitfalls in third-party libraries
         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            get<CartesianPoint>(first_parser, first_container, i);
-            get<CartesianPoint>(second_parser, second_container, i);
+            get<Point>(first_parser, first_container, i);
+            get<Point>(second_parser, second_container, i);
 
-            Geometry<CartesianPoint> polygons_union = CartesianMultiPolygon({{{{}}}});
-            /// NOLINTNEXTLINE
-            boost::geometry::union_(
-                boost::get<CartesianMultiPolygon>(first_container),
-                boost::get<CartesianMultiPolygon>(second_container),
-                boost::get<CartesianMultiPolygon>(polygons_union));
+            auto first = boost::get<MultiPolygon<Point>>(first_container);
+            auto second = boost::get<MultiPolygon<Point>>(second_container);
+            auto polygons_union = MultiPolygon<Point>({{{{}}}});
 
-            boost::get<CartesianMultiPolygon>(polygons_union).erase(
-                boost::get<CartesianMultiPolygon>(polygons_union).begin());
+            /// Orient the polygons correctly.
+            boost::geometry::correct(first);
+            boost::geometry::correct(second);
+
+            /// Main work here.
+            boost::geometry::union_(first, second, polygons_union);
+
+            polygons_union.erase(polygons_union.begin());
 
             serializer.add(polygons_union);
         }
@@ -90,10 +95,17 @@ public:
     }
 };
 
+template <>
+const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
+
+template <>
+const char * FunctionPolygonsUnion<GeographicPoint>::name = "polygonsUnionGeographic";
+
 
 void registerFunctionPolygonsUnion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsUnion>();
+    factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsUnion<GeographicPoint>>();
 }
 
 }

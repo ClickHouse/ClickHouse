@@ -19,10 +19,12 @@
 
 namespace DB
 {
+
+template <typename Point>
 class FunctionPolygonsIntersection : public IFunction
 {
 public:
-    static inline const char * name = "polygonsIntersection";
+    static inline const char * name;
 
     explicit FunctionPolygonsIntersection() = default;
 
@@ -53,28 +55,33 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto first_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
+        auto first_parser = makeGeometryFromColumnParser<Point>(arguments[0]);
         auto first_container = createContainer(first_parser);
 
-        auto second_parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[1]);
+        auto second_parser = makeGeometryFromColumnParser<Point>(arguments[1]);
         auto second_container = createContainer(second_parser);
 
-        MultiPolygonSerializer<CartesianPoint> serializer;
+        MultiPolygonSerializer<Point> serializer;
 
+        /// We are not interested in some pitfalls in third-party libraries
         /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
         for (size_t i = 0; i < input_rows_count; i++)
         {
             get(first_parser, first_container, i);
             get(second_parser, second_container, i);
 
-            CartesianGeometry intersection = CartesianMultiPolygon({{{{}}}});
-            boost::geometry::intersection(
-                boost::get<CartesianMultiPolygon>(first_container),
-                boost::get<CartesianMultiPolygon>(second_container),
-                boost::get<CartesianMultiPolygon>(intersection));
+            auto intersection = MultiPolygon<Point>({{{{}}}});
+            auto first = boost::get<MultiPolygon<Point>>(first_container);
+            auto second = boost::get<MultiPolygon<Point>>(second_container);
 
-            boost::get<CartesianMultiPolygon>(intersection).erase(
-                boost::get<CartesianMultiPolygon>(intersection).begin());
+            /// Orient the polygons correctly.
+            boost::geometry::correct(first);
+            boost::geometry::correct(second);
+
+            /// Main work here.
+            boost::geometry::intersection(first, second,intersection);
+
+            intersection.erase(intersection.begin());
 
             serializer.add(intersection);
         }
@@ -89,9 +96,17 @@ public:
 };
 
 
+template <>
+const char * FunctionPolygonsIntersection<CartesianPoint>::name = "polygonsIntersectionCartesian";
+
+template <>
+const char * FunctionPolygonsIntersection<GeographicPoint>::name = "polygonsIntersectionGeographic";
+
+
 void registerFunctionPolygonsIntersection(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPolygonsIntersection>();
+    factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>();
+    factory.registerFunction<FunctionPolygonsIntersection<GeographicPoint>>();
 }
 
 }

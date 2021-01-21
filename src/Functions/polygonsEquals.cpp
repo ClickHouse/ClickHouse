@@ -70,9 +70,13 @@ public:
             get(first_parser, first_container, i);
             get(second_parser, second_container, i);
 
-            bool equals = boost::geometry::equals(
-                boost::get<MultiPolygon<Point>>(first_container),
-                boost::get<MultiPolygon<Point>>(second_container));
+            auto first = boost::get<MultiPolygon<Point>>(first_container);
+            auto second = boost::get<MultiPolygon<Point>>(second_container);
+
+            boost::geometry::correct(first);
+            boost::geometry::correct(second);
+
+            bool equals = boost::geometry::equals(first, second);
 
             res_column->insertValue(equals);
         }

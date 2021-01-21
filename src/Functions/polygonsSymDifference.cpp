@@ -69,15 +69,17 @@ public:
             get(first_parser, first_container, i);
             get(second_parser, second_container, i);
 
-            Geometry<Point> sym_difference = MultiPolygon<Point>({{{{}}}});
+            auto sym_difference = MultiPolygon<Point>({{{{}}}});
 
-            boost::geometry::sym_difference(
-                boost::get<MultiPolygon<Point>>(first_container),
-                boost::get<MultiPolygon<Point>>(second_container),
-                boost::get<MultiPolygon<Point>>(sym_difference));
+            auto first = boost::get<MultiPolygon<Point>>(first_container);
+            auto second = boost::get<MultiPolygon<Point>>(second_container);
 
-            boost::get<MultiPolygon<Point>>(sym_difference).erase(
-                boost::get<MultiPolygon<Point>>(sym_difference).begin());
+            boost::geometry::correct(first);
+            boost::geometry::correct(second);
+
+            boost::geometry::sym_difference(first, second, sym_difference);
+
+            sym_difference.erase(sym_difference.begin());
 
             serializer.add(sym_difference);
         }
