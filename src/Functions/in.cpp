@@ -129,14 +129,14 @@ public:
 template<bool ignore_set>
 void registerFunctionsInImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
+    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>();
+    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
 }
 
 }
