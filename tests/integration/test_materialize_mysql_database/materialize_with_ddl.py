@@ -460,6 +460,7 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("INSERT INTO test_database.t1(a) VALUES(2)")
     mysql_node.query("/* start */ commit /* end */")
 
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "t1\n")
     check_query(clickhouse_node, "SELECT * FROM test_database.t1 ORDER BY a FORMAT TSV", "1\tBEGIN\n2\tBEGIN\n")
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
