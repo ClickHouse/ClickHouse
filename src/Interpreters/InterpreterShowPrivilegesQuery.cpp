@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterShowPrivilegesQuery.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -12,6 +13,7 @@ InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & qu
 
 BlockIO InterpreterShowPrivilegesQuery::execute()
 {
+    context.applySettingChange({"is_reinterpreted_execution", true});
     return executeQuery("SELECT * FROM system.privileges", context, true);
 }
 

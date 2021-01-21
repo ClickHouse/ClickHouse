@@ -507,9 +507,15 @@ class IColumn;
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
+// settings work in query runtime
+#define RUNTIME_QUERY_SETTINGS(M) \
+    M(Bool, is_reinterpreted_execution, false, "Queries such as show tables will be reinterpreted to select query.", 0)
+// End of RUNTIME_QUERY_SETTINGS
+
 #define LIST_OF_SETTINGS(M)    \
     COMMON_SETTINGS(M)         \
-    FORMAT_FACTORY_SETTINGS(M)
+    FORMAT_FACTORY_SETTINGS(M) \
+    RUNTIME_QUERY_SETTINGS(M)
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 

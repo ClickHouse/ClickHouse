@@ -45,6 +45,13 @@ def system_quotas_usage(canonical):
     print(("system_quotas_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
+def system_tiny_quota_usage(canonical):
+    canonical_tsv = TSV(canonical)
+    query = "SELECT quota_name, quota_key, duration, queries, max_queries, errors, max_errors " \
+            "FROM system.quota_usage ORDER BY duration"
+    r = TSV(instance.query(query))
+    print(("system_quota_usage: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
+    assert r == canonical_tsv
 
 def copy_quota_xml(local_file_name, reload_immediately=True):
     script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -369,6 +376,7 @@ def test_dcl_management():
 def test_users_xml_is_readonly():
     assert re.search("storage is readonly", instance.query_and_get_error("DROP QUOTA myQuota"))
 
+
 def test_query_inserts():
     check_system_quotas([["myQuota", "e651da9c-a748-8703-061a-7e5e5096dae7", "users.xml", "['user_name']", [31556952],
                           0, "['default']", "[]"]])
@@ -380,3 +388,23 @@ def test_query_inserts():
     instance.query("INSERT INTO test_table values(1)")
     system_quota_usage(
         [["myQuota", "default", 31556952, 1, 1000, 0, 500, 1, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
+
+
+def test_quota_show_statement():
+    system_quota_limits([["myQuota", 31556952, 0, 1000, "\\N", "\\N", "\\N", 1000, "\\N", "\\N"]])
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 0, 1000, 0, "\\N"]])
+
+    instance.query("show tables")
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 1, 1000, 0, "\\N"]])
+
+    instance.query("show databases")
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 2, 1000, 0, "\\N"]])
+
+    instance.query("show clusters")
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 3, 1000, 0, "\\N"]])
+
+    instance.query("show processlist")
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 4, 1000, 0, "\\N"]])
+
+    instance.query("show privileges")
+    system_tiny_quota_usage([["myQuota", "default", 31556952, 5, 1000, 0, "\\N"]])

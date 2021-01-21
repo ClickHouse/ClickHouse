@@ -12,6 +12,7 @@ namespace DB
 
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
+    context.applySettingChange({"is_reinterpreted_execution", true});
     return executeQuery("SELECT * FROM system.processes", context, true);
 }
 

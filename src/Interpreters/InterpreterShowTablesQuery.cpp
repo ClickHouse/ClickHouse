@@ -142,6 +142,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowTablesQuery::execute()
 {
+    context.applySettingChange({"is_reinterpreted_execution", true});
     return executeQuery(getRewrittenQuery(), context, true);
 }
 
