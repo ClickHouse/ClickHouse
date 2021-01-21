@@ -331,14 +331,23 @@ NamesAndTypesList ColumnsDescription::getAll() const
 
 bool ColumnsDescription::has(const String & column_name) const
 {
-    return columns.get<1>().find(column_name) != columns.get<1>().end()
-        || subcolumns.find(column_name) != subcolumns.end();
+    return columns.get<1>().find(column_name) != columns.get<1>().end();
 }
 
 bool ColumnsDescription::hasNested(const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
     return range.first != range.second && range.first->name.length() > column_name.length();
+}
+
+bool ColumnsDescription::hasSubcolumn(const String & column_name) const
+{
+    return subcolumns.find(column_name) != subcolumns.end();
+}
+
+bool ColumnsDescription::hasInStorageOrSubcolumn(const String & column_name) const
+{
+    return has(column_name) || hasSubcolumn(column_name);
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const

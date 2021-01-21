@@ -879,6 +879,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    NamesAndTypesList loaded_columns;
+
     if (!volume->getDisk()->exists(path))
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -888,25 +890,23 @@ void IMergeTreeDataPart::loadColumns(bool require)
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
             if (volume->getDisk()->exists(getFullRelativePath() + getFileNameForColumn(column) + ".bin"))
-                columns.push_back(column);
+                loaded_columns.push_back(column);
 
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         {
             auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
-            columns.writeText(*buf);
+            loaded_columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);
     }
     else
     {
-        columns.readText(*volume->getDisk()->readFile(path));
+        loaded_columns.readText(*volume->getDisk()->readFile(path));
     }
 
-    size_t pos = 0;
-    for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
+    setColumns(loaded_columns);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
