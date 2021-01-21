@@ -1,13 +1,13 @@
 1	100
-aggreagte_functions	table_functions	functions
-['count','uniq']	['numbers']	['addDays','plus','toDate']
+used_aggregate_functions	used_table_functions	used_functions
+['uniq','count']	['numbers']	['plus','toDate','addDays']
 
 \N
 \N
-functions	data_types
+used_functions	used_data_types
 ['cast']	['Nullable','UInt8']
 
-data_types	databases	storages
-[]	['Atomic']	[]
-data_types	databases	storages
-['DateTime','String']	[]	['Memory']
+used_databases
+['Atomic']
+used_data_types	used_storages
+['DateTime','String']	['Memory']

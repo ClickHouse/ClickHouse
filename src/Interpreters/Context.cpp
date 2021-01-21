@@ -954,27 +954,37 @@ void Context::addQueryAccessInfo(const String & quoted_database_name, const Stri
 }
 
 
-void Context::addQueryFactoriesInfo(String factory_type, const String & created_object) const
+void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
 
-    if (factory_type == "AggregateFunction")
-        query_factories_info.aggregate_functions.emplace(created_object);
-    else if (factory_type == "Database")
-        query_factories_info.databases.emplace(created_object);
-    else if (factory_type == "DataType")
-        query_factories_info.data_types.emplace(created_object);
-    else if (factory_type == "Dictionary")
-        query_factories_info.dictionaries.emplace(created_object);
-    else if (factory_type == "Format")
-        query_factories_info.formats.emplace(created_object);
-    else if (factory_type == "Function")
-        query_factories_info.functions.emplace(created_object);
-    else if (factory_type == "Storage")
-        query_factories_info.storages.emplace(created_object);
-    else if (factory_type == "TableFunction")
-        query_factories_info.table_functions.emplace(created_object);
+    switch (factory_type)
+    {
+        case QueryLogFactories::AggregateFunction:
+            query_factories_info.aggregate_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::Database:
+            query_factories_info.databases.emplace(created_object);
+            break;
+        case QueryLogFactories::DataType:
+            query_factories_info.data_types.emplace(created_object);
+            break;
+        case QueryLogFactories::Dictionary:
+            query_factories_info.dictionaries.emplace(created_object);
+            break;
+        case QueryLogFactories::Format:
+            query_factories_info.formats.emplace(created_object);
+            break;
+        case QueryLogFactories::Function:
+            query_factories_info.functions.emplace(created_object);
+            break;
+        case QueryLogFactories::Storage:
+            query_factories_info.storages.emplace(created_object);
+            break;
+        case QueryLogFactories::TableFunction:
+            query_factories_info.table_functions.emplace(created_object);
+    }
 }
 
 

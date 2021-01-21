@@ -48,7 +48,7 @@ DictionaryPtr DictionaryFactory::create(
     LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
     if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo("Dictionary", name);
+        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, name);
 
     const auto & layout_type = keys.front();
 

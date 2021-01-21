@@ -98,7 +98,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
     if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo("Database", engine_name);
+        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);

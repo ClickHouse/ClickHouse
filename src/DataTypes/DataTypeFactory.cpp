@@ -82,7 +82,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo("DataType", family_name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
     }
 
     return findCreatorByName(family_name)(parameters);

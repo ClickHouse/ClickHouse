@@ -64,7 +64,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo("AggregateFunction", name);
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
     }
 
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);

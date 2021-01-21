@@ -97,14 +97,14 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"},
 
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_aggregate_functions"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_databases"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_data_types"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_dictionaries"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_formats"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_functions"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_storages"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "factory_table_functions"}
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_functions"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_databases"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_data_types"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_dictionaries"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_formats"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_functions"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_storages"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_table_functions"}
     };
 
 }
@@ -140,21 +140,23 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
     auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
 
-    auto insert_array_from_set = [](const std::set<String> & data, ColumnArray & column)
     {
-        size_t size = 0;
-        for (const auto & name : data)
+        auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
-            column.getData().insertData(name.data(), name.size());
-            ++size;
-        }
-        auto & offsets = column.getOffsets();
-        offsets.push_back(offsets.back() + size);
-    };
+            size_t size = 0;
+            for (const auto & name : data)
+            {
+                column.getData().insertData(name.data(), name.size());
+                ++size;
+            }
+            auto & offsets = column.getOffsets();
+            offsets.push_back(offsets.back() + size);
+        };
 
-    insert_array_from_set(query_databases, column_databases);
-    insert_array_from_set(query_tables, column_tables);
-    insert_array_from_set(query_columns, column_columns);
+        fill_column(query_databases, column_databases);
+        fill_column(query_tables, column_tables);
+        fill_column(query_columns, column_columns);
+    }
 
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
@@ -196,23 +198,37 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 
-    auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+    {
+        auto fill_column = [](const std::unordered_set<String> & data, ColumnArray & column)
+        {
+            size_t size = 0;
+            for (const auto & name : data)
+            {
+                column.getData().insertData(name.data(), name.size());
+                ++size;
+            }
+            auto & offsets = column.getOffsets();
+            offsets.push_back(offsets.back() + size);
+        };
 
-    insert_array_from_set(factory_aggregate_functions, column_aggregate_function_factory_objects);
-    insert_array_from_set(factory_databases, column_database_factory_objects);
-    insert_array_from_set(factory_data_types, column_data_type_factory_objects);
-    insert_array_from_set(factory_dictionaries, column_dictionary_factory_objects);
-    insert_array_from_set(factory_formats, column_format_factory_objects);
-    insert_array_from_set(factory_functions, column_function_factory_objects);
-    insert_array_from_set(factory_storages, column_storage_factory_objects);
-    insert_array_from_set(factory_table_functions, column_table_function_factory_objects);
+        auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+
+        fill_column(used_aggregate_functions, column_aggregate_function_factory_objects);
+        fill_column(used_databases, column_database_factory_objects);
+        fill_column(used_data_types, column_data_type_factory_objects);
+        fill_column(used_dictionaries, column_dictionary_factory_objects);
+        fill_column(used_formats, column_format_factory_objects);
+        fill_column(used_functions, column_function_factory_objects);
+        fill_column(used_storages, column_storage_factory_objects);
+        fill_column(used_table_functions, column_table_function_factory_objects);
+    }
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

@@ -201,18 +201,20 @@ private:
 
     QueryAccessInfo query_access_info;
 
+    /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
-        std::set<std::string> aggregate_functions;
-        std::set<std::string> databases;
-        std::set<std::string> data_types;
-        std::set<std::string> dictionaries;
-        std::set<std::string> formats;
-        std::set<std::string> functions;
-        std::set<std::string> storages;
-        std::set<std::string> table_functions;
+        std::unordered_set<std::string> aggregate_functions;
+        std::unordered_set<std::string> databases;
+        std::unordered_set<std::string> data_types;
+        std::unordered_set<std::string> dictionaries;
+        std::unordered_set<std::string> formats;
+        std::unordered_set<std::string> functions;
+        std::unordered_set<std::string> storages;
+        std::unordered_set<std::string> table_functions;
     };
 
+    /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     //TODO maybe replace with temporary tables?
@@ -383,8 +385,21 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
+    /// Supported factories for records in query_log
+    enum class QueryLogFactories
+    {
+        AggregateFunction,
+        Database,
+        DataType,
+        Dictionary,
+        Format,
+        Function,
+        Storage,
+        TableFunction
+    };
+
     const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
-    void addQueryFactoriesInfo(String factory_type, const String & created_object) const;
+    void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
