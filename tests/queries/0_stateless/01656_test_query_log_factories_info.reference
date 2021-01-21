@@ -5,9 +5,9 @@ aggreagte_functions	table_functions	functions
 \N
 \N
 functions	data_types
-['cast','toTypeName']	['Nullable','UInt8']
+['cast']	['Nullable','UInt8']
 
 data_types	databases	storages
 []	['Atomic']	[]
+data_types	databases	storages
 ['DateTime','String']	[]	['Memory']
-
