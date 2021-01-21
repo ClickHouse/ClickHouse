@@ -98,7 +98,7 @@ public:
 
     DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).numerator += this->data(rhs).numerator;
         this->data(place).denominator += this->data(rhs).denominator;
@@ -137,12 +137,12 @@ private:
     UInt32 denom_scale;
 };
 
-template <class T>
+template <typename T>
 using AvgFieldType = std::conditional_t<IsDecimalNumber<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     NearestFieldType<T>>;
 
-template <class T>
+template <typename T>
 class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
