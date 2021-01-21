@@ -203,3 +203,6 @@ def test_shell_query(bin_prefix, shell_query, standalone_server):
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
     run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+
+    query = 'USE system;'
+    run_client(bin_prefix, tcp_port, query, b'')
