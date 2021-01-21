@@ -22,5 +22,4 @@ select count() from system.query_log where
     query not like '%system.query_log%' and
     event_date = today() and
     event_time >= now() - interval 1 minute and
-    type = 'ExceptionWhileProcessing' and
-    has(Settings.Names, 'max_rows_to_read');
+    type = 'ExceptionWhileProcessing' and Settings['max_rows_to_read'] != '';
