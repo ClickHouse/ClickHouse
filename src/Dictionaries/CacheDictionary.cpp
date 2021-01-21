@@ -289,7 +289,7 @@ ColumnPtr CacheDictionary::getColumn(
                     getItemsString(attribute, ids, column_string.get(), [&](const size_t) { return StringRef{def}; });
                 }
                 else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH}; 
             }
             else
             {
@@ -311,7 +311,7 @@ ColumnPtr CacheDictionary::getColumn(
             if constexpr (IsDecimalNumber<AttributeType>)
             {
                 auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
+                column = ColumnDecimal<AttributeType>::create(identifiers_size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(identifiers_size);
