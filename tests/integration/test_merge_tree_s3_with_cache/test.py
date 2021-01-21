@@ -27,7 +27,7 @@ def get_query_stat(instance, hint):
     result = {}
     instance.query("SYSTEM FLUSH LOGS")
     events = instance.query('''
-        SELECT ProfileEvents.Names, ProfileEvents.Values
+        SELECT ProfileEvents.keys, ProfileEvents.values
         FROM system.query_log
         ARRAY JOIN ProfileEvents
         WHERE type != 1 AND query LIKE '%{}%'
