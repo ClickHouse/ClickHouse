@@ -66,7 +66,7 @@ Parser makeParser(const ColumnWithTypeAndName & col)
     {
         throw Exception("Failed to cast " + col.type->getName() + " to " + wanted_data_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
-    return Parser(std::move(casted));
+    return Parser(std::move(casted->convertToFullColumnIfConst()));
 }
 
 }

@@ -69,10 +69,10 @@ public:
 #ifndef NDEBUG
         size = tuple.size();
 #endif
-        const auto & x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]);
+        const auto & x_data = dynamic_cast<const ColumnFloat64 &>(*tuple_columns[0]);
         first = x_data.getData().data();
 
-        const auto & y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]);
+        const auto & y_data = dynamic_cast<const ColumnFloat64 &>(*tuple_columns[1]);
         second = y_data.getData().data();
     }
 
