@@ -18,7 +18,7 @@ Additional cache types:
 - [Avro format](../interfaces/formats.md#data-format-avro) schemas cache
 - [dictionaries data cache](../sql-reference/dictionaries/index.md)
 
-Not directly used:
+Indirectly used:
 - OS page cache
 
 [Original article](https://clickhouse.tech/docs/en/operations/caches/) <!--hide-->
