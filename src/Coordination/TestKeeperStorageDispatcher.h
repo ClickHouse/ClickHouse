@@ -13,8 +13,6 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class TestKeeperStorageDispatcher
 {
 private:
-
-    std::atomic<int64_t> session_id_counter{0};
     Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
 
     using clock = std::chrono::steady_clock;
@@ -39,6 +37,7 @@ private:
     ThreadFromGlobalPool processing_thread;
 
     TestKeeperStorage storage;
+    std::mutex session_id_mutex;
 
 private:
     void processingThread();
@@ -53,7 +52,8 @@ public:
 
     int64_t getSessionID()
     {
-        return session_id_counter.fetch_add(1);
+        std::lock_guard lock(session_id_mutex);
+        return storage.getSessionID();
     }
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);

@@ -126,7 +126,6 @@ void NuKeeperStateMachine::create_snapshot(
     nuraft::snapshot & s,
     nuraft::async_result<bool>::handler_type & when_done)
 {
-
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
     auto snapshot = createSnapshotInternal(s);
     {
@@ -156,6 +155,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     bool /*is_last_obj*/)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
+
     if (obj_id == 0)
     {
         auto new_snapshot = createSnapshotInternal(s);
@@ -165,8 +165,9 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     else
     {
         auto received_snapshot = readSnapshot(s, data);
+
         std::lock_guard<std::mutex> lock(snapshots_lock);
-        snapshots.try_emplace(s.get_last_log_idx(), std::move(received_snapshot));
+        snapshots[s.get_last_log_idx()] = std::move(received_snapshot);
     }
 
     obj_id++;
