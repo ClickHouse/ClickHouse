@@ -920,12 +920,6 @@ private:
 
     void reportQueryError() const
     {
-        // If we probably have progress bar, we should add additional
-        // newline, otherwise exception may display concatenated with
-        // the progress bar.
-        if (need_render_progress)
-            std::cerr << '\n';
-
         if (server_exception)
         {
             std::string text = server_exception->displayText();
