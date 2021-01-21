@@ -6,6 +6,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <numeric>
 
@@ -95,7 +96,7 @@ bool IPolygonDictionary::isInjective(const std::string &) const
 
 ColumnPtr IPolygonDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
     const ColumnPtr default_untyped) const
@@ -105,8 +106,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     ColumnPtr result;
 
     const auto index = getAttributeIndex(attribute_name);
-
-    /// TODO: Check that attribute type is same as result type
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto size = key_columns.front()->size();
 
@@ -166,8 +166,8 @@ ColumnPtr IPolygonDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);

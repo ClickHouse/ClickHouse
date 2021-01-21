@@ -108,8 +108,8 @@ void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray
 }
 
 ColumnPtr FlatDictionary::getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr &,
+        const std::string & attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes &,
         const ColumnPtr default_untyped) const
@@ -122,18 +122,7 @@ ColumnPtr FlatDictionary::getColumn(
     auto size = ids.size();
 
     const auto & attribute = getAttribute(attribute_name);
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name);
-
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.nullable_set)
-    {
-        col_null_map_to = ColumnUInt8::create(size, false);
-        vec_null_map_to = &col_null_map_to->getData();
-    }
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -244,13 +233,15 @@ ColumnPtr FlatDictionary::getColumn(
 
     if (attribute.nullable_set)
     {
+        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(size, false);
+        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
+
         for (size_t row = 0; row < ids.size(); ++row)
         {
             auto id = ids[row];
+
             if (attribute.nullable_set->find(id) != nullptr)
-            {
-                (*vec_null_map_to)[row] = true;
-            }
+                vec_null_map_to[row] = true;
         }
 
         result = ColumnNullable::create(result, std::move(col_null_map_to));

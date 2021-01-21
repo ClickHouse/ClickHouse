@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace DB
 {
@@ -130,8 +131,8 @@ void DirectDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
 }
 
 ColumnPtr DirectDictionary::getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr &,
+        const std::string & attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes &,
         const ColumnPtr default_untyped) const
@@ -153,8 +154,7 @@ ColumnPtr DirectDictionary::getColumn(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -244,8 +244,8 @@ ColumnPtr DirectDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);

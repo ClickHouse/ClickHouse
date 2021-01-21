@@ -208,16 +208,32 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 
     for (const auto i : ext::range(0, key_types.size()))
     {
-        const auto & expected_type = (*key)[i].type->getName();
-        const auto & actual_type = key_types[i]->getName();
+        const auto & expected_type = (*key)[i].type;
+        const auto & actual_type = key_types[i];
 
-        if (expected_type != actual_type)
-            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type + ", found "
-                                + actual_type,
-                            ErrorCodes::TYPE_MISMATCH};
+        if (!areTypesEqual(expected_type, actual_type))
+            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type->getName() + ", found "
+                    + actual_type->getName(),
+                ErrorCodes::TYPE_MISMATCH};
     }
 }
 
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name, const DataTypePtr & type) const
+{
+    auto find_iter
+        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+
+    if (find_iter == attributes.end())
+        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    auto & attribute = *find_iter;
+
+    if (!areTypesEqual(attribute.type, type))
+        throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
+            ErrorCodes::TYPE_MISMATCH};
+
+    return *find_iter;
+}
 
 std::string DictionaryStructure::getKeyDescription() const
 {
@@ -312,19 +328,11 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             continue;
 
 
-        /// TODO: Rewrite
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
         auto type = initial_type;
         bool is_array = false;
         bool is_nullable = false;
-
-        // const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(type.get());
-        // if (array_type)
-        // {
-        //     is_array = true;
-        //     type = array_type->getNestedType();
-        // }
 
         if (type->isNullable())
         {
@@ -396,14 +404,4 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     return res_attributes;
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name) const
-{
-    auto find_iter
-        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
-
-    if (find_iter == attributes.end())
-        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
-
-    return *find_iter;
-}
 }

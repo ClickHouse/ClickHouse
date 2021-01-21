@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace
 {
@@ -129,12 +130,11 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
 
 ColumnPtr HashedDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
     const ColumnPtr default_untyped) const
 {
-    // dict_struct.validateKeyTypes(key_types);
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
@@ -143,17 +143,7 @@ ColumnPtr HashedDictionary::getColumn(
     auto size = ids.size();
 
     const auto & attribute = getAttribute(attribute_name);
-
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_nullable)
-    {
-        col_null_map_to = ColumnUInt8::create(size, false);
-        vec_null_map_to = &col_null_map_to->getData();
-    }
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
@@ -211,8 +201,8 @@ ColumnPtr HashedDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
@@ -262,15 +252,17 @@ ColumnPtr HashedDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (attribute.is_nullable)
+    if (attribute.nullable_set)
     {
+        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(size, false);
+        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
+
         for (size_t row = 0; row < ids.size(); ++row)
         {
             auto id = ids[row];
+
             if (attribute.nullable_set->find(id) != nullptr)
-            {
-                (*vec_null_map_to)[row] = true;
-            }
+                vec_null_map_to[row] = true;
         }
 
         result = ColumnNullable::create(result, std::move(col_null_map_to));
@@ -578,8 +570,8 @@ void HashedDictionary::createAttributeImpl<String>(Attribute & attribute, const 
 
 HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
 {
-    auto nullable_set = attribute.is_nullable ? std::make_unique<NullableSet>() : nullptr;
-    Attribute attr{attribute.underlying_type, attribute.is_nullable, std::move(nullable_set), {}, {}, {}, {}};
+    auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
+    Attribute attr{attribute.underlying_type, std::move(nullable_set), {}, {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -650,12 +642,11 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        if (attribute.is_nullable)
+        if (attribute.nullable_set)
         {
             if (value.isNull())
             {
-                attribute.nullable_set->insert(id);
-                result = true;
+                result = attribute.nullable_set->insert(id).second;
                 return;
             }
             else
@@ -691,7 +682,7 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     {
         out[i] = attr.find(ids[i]) != nullptr;
 
-        if (attribute.is_nullable && !out[i])
+        if (attribute.nullable_set && !out[i])
             out[i] = attribute.nullable_set->find(ids[i]) != nullptr;
     }
 }
@@ -738,7 +729,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
         /// TODO: Check if order is satisfied
         result = getIds<AttributeType>(attribute);
 
-        if (attribute.is_nullable)
+        if (attribute.nullable_set)
         {
             for (const auto& value: *attribute.nullable_set)
                 result.push_back(value.getKey());

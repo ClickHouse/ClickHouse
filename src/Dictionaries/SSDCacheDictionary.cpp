@@ -23,6 +23,7 @@
 #include <city.h>
 #include <fcntl.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace ProfileEvents
 {
@@ -1329,7 +1330,7 @@ SSDCacheDictionary::SSDCacheDictionary(
 
 ColumnPtr SSDCacheDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
     const ColumnPtr default_untyped) const
@@ -1340,9 +1341,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
     const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
     const auto index = getAttributeIndex(attribute_name);
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -1389,8 +1388,8 @@ ColumnPtr SSDCacheDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(identifiers_size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(identifiers_size);

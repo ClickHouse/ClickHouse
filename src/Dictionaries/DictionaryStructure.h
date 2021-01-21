@@ -154,11 +154,10 @@ struct DictionaryStructure final
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
     void validateKeyTypes(const DataTypes & key_types) const;
+    const DictionaryAttribute &getAttribute(const String& attribute_name, const DataTypePtr & type) const;
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
     size_t getKeySize() const;
-
-    const DictionaryAttribute &getAttribute(const String& attribute_name) const;
 private:
     /// range_min and range_max have to be parsed before this function call
     std::vector<DictionaryAttribute> getAttributes(

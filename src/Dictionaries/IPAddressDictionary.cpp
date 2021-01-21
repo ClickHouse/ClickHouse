@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteIntText.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
@@ -269,7 +270,7 @@ IPAddressDictionary::IPAddressDictionary(
 
 ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
     const ColumnPtr default_untyped) const
@@ -279,9 +280,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     ColumnPtr result;
 
     const auto & attribute = getAttribute(attribute_name);
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto size = key_columns.front()->size();
 
@@ -341,8 +340,8 @@ ColumnPtr IPAddressDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(size);
