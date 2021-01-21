@@ -46,7 +46,7 @@ static TestKeeperStorage::ResponsesForSessions processWatchesImpl(const String &
     {
         std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
         watch_response->path = path;
-        watch_response->xid = -1;
+        watch_response->xid = Coordination::WATCH_XID;
         watch_response->zxid = -1;
         watch_response->type = event_type;
         watch_response->state = Coordination::State::CONNECTED;
@@ -62,7 +62,7 @@ static TestKeeperStorage::ResponsesForSessions processWatchesImpl(const String &
     {
         std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
         watch_list_response->path = parent_path;
-        watch_list_response->xid = -1;
+        watch_list_response->xid = Coordination::WATCH_XID;
         watch_list_response->zxid = -1;
         watch_list_response->type = Coordination::Event::CHILD;
         watch_list_response->state = Coordination::State::CONNECTED;
@@ -102,7 +102,6 @@ struct TestKeeperStorageHeartbeatRequest final : public TestKeeperStorageRequest
         return {zk_request->makeResponse(), {}};
     }
 };
-
 
 struct TestKeeperStorageCreateRequest final : public TestKeeperStorageRequest
 {
