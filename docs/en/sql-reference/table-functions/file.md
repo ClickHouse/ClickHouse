@@ -39,12 +39,10 @@ $ cat /var/lib/clickhouse/user_files/test.csv
     78,43,45
 ```
 
-Table from `test.csv` and selection of the first two rows from it:
+Getting data from a table in `test.csv` and selecting first two rows from it:
 
 ``` sql
-SELECT *
-FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
-LIMIT 2;
+SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 2;
 ```
 
 ``` text
