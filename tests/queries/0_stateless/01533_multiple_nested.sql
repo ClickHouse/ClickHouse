@@ -8,7 +8,7 @@ CREATE TABLE nested
     col2 Nested(a UInt32, n Nested(s String, b UInt32)),
     col3 Nested(n1 Nested(a UInt32, b UInt32), n2 Nested(s String, t String))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
@@ -33,7 +33,7 @@ SELECT col1.a FROM nested FORMAT Null;
 
 -- 4 files: (col1.size0, col1.a) x2
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
     AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
@@ -43,7 +43,7 @@ SELECT col3.n2.s FROM nested FORMAT Null;
 
 -- 6 files: (col3.size0, col3.n2.size1, col3.n2.s) x2
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col3.n2.s FROM %nested%'))
     AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
@@ -55,7 +55,7 @@ CREATE TABLE nested
     id UInt32,
     col1 Nested(a UInt32, n Nested(s String, b UInt32))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 

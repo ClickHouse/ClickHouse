@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
@@ -59,10 +60,8 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"query", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
     };
 }
 
