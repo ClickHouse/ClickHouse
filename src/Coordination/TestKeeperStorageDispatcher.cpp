@@ -11,10 +11,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-}
-namespace zkutil
-{
-
 void TestKeeperStorageDispatcher::processingThread()
 {
     setThreadName("TestKeeperSProc");

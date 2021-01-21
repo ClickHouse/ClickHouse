@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace zkutil
+namespace DB
 {
 
 using namespace DB;

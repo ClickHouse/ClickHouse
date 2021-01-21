@@ -42,7 +42,7 @@ public:
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
-    zkutil::TestKeeperStorage & getStorage()
+    TestKeeperStorage & getStorage()
     {
         return storage;
     }
@@ -50,13 +50,13 @@ public:
 private:
     struct StorageSnapshot
     {
-        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const zkutil::TestKeeperStorage & storage_)
+        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const TestKeeperStorage & storage_)
             : snapshot(s)
             , storage(storage_)
         {}
 
         nuraft::ptr<nuraft::snapshot> snapshot;
-        zkutil::TestKeeperStorage storage;
+        TestKeeperStorage storage;
     };
 
     using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
@@ -67,7 +67,7 @@ private:
 
     void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out) const;
 
-    zkutil::TestKeeperStorage storage;
+    TestKeeperStorage storage;
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 

@@ -276,9 +276,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
     return buf.getBuffer();
 }
 
-zkutil::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
+DB::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
 {
-    zkutil::TestKeeperStorage::ResponsesForSessions results;
+    DB::TestKeeperStorage::ResponsesForSessions results;
     DB::ReadBufferFromNuraftBuffer buf(buffer);
     while (!buf.eof())
     {
@@ -296,28 +296,28 @@ zkutil::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::pt
         Coordination::read(err, buf);
         auto response = request->makeResponse();
         response->readImpl(buf);
-        results.push_back(zkutil::TestKeeperStorage::ResponseForSession{session_id, response});
+        results.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
     }
     return results;
 }
 
 TEST(CoordinationTest, TestStorageSerialization)
 {
-    zkutil::TestKeeperStorage storage;
-    storage.container["/hello"] = zkutil::TestKeeperStorage::Node{.data="world"};
-    storage.container["/hello/somepath"] =  zkutil::TestKeeperStorage::Node{.data="somedata"};
+    DB::TestKeeperStorage storage;
+    storage.container["/hello"] = DB::TestKeeperStorage::Node{.data="world"};
+    storage.container["/hello/somepath"] =  DB::TestKeeperStorage::Node{.data="somedata"};
     storage.session_id_counter = 5;
     storage.zxid = 156;
     storage.ephemerals[3] = {"/hello", "/"};
     storage.ephemerals[1] = {"/hello/somepath"};
 
     DB::WriteBufferFromOwnString buffer;
-    zkutil::TestKeeperStorageSerializer serializer;
+    DB::TestKeeperStorageSerializer serializer;
     serializer.serialize(storage, buffer);
     std::string serialized = buffer.str();
     EXPECT_NE(serialized.size(), 0);
     DB::ReadBufferFromString read(serialized);
-    zkutil::TestKeeperStorage new_storage;
+    DB::TestKeeperStorage new_storage;
     serializer.deserialize(new_storage, read);
 
     EXPECT_EQ(new_storage.container.size(), 3);

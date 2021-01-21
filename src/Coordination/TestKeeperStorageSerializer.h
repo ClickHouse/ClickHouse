@@ -9,9 +9,9 @@ namespace DB
 class TestKeeperStorageSerializer
 {
 public:
-    void serialize(const zkutil::TestKeeperStorage & storage, WriteBuffer & out) const;
+    void serialize(const TestKeeperStorage & storage, WriteBuffer & out) const;
 
-    void deserialize(zkutil::TestKeeperStorage & storage, ReadBuffer & in) const;
+    void deserialize(TestKeeperStorage & storage, ReadBuffer & in) const;
 };
 
 }

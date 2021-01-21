@@ -8,10 +8,10 @@
 namespace DB
 {
 
-zkutil::TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
+TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    zkutil::TestKeeperStorage::RequestForSession request_for_session;
+    TestKeeperStorage::RequestForSession request_for_session;
     readIntBinary(request_for_session.session_id, buffer);
 
     int32_t length;
@@ -29,7 +29,7 @@ zkutil::TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-nuraft::ptr<nuraft::buffer> writeResponses(zkutil::TestKeeperStorage::ResponsesForSessions & responses)
+nuraft::ptr<nuraft::buffer> writeResponses(TestKeeperStorage::ResponsesForSessions & responses)
 {
     WriteBufferFromNuraftBuffer buffer;
     for (const auto & response_and_session : responses)
@@ -52,7 +52,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
 {
     LOG_DEBUG(log, "Commiting logidx {}", log_idx);
     auto request_for_session = parseRequest(data);
-    zkutil::TestKeeperStorage::ResponsesForSessions responses_for_sessions;
+    TestKeeperStorage::ResponsesForSessions responses_for_sessions;
     {
         std::lock_guard lock(storage_lock);
         responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
@@ -107,7 +107,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
     TestKeeperStorageSerializer serializer;
 
     ReadBufferFromNuraftBuffer reader(in);
-    zkutil::TestKeeperStorage new_storage;
+    TestKeeperStorage new_storage;
     serializer.deserialize(new_storage, reader);
     return std::make_shared<StorageSnapshot>(ss, new_storage);
 }

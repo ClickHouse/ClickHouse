@@ -5,7 +5,7 @@
 #include <Coordination/TestKeeperStorage.h>
 #include <functional>
 
-namespace zkutil
+namespace DB
 {
 
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
