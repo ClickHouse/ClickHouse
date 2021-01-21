@@ -13,11 +13,11 @@ toc_priority: 11
 
 И одна из следующих партий этих футболок должна была отправиться на мероприятия за пределами России и мы пробовали сделать английскую версию слогана. К сожалению, русский язык достаточно изящный в терминах описания вещей к тому же было ограничение по количеству символов на футболках, так что у нас не получилось достаточно хорошего перевода (большинство версий были слишком длинные или недостаточно точные) и мы решили оставить русский вариант даже для международных событий. И это стало прекрасным решение потому что люди по всему миру были приятно удивлены когда видели фразу и интересовались, что же там написано.
 
-Итак, что же это значит? Вот несколько вариантов перевода 
+Итак, что же это значит, если вы захотите объяснить своему англоязычному другу? Вот несколько вариантов перевода: 
 
 So, what does it mean? Here are some ways to translate *“не тормозит”*:
 
--   If you translate it literally, it’d be something like *“ClickHouse doesn’t press the brake pedal”*.
+-   Если переводить буквально, то будет что-то подобное: *“ClickHouse doesn’t press the brake pedal”*.
 -   If you’d want to express it as close to how it sounds to a Russian person with IT background, it’d be something like *“If your larger system lags, it’s not because it uses ClickHouse”*.
 -   Shorter, but not so precise versions could be *“ClickHouse is not slow”*, *“ClickHouse doesn’t lag”* or just *“ClickHouse is fast”*.
 

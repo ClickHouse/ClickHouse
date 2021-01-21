@@ -6,13 +6,13 @@ toc_priority: 20
 
 # Возможно ли удалить старые записи из таблицы ClickHouse? {#is-it-possible-to-delete-old-records-from-a-clickhouse-table}
 
-The short answer is “yes”. ClickHouse has multiple mechanisms that allow freeing up disk space by removing old data. Each mechanism is aimed for different scenarios.
+Если отвечать коротко, то да. В ClickHouse есть множество механизмов, которые позволяют освобождать место на диске, удаляя старые данные. Каждый механизм подходит для разных сценариев.
 
 ## TTL {#ttl}
 
-ClickHouse allows to automatically drop values when some condition happens. This condition is configured as an expression based on any columns, usually just static offset for any timestamp column.
+ClickHouse позволяет автоматически сбрасывать значения при выполнении некоторого условия. Это условие конфигурируется как выражение на основании любых столбцов, обычно это статическое смещение allows to automatically drop values when some condition happens. This condition is configured as an expression based on any columns, usually just static offset for any timestamp column.
 
-The key advantage of this approach is that it doesn’t need any external system to trigger, once TTL is configured, data removal happens automatically in background.
+Ключевое преимущество такого подхода в том, что не нужно никакой внешней системы для тригера, The key advantage of this approach is that it doesn’t need any external system to trigger, once TTL is configured, data removal happens automatically in background.
 
 !!! note "Note"
     TTL can also be used to move data not only to [/dev/null](https://en.wikipedia.org/wiki/Null_device), but also between different storage systems, like from SSD to HDD.

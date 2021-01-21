@@ -6,26 +6,29 @@ toc_priority: 100
 
 # Что такое OLAP? {#what-is-olap}
 
-[OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) stands for Online Analytical Processing. It is a broad term that can be looked at from two perspectives: technical and business. But at the very high level, you can just read these words backward:
+[OLAP](https://ru.wikipedia.org/wiki/OLAP) переводится как интерактивная аналитическая обработка. Это широкий термин, который можно рассмотреть с двух сторон: технической и с точки зрения бизнеса. Но на самом верхнем уровне можно просто прочитать с конца:
 
-Processing
-:   Some source data is processed…
+Обработка
+:   Обрабатываются некоторые иходные данные…
 
-Analytical
-:   …to produce some analytical reports and insights…
+Аналитическая
+:   …чтобы получить некоторые аналитические отчеты и новые идеи…
 
-Online
-:   …in real-time.
+Интерактивная
+:   …в реальном времени.
 
-## OLAP from the Business Perspective {#olap-from-the-business-perspective}
+## OLAP с чтоки зрения бизнеса {#olap-from-the-business-perspective}
 
-In recent years, business people started to realize the value of data. Companies who make their decisions blindly, more often than not fail to keep up with the competition. The data-driven approach of successful companies forces them to collect all data that might be remotely useful for making business decisions and need mechanisms to timely analyze them. Here’s where OLAP database management systems (DBMS) come in.
+В последние годы, люди в бизнесе начали осознавать ценность данных. Компании, которые принимают решения вслепую, чаще всего отстают от конкурентов. Подход с учетом обработанных данных в успешных компаниях побуждает их собирать все данные, которые могут быть полезными в будущем для принятия бизнес-решений, а также подбирать механизмы, чтобы своевременно их анализировать. И вот тут приходит СУБД с OLAP. 
 
-In a business sense, OLAP allows companies to continuously plan, analyze, and report operational activities, thus maximizing efficiency, reducing expenses, and ultimately conquering the market share. It could be done either in an in-house system or outsourced to SaaS providers like web/mobile analytics services, CRM services, etc. OLAP is the technology behind many BI applications (Business Intelligence).
+В понимании бизнеса, OLAP позволяет компаниями постоянно планировать, анализировать и собирать отчеты по операционной активности, такой как увеличение эффективности, уменьшение затрат и в итоге расширение доли своей значимости на рынке. It could be done either in an in-house system or outsourced to SaaS providers like web/mobile analytics services, CRM services, etc. OLAP is the technology behind many BI applications (Business Intelligence).
 
+ClickHouse — это СУБД с OLAP, которая достаточно часто используется в роли бэкенда длдя таких SaaS-решений для анализа предметно-ориентированных данных. Тем не менее, некоторые компании все еще не слишком охотно деляться своими данными с провайдерами третьей стороны и 
 ClickHouse is an OLAP database management system that is pretty often used as a backend for those SaaS solutions for analyzing domain-specific data. However, some businesses are still reluctant to share their data with third-party providers and an in-house data warehouse scenario is also viable.
 
-## OLAP from the Technical Perspective {#olap-from-the-technical-perspective}
+## OLAP с точки зрения технической перспективы {#olap-from-the-technical-perspective}
+
+Все СУБД можно классифицировать на две группы: OLAP (интерактивная **аналитическая** обработка) и OLTP (интерактивная обработка **транзакций**). Прошлые акценты на сборке отчетов, где каждый основывается на огромных объемах 
 
 All database management systems could be classified into two groups: OLAP (Online **Analytical** Processing) and OLTP (Online **Transactional** Processing). Former focuses on building reports, each based on large volumes of historical data, but doing it not so frequently. While the latter usually handle a continuous stream of transactions, constantly modifying the current state of data.
 
