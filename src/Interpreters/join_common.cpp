@@ -276,18 +276,11 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
-void addDefaultValues(MutableColumnPtr & column, const DataTypePtr & typ, size_t count)
+void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 {
-    if (typ->getTypeId() == column->getDataType())
-    {
-        column->insertManyDefaults(count);
-    }
-    else
-    {
-        auto default_val = typ->getDefault();
-        for (size_t i = 0; i < count; ++i)
-            column->insert(default_val);
-    }
+    column.reserve(column.size() + count);
+    for (size_t i = 0; i < count; ++i)
+        type->insertDefaultInto(column);
 }
 
 }
@@ -404,20 +397,10 @@ void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
     for (size_t pos : column_indices_left)
     {
         auto & col = block.getByPosition(pos);
-        if (col.column->getDataType() == col.type->getTypeId())
-        {
-            col.column = col.column->cloneResized(rows_added);
-        }
-        else
-        {
-            auto mut_col = col.column->cloneEmpty();
-            mut_col->reserve(rows_added);
 
-            const auto default_value = col.type->getDefault();
-            for (size_t i = 0; i < rows_added; ++i)
-                mut_col->insert(default_value);
-            col.column = std::move(mut_col);
-        }
+        auto mut_col = col.column->cloneEmpty();
+        JoinCommon::addDefaultValues(*mut_col, col.type, rows_added);
+        col.column = std::move(mut_col);
     }
 }
 
