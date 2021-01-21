@@ -8,7 +8,7 @@ namespace DB
 
 namespace
 {
-    void writeNode(const zkutil::TestKeeperStorage::Node & node, WriteBuffer & out)
+    void writeNode(const TestKeeperStorage::Node & node, WriteBuffer & out)
     {
         Coordination::write(node.data, out);
         Coordination::write(node.acls, out);
@@ -18,7 +18,7 @@ namespace
         Coordination::write(node.seq_num, out);
     }
 
-    void readNode(zkutil::TestKeeperStorage::Node & node, ReadBuffer & in)
+    void readNode(TestKeeperStorage::Node & node, ReadBuffer & in)
     {
         Coordination::read(node.data, in);
         Coordination::read(node.acls, in);
@@ -29,7 +29,7 @@ namespace
     }
 }
 
-void TestKeeperStorageSerializer::serialize(const zkutil::TestKeeperStorage & storage, WriteBuffer & out) const
+void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, WriteBuffer & out) const
 {
     Coordination::write(storage.zxid, out);
     Coordination::write(storage.session_id_counter, out);
@@ -49,7 +49,7 @@ void TestKeeperStorageSerializer::serialize(const zkutil::TestKeeperStorage & st
     }
 }
 
-void TestKeeperStorageSerializer::deserialize(zkutil::TestKeeperStorage & storage, ReadBuffer & in) const
+void TestKeeperStorageSerializer::deserialize(TestKeeperStorage & storage, ReadBuffer & in) const
 {
     int64_t session_id_counter, zxid;
     Coordination::read(zxid, in);
@@ -63,7 +63,7 @@ void TestKeeperStorageSerializer::deserialize(zkutil::TestKeeperStorage & storag
     {
         std::string path;
         Coordination::read(path, in);
-        zkutil::TestKeeperStorage::Node node;
+        TestKeeperStorage::Node node;
         readNode(node, in);
         storage.container[path] = node;
     }

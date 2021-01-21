@@ -17,13 +17,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-}
-
-namespace zkutil
-{
-
-using namespace DB;
-
 static String parentPath(const String & path)
 {
     auto rslash_pos = path.rfind('/');

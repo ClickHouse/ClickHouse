@@ -28,7 +28,7 @@ private:
     IServer & server;
     Poco::Logger * log;
     Context global_context;
-    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+    std::shared_ptr<TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id;
