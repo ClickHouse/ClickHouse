@@ -11,7 +11,7 @@
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <Functions/FunctionHelpers.h>
-
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace ProfileEvents
 {
@@ -73,7 +73,7 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
 
 ColumnPtr ComplexKeyCacheDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
     const ColumnPtr default_untyped) const
@@ -83,9 +83,7 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
     ColumnPtr result;
 
     auto & attribute = getAttribute(attribute_name);
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto keys_size = key_columns.front()->size();
 
@@ -133,8 +131,8 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(keys_size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(keys_size);

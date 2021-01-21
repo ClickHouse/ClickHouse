@@ -14,6 +14,7 @@
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -251,7 +252,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 
 ColumnPtr CacheDictionary::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr &,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
     const ColumnPtr default_untyped) const
@@ -262,9 +263,7 @@ ColumnPtr CacheDictionary::getColumn(
     const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
 
     auto & attribute = getAttribute(attribute_name);
-
-    /// TODO: Check that attribute type is same as result type
-    /// TODO: Check if const will work as expected
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -311,8 +310,8 @@ ColumnPtr CacheDictionary::getColumn(
 
             if constexpr (IsDecimalNumber<AttributeType>)
             {
-                // auto scale = getDecimalScale(*attribute.type);
-                column = ColumnDecimal<AttributeType>::create(identifiers_size, 0);
+                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+                column = ColumnDecimal<AttributeType>::create(size, scale);
             }
             else if constexpr (IsNumber<AttributeType>)
                 column = ColumnVector<AttributeType>::create(identifiers_size);

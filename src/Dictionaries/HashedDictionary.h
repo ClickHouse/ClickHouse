@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <variant>
+#include <optional>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
@@ -107,8 +108,7 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        bool is_nullable;
-        std::unique_ptr<NullableSet> nullable_set;
+        std::optional<NullableSet> nullable_set;
 
         std::variant<
             UInt8,

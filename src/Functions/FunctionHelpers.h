@@ -152,4 +152,8 @@ void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithType
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
+
+/// Check if two types are equal
+bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs);
+
 }
