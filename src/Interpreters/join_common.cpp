@@ -276,6 +276,20 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
+void addDefaultValues(MutableColumnPtr & column, const DataTypePtr & typ, size_t count)
+{
+    if (typ->getTypeId() == column->getDataType())
+    {
+        column->insertManyDefaults(count);
+    }
+    else
+    {
+        auto default_val = typ->getDefault();
+        for (size_t i = 0; i < count; ++i)
+            column->insert(default_val);
+    }
+}
+
 }
 
 
@@ -387,9 +401,24 @@ void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 
 void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 {
-    /// @note it's possible to make ColumnConst here and materialize it later
     for (size_t pos : column_indices_left)
-        block.getByPosition(pos).column = block.getByPosition(pos).column->cloneResized(rows_added);
+    {
+        auto & col = block.getByPosition(pos);
+        if (col.column->getDataType() == col.type->getTypeId())
+        {
+            col.column = col.column->cloneResized(rows_added);
+        }
+        else
+        {
+            auto mut_col = col.column->cloneEmpty();
+            mut_col->reserve(rows_added);
+
+            const auto default_value = col.type->getDefault();
+            for (size_t i = 0; i < rows_added; ++i)
+                mut_col->insert(default_value);
+            col.column = std::move(mut_col);
+        }
+    }
 }
 
 void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const
