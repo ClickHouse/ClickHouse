@@ -91,7 +91,7 @@ def get_query_setting_on_shard(node, query_pattern, setting):
         query NOT LIKE '%system.query_log%' AND
         type = 'QueryFinish'
     LIMIT 1
-    """.format(setting, setting, query_pattern)).strip()
+    """.format(setting, query_pattern)).strip()
 
 def test_insecure():
     n1.query('SELECT * FROM dist_insecure')
