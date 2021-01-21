@@ -155,6 +155,27 @@ namespace
 
         return header;
     }
+
+    /// remote_error argument is used to decide whether some errors should be
+    /// ignored or not, in particular:
+    ///
+    /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
+    ///   if we receive it from remote (receiver), since:
+    ///   - the sender will got ATTEMPT_TO_READ_AFTER_EOF when the client just go away,
+    ///     i.e. server had been restarted
+    ///   - since #18853 the file will be checked on the sender locally, and
+    ///     if there is something wrong with the file itself, we will receive
+    ///     ATTEMPT_TO_READ_AFTER_EOF not from the remote at first
+    ///     and mark batch as broken.
+    bool isFileBrokenErrorCode(int code, bool remote_error)
+    {
+        return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
+            || code == ErrorCodes::CANNOT_READ_ALL_DATA
+            || code == ErrorCodes::UNKNOWN_CODEC
+            || code == ErrorCodes::CANNOT_DECOMPRESS
+            || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+    }
 }
 
 
@@ -571,7 +592,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         catch (const Exception & e)
         {
-            if (isFileBrokenErrorCode(e.code()))
+            if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
             {
                 tryLogCurrentException(parent.log, "Failed to send batch due to");
                 batch_broken = true;
@@ -801,16 +822,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 }
 
-bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
-{
-    return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-        || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
-        || code == ErrorCodes::CANNOT_READ_ALL_DATA
-        || code == ErrorCodes::UNKNOWN_CODEC
-        || code == ErrorCodes::CANNOT_DECOMPRESS
-        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
-}
-
 void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
 {
     const auto last_path_separator_pos = file_path.rfind('/');
@@ -837,7 +848,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
 {
     /// mark file as broken if necessary
-    if (isFileBrokenErrorCode(e.code()))
+    if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);
         return true;
