@@ -133,7 +133,10 @@ public:
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
     {
-        const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_type.get())->getScale();
+        UInt32 scale = DataTypeDateTime64::default_scale;
+        if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(result_type.get()))
+            scale = type->getScale();
+
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), result_type);
     }
 };
