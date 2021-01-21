@@ -60,9 +60,12 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name, const DataTypes & argument_types, const Array & parameters, AggregateFunctionProperties & out_properties) const
 {
-    auto query_context = CurrentThread::get().getQueryContext();
-    if (query_context && query_context->getSettingsRef().log_queries)
-        query_context->addQueryFactoriesInfo("AggregateFunction", name);
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo("AggregateFunction", name);
+    }
 
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
