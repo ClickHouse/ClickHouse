@@ -3,6 +3,7 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Coordination/TestKeeperStorageSerializer.h>
 
 namespace DB
 {
@@ -51,23 +52,30 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
 {
     LOG_DEBUG(log, "Commiting logidx {}", log_idx);
     auto request_for_session = parseRequest(data);
-    auto responses_with_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+    zkutil::TestKeeperStorage::ResponsesForSessions responses_for_sessions;
+    {
+        std::lock_guard lock(storage_lock);
+        responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+    }
 
     last_committed_idx = log_idx;
-    return writeResponses(responses_with_sessions);
+    return writeResponses(responses_for_sessions);
 }
 
 bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
     LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
-    std::lock_guard<std::mutex> lock(snapshots_lock);
-    auto entry = snapshots.find(s.get_last_log_idx());
-    if (entry == snapshots.end())
+    StorageSnapshotPtr snapshot;
     {
-        return false;
+        std::lock_guard<std::mutex> lock(snapshots_lock);
+        auto entry = snapshots.find(s.get_last_log_idx());
+        if (entry == snapshots.end())
+            return false;
+        snapshot = entry->second;
     }
-
-    /// TODO
+    std::lock_guard lock(storage_lock);
+    storage = snapshot->storage;
+    last_committed_idx = s.get_last_log_idx();
     return true;
 }
 
@@ -81,7 +89,37 @@ nuraft::ptr<nuraft::snapshot> NuKeeperStateMachine::last_snapshot()
     if (entry == snapshots.rend())
         return nullptr;
 
-    return entry->second;
+    return entry->second->snapshot;
+}
+
+NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::createSnapshotInternal(nuraft::snapshot & s)
+{
+    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
+    nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
+    std::lock_guard lock(storage_lock);
+    return std::make_shared<NuKeeperStateMachine::StorageSnapshot>(ss, storage);
+}
+
+NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nuraft::snapshot & s, nuraft::buffer & in) const
+{
+    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
+    nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
+    TestKeeperStorageSerializer serializer;
+
+    ReadBufferFromNuraftBuffer reader(in);
+    zkutil::TestKeeperStorage new_storage;
+    serializer.deserialize(new_storage, reader);
+    return std::make_shared<StorageSnapshot>(ss, new_storage);
+}
+
+
+void NuKeeperStateMachine::writeSnapshot(const NuKeeperStateMachine::StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out) const
+{
+    TestKeeperStorageSerializer serializer;
+
+    WriteBufferFromNuraftBuffer writer;
+    serializer.serialize(snapshot->storage, writer);
+    out = writer.getBuffer();
 }
 
 void NuKeeperStateMachine::create_snapshot(
@@ -90,11 +128,10 @@ void NuKeeperStateMachine::create_snapshot(
 {
 
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
+    auto snapshot = createSnapshotInternal(s);
     {
         std::lock_guard<std::mutex> lock(snapshots_lock);
-        nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-        nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
-        snapshots[s.get_last_log_idx()] = ss;
+        snapshots[s.get_last_log_idx()] = snapshot;
         const int MAX_SNAPSHOTS = 3;
         int num = snapshots.size();
         auto entry = snapshots.begin();
@@ -114,33 +151,22 @@ void NuKeeperStateMachine::create_snapshot(
 void NuKeeperStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s,
     size_t & obj_id,
-    nuraft::buffer & /*data*/,
+    nuraft::buffer & data,
     bool /*is_first_obj*/,
     bool /*is_last_obj*/)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
     if (obj_id == 0)
     {
+        auto new_snapshot = createSnapshotInternal(s);
         std::lock_guard<std::mutex> lock(snapshots_lock);
-        nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-        nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
-        snapshots[s.get_last_log_idx()] = ss;
-        const int MAX_SNAPSHOTS = 3;
-        int num = snapshots.size();
-        auto entry = snapshots.begin();
-
-        for (int i = 0; i < num - MAX_SNAPSHOTS; ++i)
-        {
-            if (entry == snapshots.end())
-                break;
-            entry = snapshots.erase(entry);
-        }
+        snapshots.try_emplace(s.get_last_log_idx(), std::move(new_snapshot));
     }
     else
     {
+        auto received_snapshot = readSnapshot(s, data);
         std::lock_guard<std::mutex> lock(snapshots_lock);
-        auto entry = snapshots.find(s.get_last_log_idx());
-        assert(entry != snapshots.end());
+        snapshots.try_emplace(s.get_last_log_idx(), std::move(received_snapshot));
     }
 
     obj_id++;
@@ -155,8 +181,9 @@ int NuKeeperStateMachine::read_logical_snp_obj(
 {
 
     LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
+    StorageSnapshotPtr required_snapshot;
     {
-        std::lock_guard<std::mutex> ll(snapshots_lock);
+        std::lock_guard<std::mutex> lock(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
         if (entry == snapshots.end())
         {
@@ -165,23 +192,18 @@ int NuKeeperStateMachine::read_logical_snp_obj(
             is_last_obj = true;
             return 0;
         }
+        required_snapshot = entry->second;
     }
 
     if (obj_id == 0)
     {
-        // Object ID == 0: first object, put dummy data.
-        data_out = nuraft::buffer::alloc(sizeof(size_t));
-        nuraft::buffer_serializer bs(data_out);
-        bs.put_i32(0);
+        auto new_snapshot = createSnapshotInternal(s);
+        writeSnapshot(new_snapshot, data_out);
         is_last_obj = false;
-
     }
     else
     {
-        // Object ID > 0: second object, put actual value.
-        data_out = nuraft::buffer::alloc(sizeof(size_t));
-        nuraft::buffer_serializer bs(data_out);
-        bs.put_u64(1);
+        writeSnapshot(required_snapshot, data_out);
         is_last_obj = true;
     }
     return 0;

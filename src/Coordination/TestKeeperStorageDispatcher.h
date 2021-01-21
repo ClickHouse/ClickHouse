@@ -13,6 +13,8 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class TestKeeperStorageDispatcher
 {
 private:
+
+    std::atomic<int64_t> session_id_counter{0};
     Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
 
     using clock = std::chrono::steady_clock;
@@ -48,10 +50,12 @@ public:
     ~TestKeeperStorageDispatcher();
 
     void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+
     int64_t getSessionID()
     {
-        return storage.getSessionID();
+        return session_id_counter.fetch_add(1);
     }
+
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);

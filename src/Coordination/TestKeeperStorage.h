@@ -19,7 +19,7 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 class TestKeeperStorage
 {
 public:
-    std::atomic<int64_t> session_id_counter{0};
+    int64_t session_id_counter{0};
 
     struct Node
     {
@@ -58,8 +58,8 @@ public:
     Ephemerals ephemerals;
     SessionAndWatcher sessions_and_watchers;
 
-    std::atomic<int64_t> zxid{0};
-    std::atomic<bool> finalized{false};
+    int64_t zxid{0};
+    bool finalized{false};
 
     Watches watches;
     Watches list_watches;   /// Watches for 'list' request (watches on children).
@@ -68,7 +68,7 @@ public:
 
     int64_t getZXID()
     {
-        return zxid.fetch_add(1);
+        return zxid++;
     }
 
 public:
@@ -76,11 +76,6 @@ public:
 
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
     ResponsesForSessions finalize(const RequestsForSessions & expired_requests);
-
-    int64_t getSessionID()
-    {
-        return session_id_counter.fetch_add(1);
-    }
 };
 
 }
