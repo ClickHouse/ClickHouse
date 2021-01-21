@@ -411,7 +411,7 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 
     for (size_t i = 0; i < right_columns.size(); ++i)
     {
-        JoinCommon::addDefaultValues(right_columns[i], right_block.getByPosition(i).type, rows_to_add);
+        JoinCommon::addDefaultValues(*right_columns[i], right_block.getByPosition(i).type, rows_to_add);
     }
 }
 

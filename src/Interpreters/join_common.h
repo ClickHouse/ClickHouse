@@ -34,7 +34,7 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);
 
-void addDefaultValues(MutableColumnPtr & column, const DataTypePtr & typ, size_t count);
+void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 }
 

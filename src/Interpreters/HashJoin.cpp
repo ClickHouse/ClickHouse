@@ -702,7 +702,7 @@ public:
         if (lazy_defaults_count)
         {
             for (size_t j = 0; j < right_indexes.size(); ++j)
-                JoinCommon::addDefaultValues(columns[j], type_name[j].first, lazy_defaults_count);
+                JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
     }
