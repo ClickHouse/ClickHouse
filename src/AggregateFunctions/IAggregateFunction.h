@@ -500,7 +500,7 @@ private:
             const IColumn * columns[args_count];
             const auto & tup_columns = col->getColumns();
 
-            assert(tup_columns.size == args_count);
+            assert(tup_columns.size() == args_count);
             for (size_t i = 0; i < tup_columns.size(); ++i)
             {
                 columns[i] = tup_columns[i].get();
