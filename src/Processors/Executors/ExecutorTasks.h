@@ -106,5 +106,4 @@ public:
     ExecutingGraph::Node *& getNode(size_t thread_num) { return executor_contexts[thread_num]->node; }
 };
 
-
-};
+}
