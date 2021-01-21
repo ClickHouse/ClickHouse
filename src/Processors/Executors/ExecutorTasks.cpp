@@ -111,7 +111,7 @@ void ExecutorTasks::expandPipelineEnd()
         doExpandPipeline(task, false);
 }
 
-ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num, size_t num_threads)
+ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num)
 {
     ExecutingGraph::Node * node = nullptr;
     auto & context = executor_contexts[thread_num];
@@ -176,7 +176,7 @@ ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num, size_t num_t
     return nullptr;
 }
 
-void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_num, size_t num_threads)
+void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_num)
 {
     auto & context = executor_contexts[thread_num];
     /// Take local task from queue if has one.
@@ -220,8 +220,9 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_
     }
 }
 
-void ExecutorTasks::init(size_t num_threads)
+void ExecutorTasks::init(size_t num_threads_)
 {
+    num_threads = num_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
 
@@ -234,7 +235,7 @@ void ExecutorTasks::init(size_t num_threads)
     }
 }
 
-void ExecutorTasks::fill(Queue & queue, size_t num_threads)
+void ExecutorTasks::fill(Queue & queue)
 {
     std::lock_guard lock(task_queue_mutex);
 

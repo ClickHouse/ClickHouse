@@ -82,8 +82,8 @@ private:
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads);
-    void executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num, size_t num_threads);
+    void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
+    void executeSingleThread(size_t thread_num);
     void finish();
 
     String dumpPipeline() const;

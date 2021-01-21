@@ -362,7 +362,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     if (!is_execution_initialized)
         initializeExecution(1);
 
-    executeStepImpl(0, 1, yield_flag);
+    executeStepImpl(0, yield_flag);
 
     if (!tasks.isFinished())
         return true;
@@ -400,9 +400,9 @@ void PipelineExecutor::finalizeExecution()
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
+void PipelineExecutor::executeSingleThread(size_t thread_num)
 {
-    executeStepImpl(thread_num, num_threads);
+    executeStepImpl(thread_num);
 
 #ifndef NDEBUG
     auto & context = executor_contexts[thread_num];
@@ -410,7 +410,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 #endif
 }
 
-void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag)
+void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
@@ -425,7 +425,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
         /// Just travers graph and prepare any processor.
         while (!tasks.isFinished() && node == nullptr)
         {
-            node = tasks.tryGetTask(thread_num, num_threads);
+            node = tasks.tryGetTask(thread_num);
         }
 
         while (node && !yield)
@@ -474,7 +474,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 node = nullptr;
 
                 /// Push other tasks to global queue.
-                tasks.pushTasks(queue, async_queue, thread_num, num_threads);
+                tasks.pushTasks(queue, async_queue, thread_num);
 
                 tasks.expandPipelineEnd();
             }
@@ -519,7 +519,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
                             async_queue.front()->processor->getName());
     }
 
-    tasks.fill(queue, num_threads);
+    tasks.fill(queue);
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
@@ -551,7 +551,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this, thread_group, thread_num = i, num_threads]
+            threads.emplace_back([this, thread_group, thread_num = i]
             {
                 /// ThreadStatus thread_status;
 
@@ -567,7 +567,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
                 try
                 {
-                    executeSingleThread(thread_num, num_threads);
+                    executeSingleThread(thread_num);
                 }
                 catch (...)
                 {
@@ -585,7 +585,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 thread.join();
     }
     else
-        executeSingleThread(0, num_threads);
+        executeSingleThread(0);
 
     finished_flag = true;
 }
