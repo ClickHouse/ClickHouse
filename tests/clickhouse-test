@@ -649,7 +649,7 @@ def main(args):
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
         (name, ext) = os.path.splitext(case)
-        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py')
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect' or os.access(case_file, os. X_OK))
 
     def sute_key_func(item):
        if args.order == 'random':

@@ -680,6 +680,12 @@ private:
 
                     std::cerr << std::endl;
 
+                    client_exception.reset(new Exception(e));
+                }
+
+                if (client_exception)
+                {
+                    /// client_exception may have been set above or elsewhere.
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
                     /// So we reconnect and allow to enter the next query.
@@ -937,7 +943,7 @@ private:
         if (client_exception)
         {
             fmt::print(stderr,
-                "Error on processing query '{}':\n{}",
+                "Error on processing query '{}':\n{}\n",
                 full_query, client_exception->message());
         }
 
