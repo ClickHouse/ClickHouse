@@ -66,7 +66,7 @@ class ExecutorTasks
     /// For single thread, will wait for async tasks only when task_queue is empty.
     PollingQueue async_task_queue;
 
-
+    size_t num_threads = 0;
     size_t num_waiting_async_tasks = 0;
 
     ThreadsQueue threads_queue;
@@ -95,11 +95,11 @@ public:
 
     void wakeUpExecutor(size_t thread_num);
 
-    ExecutingGraph::Node * tryGetTask(size_t thread_num, size_t num_threads);
-    void pushTasks(Queue & queue, Queue & async_queue, size_t thread_num, size_t num_threads);
+    ExecutingGraph::Node * tryGetTask(size_t thread_num);
+    void pushTasks(Queue & queue, Queue & async_queue, size_t thread_num);
 
-    void init(size_t num_threads);
-    void fill(Queue & queue, size_t num_threads);
+    void init(size_t num_threads_);
+    void fill(Queue & queue);
 
     void processAsyncTasks();
 
