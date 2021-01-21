@@ -867,9 +867,21 @@ void StorageBuffer::reschedule()
 
     for (auto & buffer : buffers)
     {
-        std::lock_guard lock(buffer.mutex);
-        min_first_write_time = buffer.first_write_time;
-        rows += buffer.data.rows();
+        /// try_to_lock here to avoid waiting for other layers flushing to be finished,
+        /// since the buffer table may:
+        /// - push to Distributed table, that may take too much time,
+        /// - push to table with materialized views attached,
+        ///   this is also may take some time.
+        ///
+        /// try_to_lock is also ok for background flush, since if there is
+        /// INSERT contended, then the reschedule will be done after
+        /// INSERT will be done.
+        std::unique_lock lock(buffer.mutex, std::try_to_lock);
+        if (lock.owns_lock())
+        {
+            min_first_write_time = buffer.first_write_time;
+            rows += buffer.data.rows();
+        }
     }
 
     /// will be rescheduled via INSERT
