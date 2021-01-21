@@ -148,7 +148,7 @@ class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<
 public:
     using AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         this->data(place).numerator += static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
