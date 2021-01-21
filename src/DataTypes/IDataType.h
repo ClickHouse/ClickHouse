@@ -497,7 +497,7 @@ public:
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-private:
+protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
     /// Customize this DataType
