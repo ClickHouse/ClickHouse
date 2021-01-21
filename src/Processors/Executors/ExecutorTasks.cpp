@@ -116,58 +116,60 @@ ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num, size_t num_t
     ExecutingGraph::Node * node = nullptr;
     auto & context = executor_contexts[thread_num];
 
-    std::unique_lock lock(task_queue_mutex);
-
-    if (!context->async_tasks.empty())
     {
-        node = context->async_tasks.front();
-        context->async_tasks.pop();
-        --num_waiting_async_tasks;
+        std::unique_lock lock(task_queue_mutex);
 
-        if (context->async_tasks.empty())
-            context->has_async_tasks = false;
-    }
-    else if (!task_queue.empty())
-        node = task_queue.pop(thread_num);
-
-    if (node)
-    {
-        if (!task_queue.empty() && !threads_queue.empty())
+        if (!context->async_tasks.empty())
         {
-            auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+            node = context->async_tasks.front();
+            context->async_tasks.pop();
+            --num_waiting_async_tasks;
 
-            if (threads_queue.has(thread_to_wake))
-                threads_queue.pop(thread_to_wake);
-            else
-                thread_to_wake = threads_queue.popAny();
+            if (context->async_tasks.empty())
+                context->has_async_tasks = false;
+        }
+        else if (!task_queue.empty())
+            node = task_queue.pop(thread_num);
 
-            lock.unlock();
-            wakeUpExecutor(thread_to_wake);
+        if (node)
+        {
+            if (!task_queue.empty() && !threads_queue.empty())
+            {
+                auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+
+                if (threads_queue.has(thread_to_wake))
+                    threads_queue.pop(thread_to_wake);
+                else
+                    thread_to_wake = threads_queue.popAny();
+
+                lock.unlock();
+                wakeUpExecutor(thread_to_wake);
+            }
+
+            return node;
         }
 
-        return node;
+        if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
+        {
+            lock.unlock();
+            finish();
+            return nullptr;
+        }
+
+    #if defined(OS_LINUX)
+        if (num_threads == 1)
+        {
+            /// If we execute in single thread, wait for async tasks here.
+            auto res = async_task_queue.wait(lock);
+            if (!res)
+                throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
+
+            return  static_cast<ExecutingGraph::Node *>(res.data);
+        }
+    #endif
+
+        threads_queue.push(thread_num);
     }
-
-    if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
-    {
-        lock.unlock();
-        finish();
-        return nullptr;
-    }
-
-#if defined(OS_LINUX)
-    if (num_threads == 1)
-    {
-        /// If we execute in single thread, wait for async tasks here.
-        auto res = async_task_queue.wait(lock);
-        if (!res)
-            throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
-
-        return  static_cast<ExecutingGraph::Node *>(res.data);
-    }
-#endif
-
-    threads_queue.push(thread_num);
 
     context->wait(finished);
 
