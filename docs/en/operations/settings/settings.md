@@ -2557,12 +2557,12 @@ It can be useful when merges are CPU bounded not IO bounded (performing heavy da
 
 ## max_final_threads {#max-final-threads}
 
-Sets maximum number of threads to read from table with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Sets the maximum number of parallel threads to execute `SELECT` queries with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 Possible values:
 
 -   Positive integer.
--   0 or 1 — Disabled. Executed in a single thread.
+-   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
 
