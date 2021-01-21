@@ -9,6 +9,8 @@ toc_title: MaterializeMySQL
 
 Сервер ClickHouse работает как реплика MySQL. Он читает файл binlog и выполняет DDL and DML-запросы.
 
+`MaterializeMySQL` — экспериментальный движок баз данных.
+
 ## Создание базы данных {#creating-a-database}
 
 ``` sql
@@ -63,17 +65,17 @@ DDL-запросы в MySQL конвертируются в соответств
 
 ### Репликация данных {#data-replication}
 
-Движок MaterializeMySQL не поддерживает прямые запросы `INSERT`, `DELETE` и `UPDATE`. Однако они поддерживаются с точки зрения репликации данных:
+Данные являются неизменяемыми со стороны пользователя ClickHouse, но автоматически обновляются путём репликации следующих запросов из MySQL:
 
-- Запрос `INSERT` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=1`.
+- Запрос `INSERT` конвертируется в ClickHouse в `INSERT` с `_sign=1`.
 
-- Запрос `DELETE` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=-1`.
+- Запрос `DELETE` конвертируется в ClickHouse в `INSERT` с `_sign=-1`.
 
-- Запрос `UPDATE` из MySQL конвертируется в ClickHouse в `INSERT` с `_sign=-1` и `INSERT` с `_sign=1`.
+- Запрос `UPDATE` конвертируется в ClickHouse в `INSERT` с `_sign=-1` и `INSERT` с `_sign=1`.
 
 ### Выборка из таблиц движка MaterializeMySQL {#select}
 
-Запрос `SELECT` из таблиц движка MaterializeMySQL имеет некоторую специфику:
+Запрос `SELECT` из таблиц движка `MaterializeMySQL` имеет некоторую специфику:
 
 - Если в запросе `SELECT` напрямую не указан столбец `_version`, то используется модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final). Таким образом, выбираются только строки с `MAX(_version)`.
 
