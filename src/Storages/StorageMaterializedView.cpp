@@ -151,7 +151,7 @@ void StorageMaterializedView::read(
     if (query_plan.isInitialized())
     {
         auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, context, processed_stage);
-        auto target_header = getHeaderForProcessingStage(*storage, column_names, target_metadata_snapshot, query_info, context, processed_stage);
+        auto target_header = query_plan.getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(mv_header, target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
