@@ -314,52 +314,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     return true;
 }
 
-bool ExecutorTasks::runExpandPipeline(size_t thread_number, std::function<bool()> callback)
-{
-    executor_contexts[thread_number]->task_list.emplace_back(std::move(callback));
-
-    ExpandPipelineTask * desired = &executor_contexts[thread_number]->task_list.back();
-    ExpandPipelineTask * expected = nullptr;
-
-    while (!expand_pipeline_task.compare_exchange_strong(expected, desired))
-    {
-        if (!doExpandPipeline(expected, true))
-            return false;
-
-        expected = nullptr;
-    }
-
-    return doExpandPipeline(desired, true);
-}
-
-bool ExecutorTasks::doExpandPipeline(ExpandPipelineTask * task, bool processing)
-{
-    std::unique_lock lock(task->mutex);
-
-    if (processing)
-        ++task->num_waiting_processing_threads;
-
-    task->condvar.wait(lock, [&]()
-    {
-        return task->num_waiting_processing_threads >= num_processing_executors || expand_pipeline_task != task;
-    });
-
-    bool result = true;
-
-    /// After condvar.wait() task may point to trash. Can change it only if it is still in expand_pipeline_task.
-    if (expand_pipeline_task == task)
-    {
-        result = task->callback(); //expandPipeline(*task->stack, task->node_to_expand->processors_id);
-
-        expand_pipeline_task = nullptr;
-
-        lock.unlock();
-        task->condvar.notify_all();
-    }
-
-    return result;
-}
-
 void PipelineExecutor::cancel()
 {
     cancelled = true;
@@ -373,34 +327,6 @@ void PipelineExecutor::cancel()
 void PipelineExecutor::finish()
 {
     tasks.finish();
-}
-
-void ExecutorTasks::finish()
-{
-    {
-        std::lock_guard lock(task_queue_mutex);
-        finished = true;
-        async_task_queue.finish();
-    }
-
-    std::lock_guard guard(executor_contexts_mutex);
-
-    for (auto & context : executor_contexts)
-    {
-        {
-            std::lock_guard lock(context->mutex);
-            context->wake_flag = true;
-        }
-
-        context->condvar.notify_one();
-    }
-}
-
-void ExecutorTasks::rethrowFirstThreadException()
-{
-    for (auto & executor_context : executor_contexts)
-        if (executor_context->exception)
-            std::rethrow_exception(executor_context->exception);
 }
 
 void PipelineExecutor::execute(size_t num_threads)
@@ -430,7 +356,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    if (tasks.finished)
+    if (tasks.isFinished())
         return false;
 
     if (!is_execution_initialized)
@@ -438,7 +364,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 
     executeStepImpl(0, 1, yield_flag);
 
-    if (!tasks.finished)
+    if (!tasks.isFinished())
         return true;
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
@@ -474,13 +400,6 @@ void PipelineExecutor::finalizeExecution()
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void ExecutorTasks::wakeUpExecutor(size_t thread_num)
-{
-    std::lock_guard guard(executor_contexts[thread_num]->mutex);
-    executor_contexts[thread_num]->wake_flag = true;
-    executor_contexts[thread_num]->condvar.notify_one();
-}
-
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
     executeStepImpl(thread_num, num_threads);
@@ -491,156 +410,30 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 #endif
 }
 
-void ExecutorTasks::expandPipelineStart()
-{
-    ++num_processing_executors;
-    while (auto * task = expand_pipeline_task.load())
-        doExpandPipeline(task, true);
-}
-
-void ExecutorTasks::expandPipelineEnd()
-{
-    --num_processing_executors;
-    while (auto * task = expand_pipeline_task.load())
-        doExpandPipeline(task, false);
-}
-
-ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num, size_t num_threads)
-{
-    ExecutingGraph::Node * node = nullptr;
-    auto & context = executor_contexts[thread_num];
-
-    std::unique_lock lock(task_queue_mutex);
-
-    if (!context->async_tasks.empty())
-    {
-        node = context->async_tasks.front();
-        context->async_tasks.pop();
-        --num_waiting_async_tasks;
-
-        if (context->async_tasks.empty())
-            context->has_async_tasks = false;
-    }
-    else if (!task_queue.empty())
-        node = task_queue.pop(thread_num);
-
-    if (node)
-    {
-        if (!task_queue.empty() && !threads_queue.empty())
-        {
-            auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
-
-            if (threads_queue.has(thread_to_wake))
-                threads_queue.pop(thread_to_wake);
-            else
-                thread_to_wake = threads_queue.popAny();
-
-            lock.unlock();
-            wakeUpExecutor(thread_to_wake);
-        }
-
-        return node;
-    }
-
-    if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
-    {
-        lock.unlock();
-        finish();
-        return nullptr;
-    }
-
-#if defined(OS_LINUX)
-    if (num_threads == 1)
-    {
-        /// If we execute in single thread, wait for async tasks here.
-        auto res = async_task_queue.wait(lock);
-        if (!res)
-            throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
-
-        return  static_cast<ExecutingGraph::Node *>(res.data);
-    }
-#endif
-
-    threads_queue.push(thread_num);
-}
-
-void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_num, size_t num_threads)
-{
-    if (!queue.empty() || !async_queue.empty())
-    {
-        std::unique_lock lock(task_queue_mutex);
-
-#if defined(OS_LINUX)
-        while (!async_queue.empty() && !finished)
-        {
-            async_task_queue.addTask(thread_num, async_queue.front(), async_queue.front()->processor->schedule());
-            async_queue.pop();
-        }
-#endif
-
-        while (!queue.empty() && !finished)
-        {
-            task_queue.push(queue.front(), thread_num);
-            queue.pop();
-        }
-
-        if (!threads_queue.empty() && !task_queue.empty() && !finished)
-        {
-            auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
-
-            if (threads_queue.has(thread_to_wake))
-                threads_queue.pop(thread_to_wake);
-            else
-                thread_to_wake = threads_queue.popAny();
-
-            lock.unlock();
-
-            wakeUpExecutor(thread_to_wake);
-        }
-    }
-}
-
 void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
 #endif
 
-    auto & context = tasks.executor_contexts[thread_num];
-    auto & node = context->node;
+    auto & node = tasks.getNode(thread_num);
     bool yield = false;
 
-    while (!tasks.finished && !yield)
+    while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
-        while (!tasks.finished && node == nullptr)
+        while (!tasks.isFinished() && node == nullptr)
         {
             node = tasks.tryGetTask(thread_num, num_threads);
-            if (node)
-                break;
-
-            if (tasks.finished)
-                break;
-
-            {
-                std::unique_lock lock(context->mutex);
-
-                context->condvar.wait(lock, [&]
-                {
-                    return tasks.finished || context->wake_flag;
-                });
-
-                context->wake_flag = false;
-            }
         }
 
-        if (tasks.finished)
+        if (tasks.isFinished())
             break;
 
         while (node && !yield)
         {
-            if (tasks.finished)
+            if (tasks.isFinished())
                 break;
 
             addJob(node);
@@ -660,7 +453,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             if (node->exception)
                 cancel();
 
-            if (tasks.finished)
+            if (tasks.isFinished())
                 break;
 
 #ifndef NDEBUG
@@ -683,13 +476,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
 
                 node = nullptr;
 
-                /// Take local task from queue if has one.
-                if (!queue.empty() && !context->has_async_tasks)
-                {
-                    node = queue.front();
-                    queue.pop();
-                }
-
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, thread_num, num_threads);
 
@@ -710,36 +496,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
     context->total_time_ns += total_time_watch.elapsed();
     context->wait_time_ns = context->total_time_ns - context->execution_time_ns - context->processing_time_ns;
 #endif
-}
-
-void ExecutorTasks::init(size_t num_threads)
-{
-    threads_queue.init(num_threads);
-    task_queue.init(num_threads);
-
-    {
-        std::lock_guard guard(executor_contexts_mutex);
-
-        executor_contexts.reserve(num_threads);
-        for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
-    }
-}
-
-void ExecutorTasks::fill(Queue & queue, size_t num_threads)
-{
-    std::lock_guard lock(task_queue_mutex);
-
-    size_t next_thread = 0;
-    while (!queue.empty())
-    {
-        task_queue.push(queue.front(), next_thread);
-        queue.pop();
-
-        ++next_thread;
-        if (next_thread >= num_threads)
-            next_thread = 0;
-    }
 }
 
 void PipelineExecutor::initializeExecution(size_t num_threads)
@@ -767,29 +523,6 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     }
 
     tasks.fill(queue, num_threads);
-}
-
-void ExecutorTasks::processAsyncTasks()
-{
-#if defined(OS_LINUX)
-    {
-        /// Wait for async tasks.
-        std::unique_lock lock(task_queue_mutex);
-        while (auto task = async_task_queue.wait(lock))
-        {
-            auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            executor_contexts[task.thread_num]->async_tasks.push(node);
-            executor_contexts[task.thread_num]->has_async_tasks = true;
-            ++num_waiting_async_tasks;
-
-            if (threads_queue.has(task.thread_num))
-            {
-                threads_queue.pop(task.thread_num);
-                wakeUpExecutor(task.thread_num);
-            }
-        }
-    }
-#endif
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
@@ -843,7 +576,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 {
                     /// In case of exception from executor itself, stop other threads.
                     finish();
-                    tasks.executor_contexts[thread_num]->exception = std::current_exception();
+                    tasks.getNode(thread_num)->exception = std::current_exception();
                 }
             });
         }
