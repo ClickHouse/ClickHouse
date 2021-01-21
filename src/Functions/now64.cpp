@@ -3,6 +3,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Common/assert_cast.h>
 
@@ -134,7 +135,8 @@ public:
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
-        if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(result_type.get()))
+        auto res_type = removeNullable(result_type);
+        if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(res_type.get()))
             scale = type->getScale();
 
         return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), result_type);
