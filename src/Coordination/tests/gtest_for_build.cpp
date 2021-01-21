@@ -351,7 +351,6 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     EXPECT_EQ(responses[0].response->getOpNum(), Coordination::OpNum::Create);
     EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperCreateResponse *>(responses[0].response.get())->path_created, "/hello");
 
-
     while (s1.state_machine->getStorage().container.count("/hello") == 0)
     {
         std::cout << "Waiting s1 to apply entry\n";
@@ -373,6 +372,23 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     EXPECT_EQ(s1.state_machine->getStorage().container["/hello"].data, "world");
     EXPECT_EQ(s2.state_machine->getStorage().container["/hello"].data, "world");
     EXPECT_EQ(s3.state_machine->getStorage().container["/hello"].data, "world");
+
+    std::shared_ptr<Coordination::ZooKeeperGetRequest> get_request = std::make_shared<Coordination::ZooKeeperGetRequest>();
+    get_request->path = "/hello";
+    auto entry2 = getZooKeeperLogEntry(session_id, get_request);
+    auto ret_leader_get = s2.raft_instance->append_entries({entry2});
+
+    EXPECT_TRUE(ret_leader_get->get_accepted()) << "failed to replicate create entry: " << ret_leader_get->get_result_code();
+    EXPECT_EQ(ret_leader_get->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate create entry: " << ret_leader_get->get_result_code();
+
+    auto result_get = ret_leader_get.get();
+
+    auto get_responses = getZooKeeperResponses(result_get->get(), get_request);
+
+    EXPECT_EQ(get_responses.size(), 1);
+    EXPECT_EQ(get_responses[0].session_id, 34);
+    EXPECT_EQ(get_responses[0].response->getOpNum(), Coordination::OpNum::Get);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetResponse *>(get_responses[0].response.get())->data, "world");
 
     s1.launcher.shutdown(5);
     s2.launcher.shutdown(5);
