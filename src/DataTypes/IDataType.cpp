@@ -3,8 +3,10 @@
 
 #include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
+#include <Common/SipHash.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -19,9 +21,48 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
-IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr)
+String IDataType::Substream::toString() const
+{
+    switch (type)
+    {
+        case ArrayElements:
+            return "ArrayElements";
+        case ArraySizes:
+            return "ArraySizes";
+        case NullableElements:
+            return "NullableElements";
+        case NullMap:
+            return "NullMap";
+        case TupleElement:
+            return "TupleElement(" + tuple_element_name + ", "
+                + std::to_string(escape_tuple_delimiter) + ")";
+        case DictionaryKeys:
+            return "DictionaryKeys";
+        case DictionaryIndexes:
+            return "DictionaryIndexes";
+    }
+
+    __builtin_unreachable();
+}
+
+String IDataType::SubstreamPath::toString() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "{";
+    for (size_t i = 0; i < size(); ++i)
+    {
+        if (i != 0)
+            wb << ", ";
+        wb << at(i).toString();
+    }
+    wb << "}";
+    return wb.str();
+}
+
+IDataType::IDataType() : custom_name(nullptr), custom_text_serialization(nullptr), custom_streams(nullptr)
 {
 }
 
@@ -93,42 +134,89 @@ size_t IDataType::getSizeOfValueInMemory() const
     throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
-
-String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
+DataTypePtr IDataType::getSubcolumnType(const String & subcolumn_name) const
 {
-    /// Sizes of arrays (elements of Nested type) are shared (all reside in single file).
-    String nested_table_name = Nested::extractTableName(column_name);
+    auto subcolumn_type = tryGetSubcolumnType(subcolumn_name);
+    if (subcolumn_type)
+        return subcolumn_type;
 
-    bool is_sizes_of_nested_type =
-        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimensional arrays).
-                            /// Sizes of arrays are shared only at first level.
-        && path[0].type == IDataType::Substream::ArraySizes
-        && nested_table_name != column_name;
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+}
 
-    size_t array_level = 0;
-    String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
-    for (const Substream & elem : path)
+ColumnPtr IDataType::getSubcolumn(const String & subcolumn_name, const IColumn &) const
+{
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+}
+
+Names IDataType::getSubcolumnNames() const
+{
+    NameSet res;
+    enumerateStreams([&res, this](const SubstreamPath & substream_path, const IDataType & /* substream_type */)
     {
-        if (elem.type == Substream::NullMap)
-            stream_name += ".null";
-        else if (elem.type == Substream::ArraySizes)
-            stream_name += ".size" + toString(array_level);
-        else if (elem.type == Substream::ArrayElements)
-            ++array_level;
-        else if (elem.type == Substream::TupleElement)
+        SubstreamPath new_path;
+        /// Iterate over path to try to get intermediate subcolumns for complex nested types.
+        for (const auto & elem : substream_path)
         {
-            /// For compatibility reasons, we use %2E instead of dot.
+            new_path.push_back(elem);
+            auto subcolumn_name = getSubcolumnNameForStream(new_path);
+            if (!subcolumn_name.empty() && tryGetSubcolumnType(subcolumn_name))
+                res.insert(subcolumn_name);
+        }
+    });
+
+    return Names(std::make_move_iterator(res.begin()), std::make_move_iterator(res.end()));
+}
+
+static String getNameForSubstreamPath(
+    String stream_name,
+    const IDataType::SubstreamPath & path,
+    bool escape_tuple_delimiter)
+{
+    size_t array_level = 0;
+    for (const auto & elem : path)
+    {
+        if (elem.type == IDataType::Substream::NullMap)
+            stream_name += ".null";
+        else if (elem.type == IDataType::Substream::ArraySizes)
+            stream_name += ".size" + toString(array_level);
+        else if (elem.type == IDataType::Substream::ArrayElements)
+            ++array_level;
+        else if (elem.type == IDataType::Substream::DictionaryKeys)
+            stream_name += ".dict";
+        else if (elem.type == IDataType::Substream::TupleElement)
+        {
+            /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
-            stream_name += "%2E" + escapeForFileName(elem.tuple_element_name);
+            stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
+                escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
         }
-        else if (elem.type == Substream::DictionaryKeys)
-            stream_name += ".dict";
     }
+
     return stream_name;
 }
 
+String IDataType::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
+{
+    auto name_in_storage = column.getNameInStorage();
+    auto nested_storage_name = Nested::extractTableName(name_in_storage);
+
+    if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes))
+        name_in_storage = nested_storage_name;
+
+    auto stream_name = escapeForFileName(name_in_storage);
+    return getNameForSubstreamPath(std::move(stream_name), path, true);
+}
+
+String IDataType::getSubcolumnNameForStream(const SubstreamPath & path)
+{
+    auto subcolumn_name = getNameForSubstreamPath("", path, false);
+    if (!subcolumn_name.empty())
+        subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
+
+    return subcolumn_name;
+}
 
 bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
@@ -145,6 +233,102 @@ bool IDataType::isSpecialCompressionAllowed(const SubstreamPath & path)
 void IDataType::insertDefaultInto(IColumn & column) const
 {
     column.insertDefault();
+}
+
+void IDataType::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+{
+    if (custom_streams)
+        custom_streams->enumerateStreams(callback, path);
+    else
+        enumerateStreamsImpl(callback, path);
+}
+
+void IDataType::serializeBinaryBulkStatePrefix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkStatePrefix(settings, state);
+    else
+        serializeBinaryBulkStatePrefixImpl(settings, state);
+}
+
+void IDataType::serializeBinaryBulkStateSuffix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkStateSuffix(settings, state);
+    else
+        serializeBinaryBulkStateSuffixImpl(settings, state);
+}
+
+void IDataType::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->deserializeBinaryBulkStatePrefix(settings, state);
+    else
+        deserializeBinaryBulkStatePrefixImpl(settings, state);
+}
+
+void IDataType::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    if (custom_streams)
+        custom_streams->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+    else
+        serializeBinaryBulkWithMultipleStreamsImpl(column, offset, limit, settings, state);
+}
+
+void IDataType::deserializeBinaryBulkWithMultipleStreamsImpl(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /* state */,
+    SubstreamsCache * /* cache */) const
+{
+    if (ReadBuffer * stream = settings.getter(settings.path))
+        deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
+}
+
+
+void IDataType::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    if (custom_streams)
+    {
+        custom_streams->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
+    /// Do not cache complex type, because they can be constructed
+    /// from their subcolumns, which are in cache.
+    if (!haveSubtypes())
+    {
+        auto cached_column = getFromSubstreamsCache(cache, settings.path);
+        if (cached_column)
+        {
+            column = cached_column;
+            return;
+        }
+    }
+
+    auto mutable_column = column->assumeMutable();
+    deserializeBinaryBulkWithMultipleStreamsImpl(*mutable_column, limit, settings, state, cache);
+    column = std::move(mutable_column);
+
+    if (!haveSubtypes())
+        addToSubstreamsCache(cache, settings.path, column);
 }
 
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -243,6 +427,27 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
 
     if (custom_desc_->text_serialization)
         custom_text_serialization = std::move(custom_desc_->text_serialization);
+
+    if (custom_desc_->streams)
+        custom_streams = std::move(custom_desc_->streams);
+}
+
+void IDataType::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
+{
+    if (cache && !path.empty())
+        cache->emplace(getSubcolumnNameForStream(path), column);
+}
+
+ColumnPtr IDataType::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+{
+    if (!cache || path.empty())
+        return nullptr;
+
+    auto it = cache->find(getSubcolumnNameForStream(path));
+    if (it == cache->end())
+        return nullptr;
+
+    return it->second;
 }
 
 }

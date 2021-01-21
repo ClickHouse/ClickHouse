@@ -78,6 +78,9 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
 
     auto & func_arguments = func.arguments->children;
 
+    if (func_arguments.size() != 1)
+        return;
+
     const auto * first_arg_func = func_arguments[0]->as<ASTFunction>();
     if (!first_arg_func || first_arg_func->arguments->children.empty())
         return;
