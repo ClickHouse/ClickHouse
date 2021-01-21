@@ -428,9 +428,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             node = tasks.tryGetTask(thread_num, num_threads);
         }
 
-        if (tasks.isFinished())
-            break;
-
         while (node && !yield)
         {
             if (tasks.isFinished())
