@@ -680,7 +680,7 @@ private:
 
                     std::cerr << std::endl;
 
-                    client_exception.reset(new Exception(e));
+                    client_exception = std::make_unique<Exception>(e);
                 }
 
                 if (client_exception)
