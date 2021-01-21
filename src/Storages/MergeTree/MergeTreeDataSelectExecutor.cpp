@@ -1305,6 +1305,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         data_settings->index_granularity,
         index_granularity_bytes);
 
+    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
+        settings.merge_tree_min_rows_for_concurrent_read,
+        settings.merge_tree_min_bytes_for_concurrent_read,
+        data_settings->index_granularity,
+        index_granularity_bytes);
+
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
 
@@ -1347,25 +1353,60 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         {
             Pipes pipes;
 
-            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
+            /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
+            /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
+            /// can use parallel select on this part.
+            if (num_streams > 1 && settings.do_not_merge_across_partitions_select_final &&
+                std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
+                parts_to_merge_ranges[range_index]->data_part->info.level > 0)
             {
-                auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
+                MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
+                    num_streams,
+                    sum_marks,
+                    min_marks_for_concurrent_read,
+                    std::vector{*std::move(parts_to_merge_ranges[range_index])},
                     data,
                     metadata_snapshot,
-                    part_it->data_part,
-                    max_block_size,
-                    settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes,
-                    column_names,
-                    part_it->ranges,
-                    use_uncompressed_cache,
                     query_info.prewhere_info,
                     true,
-                    reader_settings,
-                    virt_columns,
-                    part_it->part_index_in_query);
+                    column_names,
+                    MergeTreeReadPool::BackoffSettings(settings),
+                    settings.preferred_block_size_bytes,
+                    false);
 
-                pipes.emplace_back(std::move(source_processor));
+                for (size_t i = 0; i < num_streams; ++i)
+                {
+                    auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
+                        i, pool, min_marks_for_concurrent_read, max_block_size,
+                        settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
+                        data, metadata_snapshot, use_uncompressed_cache,
+                        query_info.prewhere_info, reader_settings, virt_columns);
+
+                    pipes.emplace_back(std::move(source));
+                }
+            }
+            else
+            {
+                for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
+                {
+                    auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
+                        data,
+                        metadata_snapshot,
+                        part_it->data_part,
+                        max_block_size,
+                        settings.preferred_block_size_bytes,
+                        settings.preferred_max_column_in_block_size_bytes,
+                        column_names,
+                        part_it->ranges,
+                        use_uncompressed_cache,
+                        query_info.prewhere_info,
+                        true,
+                        reader_settings,
+                        virt_columns,
+                        part_it->part_index_in_query);
+
+                    pipes.emplace_back(std::move(source_processor));
+                }
             }
 
             if (pipes.empty())
@@ -1380,6 +1421,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             plan = createPlanFromPipe(std::move(pipe), "with final");
         }
 
+        auto expression_step = std::make_unique<ExpressionStep>(
+            plan->getCurrentDataStream(),
+            metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
+
+        expression_step->setStepDescription("Calculate sorting key expression");
+        plan->addStep(std::move(expression_step));
+
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't postprocess this part
         if (settings.do_not_merge_across_partitions_select_final &&
@@ -1389,13 +1437,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             partition_plans.emplace_back(std::move(plan));
             continue;
         }
-
-        auto expression_step = std::make_unique<ExpressionStep>(
-                plan->getCurrentDataStream(),
-                metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
-
-        expression_step->setStepDescription("Calculate sorting key expression");
-        plan->addStep(std::move(expression_step));
 
         Names sort_columns = metadata_snapshot->getSortingKeyColumns();
         SortDescription sort_description;
