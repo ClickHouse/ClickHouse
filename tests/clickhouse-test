@@ -649,7 +649,10 @@ def main(args):
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
         (name, ext) = os.path.splitext(case)
-        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect' or os.access(case_file, os. X_OK))
+        # We could also test for executable files (os.access(case_file, os.X_OK),
+        # but it interferes with 01610_client_spawn_editor.editor, which is invoked
+        # as a query editor in the test, and must be marked as executable.
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect')
 
     def sute_key_func(item):
        if args.order == 'random':
