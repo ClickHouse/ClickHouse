@@ -60,6 +60,7 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        DENY_ALLOCATIONS_IN_SCOPE;
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
         /// In case malicious user is sending signals manually (for unknown reason).

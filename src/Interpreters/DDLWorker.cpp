@@ -13,7 +13,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -21,7 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -34,7 +32,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <Poco/Net/NetException.h>
 #include <common/sleep.h>
 #include <common/getFQDNOrHostName.h>
 #include <pcg_random.hpp>
@@ -62,107 +59,46 @@ namespace ErrorCodes
 }
 
 
-namespace
+String DDLLogEntry::toString()
 {
+    WriteBufferFromOwnString wb;
 
-struct HostID
-{
-    String host_name;
-    UInt16 port;
+    Strings host_id_strings(hosts.size());
+    std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
 
-    HostID() = default;
+    auto version = CURRENT_VERSION;
+    wb << "version: " << version << "\n";
+    wb << "query: " << escape << query << "\n";
+    wb << "hosts: " << host_id_strings << "\n";
+    wb << "initiator: " << initiator << "\n";
 
-    explicit HostID(const Cluster::Address & address)
-    : host_name(address.host_name), port(address.port) {}
-
-    static HostID fromString(const String & host_port_str)
-    {
-        HostID res;
-        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
-        return res;
-    }
-
-    String toString() const
-    {
-        return Cluster::Address::toString(host_name, port);
-    }
-
-    String readableString() const
-    {
-        return host_name + ":" + DB::toString(port);
-    }
-
-    bool isLocalAddress(UInt16 clickhouse_port) const
-    {
-        try
-        {
-            return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            /// Avoid "Host not found" exceptions
-            return false;
-        }
-    }
-
-    static String applyToString(const HostID & host_id)
-    {
-        return host_id.toString();
-    }
-};
-
+    return wb.str();
 }
 
-
-struct DDLLogEntry
+void DDLLogEntry::parse(const String & data)
 {
-    String query;
-    std::vector<HostID> hosts;
-    String initiator; // optional
+    ReadBufferFromString rb(data);
 
-    static constexpr int CURRENT_VERSION = 1;
+    int version;
+    rb >> "version: " >> version >> "\n";
 
-    String toString()
-    {
-        WriteBufferFromOwnString wb;
+    if (version != CURRENT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
 
-        Strings host_id_strings(hosts.size());
-        std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
+    Strings host_id_strings;
+    rb >> "query: " >> escape >> query >> "\n";
+    rb >> "hosts: " >> host_id_strings >> "\n";
 
-        auto version = CURRENT_VERSION;
-        wb << "version: " << version << "\n";
-        wb << "query: " << escape << query << "\n";
-        wb << "hosts: " << host_id_strings << "\n";
-        wb << "initiator: " << initiator << "\n";
+    if (!rb.eof())
+        rb >> "initiator: " >> initiator >> "\n";
+    else
+        initiator.clear();
 
-        return wb.str();
-    }
+    assertEOF(rb);
 
-    void parse(const String & data)
-    {
-        ReadBufferFromString rb(data);
-
-        int version;
-        rb >> "version: " >> version >> "\n";
-
-        if (version != CURRENT_VERSION)
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
-
-        Strings host_id_strings;
-        rb >> "query: " >> escape >> query >> "\n";
-        rb >> "hosts: " >> host_id_strings >> "\n";
-
-        if (!rb.eof())
-            rb >> "initiator: " >> initiator >> "\n";
-        else
-            initiator.clear();
-
-        assertEOF(rb);
-
-        hosts.resize(host_id_strings.size());
-        std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
-    }
-};
+    hosts.resize(host_id_strings.size());
+    std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
+}
 
 
 struct DDLTask
@@ -315,7 +251,7 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, Context & 
     : context(context_)
     , log(&Poco::Logger::get("DDLWorker"))
     , pool_size(pool_size_)
-    , worker_pool(pool_size_)
+    , worker_pool(std::make_unique<ThreadPool>(pool_size))
 {
     CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, 0);
     last_tasks.reserve(pool_size);
@@ -352,7 +288,7 @@ DDLWorker::~DDLWorker()
     stop_flag = true;
     queue_updated_event->set();
     cleanup_event->set();
-    worker_pool.wait();
+    worker_pool.reset();
     main_thread.join();
     cleanup_thread.join();
 }
@@ -517,7 +453,7 @@ void DDLWorker::scheduleTasks()
 
         if (!already_processed)
         {
-            worker_pool.scheduleOrThrowOnError([this, task_ptr = task.release()]()
+            worker_pool->scheduleOrThrowOnError([this, task_ptr = task.release()]()
             {
                 setThreadName("DDLWorkerExec");
                 enqueueTask(DDLTaskPtr(task_ptr));
@@ -847,6 +783,13 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
     if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
         return false;
 
+    if (auto * alter = ast_ddl->as<ASTAlterQuery>())
+    {
+        // Setting alters should be executed on all replicas
+        if (alter->isSettingsAlter())
+            return false;
+    }
+
     return storage->supportsReplication();
 }
 
@@ -1131,6 +1074,17 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
 void DDLWorker::runMainThread()
 {
+    auto reset_state = [&](bool reset_pool = true)
+    {
+        /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
+        /// We create new thread pool to forget previous exceptions.
+        if (reset_pool)
+            worker_pool = std::make_unique<ThreadPool>(pool_size);
+        /// Clear other in-memory state, like server just started.
+        last_tasks.clear();
+        max_id = 0;
+    };
+
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
@@ -1146,7 +1100,12 @@ void DDLWorker::runMainThread()
         catch (const Coordination::Exception & e)
         {
             if (!Coordination::isHardwareError(e.code))
-                throw;  /// A logical error.
+            {
+                /// A logical error.
+                LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.",getCurrentExceptionMessage(true));
+                reset_state(false);
+                assert(false);  /// Catch such failures in tests with debug build
+            }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -1155,8 +1114,8 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
-            return;
+            tryLogCurrentException(log, "Cannot initialize DDL queue.");
+            reset_state(false);
         }
     }
     while (!initialized && !stop_flag);
@@ -1185,14 +1144,14 @@ void DDLWorker::runMainThread()
             }
             else
             {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: {}. Terminating.", getCurrentExceptionMessage(true));
-                return;
+                LOG_ERROR(log, "Unexpected ZooKeeper error: {}", getCurrentExceptionMessage(true));
+                reset_state();
             }
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will terminate:");
-            return;
+            tryLogCurrentException(log, "Unexpected error:");
+            reset_state();
         }
     }
 }

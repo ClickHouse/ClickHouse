@@ -2,6 +2,8 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -14,6 +16,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/StorageMaterializedView.h>
 
 
 namespace DB
