@@ -19,6 +19,6 @@ Additional cache types:
 - [dictionaries data cache](../sql-reference/dictionaries/index.md)
 
 Not directly used:
-- page cache OS
+- OS page cache
 
 [Original article](https://clickhouse.tech/docs/en/operations/caches/) <!--hide-->
