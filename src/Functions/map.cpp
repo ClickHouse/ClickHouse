@@ -65,7 +65,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
-            throw Exception("Function " + getName() + " even number of arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Function " + getName() + " even number of arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
@@ -164,7 +164,7 @@ public:
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map.",
+            throw Exception{"First argument for function " + getName() + " must be a map",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto key_type = map_type->getKeyType();
@@ -225,7 +225,7 @@ public:
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map.",
+            throw Exception{"First argument for function " + getName() + " must be a map",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto key_type = map_type->getKeyType();
@@ -270,7 +270,7 @@ public:
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map.",
+            throw Exception{"First argument for function " + getName() + " must be a map",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto value_type = map_type->getValueType();
