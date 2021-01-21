@@ -390,7 +390,11 @@ void TestKeeperTCPHandler::finish()
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
     request->xid = close_xid;
+    /// Put close request (so storage will remove all info about session)
     test_keeper_storage_dispatcher->putRequest(request, session_id);
+    /// We don't need any callbacks because session can be already dead and
+    /// nobody wait for response
+    test_keeper_storage_dispatcher->finishSession(session_id);
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveRequest()
