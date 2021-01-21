@@ -12,10 +12,10 @@
 
 namespace DB
 {
-template <class T>
+template <typename T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
-template <class T> constexpr bool DecimalOrExtendedInt =
+template <typename T> constexpr bool DecimalOrExtendedInt =
     IsDecimalNumber<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
@@ -25,7 +25,7 @@ template <class T> constexpr bool DecimalOrExtendedInt =
 /**
  * Helper class to encapsulate values conversion for avg and avgWeighted.
  */
-template <class Numerator, class Denominator>
+template <typename Numerator, typename Denominator>
 struct AvgFraction
 {
     Numerator numerator{0};
@@ -84,7 +84,7 @@ struct AvgFraction
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class Numerator, class Denominator, class Derived>
+template <typename Numerator, typename Denominator, typename Derived>
 class AggregateFunctionAvgBase : public
         IAggregateFunctionDataHelper<AvgFraction<Numerator, Denominator>, Derived>
 {
