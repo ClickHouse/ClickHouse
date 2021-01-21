@@ -81,7 +81,6 @@ bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
 nuraft::ptr<nuraft::snapshot> NuKeeperStateMachine::last_snapshot()
 {
-
     LOG_DEBUG(log, "Trying to get last snapshot");
    // Just return the latest snapshot.
     std::lock_guard<std::mutex> lock(snapshots_lock);
