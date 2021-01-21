@@ -74,7 +74,6 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
-    PolygonsUnion.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -386,6 +385,7 @@ SRCS(
     polygonsEquals.cpp
     polygonsIntersection.cpp
     polygonsSymDifference.cpp
+    polygonsUnion.cpp
     polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp

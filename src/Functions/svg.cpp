@@ -65,13 +65,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-
-        auto parser = const_col ?
-            makeGeometryFromColumnParser<CartesianPoint>(ColumnWithTypeAndName(const_col->getDataColumnPtr(), arguments[0].type, arguments[0].name)) :
-            makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
-
-        bool geo_column_is_const = static_cast<bool>(const_col);
+        auto parser = makeGeometryFromColumnParser<CartesianPoint>(arguments[0]);
 
         auto res_column = ColumnString::create();
         auto container = createContainer(parser);
@@ -83,10 +77,8 @@ public:
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            /// FIXME
             std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            if (!geo_column_is_const || i == 0)
-                get(parser, container, i);
+            get(parser, container, i);
 
             str << boost::geometry::svg(container, has_style ? style->getDataAt(i).toString() : "");
             std::string serialized = str.str();

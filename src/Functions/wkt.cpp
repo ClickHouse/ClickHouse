@@ -45,7 +45,6 @@ public:
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
-            /// FIXME
             std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             get(parser, container, i);
             str << boost::geometry::wkt(container);

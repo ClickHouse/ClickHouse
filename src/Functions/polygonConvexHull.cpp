@@ -64,13 +64,13 @@ public:
         {
             get(parser, container, i);
 
-            Geometry<Point> convex_hull = Polygon<Point>({{{}}});
+            auto convex_hull = Polygon<Point>({{{}}});
+
             boost::geometry::convex_hull(
                 boost::get<MultiPolygon<Point>>(container),
-                boost::get<Polygon<Point>>(convex_hull));
+                convex_hull);
 
-            boost::get<Polygon<Point>>(convex_hull).outer().erase(
-                boost::get<Polygon<Point>>(convex_hull).outer().begin());
+            convex_hull.outer().erase(convex_hull.outer().begin());
 
             serializer.add(convex_hull);
         }
@@ -88,14 +88,10 @@ public:
 template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
-// template <>
-// const char * FunctionPolygonConvexHull<GeographicPoint>::name = "polygonConvexHullGeographic";
-
 
 void registerFunctionPolygonConvexHull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
-    // factory.registerFunction<FunctionPolygonConvexHull<GeographicPoint>>();
 }
 
 }
