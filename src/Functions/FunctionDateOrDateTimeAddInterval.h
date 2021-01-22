@@ -87,7 +87,7 @@ struct AddMinutesImpl : public AddOnDateTime64DefaultImpl<AddMinutesImpl>
 
     static constexpr auto name = "addMinutes";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 60;
     }
@@ -106,7 +106,7 @@ struct AddHoursImpl : public AddOnDateTime64DefaultImpl<AddHoursImpl>
 
     static constexpr auto name = "addHours";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 3600;
     }
@@ -150,7 +150,7 @@ struct AddWeeksImpl : public AddOnDateTime64DefaultImpl<AddWeeksImpl>
 
     static constexpr auto name = "addWeeks";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addWeeks(t, delta);
     }
