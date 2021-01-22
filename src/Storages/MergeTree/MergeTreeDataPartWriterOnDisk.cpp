@@ -206,6 +206,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
+    {
     /** While filling index (index_columns), disable memory tracker.
      * Because memory is allocated here (maybe in context of INSERT query),
      *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
@@ -232,6 +233,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         }
 
         current_row += index_granularity.getMarkRows(index_mark++);
+    }
     }
 
     /// store last index row to write final mark at the end of column
