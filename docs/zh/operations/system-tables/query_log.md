@@ -80,10 +80,8 @@ ClickHouse不会自动从表中删除数据。 看 [导言](../../operations/sys
 -   `quota_key` ([字符串](../../sql-reference/data-types/string.md)) — The “quota key” 在指定 [配额](../../operations/quotas.md) 设置（见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
 -   `thread_numbers` ([数组(UInt32)](../../sql-reference/data-types/array.md)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
--   `ProfileEvents.Values` ([数组(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics that are listed in the `ProfileEvents.Names` 列。
--   `Settings.Names` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
--   `Settings.Values` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Values of settings that are listed in the `Settings.Names` 列。
+-   `ProfileEvents` ([Map(String, UInt64))](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
 
 **示例**
 
@@ -132,10 +130,8 @@ http_user_agent:
 quota_key:
 revision:             54434
 thread_ids:           []
-ProfileEvents.Names:  []
-ProfileEvents.Values: []
-Settings.Names:       ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage']
-Settings.Values:      ['0','random','1','10000000000']
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **另请参阅**

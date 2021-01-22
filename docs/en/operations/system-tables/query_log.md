@@ -77,10 +77,8 @@ Columns:
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
 -   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events)
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
--   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
--   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — Values of settings that are listed in the `Settings.Names` column.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events)
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — Settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 
 **Example**
 
@@ -108,8 +106,8 @@ memory_usage:                  0
 current_database:              default
 query:                         INSERT INTO test1 VALUES
 exception_code:                0
-exception:                     
-stack_trace:                   
+exception:
+stack_trace:
 is_initial_query:              1
 user:                          default
 query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
@@ -122,20 +120,18 @@ initial_port:                  33452
 interface:                     1
 os_user:                       bharatnc
 client_hostname:               tower
-client_name:                   ClickHouse 
+client_name:                   ClickHouse
 client_revision:               54437
 client_version_major:          20
 client_version_minor:          7
 client_version_patch:          2
 http_method:                   0
-http_user_agent:               
-quota_key:                     
+http_user_agent:
+quota_key:
 revision:                      54440
 thread_ids:                    []
-ProfileEvents.Names:           []
-ProfileEvents.Values:          []
-Settings.Names:                ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage','allow_introspection_functions']
-Settings.Values:               ['0','random','1','10000000000','1']
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **See Also**

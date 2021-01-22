@@ -26,7 +26,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
     from
         (select *, attribute_name, attribute_value
             from system.opentelemetry_span_log
-                array join attribute.names as attribute_name,
+                array join attribute.keys as attribute_name,
                     attribute.values as attribute_value) o
         join system.query_log on query_id = o.attribute_value
     where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
@@ -41,7 +41,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
 -- same non-empty value for all 'query' spans in this trace.
 select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
-        array join attribute.names as name, attribute.values as value
+        array join attribute.keys as name, attribute.values as value
     where
         trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
@@ -108,7 +108,7 @@ ${CLICKHOUSE_CLIENT} -q "
     -- expect 200 * 0.1 = 20 sampled events on average
     select if(c > 1 and c < 50, 'OK', 'fail: ' || toString(c))
     from system.opentelemetry_span_log
-        array join attribute.names as name, attribute.values as value
+        array join attribute.keys as name, attribute.values as value
     where name = 'clickhouse.query_id'
         and operation_name = 'query'
         and parent_span_id = 0  -- only account for the initial queries
