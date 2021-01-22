@@ -189,4 +189,5 @@
 01650_fetch_patition_with_macro_in_zk_path
 01651_bugs_from_15889
 01655_agg_if_nullable
+01182_materialized_view_different_structure
 01660_sum_ubsan
