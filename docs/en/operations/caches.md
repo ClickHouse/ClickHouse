@@ -21,4 +21,6 @@ Additional cache types:
 Indirectly used:
 - OS page cache
 
+To drop cache, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md) statements.
+
 [Original article](https://clickhouse.tech/docs/en/operations/caches/) <!--hide-->
