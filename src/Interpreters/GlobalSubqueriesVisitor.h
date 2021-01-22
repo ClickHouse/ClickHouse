@@ -146,7 +146,7 @@ public:
 
                 table_out->writePrefix();
                 Block block;
-                while (!executor.pull(block))
+                while (executor.pull(block))
                     table_out->write(block);
 
                 table_out->writeSuffix();
