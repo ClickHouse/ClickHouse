@@ -600,6 +600,12 @@ static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
 void QueryPlan::optimize()
 {
+    /* Stack contains info for every nodes in the path from tree root to the current node.
+     * Every optimization changes only current node and it's children.
+     * Optimization may change QueryPlanStep, but not QueryPlan::Node (only add a new one).
+     * So, QueryPlan::Node::children will be always valid.
+     */
+
     struct Frame
     {
         Node * node;

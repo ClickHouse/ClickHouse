@@ -309,7 +309,8 @@
         "01632_max_partitions_to_read",
         "01638_div_mod_ambiguities",
         "01642_if_nullable_regression",
-        "01643_system_suspend"
+        "01643_system_suspend",
+        "01655_plan_optimizations"
     ],
     "parallel":
     [
