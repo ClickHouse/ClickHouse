@@ -514,7 +514,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header, true);
 
-    pushdown_limit_to_shards = context->getSettingsRef().enable_pushdown_limit_to_shards &&
+    pushdown_limit_to_shards = context->getSettingsRef().experimental_enable_pushdown_limit_to_shards &&
         analysis_result.need_aggregate &&
         options.to_stage <= QueryProcessingStage::WithMergeableState &&
         !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;

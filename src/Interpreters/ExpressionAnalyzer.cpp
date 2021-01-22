@@ -1703,7 +1703,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
         }
 
-        if (need_aggregate && settings.enable_pushdown_limit_to_shards && first_stage)
+        if (need_aggregate && settings.experimental_enable_pushdown_limit_to_shards && first_stage)
         {
             before_limit_pushdown = query_analyzer.appendBeforeLimitPushdown(
                     chain,
