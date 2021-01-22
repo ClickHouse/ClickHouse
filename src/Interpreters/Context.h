@@ -194,9 +194,36 @@ private:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
-        std::set<std::string> databases;
-        std::set<std::string> tables;
-        std::set<std::string> columns;
+        QueryAccessInfo() = default;
+
+        QueryAccessInfo(const QueryAccessInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            databases = rhs.databases;
+            tables = rhs.tables;
+            columns = rhs.columns;
+        }
+
+        QueryAccessInfo(QueryAccessInfo && rhs) = delete;
+
+        QueryAccessInfo & operator=(QueryAccessInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryAccessInfo & rhs)
+        {
+            std::swap(databases, rhs.databases);
+            std::swap(tables, rhs.tables);
+            std::swap(columns, rhs.columns);
+        }
+
+        /// To prevent a race between copy-constructor and other uses of this structure.
+        mutable std::mutex mutex{};
+        std::set<std::string> databases{};
+        std::set<std::string> tables{};
+        std::set<std::string> columns{};
     };
 
     QueryAccessInfo query_access_info;
