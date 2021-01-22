@@ -1,4 +1,5 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ void WriteBufferFromNuraftBuffer::nextImpl()
     size_t old_size = buffer->size();
     /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data
     size_t pos_offset = pos - reinterpret_cast<Position>(buffer->data_begin());
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BUFFER SIZE {}", old_size * size_multiplier);
     nuraft::ptr<nuraft::buffer> new_buffer = nuraft::buffer::alloc(old_size * size_multiplier);
     memcpy(new_buffer->data_begin(), buffer->data_begin(), buffer->size());
     buffer = new_buffer;
