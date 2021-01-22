@@ -54,7 +54,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
 
     if (!frame.is_default)
     {
-        const auto name = frame.type == WindowFrame::FrameType::Rows
+        const auto * name = frame.type == WindowFrame::FrameType::Rows
             ? "ROWS" : frame.type == WindowFrame::FrameType::Groups
                 ? "GROUPS" : "RANGE";
 

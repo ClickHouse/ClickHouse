@@ -32,8 +32,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
 
         workspace.argument_column_indices.reserve(
             workspace.window_function.argument_names.size());
-        workspace.argument_columns.reserve(
-            workspace.window_function.argument_names.size());
         for (const auto & argument_name : workspace.window_function.argument_names)
         {
             workspace.argument_column_indices.push_back(
@@ -53,8 +51,13 @@ WindowTransform::WindowTransform(const Block & input_header_,
         partition_by_indices.push_back(
             input_header.getPositionByName(column.column_name));
     }
-    partition_start_columns.resize(partition_by_indices.size(), nullptr);
-    partition_start_row = 0;
+
+    order_by_indices.reserve(window_description.order_by.size());
+    for (const auto & column : window_description.order_by)
+    {
+        order_by_indices.push_back(
+            input_header.getPositionByName(column.column_name));
+    }
 }
 
 WindowTransform::~WindowTransform()
@@ -67,87 +70,490 @@ WindowTransform::~WindowTransform()
     }
 }
 
-void WindowTransform::transform(Chunk & chunk)
+void WindowTransform::advancePartitionEnd()
 {
-    const size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    for (auto & ws : workspaces)
+    if (partition_ended)
     {
-        ws.argument_columns.clear();
-        for (const auto column_index : ws.argument_column_indices)
-        {
-            // Aggregate functions can't work with constant columns, so we have to
-            // materialize them like the Aggregator does.
-            columns[column_index]
-                = std::move(columns[column_index])->convertToFullColumnIfConst();
-
-            ws.argument_columns.push_back(columns[column_index].get());
-        }
-
-        ws.result_column = ws.window_function.aggregate_function->getReturnType()
-            ->createColumn();
+        return;
     }
 
-    // We loop for all window functions for each row. Switching the loops might
-    // be more efficient, because we would run less code and access less data in
-    // the inner loop. If you change this, don't forget to fix the calculation of
-    // partition boundaries. Probably it has to be precalculated and stored as
-    // an array of offsets. An interesting optimization would be to pass it as
-    // an extra column from the previous sorting step -- that step might need to
-    // make similar comparison anyway, if it's sorting only by the PARTITION BY
-    // columns.
-    for (size_t row = 0; row < num_rows; row++)
+    const RowNumber end = blocksEnd();
+
+    // If we're at the total end of data, we must end the partition. This is the
+    // only place in calculations where we need special handling for end of data,
+    // other places will work as usual based on `partition_ended` = true, because
+    // end of data is logically the same as any other end of partition.
+    // We must check this first, because other calculations might not be valid
+    // when we're at the end of data.
+    // FIXME not true, we also handle it elsewhere
+    if (input_is_finished)
     {
-        // Check whether the new partition has started. We have to reset the
-        // aggregate functions when the new partition starts.
-        assert(partition_start_columns.size() == partition_by_indices.size());
-        bool new_partition = false;
-        if (partition_start_columns.empty())
+        partition_ended = true;
+        partition_end = end;
+        return;
+    }
+
+    // Try to advance the partition end pointer.
+    const size_t n = partition_by_indices.size();
+    if (n == 0)
+    {
+        fmt::print(stderr, "no partition by\n");
+        // No PARTITION BY. All input is one partition, which will end when the
+        // input ends.
+        partition_end = end;
+        return;
+    }
+
+    // The partition ends when the PARTITION BY columns change. We need an array
+    // of reference columns for comparison. We might have already dropped the
+    // blocks where the partition starts, but any row in the partition will do.
+    // We can't use group_start or frame_start, because we might have advanced
+    // them to be equal to the partition_end.
+    // Use the row previous to partition_end -- it should be valid.
+    // FIXME group_start is now valid;
+    //auto reference_row = partition_end;
+    //retreatRowNumber(partition_end);
+    auto reference_row = group_start;
+    // assert(reference_row < partition_end);
+    if (reference_row == partition_end)
+    {
+        // This is for the very first partition. Try to get rid of it.
+        advanceRowNumber(partition_end);
+    }
+    assert(reference_row < blocksEnd());
+    assert(reference_row.block >= first_block_number);
+    Columns reference_partition_by;
+    for (const auto i : partition_by_indices)
+    {
+        reference_partition_by.push_back(inputAt(reference_row)[i]);
+    }
+
+    fmt::print(stderr, "{} cols to compare, reference at {}\n", n, group_start);
+
+    for ( ; partition_end < end; advanceRowNumber(partition_end))
+    {
+        // Check for partition end.
+        size_t i = 0;
+        for ( ; i < n; i++)
         {
-            // No PARTITION BY at all, do nothing.
-        }
-        else if (partition_start_columns[0] == nullptr)
-        {
-            // This is the first partition.
-            new_partition = true;
-            partition_start_columns.clear();
-            for (const auto i : partition_by_indices)
+            const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
+            if (c->compareAt(partition_end.row,
+                    group_start.row, *reference_partition_by[i],
+                    1 /* nan_direction_hint */) != 0)
             {
-                partition_start_columns.push_back(columns[i]);
+                break;
             }
-            partition_start_row = row;
+        }
+
+        if (i < n)
+        {
+//            fmt::print(stderr, "col {} doesn't match at {}: ref {}, val {}\n",
+//                i, partition_end, inputAt(partition_end)[i]);
+            partition_ended = true;
+            return;
+        }
+    }
+
+    // Went until the end of data and didn't find the new partition.
+    assert(!partition_ended && partition_end == blocksEnd());
+}
+
+void WindowTransform::advanceGroupEnd()
+{
+    if (group_ended)
+    {
+        return;
+    }
+
+    switch (window_description.frame.type)
+    {
+        case WindowFrame::FrameType::Groups:
+            advanceGroupEndGroups();
+            break;
+        case WindowFrame::FrameType::Rows:
+            advanceGroupEndRows();
+            break;
+        case WindowFrame::FrameType::Range:
+            advanceGroupEndRange();
+            break;
+    }
+}
+
+void WindowTransform::advanceGroupEndRows()
+{
+    // ROWS mode, peer groups always contains only the current row.
+//    if (group_end == partition_end)
+//    {
+//        // We might be already at the partition_end, if we got to it at the
+//        // previous work() call, but didn't know the partition ended there (it
+//        // was non-final end of data), and in the next work() call (now) we
+//        // discovered that either:
+//        // 1) we won't get more input, or
+//        // 2) we got new data and the new partition really began at this point,
+//        //    which is the beginning of the block.
+//        // Assert these conditions and do nothing.
+//        assert(input_is_finished || partition_end.row == 0);
+//    }
+//    else
+//    {
+//        assert(group_end < partition_end);
+//        advanceRowNumber(group_end);
+//        group_ended = true;
+//    }
+
+    assert(group_ended == false);
+    // We cannot advance the groups if the group start is already beyond the
+    // end of partition.
+    if (group_start == partition_end)
+    {
+        // should it be an assertion?
+        return;
+    }
+
+    assert(group_start < partition_end);
+    group_end = group_start;
+    advanceRowNumber(group_end);
+    group_ended = true;
+}
+
+void WindowTransform::advanceGroupEndRange()
+{
+    assert(false);
+}
+
+void WindowTransform::advanceGroupEndGroups()
+{
+    const size_t n = order_by_indices.size();
+    if (n == 0)
+    {
+        // No ORDER BY, so all rows are the same group. The group will end
+        // with the partition.
+        group_end = partition_end;
+        group_ended = partition_ended;
+    }
+
+    Columns reference_order_by;
+    for (const auto i : order_by_indices)
+    {
+        reference_order_by.push_back(inputAt(group_start)[i]);
+    }
+
+    // `partition_end` is either end of partition or end of data.
+    for ( ; group_end < partition_end; advanceRowNumber(group_end))
+    {
+        // Check for group end.
+        size_t i = 0;
+        for ( ; i < n; i++)
+        {
+            const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
+            if (c->compareAt(group_end.row,
+                    group_start.row, *reference_order_by[i],
+                    1 /* nan_direction_hint */) != 0)
+            {
+                break;
+            }
+        }
+
+        if (i < n)
+        {
+            group_ended = true;
+            return;
+        }
+    }
+
+    assert(group_end == partition_end);
+    if (partition_ended)
+    {
+        // A corner case -- the ORDER BY columns were the same, but the group
+        // still ended because the partition has ended.
+        group_ended = true;
+    }
+}
+
+void WindowTransform::advanceFrameStart()
+{
+    // Frame start is always UNBOUNDED PRECEDING for now, so we don't have to
+    // move it. It is initialized when the new partition starts.
+}
+
+void WindowTransform::advanceFrameEnd()
+{
+    // This should be called when we know the boundaries of the group (probably
+    // not a fundamental requirement, but currently it's written this way).
+    assert(group_ended);
+
+    const auto frame_end_before = frame_end;
+
+    // Frame end is always the current group end, for now.
+    // In ROWS mode the group is going to contain only the current row.
+    frame_end = group_end;
+    frame_ended = true;
+
+    // Add the columns over which we advanced the frame to the aggregate function
+    // states.
+    std::vector<const IColumn *> argument_columns;
+    for (auto & ws : workspaces)
+    {
+        const auto & f = ws.window_function;
+        const auto * a = f.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+
+        // We use two explicit loops here instead of using advanceRowNumber(),
+        // because we want to cache the argument columns array per block. Later
+        // we also use batch add.
+        // Unfortunately this leads to tricky loop conditions, because the
+        // frame_end might be either a past-the-end block, or a valid block, in
+        // which case we also have to process its head.
+        // And we also have to remember to reset the row number when moving to
+        // the next block.
+
+        uint64_t past_the_end_block;
+        // Note that the past-the-end row is not in the past-the-end block, but
+        // in the block before it.
+        uint32_t past_the_end_row;
+
+        if (frame_end.block < first_block_number + blocks.size())
+        {
+            // The past-the-end row is in some valid block.
+            past_the_end_block = frame_end.block + 1;
+            past_the_end_row = frame_end.row;
         }
         else
         {
-            // Check whether the new partition started, by comparing all the
-            // PARTITION BY columns.
-            size_t first_inequal_column = 0;
-            for (; first_inequal_column < partition_start_columns.size();
-                  ++first_inequal_column)
-            {
-                const auto * current_column = columns[
-                    partition_by_indices[first_inequal_column]].get();
+            // The past-the-end row is at the total end of data.
+            past_the_end_block = first_block_number + blocks.size();
+            // It's in the previous block!
+            past_the_end_row = blocks.back().numRows();
+        }
+        for (auto r = frame_end_before;
+            r.block < past_the_end_block;
+            ++r.block, r.row = 0)
+        {
+            const auto & block = blocks[r.block - first_block_number];
 
-                if (current_column->compareAt(row, partition_start_row,
-                    *partition_start_columns[first_inequal_column],
-                    1 /* nan_direction_hint */) != 0)
-                {
-                    break;
-                }
+            argument_columns.clear();
+            for (const auto i : ws.argument_column_indices)
+            {
+                argument_columns.push_back(block.input_columns[i].get());
             }
 
-            if (first_inequal_column < partition_start_columns.size())
+            // We process all rows of intermediate blocks, and the head of the
+            // last block.
+            const auto end = ((r.block + 1) == past_the_end_block)
+                ? past_the_end_row
+                : block.numRows();
+            for ( ; r.row < end; ++r.row)
             {
-                // The new partition has started. Remember where.
-                new_partition = true;
-                partition_start_columns.clear();
-                for (const auto i : partition_by_indices)
-                {
-                    partition_start_columns.push_back(columns[i]);
-                }
-                partition_start_row = row;
+                a->add(buf,
+                    argument_columns.data(),
+                    r.row,
+                    arena.get());
             }
+        }
+    }
+}
+
+void WindowTransform::writeOutGroup()
+{
+    fmt::print(stderr, "write out group [{}..{})\n",
+        group_start, group_end);
+
+    // Empty groups don't make sense.
+    assert(group_start < group_end);
+
+    std::vector<const IColumn *> argument_columns;
+    for (size_t wi = 0; wi < workspaces.size(); ++wi)
+    {
+        auto & ws = workspaces[wi];
+        const auto & f = ws.window_function;
+        const auto * a = f.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+
+        // Need to use a tricky loop to be able to batch per-block (but we don't
+        // do it yet...). See the comments to the similar loop in
+        // advanceFrameEnd() above.
+        uint64_t past_the_end_block;
+        uint32_t past_the_end_row;
+        if (frame_end.block < first_block_number + blocks.size())
+        {
+            past_the_end_block = frame_end.block + 1;
+            past_the_end_row = frame_end.row;
+        }
+        else
+        {
+            past_the_end_block = first_block_number + blocks.size();
+            past_the_end_row = blocks.back().numRows();
+        }
+        for ( auto r = group_start;
+            r.block < past_the_end_block;
+            ++r.block, r.row = 0)
+        {
+            const auto & block = blocks[r.block - first_block_number];
+
+            argument_columns.clear();
+            for (const auto ai : ws.argument_column_indices)
+            {
+                argument_columns.push_back(block.input_columns[ai].get());
+            }
+
+            // We process all rows of intermediate blocks, and the head of the
+            // last block.
+            const auto end = ((r.block + 1) == past_the_end_block)
+                ? past_the_end_row
+                : block.numRows();
+            for ( ; r.row < end; ++r.row)
+            {
+                // FIXME does it also allocate the result on the arena?
+                // We'll have to pass it out with blocks then...
+                a->insertResultInto(buf,
+                    *block.output_columns[wi],
+                    arena.get());
+            }
+        }
+    }
+
+    first_not_ready_row = group_end;
+}
+
+void WindowTransform::appendChunk(Chunk & chunk)
+{
+    fmt::print(stderr, "new chunk, {} rows, finished={}\n", chunk.getNumRows(),
+        input_is_finished);
+
+    // First, prepare the new input block and add it to the queue. We might not
+    // have it if it's end of data, though.
+    if (!input_is_finished)
+    {
+        blocks.push_back({});
+        auto & block = blocks.back();
+        block.input_columns = chunk.detachColumns();
+
+        for (auto & ws : workspaces)
+        {
+            // Aggregate functions can't work with constant columns, so we have to
+            // materialize them like the Aggregator does.
+            for (const auto column_index : ws.argument_column_indices)
+            {
+                block.input_columns[column_index]
+                    = std::move(block.input_columns[column_index])
+                        ->convertToFullColumnIfConst();
+            }
+
+            block.output_columns.push_back(ws.window_function.aggregate_function
+                ->getReturnType()->createColumn());
+        }
+    }
+
+    // Start the calculations. First, advance the partition end.
+    for (;;)
+    {
+        advancePartitionEnd();
+
+        // Either we ran out of data or we found the end of partition (maybe
+        // both, but this only happens at the total end of data).
+        assert(partition_ended || partition_end == blocksEnd());
+        if (partition_ended && partition_end == blocksEnd())
+        {
+            assert(input_is_finished);
+        }
+
+        fmt::print(stderr, "partition end '{}', {}\n", partition_end,
+            partition_ended);
+
+        // After that, advance the peer groups. We can advance peer groups until
+        // the end of partition or current end of data, which is precisely the
+        // description of `partition_end`.
+        while (group_end < partition_end)
+        {
+            group_start = group_end;
+            advanceGroupEnd();
+
+            fmt::print(stderr, "group end '{}'\n", group_end);
+
+            // If the group didn't end yet, wait.
+            if (!group_ended)
+            {
+                return;
+            }
+
+            // The group ended.
+            // Advance the frame start, updating the state of the aggregate
+            // functions.
+            advanceFrameStart();
+            // Advance the frame end, updating the state of the aggregate
+            // functions.
+            advanceFrameEnd();
+
+            if (!frame_ended)
+            {
+                return;
+            }
+
+            // Write out the aggregation results
+            writeOutGroup();
+
+            // Move to the next group.
+            // The frame will have to be recalculated.
+            frame_ended = false;
+
+            // Move to the next group. Don't advance group_start yet, it's
+            // convenient to use it as the PARTITION BY etalon.
+            group_ended = false;
+
+            if (group_end == partition_end)
+            {
+                break;
+            }
+            assert(group_end < partition_end);
+        }
+
+        if (!partition_ended)
+        {
+            // We haven't encountered the end of the partition yet, need more
+            // data.
+            assert(partition_end == blocksEnd());
+            break;
+        }
+
+        if (input_is_finished)
+        {
+            // why?
+            return;
+        }
+
+        // Start the next partition.
+        const auto new_partition_start = partition_end;
+        advanceRowNumber(partition_end);
+        partition_ended = false;
+        // We have to reset the frame when the new partition starts. This is not a
+        // generally correct way to do so, but we don't really support moving frame
+        // for now.
+        frame_start = new_partition_start;
+        frame_end = new_partition_start;
+        group_start = new_partition_start;
+        group_end = new_partition_start;
+        // The group pointers are already reset to the partition start, see the
+        // above loop.
+
+        fmt::print(stderr, "reinitialize agg data at start of {}\n",
+            new_partition_start);
+        // Reinitialize the aggregate function states because the new partition
+        // has started.
+        for (auto & ws : workspaces)
+        {
+            const auto & f = ws.window_function;
+            const auto * a = f.aggregate_function.get();
+            auto * buf = ws.aggregate_function_state.data();
+
+            a->destroy(buf);
+        }
+
+        // Release the arena we use for aggregate function states, so that it
+        // doesn't grow without limit. Not sure if it's actually correct, maybe
+        // it allocates the return values in the Arena as well...
+        if (arena)
+        {
+            arena = std::make_unique<Arena>();
         }
 
         for (auto & ws : workspaces)
@@ -156,86 +562,105 @@ void WindowTransform::transform(Chunk & chunk)
             const auto * a = f.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
 
-            if (new_partition)
-            {
-                // Reset the aggregate function states.
-                a->destroy(buf);
-                a->create(buf);
-            }
-
-            // Update the aggregate function state and save the result.
-            a->add(buf,
-                ws.argument_columns.data(),
-                row,
-                arena.get());
-
-            a->insertResultInto(buf,
-                *ws.result_column,
-                arena.get());
+            a->create(buf);
         }
     }
-
-    // We have to release the mutable reference to the result column before we
-    // return this block, or else extra copying may occur when the subsequent
-    // processors modify the block. Workspaces live longer than individual blocks.
-    for (auto & ws : workspaces)
-    {
-        columns.push_back(std::move(ws.result_column));
-    }
-
-    chunk.setColumns(std::move(columns), num_rows);
 }
 
 IProcessor::Status WindowTransform::prepare()
 {
-    /// Check can output.
+    fmt::print(stderr, "prepare, next output {}, not ready row {}, first block {}, hold {} blocks\n",
+        next_output_block_number, first_not_ready_row, first_block_number,
+        blocks.size());
+
     if (output.isFinished())
     {
+        // The consumer asked us not to continue (or we decided it ourselves),
+        // so we abort.
         input.close();
         return Status::Finished;
     }
 
-    if (!output.canPush())
-    {
-        input.setNotNeeded();
-        return Status::PortFull;
-    }
+//    // Technically the past-the-end next_output_block_number is also valid if
+//    // we haven't yet received the corresponding input block.
+//    assert(next_output_block_number < first_block_number + blocks.size()
+//        || blocks.empty());
 
-    /// Output if has data.
-    if (has_output)
-    {
-        output.pushData(std::move(output_data));
-        has_output = false;
+    assert(first_not_ready_row.block >= first_block_number);
+    // Might be past-the-end, so equality also valid.
+    assert(first_not_ready_row.block <= first_block_number + blocks.size());
+    assert(next_output_block_number >= first_block_number);
 
-        return Status::PortFull;
-    }
-
-    /// Check can input.
-    if (!has_input)
+    // Output the ready data prepared by work().
+    // We inspect the calculation state and create the output chunk right here,
+    // because this is pretty lightweight.
+    if (next_output_block_number < first_not_ready_row.block)
     {
-        if (input.isFinished())
+        if (output.canPush())
         {
-            output.finish();
-            return Status::Finished;
+            // Output the ready block.
+            fmt::print(stderr, "output block {}\n", next_output_block_number);
+            const auto i = next_output_block_number - first_block_number;
+            ++next_output_block_number;
+            auto & block = blocks[i];
+            auto columns = block.input_columns;
+            for (auto & res : block.output_columns)
+            {
+                columns.push_back(ColumnPtr(std::move(res)));
+            }
+            output_data.chunk.setColumns(columns, block.numRows());
+
+            output.pushData(std::move(output_data));
+        }
+        else
+        {
+            // Not sure what this branch means. The output port is full and we
+            // apply backoff pressure on the input?
+            input.setNotNeeded();
         }
 
-        input.setNeeded();
+        return Status::PortFull;
+    }
 
-        if (!input.hasData())
-            return Status::NeedData;
+    if (input_is_finished)
+    {
+        // The input data ended at the previous prepare() + work() cycle,
+        // and we don't have ready output data (checked above). We must be
+        // finished.
+        assert(next_output_block_number == first_block_number + blocks.size());
+        assert(first_not_ready_row == blocksEnd());
 
+        // FIXME do we really have to do this?
+        output.finish();
+
+        return Status::Finished;
+    }
+
+    // Consume input data if we have any ready.
+    if (!has_input && input.hasData())
+    {
         input_data = input.pullData(true /* set_not_needed */);
         has_input = true;
 
-        if (input_data.exception)
-        {
-            /// No more data needed. Exception will be thrown (or swallowed) later.
-            input.setNotNeeded();
-        }
+        // Now we have new input and can try to generate more output in work().
+        return Status::Ready;
     }
 
-    /// Now transform.
-    return Status::Ready;
+    // We 1) don't have any ready output (checked above),
+    // 2) don't have any more input (also checked above).
+    // Will we get any more input?
+    if (input.isFinished())
+    {
+        // We won't, time to finalize the calculation in work(). We should only
+        // do this once.
+        assert(!input_is_finished);
+        input_is_finished = true;
+        return Status::Ready;
+    }
+
+    // We have to wait for more input.
+    input.setNeeded();
+    return Status::NeedData;
 }
 
 void WindowTransform::work()
@@ -249,10 +674,12 @@ void WindowTransform::work()
         return;
     }
 
+    assert(has_input || input_is_finished);
+
     try
     {
-        transform(input_data.chunk);
-        output_data.chunk.swap(input_data.chunk);
+        has_input = false;
+        appendChunk(input_data.chunk);
     }
     catch (DB::Exception &)
     {
@@ -262,10 +689,32 @@ void WindowTransform::work()
         return;
     }
 
-    has_input = false;
+    // We don't really have to keep the entire partition, and it can be big, so
+    // we want to drop the starting blocks to save memory.
+    // We can drop the old blocks if we already returned them as output, and the
+    // frame and group are already past them. Note that the frame start can be
+    // further than group start for some frame specs, so we have to check both.
+    // Both pointers can also be at the end of partition, but we need at least
+    // one row before that, so that we can use it as an etalon for finding the
+    // partition boundaries, hence the "-1", and the weird std::max(1, ...)
+    // wrapper is to avoid unsigned overflow.
+    // FIXME the above "-1" is not needed anymore, I changed how we advance the
+    // group_start
+    const auto first_used_block = std::min(next_output_block_number,
+        std::max(1ul, std::min(frame_start.block, group_start.block)) - 1);
+    if (first_block_number < first_used_block)
+    {
+        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
+            first_used_block);
 
-    if (output_data.chunk)
-        has_output = true;
+        blocks.erase(blocks.begin(),
+            blocks.begin() + first_used_block - first_block_number);
+        first_block_number = first_used_block;
+
+        assert(next_output_block_number >= first_block_number);
+        assert(frame_start.block >= first_block_number);
+        assert(group_start.block >= first_block_number);
+    }
 }
 
 
