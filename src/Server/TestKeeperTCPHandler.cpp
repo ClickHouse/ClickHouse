@@ -357,7 +357,7 @@ void TestKeeperTCPHandler::runImpl()
                 while (in->available());
             }
 
-            /// Process exact amout of responses from pipe
+            /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
             /// became inconsistent and race condition is possible.
             while (result.ready_responses_count != 0)
