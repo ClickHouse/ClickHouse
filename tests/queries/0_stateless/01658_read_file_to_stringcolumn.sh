@@ -20,23 +20,23 @@ ${CLICKHOUSE_CLIENT} --query "create table data (A String, B String) engine=Merg
 
 
 # Valid cases:
-${CLICKHOUSE_CLIENT} --query "select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "select file('c.txt'), * from data";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('/var/lib/clickhouse/user_files/c.txt'), * from data";echo ":"$?
 
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
-echo "clickhouse-client --query "'"select file('"'nonexist.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'nonexist.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test isDir
-echo "clickhouse-client --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'/var/lib/clickhouse/user_files/dir'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test path out of the user_files directory. It's not allowed in client mode
-echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
 echo "clickhouse-client --query "'"select file('"'/var/lib/clickhouse/user_files/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
-echo "clickhouse-client --query "'"select file('"'../a.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'../../../../a.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 
 
