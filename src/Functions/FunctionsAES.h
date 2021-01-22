@@ -302,7 +302,13 @@ private:
             const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
             if (iv_column)
+            {
                 iv_value = iv_column->getDataAt(r);
+
+                /// If the length is zero (empty string is passed) it should be treat as no IV.
+                if (iv_value.size == 0)
+                    iv_value.data = nullptr;
+            }
 
             const StringRef input_value = input_column->getDataAt(r);
 
@@ -568,7 +574,13 @@ private:
             auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
             if (iv_column)
+            {
                 iv_value = iv_column->getDataAt(r);
+
+                /// If the length is zero (empty string is passed) it should be treat as no IV.
+                if (iv_value.size == 0)
+                    iv_value.data = nullptr;
+            }
 
             auto input_value = input_column->getDataAt(r);
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
