@@ -45,7 +45,6 @@ namespace DB
         }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
@@ -101,14 +100,14 @@ namespace DB
         }
 
     private:
-        void checkReadIsAllowed(const std::string & user_files_path, const std::string & file_path) const
+        void checkReadIsAllowed(const std::string & user_files_absolute_path, const std::string & file_absolute_path) const
         {
             // If run in Local mode, no need for path checking.
             if (context.getApplicationType() != Context::ApplicationType::LOCAL)
-                if (file_path.find(user_files_path) != 0)
-                    throw Exception("File is not inside " + user_files_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+                if (file_absolute_path.find(user_files_absolute_path) != 0)
+                    throw Exception("File is not inside " + user_files_absolute_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
-            Poco::File path_poco_file = Poco::File(file_path);
+            Poco::File path_poco_file = Poco::File(file_absolute_path);
             if (path_poco_file.exists() && path_poco_file.isDirectory())
                 throw Exception("File can't be a directory", ErrorCodes::INCORRECT_FILE_NAME);
         }
