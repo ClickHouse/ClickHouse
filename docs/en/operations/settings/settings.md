@@ -443,19 +443,19 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--   `'simple'` - Simple output format.
+-   `simple` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. The calculation is performed according to the data type's time zone (if present) or server time zone.
+    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--   `'iso'` - ISO output format.
+-   `iso` - ISO output format.
 
-    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `'2019-08-20T10:18:56Z'`. Note that output is in UTC (`Z` means UTC).
+    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--   `'unix_timestamp'` - Unix timestamp output format.
+-   `unix_timestamp` - Unix timestamp output format.
 
-    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `'1566285536'`.
+    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
-Default value: `'simple'`.
+Default value: `simple`.
 
 See also:
 
