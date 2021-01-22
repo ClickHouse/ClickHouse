@@ -66,8 +66,7 @@
 #cmakedefine WITH_SASL_OAUTHBEARER 1
 #cmakedefine WITH_SASL_CYRUS 1
 // crc32chw
-// actually some arch cpus may have hw crc, feature detection can be added.
-#if !defined(__aarch64__) && !defined(__PPC__)
+#if !defined(__PPC__) && (!defined(__aarch64__) || defined(__ARM_FEATURE_CRC32))
 #define WITH_CRC32C_HW 1
 #endif
 // regex
