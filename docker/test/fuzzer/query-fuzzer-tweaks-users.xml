@@ -12,7 +12,7 @@
                 </max_execution_time>
 
                 <max_memory_usage>
-                    <max>10737418240</max>
+                    <max>10G</max>
                 </max_memory_usage>
 
                 <!-- Not ready for production -->
