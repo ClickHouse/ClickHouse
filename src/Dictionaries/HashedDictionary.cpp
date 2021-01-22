@@ -133,7 +133,7 @@ ColumnPtr HashedDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     ColumnPtr result;
 
@@ -155,9 +155,9 @@ ColumnPtr HashedDictionary::getColumn(
             auto column_string = ColumnString::create();
             auto * out = column_string.get();
 
-            if (default_untyped != nullptr)
+            if (default_values_column != nullptr)
             {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_values_column))
                 {
                     getItemsImpl<StringRef, StringRef>(
                         attribute,
@@ -165,7 +165,7 @@ ColumnPtr HashedDictionary::getColumn(
                         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
                         [&](const size_t row) { return default_col->getDataAt(row); });
                 }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_values_column.get()))
                 {
                     const auto & def = default_col_const->template getValue<String>();
 
@@ -209,9 +209,9 @@ ColumnPtr HashedDictionary::getColumn(
 
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
+            if (default_values_column != nullptr)
             {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_values_column))
                 {
                     getItemsImpl<AttributeType, AttributeType>(
                         attribute,
@@ -220,7 +220,7 @@ ColumnPtr HashedDictionary::getColumn(
                         [&](const size_t row) { return default_col->getData()[row]; }
                     );
                 }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
+                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_values_column.get()))
                 {
                     const auto & def = default_col_const->template getValue<AttributeType>();
 

@@ -49,12 +49,13 @@ FlatDictionary::FlatDictionary(
 void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    DefaultValueExtractor<UInt64> extractor(null_value, nullptr);
 
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
         [&](const size_t row, const UInt64 value) { out[row] = value; },
-        [&](const size_t) { return null_value; });
+        extractor);
 }
 
 
@@ -112,7 +113,7 @@ ColumnPtr FlatDictionary::getColumn(
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes &,
-        const ColumnPtr default_untyped) const
+        const ColumnPtr default_values_column) const
 {
     ColumnPtr result;
 
@@ -134,39 +135,14 @@ ColumnPtr FlatDictionary::getColumn(
             auto column_string = ColumnString::create();
             auto * out = column_string.get();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        ids,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
+            const auto & null_value = std::get<StringRef>(attribute.null_values);
+            DefaultValueExtractor<StringRef> extractor(null_value, default_values_column);
 
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        ids,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t) { return def; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = std::get<StringRef>(attribute.null_values);
-
-                getItemsImpl<StringRef, StringRef>(
-                    attribute,
-                    ids,
-                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                    [&](const size_t) { return null_value; });
-            }
+            getItemsImpl<StringRef, StringRef>(
+                attribute,
+                ids,
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                extractor);
 
             result = std::move(column_string);
         }
@@ -188,42 +164,14 @@ ColumnPtr FlatDictionary::getColumn(
 
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        [&](const size_t row, const auto value) { out[row] = value; },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
+            const auto null_value = std::get<AttributeType>(attribute.null_values);
+            DefaultValueExtractor<AttributeType> extractor(null_value, default_values_column);
 
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        [&](const size_t row, const auto value) { out[row] = value; },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    ids,
-                    [&](const size_t row, const auto value) { out[row] = value; },
-                    [&](const size_t) { return null_value; }
-                );
-            }
+            getItemsImpl<AttributeType, AttributeType>(
+                attribute, 
+                ids, 
+                [&](const size_t row, const auto value) { out[row] = value; },
+                extractor);
 
             result = std::move(column);
         }
@@ -472,9 +420,12 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
 }
 
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter>
 void FlatDictionary::getItemsImpl(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ValueSetter && set_value,
+    DefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto & attr = std::get<ContainerType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
@@ -482,7 +433,7 @@ void FlatDictionary::getItemsImpl(
     for (const auto row : ext::range(0, rows))
     {
         const auto id = ids[row];
-        set_value(row, id < ext::size(attr) && loaded_ids[id] ? static_cast<OutputType>(attr[id]) : get_default(row));
+        set_value(row, id < ext::size(attr) && loaded_ids[id] ? static_cast<OutputType>(attr[id]) : default_value_extractor[row]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
