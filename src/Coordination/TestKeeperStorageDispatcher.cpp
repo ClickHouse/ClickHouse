@@ -18,16 +18,16 @@ void TestKeeperStorageDispatcher::processingThread()
     {
         while (!shutdown)
         {
-            RequestInfo info;
+            TestKeeperStorage::RequestForSession request;
 
             UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
 
-            if (requests_queue.tryPop(info, max_wait))
+            if (requests_queue.tryPop(request, max_wait))
             {
                 if (shutdown)
                     break;
 
-                auto responses = storage.processRequest(info.request, info.session_id);
+                auto responses = server.putRequests({request});
                 for (const auto & response_for_session : responses)
                     setResponse(response_for_session.session_id, response_for_session.response);
             }
@@ -67,15 +67,17 @@ void TestKeeperStorageDispatcher::finalize()
             processing_thread.join();
     }
 
-    RequestInfo info;
-    TestKeeperStorage::RequestsForSessions expired_requests;
-    while (requests_queue.tryPop(info))
-        expired_requests.push_back(TestKeeperStorage::RequestForSession{info.session_id, info.request});
+    //TestKeeperStorage::RequestsForSessions expired_requests;
+    //TestKeeperStorage::RequestForSession request;
+    //while (requests_queue.tryPop(request))
+    //    expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
 
-    auto expired_responses = storage.finalize(expired_requests);
+    //auto expired_responses = storage.finalize(expired_requests);
 
-    for (const auto & response_for_session : expired_responses)
-        setResponse(response_for_session.session_id, response_for_session.response);
+    //for (const auto & response_for_session : expired_responses)
+    //    setResponse(response_for_session.session_id, response_for_session.response);
+    /// TODO FIXME
+    server.shutdown();
 }
 
 void TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
@@ -87,8 +89,7 @@ void TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperReques
             throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown session id {}", session_id);
     }
 
-    RequestInfo request_info;
-    request_info.time = clock::now();
+    TestKeeperStorage::RequestForSession request_info;
     request_info.request = request;
     request_info.session_id = session_id;
 
@@ -101,7 +102,9 @@ void TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperReques
 }
 
 TestKeeperStorageDispatcher::TestKeeperStorageDispatcher()
+    : server(1, "localhost", 44444)
 {
+    server.startup();
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
 

@@ -519,6 +519,7 @@ TestKeeperStorage::ResponsesForSessions TestKeeperStorage::finalize(const Reques
 
     finalized = true;
 
+    /// TODO delete ephemerals
     ResponsesForSessions finalize_results;
     auto finish_watch = [] (const auto & watch_pair) -> ResponsesForSessions
     {

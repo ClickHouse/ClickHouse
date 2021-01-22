@@ -2,8 +2,9 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Coordination/TestKeeperStorage.h>
 #include <functional>
+#include <Coordination/NuKeeperServer.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -17,16 +18,9 @@ private:
 
     using clock = std::chrono::steady_clock;
 
-    struct RequestInfo
-    {
-        Coordination::ZooKeeperRequestPtr request;
-        clock::time_point time;
-        int64_t session_id;
-    };
-
     std::mutex push_request_mutex;
 
-    using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
+    using RequestsQueue = ConcurrentBoundedQueue<TestKeeperStorage::RequestForSession>;
     RequestsQueue requests_queue{1};
     std::atomic<bool> shutdown{false};
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
@@ -36,7 +30,7 @@ private:
 
     ThreadFromGlobalPool processing_thread;
 
-    TestKeeperStorage storage;
+    NuKeeperServer server;
     std::mutex session_id_mutex;
 
 private:
@@ -46,6 +40,7 @@ private:
 
 public:
     TestKeeperStorageDispatcher();
+
     ~TestKeeperStorageDispatcher();
 
     void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
@@ -53,7 +48,7 @@ public:
     int64_t getSessionID()
     {
         std::lock_guard lock(session_id_mutex);
-        return storage.getSessionID();
+        return server.getSessionID();
     }
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
