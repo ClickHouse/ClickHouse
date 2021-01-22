@@ -21,7 +21,8 @@ public:
     /// Pull will be called at next prepare call.
     void flush() { need_flush = true; }
 
-    void insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t block_size)
+    template <typename TColumns>
+    void insertRow(const TColumns & raw_columns, size_t row, size_t block_size)
     {
         size_t num_columns = raw_columns.size();
         for (size_t i = 0; i < num_columns; ++i)
