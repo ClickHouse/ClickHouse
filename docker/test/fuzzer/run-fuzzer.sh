@@ -27,7 +27,7 @@ function clone
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git fetch --depth=1 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
+        git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
     fi
 
     git checkout "$SHA_TO_TEST"
