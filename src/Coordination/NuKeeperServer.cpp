@@ -127,10 +127,12 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "REQUESTS SIZE {}", requests.size());
     for (auto & [session_id, request] : requests)
     {
         ops_mapping[session_id][request->xid] = request->makeResponse();
         entries.push_back(getZooKeeperLogEntry(session_id, request));
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ENTRY SIZE {}", entries.back()->size());
     }
 
     auto result = raft_instance->append_entries(entries);
