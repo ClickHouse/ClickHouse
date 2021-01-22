@@ -5,9 +5,16 @@
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/TestKeeperStorage.h>
+#include <unordered_map>
 
 namespace DB
 {
+
+struct NuraftError
+{
+    nuraft::cmd_result_code code;
+    std::string message;
+};
 
 class NuKeeperServer
 {
@@ -20,7 +27,7 @@ private:
 
     std::string endpoint;
 
-    nuraft::ptr<StateMachine> state_machine;
+    nuraft::ptr<NuKeeperStateMachine> state_machine;
 
     nuraft::ptr<nuraft::state_mgr> state_manager;
 
@@ -28,16 +35,26 @@ private:
 
     nuraft::ptr<nuraft::raft_server> raft_instance;
 
-public:
-    NuKeeperServer(int server_id, const std::string & hostname, int port);
+    using XIDToOp = std::unordered_map<Coordination::XID, Coordination::ZooKeeperResponsePtr>;
 
-    void startup();
+    using SessionIDOps = std::unordered_map<int64_t, XIDToOp>;
+
+    SessionIDOps ops_mapping;
+
+    TestKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
+
+public:
+    NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
+
+    NuraftError startup();
 
     TestKeeperStorage::ResponsesForSessions putRequests(const TestKeeperStorage::RequestsForSessions & requests);
 
-    void addServer(int server_id_, const std::string & server_uri);
+    int64_t getSessionID();
 
-    void shutdown();
+    NuraftError addServer(int server_id_, const std::string & server_uri);
+
+    NuraftError shutdown();
 };
 
 }

@@ -51,15 +51,32 @@ NuKeeperStateMachine::NuKeeperStateMachine()
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
     LOG_DEBUG(log, "Commiting logidx {}", log_idx);
-    auto request_for_session = parseRequest(data);
-    TestKeeperStorage::ResponsesForSessions responses_for_sessions;
+    if (data.size() == sizeof(size_t))
     {
-        std::lock_guard lock(storage_lock);
-        responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+        LOG_DEBUG(log, "Session ID response {}", log_idx);
+        auto response = nuraft::buffer::alloc(sizeof(size_t));
+        nuraft::buffer_serializer bs(response);
+        {
+            std::lock_guard lock(storage_lock);
+            bs.put_i64(storage.getSessionID());
+        }
+        last_committed_idx = log_idx;
+        return response;
     }
+    else
+    {
+        auto request_for_session = parseRequest(data);
+        //LOG_DEBUG(log, "GOT REQUEST {}", Coordination::toString(request_for_session.request->getOpNum()));
+        TestKeeperStorage::ResponsesForSessions responses_for_sessions;
+        {
+            std::lock_guard lock(storage_lock);
+            responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
+        }
+        //LOG_DEBUG(log, "TOTAL RESPONSES {} FIRST XID {}", responses_for_sessions.size(), responses_for_sessions[0].response->xid);
 
-    last_committed_idx = log_idx;
-    return writeResponses(responses_for_sessions);
+        last_committed_idx = log_idx;
+        return writeResponses(responses_for_sessions);
+    }
 }
 
 bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)

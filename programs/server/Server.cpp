@@ -830,6 +830,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
+    /// Initialize test keeper raft
+    global_context->getTestKeeperStorageDispatcher();
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP TestKeeper
