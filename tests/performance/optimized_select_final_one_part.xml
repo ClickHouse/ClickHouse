@@ -9,7 +9,7 @@
         PARTITION BY toYYYYMM(t) ORDER BY x
     </create_query>
 
-    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), number, 'string' FROM numbers(500000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), number, 'string' FROM numbers(100000000)</fill_query>
 
     <fill_query>OPTIMIZE TABLE optimized_select_final FINAL</fill_query>
 
