@@ -224,8 +224,9 @@ struct SubtractIntervalImpl : public Transform
     using Transform::Transform;
 
     template <typename T>
-    inline auto execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
+    inline NO_SANITIZE_UNDEFINED auto execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
     {
+        /// Signed integer overflow is Ok.
         return Transform::execute(t, -delta, time_zone);
     }
 };

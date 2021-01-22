@@ -466,6 +466,8 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
         assertNoWindows(select_query.where(), "in WHERE");
     if (select_query.prewhere())
         assertNoWindows(select_query.prewhere(), "in PREWHERE");
+    if (select_query.window())
+        assertNoWindows(select_query.window(), "in WINDOW");
 
     GetAggregatesVisitor::Data data;
     GetAggregatesVisitor(data).visit(query);
@@ -483,20 +485,9 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
             }
         }
 
-        if (node->window_partition_by)
+        if (node->window_definition)
         {
-            for (auto & arg : node->window_partition_by->children)
-            {
-                assertNoWindows(arg, "inside PARTITION BY of a window");
-            }
-        }
-
-        if (node->window_order_by)
-        {
-            for (auto & arg : node->window_order_by->children)
-            {
-                assertNoWindows(arg, "inside ORDER BY of a window");
-            }
+            assertNoWindows(node->window_definition, "inside window definition");
         }
     }
 
@@ -526,7 +517,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         const ColumnsDescription & columns = metadata_snapshot->getColumns();
 
-        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+        NamesAndTypesList columns_from_storage;
+        if (storage->supportsSubcolumns())
+            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
+        else
+            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -590,11 +586,13 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 required.insert(column_name_type.name);
     }
 
-    /// You need to read at least one column to find the number of rows.
-    if (is_select && required.empty())
+    /// Figure out if we're able to use the trivial count optimization.
+    has_explicit_columns = !required.empty();
+    if (is_select && !has_explicit_columns)
     {
         optimize_trivial_count = true;
 
+        /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
