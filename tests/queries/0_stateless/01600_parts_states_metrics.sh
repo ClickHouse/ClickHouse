@@ -22,7 +22,7 @@ verify()
     echo 1
 }
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_table"
+$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE IF EXISTS test_table"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')"
@@ -34,5 +34,5 @@ verify
 $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE test_table FINAL"
 verify
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE test_table"
+$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE test_table"
 verify

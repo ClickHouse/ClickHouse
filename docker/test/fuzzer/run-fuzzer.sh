@@ -21,13 +21,13 @@ function clone
 
     git init
     git remote add origin https://github.com/ClickHouse/ClickHouse
-    git fetch --depth=1 origin "$SHA_TO_TEST"
-    git fetch --depth=1 origin master # Used to obtain the list of modified or added tests
+    git fetch --depth=100 origin "$SHA_TO_TEST"
+    git fetch --depth=100 origin master # Used to obtain the list of modified or added tests
 
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git fetch --depth=1 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
+        git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
     fi
 
     git checkout "$SHA_TO_TEST"
@@ -75,7 +75,7 @@ function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     cd ch
-    NEW_TESTS=$(git diff --name-only master "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
+    NEW_TESTS=$(git diff --name-only "$(git merge-base origin/master "$SHA_TO_TEST"~)" "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
     cd ..
     if [[ -n "$NEW_TESTS" ]]
     then
@@ -175,7 +175,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs" > description.txt
         fi
