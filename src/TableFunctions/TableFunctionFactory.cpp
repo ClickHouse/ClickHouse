@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -45,8 +46,13 @@ TableFunctionPtr TableFunctionFactory::get(
 
     res->parseArguments(ast_function, context);
 
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, table_function->name);
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, table_function->name);
+    }
+
 
     return res;
 }
