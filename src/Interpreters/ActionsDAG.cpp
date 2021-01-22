@@ -946,7 +946,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
                     {
                         auto & child_data = data[child];
 
-                        /// If children is not created, int may be from split part.
+                        /// If children is not created, it may be from split part.
                         if (!child_data.to_second)
                         {
                             if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
