@@ -60,13 +60,6 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name, const DataTypes & argument_types, const Array & parameters, AggregateFunctionProperties & out_properties) const
 {
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
-    }
-
     auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
     /// If one of the types is Nullable, we apply aggregate function combinator "Null".
@@ -116,9 +109,16 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
         found = jt->second;
 
+    const Context * query_context = nullptr;
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().getQueryContext();
+
     if (found.creator)
     {
         out_properties = found.properties;
+
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
@@ -135,6 +135,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     {
         if (combinator->isForInternalUsageOnly())
             throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, combinator->getName());
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);

@@ -80,7 +80,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        const auto * query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
     }

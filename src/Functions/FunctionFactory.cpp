@@ -77,13 +77,6 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
-    if (CurrentThread::isInitialized())
-    {
-        auto query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
-    }
-
     return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }
 
@@ -92,6 +85,13 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const Context & context) const
 {
     String name = getAliasToOrName(name_param);
+
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+    }
 
     auto it = functions.find(name);
     if (functions.end() != it)

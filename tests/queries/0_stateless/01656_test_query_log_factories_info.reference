@@ -1,13 +1,21 @@
-1	100
-used_aggregate_functions	used_table_functions	used_functions
-['uniq','count']	['numbers']	['plus','toDate','addDays']
+2	 worl	\N	50	4950	Nullable(UInt64)	50
+2	 worl	\N	50	4950	Nullable(UInt64)	50
 
-\N
-\N
-used_functions	used_data_types
-['cast']	['Nullable','UInt8']
+arraySort(used_aggregate_functions)
+['Array','If','OrDefault','OrNull','avg','count','sum','uniq']
+
+arraySort(used_table_functions)
+['numbers']
+
+arraySort(used_functions)
+['addDays','cast','modulo','plus','substring','toDate','toDayOfYear','toTypeName']
+
+arraySort(used_data_types)
+['Nullable','UInt8']
 
 used_databases
 ['Atomic']
-used_data_types	used_storages
-['DateTime','String']	['Memory']
+
+arraySort(used_data_types)	used_storages
+['DateTime','UInt64']	['Memory']
+
