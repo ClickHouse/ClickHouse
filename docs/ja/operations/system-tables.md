@@ -625,10 +625,8 @@ ClickHouseはこのテーブルを作成します。 [query_log](server-configur
 -   `quota_key` (String) — The “quota key” で指定される。 [クォータ](quotas.md) 設定(参照 `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
 -   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [システムイベント](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` 列。
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` パラメータは1。
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` 列。
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics. The description of them could be found in the table [システムイベント](#system_tables-events)
+-   `Settings` (Map(String, String)) — Settings  列。
 
 それぞれのクエリでは、一つまたは二つの行が `query_log` クエリのステータスに応じて、テーブル:
 
@@ -698,8 +696,7 @@ ClickHouseはこのテーブルを作成します。 [query_thread_log](server-c
 -   `http_user_agent` (String) — The `UserAgent` HTTP要求で渡されるヘッダー。
 -   `quota_key` (String) — The “quota key” で指定される。 [クォータ](quotas.md) 設定(参照 `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [システムイベント](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` 列。
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [システムイベント](#system_tables-events)
 
 既定では、ログは7.5秒間隔でテーブルに追加されます。 この間隔は [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバ設定(参照 `flush_interval_milliseconds` 変数）。 ログをメモリバッファからテーブルに強制的にフラッシュするには、 `SYSTEM FLUSH LOGS` クエリ。
 

@@ -625,10 +625,8 @@ Columna:
 -   `quota_key` (String) — The “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
 -   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [sistema.evento](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` columna.
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parámetro a 1.
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` columna.
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics. The description of them could be found in the table [sistema.evento](#system_tables-events)
+-   `Settings` (Map(String, String)) — Settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parámetro a 1.
 
 Cada consulta crea una o dos filas en el `query_log` tabla, dependiendo del estado de la consulta:
 
@@ -698,8 +696,7 @@ Columna:
 -   `http_user_agent` (String) — The `UserAgent` encabezado pasado en la solicitud HTTP.
 -   `quota_key` (String) — The “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [sistema.evento](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` columna.
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [sistema.evento](#system_tables-events)
 
 De forma predeterminada, los registros se agregan a la tabla a intervalos de 7,5 segundos. Puede establecer este intervalo en el [Sistema abierto.](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuración del servidor (consulte el `flush_interval_milliseconds` parámetro). Para vaciar los registros a la fuerza desde el búfer de memoria a la tabla, utilice `SYSTEM FLUSH LOGS` consulta.
 

@@ -46,7 +46,7 @@ ClickHouse не удаляет данные из таблица автомати
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — потребление RAM запросом.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — текст запроса.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — сообщение исключения, если запрос завершился по исключению.
--   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения. 
+-   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — код исключения.
 -   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [stack trace](https://en.wikipedia.org/wiki/Stack_trace). Пустая строка, если запрос успешно завершен.
 -   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — вид запроса. Возможные значения:
     -   1 — запрос был инициирован клиентом.
@@ -77,10 +77,8 @@ ClickHouse не удаляет данные из таблица автомати
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — «ключ квоты» из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
 -   `thread_numbers` ([Array(UInt32)](../../sql-reference/data-types/array.md)) — количество потоков, участвующих в обработке запросов.
--   `ProfileEvents.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
--   `ProfileEvents.Values` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
--   `Settings.Names` ([Array(String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
--   `Settings.Values` ([Array(String)](../../sql-reference/data-types/array.md)) — значения настроек, которые перечислены в столбце `Settings.Names`.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(#system_tables-events
+-   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 
 **Пример**
 
@@ -108,8 +106,8 @@ memory_usage:                  0
 current_database:              default
 query:                         INSERT INTO test1 VALUES
 exception_code:                0
-exception:                     
-stack_trace:                   
+exception:
+stack_trace:
 is_initial_query:              1
 user:                          default
 query_id:                      50a320fd-85a8-49b8-8761-98a86bcbacef
@@ -122,20 +120,18 @@ initial_port:                  33452
 interface:                     1
 os_user:                       bharatnc
 client_hostname:               tower
-client_name:                   ClickHouse 
+client_name:                   ClickHouse
 client_revision:               54437
 client_version_major:          20
 client_version_minor:          7
 client_version_patch:          2
 http_method:                   0
-http_user_agent:               
-quota_key:                     
+http_user_agent:
+quota_key:
 revision:                      54440
 thread_ids:                    []
-ProfileEvents.Names:           []
-ProfileEvents.Values:          []
-Settings.Names:                ['use_uncompressed_cache','load_balancing','log_queries','max_memory_usage','allow_introspection_functions']
-Settings.Values:               ['0','random','1','10000000000','1']
+ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+Settings:             {'background_pool_size':'32','load_balancing':'random','allow_suspicious_low_cardinality_types':'1','distributed_aggregation_memory_efficient':'1','skip_unavailable_shards':'1','log_queries':'1','max_bytes_before_external_group_by':'20000000000','max_bytes_before_external_sort':'20000000000','allow_introspection_functions':'1'}
 ```
 
 **Смотрите также**

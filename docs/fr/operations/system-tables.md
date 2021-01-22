@@ -625,10 +625,8 @@ Colonne:
 -   `quota_key` (String) — The “quota key” spécifié dans le [quota](quotas.md) (voir `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
 -   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [système.événement](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` colonne.
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` paramètre 1.
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` colonne.
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics. The description of them could be found in the table [système.événement](#system_tables-events)
+-   `Settings` (Map(String, UInt64)) — Settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` paramètre 1.
 
 Chaque requête crée une ou deux lignes dans le `query_log` le tableau, en fonction de l'état de la requête:
 
@@ -698,8 +696,7 @@ Colonne:
 -   `http_user_agent` (String) — The `UserAgent` en-tête passé dans la requête HTTP.
 -   `quota_key` (String) — The “quota key” spécifié dans le [quota](quotas.md) (voir `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [système.événement](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` colonne.
+-   `ProfileEvents` (Map(String, UInt64)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [système.événement](#system_tables-events)
 
 Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query_thread_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
 
