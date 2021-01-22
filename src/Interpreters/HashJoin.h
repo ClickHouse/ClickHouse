@@ -168,8 +168,8 @@ public:
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
-    void setTotals(const Block & block) override { totals = block; }
-    bool hasTotals() const override { return totals; }
+    void setTotals(const Block & block) override;
+    bool hasTotals() const override;
 
     void joinTotals(Block & block) const override;
 

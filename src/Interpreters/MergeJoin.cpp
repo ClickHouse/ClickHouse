@@ -487,6 +487,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
 void MergeJoin::setTotals(const Block & totals_block)
 {
+    std::unique_lock lock(rwlock);
+
     totals = totals_block;
     mergeRightBlocks();
 
@@ -494,8 +496,15 @@ void MergeJoin::setTotals(const Block & totals_block)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
+bool MergeJoin::hasTotals() const
+{
+    std::shared_lock lock(rwlock);
+    return totals;
+}
+
 void MergeJoin::joinTotals(Block & block) const
 {
+    std::shared_lock lock(rwlock);
     JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
 }
 

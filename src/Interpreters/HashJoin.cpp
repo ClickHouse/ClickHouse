@@ -1265,8 +1265,21 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 }
 
 
+void HashJoin::setTotals(const Block & block)
+{
+    std::unique_lock lock(data->rwlock);
+    totals = block;
+}
+
+bool HashJoin::hasTotals() const
+{
+    std::shared_lock lock(data->rwlock);
+    return totals;
+}
+
 void HashJoin::joinTotals(Block & block) const
 {
+    std::shared_lock lock(data->rwlock);
     JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 
