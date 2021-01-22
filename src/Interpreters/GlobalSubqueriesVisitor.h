@@ -17,6 +17,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -140,16 +141,15 @@ public:
             {
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), context);
-                auto stream = interpreter->execute().getInputStream();
+                auto io = interpreter->execute();
+                PullingPipelineExecutor executor(io.pipeline);
 
                 table_out->writePrefix();
-                stream->readPrefix();
-                while (Block block = stream->read())
-                {
+                Block block;
+                while (!executor.pull(block))
                     table_out->write(block);
-                }
+
                 table_out->writeSuffix();
-                stream->readSuffix();
             }
             else
             {
