@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYSTEM_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
