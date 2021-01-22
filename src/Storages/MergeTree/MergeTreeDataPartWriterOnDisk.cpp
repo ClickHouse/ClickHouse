@@ -206,28 +206,29 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
-    /// Write index. The index contains Primary Key value for each `index_granularity` row.
-
-    size_t current_row = getIndexOffset();
-    size_t total_marks = index_granularity.getMarksCount();
-
-    while (index_mark < total_marks && current_row < rows)
     {
-        if (metadata_snapshot->hasPrimaryKey())
+        /** While filling index (index_columns), disable memory tracker.
+         * Because memory is allocated here (maybe in context of INSERT query),
+         *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+         * And otherwise it will look like excessively growing memory consumption in context of query.
+         *  (observed in long INSERT SELECTs)
+         */
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+        /// Write index. The index contains Primary Key value for each `index_granularity` row.
+
+        size_t current_row = getIndexOffset();
+        size_t total_marks = index_granularity.getMarksCount();
+
+        while (index_mark < total_marks && current_row < rows)
         {
-            for (size_t j = 0; j < primary_columns_num; ++j)
+            if (metadata_snapshot->hasPrimaryKey())
             {
-                const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
+                for (size_t j = 0; j < primary_columns_num; ++j)
+                {
+                    const auto & primary_column = primary_index_block.getByPosition(j);
+                    index_columns[j]->insertFrom(*primary_column.column, current_row);
+                    primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
+                }
             }
         }
 
