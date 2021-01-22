@@ -315,10 +315,10 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
-int DiskLocal::open(const String & path, mode_t mode) const
+int DiskLocal::open(const String & path, int flags) const
 {
     String full_path = disk_path + path;
-    int fd = ::open(full_path.c_str(), mode);
+    int fd = ::open(full_path.c_str(), flags);
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
                         errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);

@@ -1,9 +1,7 @@
-if (NOT ARCH_ARM AND OPENSSL_FOUND)
+if (NOT ARCH_ARM)
     option (ENABLE_RDKAFKA "Enable kafka" ${ENABLE_LIBRARIES})
-elseif(ENABLE_RDKAFKA AND NOT OPENSSL_FOUND)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use librdkafka without SSL")
 elseif(ENABLE_RDKAFKA)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "librdafka is not supported on ARM and on FreeBSD")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "librdafka is not supported on ARM")
 endif ()
 
 if (NOT ENABLE_RDKAFKA)

@@ -680,6 +680,12 @@ private:
 
                     std::cerr << std::endl;
 
+                    client_exception = std::make_unique<Exception>(e);
+                }
+
+                if (client_exception)
+                {
+                    /// client_exception may have been set above or elsewhere.
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
                     /// So we reconnect and allow to enter the next query.
@@ -914,12 +920,6 @@ private:
 
     void reportQueryError() const
     {
-        // If we probably have progress bar, we should add additional
-        // newline, otherwise exception may display concatenated with
-        // the progress bar.
-        if (need_render_progress)
-            std::cerr << '\n';
-
         if (server_exception)
         {
             std::string text = server_exception->displayText();
@@ -937,7 +937,7 @@ private:
         if (client_exception)
         {
             fmt::print(stderr,
-                "Error on processing query '{}':\n{}",
+                "Error on processing query '{}':\n{}\n",
                 full_query, client_exception->message());
         }
 

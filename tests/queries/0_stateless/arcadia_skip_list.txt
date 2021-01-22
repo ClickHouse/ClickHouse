@@ -25,6 +25,7 @@
 00877_memory_limit_for_new_delete
 00921_datetime64_basic
 00926_geo_to_h3
+01659_h3_buffer_overflow
 00926_multimatch
 00929_multi_match_edit_distance
 00952_insert_into_distributed_with_materialized_column
@@ -189,3 +190,4 @@
 01651_bugs_from_15889
 01655_agg_if_nullable
 01182_materialized_view_different_structure
+01660_sum_ubsan
