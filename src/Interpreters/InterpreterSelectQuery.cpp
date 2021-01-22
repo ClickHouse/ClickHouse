@@ -100,7 +100,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
-    extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
 }
 
