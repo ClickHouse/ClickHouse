@@ -2316,7 +2316,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 }
 
 
-void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
+void Aggregator::setCancellationHook(const CancellationHook & cancellation_hook)
 {
     isCancelled = cancellation_hook;
 }
