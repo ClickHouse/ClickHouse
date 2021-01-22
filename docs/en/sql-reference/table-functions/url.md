@@ -17,7 +17,7 @@ url(URL, format, structure)
 
 **Input parameters**
 
-- `URL` - HTTP or HTTPS server address, which can accept `GET` and/or `POST` requests. Type: [String](../../sql-reference/data-types/string.md).
+- `URL` - HTTP or HTTPS server address, which can accept `GET` (for `SELECT`) or `POST` (for `INSERT`) requests. Type: [String](../../sql-reference/data-types/string.md).
 - `format` - [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` - Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 
