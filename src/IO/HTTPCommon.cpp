@@ -120,7 +120,7 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
+#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
