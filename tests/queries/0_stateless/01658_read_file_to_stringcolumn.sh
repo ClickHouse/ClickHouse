@@ -12,7 +12,7 @@ echo -n aaaaaaaaa > /var/lib/clickhouse/user_files/a.txt
 echo -n bbbbbbbbb > /var/lib/clickhouse/user_files/b.txt
 echo -n ccccccccc > /var/lib/clickhouse/user_files/c.txt
 echo -n ccccccccc > /tmp/c.txt
-mkdir /var/lib/clickhouse/user_files/dir
+mkdir -p /var/lib/clickhouse/user_files/dir
 
 ### 1st TEST in CLIENT mode.
 ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"
@@ -45,7 +45,7 @@ echo "clickhouse-client --query "'"select file('"'../a.txt'), file('b.txt')"'";e
 echo -n aaaaaaaaa > a.txt
 echo -n bbbbbbbbb > b.txt
 echo -n ccccccccc > c.txt
-mkdir dir
+mkdir -p dir
 #Test for large files, with length : 699415
 c_count=$(wc -c ${CURDIR}/01518_nullable_aggregate_states2.reference | awk '{print $1}')
 echo $c_count
