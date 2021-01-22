@@ -34,6 +34,10 @@ echo "clickhouse-client --query "'"select file('"'dir'), file('b.txt')"'";echo :
 # Test path out of the user_files directory. It's not allowed in client mode
 echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 
+# Test relative path consists of ".." whose absolute path is out of the user_files directory.
+echo "clickhouse-client --query "'"select file('"'/var/lib/clickhouse/user_files/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'../a.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+
 
 
 ### 2nd TEST in LOCAL mode.
