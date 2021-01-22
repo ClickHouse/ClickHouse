@@ -3,12 +3,14 @@
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
 
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
 
 namespace DB
 {
@@ -75,8 +77,12 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+    }
 
     return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }

@@ -136,11 +136,11 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(normalized_query_hash);
     columns[i++]->insertData(query_kind.data(), query_kind.size());
 
-    auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
-
     {
+        auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
             size_t size = 0;
@@ -199,6 +199,15 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     {
+        auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+
         auto fill_column = [](const std::unordered_set<String> & data, ColumnArray & column)
         {
             size_t size = 0;
@@ -210,15 +219,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             auto & offsets = column.getOffsets();
             offsets.push_back(offsets.back() + size);
         };
-
-        auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_format_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
 
         fill_column(used_aggregate_functions, column_aggregate_function_factory_objects);
         fill_column(used_databases, column_database_factory_objects);
