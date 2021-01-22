@@ -1995,21 +1995,6 @@ SELECT * FROM a;
 
 -   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
 
-## optimize_aggregation_in_order {#optimize_aggregation_in_order}
-
-Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](../../sql-reference/statements/select/group-by.md) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-
-Возможные значения:
-
--   0 — оптимизация по ключу сортировки отключена.
--   1 — оптимизация по ключу сортировки включена.
-
-Значение по умолчанию: `0`.
-
-**См. также**
-
--   [Оптимизация GROUP BY для отсортированных таблиц](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
-
 ## mutations_sync {#mutations_sync}
 
 Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter/index.md#mutations)) синхронно.
@@ -2358,41 +2343,6 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Значение по умолчанию: `0`.
 
-
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
-
-Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull). Включите для совместимости со стандартом SQL.
-Реализуется с помощью перезаписи запросов (аналогично настройке [count_distinct_implementation](#settings-count_distinct_implementation)), чтобы получить согласованные результаты для распределенных запросов.
-
-Возможные значения:
-
--   0 — выключена.
--   1 — включена.
-
-Значение по умолчанию: 0.
-
-**Пример**
-
-Рассмотрим запрос с агрегирующими функциями:
-```sql
-SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
-```
-
-Результат запроса с настройкой `aggregate_functions_null_for_empty = 0`:
-```text
-┌─SUM(-1)─┬─MAX(0)─┐
-│       0 │      0 │
-└─────────┴────────┘
-```
-
-Результат запроса с настройкой `aggregate_functions_null_for_empty = 1`:
-```text
-┌─SUMOrNull(-1)─┬─MAXOrNull(0)─┐
-│          NULL │         NULL │
-└───────────────┴──────────────┘
-```
-
-
 ## union_default_mode {#union-default-mode}
 
 Устанавливает режим объединения результатов `SELECT` запросов. Настройка используется только при совместном использовании с [UNION](../../sql-reference/statements/select/union.md) без явного указания `UNION ALL` или `UNION DISTINCT`.
@@ -2406,17 +2356,6 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 Значение по умолчанию: `''`.
 
 Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
-
-## data_type_default_nullable {#data_type_default_nullable}
-
-Позволяет использовать по умолчанию тип данных [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
-
-Возможные значения:
-
-- 1 — типы данных в определении столбца заданы по умолчанию как `Nullable`.
-- 0 — типы данных в определении столбца не заданы по умолчанию как `Nullable`.
-
-Значение по умолчанию: `0`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 

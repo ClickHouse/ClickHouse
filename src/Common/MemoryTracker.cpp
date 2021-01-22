@@ -12,10 +12,6 @@
 #include <random>
 #include <cstdlib>
 
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
-#endif
-
 namespace
 {
 
@@ -145,9 +141,8 @@ void MemoryTracker::alloc(Int64 size)
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::add(metric_loaded, size);
+    if (metric != CurrentMetrics::end())
+        CurrentMetrics::add(metric, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -170,19 +165,11 @@ void MemoryTracker::alloc(Int64 size)
         }
     }
 
-#ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(_memory_tracker_always_throw_logical_error_on_allocation))
-    {
-        _memory_tracker_always_throw_logical_error_on_allocation = false;
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
-    }
-#endif
-
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock(VariableContext::Global);
+        BlockerInThread untrack_lock;
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
@@ -196,7 +183,7 @@ void MemoryTracker::alloc(Int64 size)
 
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
-        BlockerInThread untrack_lock(VariableContext::Global);
+        BlockerInThread untrack_lock;
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
     }
@@ -204,14 +191,14 @@ void MemoryTracker::alloc(Int64 size)
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock(VariableContext::Global);
+        BlockerInThread untrack_lock;
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false))
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock(VariableContext::Global);
+        BlockerInThread untrack_lock;
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
@@ -257,7 +244,7 @@ void MemoryTracker::free(Int64 size)
     std::bernoulli_distribution sample(sample_probability);
     if (unlikely(sample_probability && sample(thread_local_rng)))
     {
-        BlockerInThread untrack_lock(VariableContext::Global);
+        BlockerInThread untrack_lock;
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
     }
 
@@ -287,9 +274,8 @@ void MemoryTracker::free(Int64 size)
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
 
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::sub(metric_loaded, accounted_size);
+    if (metric != CurrentMetrics::end())
+        CurrentMetrics::sub(metric, accounted_size);
 }
 
 
@@ -304,9 +290,8 @@ void MemoryTracker::resetCounters()
 
 void MemoryTracker::reset()
 {
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end())
-        CurrentMetrics::sub(metric_loaded, amount.load(std::memory_order_relaxed));
+    if (metric != CurrentMetrics::end())
+        CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
     resetCounters();
 }
@@ -316,12 +301,6 @@ void MemoryTracker::set(Int64 to)
 {
     amount.store(to, std::memory_order_relaxed);
     updatePeak(to);
-}
-
-
-void MemoryTracker::setHardLimit(Int64 value)
-{
-    hard_limit.store(value, std::memory_order_relaxed);
 }
 
 

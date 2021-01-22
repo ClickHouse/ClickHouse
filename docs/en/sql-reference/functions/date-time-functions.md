@@ -622,7 +622,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded ( 1-31)                  |  2         |
+| %e       | day of the month, space-padded ( 1-31)                  | 2          |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
@@ -633,7 +633,6 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
-| %Q       | Quarter (1-4)                                           | 1          |
 | %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |

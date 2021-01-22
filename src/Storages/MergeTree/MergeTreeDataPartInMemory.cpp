@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>

@@ -173,15 +173,12 @@ describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 
 dropStmt
     : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                                  # DropDatabaseStmt
-    | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE | VIEW) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
+    | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
     ;
 
 // EXISTS statement
 
-existsStmt
-    : EXISTS DATABASE databaseIdentifier                             # ExistsDatabaseStmt
-    | EXISTS (DICTIONARY | TEMPORARY? TABLE | VIEW)? tableIdentifier # ExistsTableStmt
-    ;
+existsStmt: EXISTS (DICTIONARY | TEMPORARY? TABLE)? tableIdentifier;
 
 // EXPLAIN statement
 

@@ -253,6 +253,9 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
+
+        if (buf.hasPendingData())
+            return;
     }
 }
 
@@ -1014,7 +1017,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
@@ -1041,7 +1044,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

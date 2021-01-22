@@ -692,37 +692,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
-            /// Limit on total memory usage
-            size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
-
-            double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
-            size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
-
-            if (max_server_memory_usage == 0)
-            {
-                max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
-                    formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
-                    max_server_memory_usage_to_ram_ratio);
-            }
-            else if (max_server_memory_usage > default_max_server_memory_usage)
-            {
-                max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-                    " because the system has low amount of memory. The amount was"
-                    " calculated as {} available"
-                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
-                    formatReadableSizeWithBinarySuffix(max_server_memory_usage),
-                    formatReadableSizeWithBinarySuffix(memory_amount),
-                    max_server_memory_usage_to_ram_ratio);
-            }
-
-            total_memory_tracker.setHardLimit(max_server_memory_usage);
-            total_memory_tracker.setDescription("(total)");
-            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
@@ -810,6 +779,37 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
+
+    /// Limit on total memory usage
+    size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
+
+    double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
+    size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+            " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+            " because the system has low amount of memory. The amount was"
+            " calculated as {} available"
+            " * {:.2f} max_server_memory_usage_to_ram_ratio",
+            formatReadableSizeWithBinarySuffix(max_server_memory_usage),
+            formatReadableSizeWithBinarySuffix(memory_amount),
+            max_server_memory_usage_to_ram_ratio);
+    }
+
+    total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
