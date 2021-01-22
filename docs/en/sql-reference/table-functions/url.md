@@ -36,9 +36,9 @@ SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt3
 Inserting data from a URL into a table:
 
 ``` sql
-CREATE TABLE url_engine_table (column1 String, column2 UInt32) ENGINE=URL('http://127.0.0.1:12345/', CSV);
-INSERT INTO url_engine_table FROM url('http://127.0.0.1:12345/', 'CSV', 'column1 String, column2 UInt32');
-SELECT * FROM url_engine_table;
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/url/) <!--hide-->

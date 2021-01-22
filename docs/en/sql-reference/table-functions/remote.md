@@ -101,9 +101,9 @@ SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 Inserting data from a remote server into a table:
 
 ``` sql
-CREATE TABLE remote_engine_table (name String, value UInt32) ENGINE=Distributed(cluster, default, hits);
-INSERT INTO remote_engine_table FROM remote('127.0.0.1', db.remote_engine_table);
-SELECT * FROM remote_engine_table;
+CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
+SELECT * FROM remote_table;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/remote/) <!--hide-->

@@ -60,9 +60,8 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 Inserting data from a file into a table:
 
 ``` sql
-CREATE TABLE file_engine_table (column1 UInt32, column2 UInt32, column3 UInt32) ENGINE=File(CSV);
-INSERT INTO file_engine_table FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
-SELECT * FROM file_engine_table;
+INSERT INTO FUNCTION file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') VALUES (1, 2, 3), (3, 2, 1);
+SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ``` text
