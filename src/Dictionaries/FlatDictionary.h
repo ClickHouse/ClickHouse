@@ -24,6 +24,50 @@ namespace DB
 {
 using BlockPtr = std::shared_ptr<Block>;
 
+template <typename DefaultValue>
+class DefaultValueExtractor
+{
+public:
+    using ResultColumnType = std::conditional_t<
+        std::is_same_v<DefaultValue, StringRef>,
+        ColumnString,
+        std::conditional_t<IsDecimalNumber<DefaultValue>, ColumnDecimal<DefaultValue>, ColumnVector<DefaultValue>>>;
+
+    DefaultValueExtractor(DefaultValue default_value_, ColumnPtr default_values_)
+    {
+        if (default_values_ != nullptr)
+        {
+            if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_values_))
+            {
+                default_values = default_col;
+            }
+            else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_values_.get()))
+            {
+                using ConstColumnValue = std::conditional_t<std::is_same_v<DefaultValue, StringRef>, String, DefaultValue>;
+                default_value = std::make_optional<DefaultValue>(default_col_const->template getValue<ConstColumnValue>());
+            }
+            else
+                throw Exception{"Type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
+        }
+        else
+            default_value = std::make_optional<DefaultValue>(default_value_);
+    }
+
+    DefaultValue operator[](size_t row)
+    {
+        if (default_value)
+            return *default_value;
+        
+        if constexpr (std::is_same_v<ResultColumnType, ColumnString>)
+            return default_values->getDataAt(row);
+        else
+            return default_values->getData()[row];
+    }
+private:
+    const ResultColumnType * default_values = nullptr;
+    std::optional<DefaultValue> default_value = {};
+};
+
 class FlatDictionary final : public IDictionary
 {
 public:
@@ -79,7 +123,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
     ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -149,9 +193,9 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter>
     void getItemsImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
     template <typename T>
     void resize(Attribute & attribute, const Key id);

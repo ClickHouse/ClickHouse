@@ -102,7 +102,7 @@ struct IDictionaryBase : public IExternalLoadable
         const DataTypePtr & result_type [[maybe_unused]],
         const Columns & key_columns [[maybe_unused]],
         const DataTypes & key_types [[maybe_unused]],
-        const ColumnPtr default_untyped [[maybe_unused]]) const /* = 0; */
+        const ColumnPtr default_values_column [[maybe_unused]]) const /* = 0; */
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Get column not supported", getDictionaryID().getNameForLogs());
