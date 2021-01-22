@@ -9,12 +9,12 @@ INSERT INTO pk_order(a, b, c, d) VALUES (2, 2, 107, 2), (2, 3, 108, 2), (2, 4, 1
 
 -- Order after group by in order is determined
 
-SELECT a, b FROM pk_order GROUP BY a, b;
-SELECT a FROM pk_order GROUP BY a;
+SELECT a, b FROM pk_order GROUP BY a, b ORDER BY a, b;
+SELECT a FROM pk_order GROUP BY a ORDER BY a;
 
-SELECT a, b, sum(c), avg(d) FROM pk_order GROUP BY a, b;
-SELECT a, sum(c), avg(d) FROM pk_order GROUP BY a;
-SELECT a, sum(c), avg(d) FROM pk_order GROUP BY -a;
+SELECT a, b, sum(c), avg(d) FROM pk_order GROUP BY a, b ORDER BY a, b;
+SELECT a, sum(c), avg(d) FROM pk_order GROUP BY a ORDER BY a;
+SELECT a, sum(c), avg(d) FROM pk_order GROUP BY -a ORDER BY a;
 
 DROP TABLE IF EXISTS pk_order;
 
@@ -26,8 +26,8 @@ INSERT INTO pk_order
 
 set max_block_size = 1;
 
-SELECT d, max(b) FROM pk_order GROUP BY d, a LIMIT 5;
-SELECT d, avg(a) FROM pk_order GROUP BY toString(d) LIMIT 5;
-SELECT toStartOfHour(d) as d1, min(a), max(b) FROM pk_order GROUP BY d1 LIMIT 5;
+SELECT d, max(b) FROM pk_order GROUP BY d, a ORDER BY d, a LIMIT 5;
+SELECT d, avg(a) FROM pk_order GROUP BY toString(d) ORDER BY toString(d) LIMIT 5;
+SELECT toStartOfHour(d) as d1, min(a), max(b) FROM pk_order GROUP BY d1 ORDER BY d1 LIMIT 5;
 
 DROP TABLE pk_order;

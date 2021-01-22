@@ -88,5 +88,4 @@ private:
     AggregatingTransformParamsPtr params;
 };
 
-
 }
