@@ -13,6 +13,8 @@
 
 #include <Functions/FunctionHelpers.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -81,6 +83,10 @@ private:
 
     /// Name of the type to distinguish different aggregation states.
     String type_string;
+
+    /// MergedData records, used to avoid duplicated data copy.
+    ///key: src pointer, val:  pos in current column.
+    std::unordered_map<ConstAggregateDataPtr, size_t> copiedDataInfo;
 
     ColumnAggregateFunction() {}
 

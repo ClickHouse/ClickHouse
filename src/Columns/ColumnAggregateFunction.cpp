@@ -75,8 +75,22 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto * val : data)
+    {
+      for(size_t i=0;i<data.size();++i){
+            auto  val = data[i];
+            if(val==NULL){
+                continue;
+            }
+
+            for(size_t j=i;j<data.size();++j){
+                if(data[j]==val){
+                    data[j]= NULL;
+                }
+            }
+
             func->destroy(val);
+        }
+    }
 }
 
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
@@ -467,7 +481,15 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 {
-    func->merge(data.back(), place, &createOrGetArena());
+    std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
+    iter = copiedDataInfo.find(place);
+    if( iter == copiedDataInfo.end() ){
+        copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
+        func->merge(data.back(), place, &createOrGetArena());
+    }else{
+        size_t pos = iter->second;
+        data[data.size()-1] = data[pos];
+    }
 }
 
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
