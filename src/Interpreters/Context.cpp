@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorage.h>
+#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -26,7 +26,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -306,8 +305,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorage> test_keeper_storage;
+    mutable std::mutex test_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -429,7 +428,6 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -449,7 +447,7 @@ struct ContextShared
         /// Stop zookeeper connection
         zookeeper.reset();
         /// Stop test_keeper storage
-        test_keeper_storage.reset();
+        test_keeper_storage_dispatcher.reset();
     }
 
     bool hasTraceCollector() const
@@ -493,7 +491,6 @@ Context Context::createGlobal(ContextShared * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(*this);
-    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
@@ -949,7 +946,7 @@ bool Context::hasScalar(const String & name) const
 void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
-    auto lock = getLock();
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
@@ -1534,13 +1531,13 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorage> & Context::getTestKeeperStorage() const
+std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->test_keeper_storage_mutex);
-    if (!shared->test_keeper_storage)
-        shared->test_keeper_storage = std::make_shared<zkutil::TestKeeperStorage>();
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    if (!shared->test_keeper_storage_dispatcher)
+        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    return shared->test_keeper_storage;
+    return shared->test_keeper_storage_dispatcher;
 }
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const

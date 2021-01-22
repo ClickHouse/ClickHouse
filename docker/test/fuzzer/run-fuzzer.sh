@@ -1,4 +1,6 @@
 #!/bin/bash
+# shellcheck disable=SC2086
+
 set -eux
 set -o pipefail
 trap "exit" INT TERM
@@ -8,6 +10,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted_disable_False_binary"}
 
 function clone
 {
@@ -19,6 +22,7 @@ function clone
     git init
     git remote add origin https://github.com/ClickHouse/ClickHouse
     git fetch --depth=1 origin "$SHA_TO_TEST"
+    git fetch --depth=1 origin master # Used to obtain the list of modified or added tests
 
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
@@ -32,10 +36,7 @@ function clone
 
 function download
 {
-#    wget -O- -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/performance/performance.tgz" \
-#        | tar --strip-components=1 -zxv
-
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-11_debug_none_bundled_unsplitted_disable_False_binary/clickhouse"
+    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
@@ -72,7 +73,18 @@ function watchdog
 
 function fuzz
 {
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -10000 > server.log &
+    # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
+    cd ch
+    NEW_TESTS=$(git diff --name-only "$(git merge-base origin/master "$SHA_TO_TEST"~)" "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
+    cd ..
+    if [[ -n "$NEW_TESTS" ]]
+    then
+        NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
+    else
+        NEW_TESTS_OPT=""
+    fi
+
+    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
@@ -84,8 +96,8 @@ function fuzz
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        > >(tail -n 10000 > fuzzer.log) \
+    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
+        > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
 
@@ -106,7 +118,7 @@ function fuzz
 
 case "$stage" in
 "")
-    ;&
+    ;&  # Did you know? This is "fallthrough" in bash. https://stackoverflow.com/questions/12010686/case-statement-fallthrough
 "clone")
     time clone
     if [ -v FUZZ_LOCAL_SCRIPT ]
@@ -163,7 +175,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs" > description.txt
         fi
