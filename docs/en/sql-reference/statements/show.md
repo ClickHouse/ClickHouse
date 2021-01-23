@@ -231,7 +231,7 @@ Shows privileges for a user.
 ### Syntax {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
