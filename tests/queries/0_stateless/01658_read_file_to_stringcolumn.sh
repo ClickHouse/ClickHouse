@@ -7,12 +7,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Data preparation.
 # When run with client mode on different machine to the server, the data-file creation maybe implemented in SQL. Now we just make it simple
-mkdir -p /var/lib/clickhouse/user_files/
-echo -n aaaaaaaaa > /var/lib/clickhouse/user_files/a.txt
-echo -n bbbbbbbbb > /var/lib/clickhouse/user_files/b.txt
-echo -n ccccccccc > /var/lib/clickhouse/user_files/c.txt
+#user_files_path=$(clickhouse-client --query "select data_path from system.databases where name='default'" | sed -En 's/data\/default/user_files/p')
+user_files_path=$(grep user_files_path ${CLICKHOUSE_CONFIG} | awk '{match($0,"<user_files_path>(.*)</user_files_path>",path); print path[1]}')
+mkdir -p ${user_files_path}/
+echo -n aaaaaaaaa > ${user_files_path}/a.txt
+echo -n bbbbbbbbb > ${user_files_path}/b.txt
+echo -n ccccccccc > ${user_files_path}/c.txt
 echo -n ccccccccc > /tmp/c.txt
-mkdir -p /var/lib/clickhouse/user_files/dir
+mkdir -p ${user_files_path}/dir
 
 ### 1st TEST in CLIENT mode.
 ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"
@@ -20,23 +22,23 @@ ${CLICKHOUSE_CLIENT} --query "create table data (A String, B String) engine=Merg
 
 
 # Valid cases:
-${CLICKHOUSE_CLIENT} --query "select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('/var/lib/clickhouse/user_files/a.txt'), file('/var/lib/clickhouse/user_files/b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "select file('/var/lib/clickhouse/user_files/c.txt'), * from data";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/c.txt'), * from data";echo ":"$?
 
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
-echo "clickhouse-client --query "'"select file('"'nonexist.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'nonexist.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test isDir
-echo "clickhouse-client --query "'"select file('"'/var/lib/clickhouse/user_files/dir'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'${user_files_path}/dir'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test path out of the user_files directory. It's not allowed in client mode
-echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
-echo "clickhouse-client --query "'"select file('"'/var/lib/clickhouse/user_files/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
-echo "clickhouse-client --query "'"select file('"'../../../../a.txt'), file('/var/lib/clickhouse/user_files/b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'${user_files_path}/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'../../../../a.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 
 
@@ -74,8 +76,8 @@ echo "clickhouse-local --query "'"select file('"'dir'), file('b.txt')"'";echo :$
 
 # Restore
 rm -rf a.txt b.txt c.txt dir
-rm -rf /var/lib/clickhouse/user_files/a.txt
-rm -rf /var/lib/clickhouse/user_files/b.txt
-rm -rf /var/lib/clickhouse/user_files/c.txt
+rm -rf ${user_files_path}/a.txt
+rm -rf ${user_files_path}/b.txt
+rm -rf ${user_files_path}/c.txt
 rm -rf /tmp/c.txt
-rm -rf /var/lib/clickhouse/user_files/dir
+rm -rf ${user_files_path}/dir
