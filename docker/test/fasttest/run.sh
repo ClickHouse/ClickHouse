@@ -269,6 +269,7 @@ function run_tests
         01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
         01318_encrypt                           # Depends on OpenSSL
         01318_decrypt                           # Depends on OpenSSL
+        01663_aes_msan                          # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
