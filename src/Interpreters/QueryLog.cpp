@@ -59,36 +59,40 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeString>(), "query"},
         {std::make_shared<DataTypeUInt64>(), "normalized_query_hash"},
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "query_kind"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "databases"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
-        {std::make_shared<DataTypeInt32>(), "exception_code"},
-        {std::make_shared<DataTypeString>(), "exception"},
-        {std::make_shared<DataTypeString>(), "stack_trace"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "databases"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "tables"},
+        {std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())), "columns"},
+        {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
+        {std::make_shared<DataTypeString>(),                                  "exception"},
+        {std::make_shared<DataTypeString>(),                                  "stack_trace"},
 
-        {std::make_shared<DataTypeUInt8>(), "is_initial_query"},
-        {std::make_shared<DataTypeString>(), "user"},
-        {std::make_shared<DataTypeString>(), "query_id"},
-        {DataTypeFactory::instance().get("IPv6"), "address"},
-        {std::make_shared<DataTypeUInt16>(), "port"},
-        {std::make_shared<DataTypeString>(), "initial_user"},
-        {std::make_shared<DataTypeString>(), "initial_query_id"},
-        {DataTypeFactory::instance().get("IPv6"), "initial_address"},
-        {std::make_shared<DataTypeUInt16>(), "initial_port"},
-        {std::make_shared<DataTypeUInt8>(), "interface"},
-        {std::make_shared<DataTypeString>(), "os_user"},
-        {std::make_shared<DataTypeString>(), "client_hostname"},
-        {std::make_shared<DataTypeString>(), "client_name"},
-        {std::make_shared<DataTypeUInt32>(), "client_revision"},
-        {std::make_shared<DataTypeUInt32>(), "client_version_major"},
-        {std::make_shared<DataTypeUInt32>(), "client_version_minor"},
-        {std::make_shared<DataTypeUInt32>(), "client_version_patch"},
-        {std::make_shared<DataTypeUInt8>(), "http_method"},
-        {std::make_shared<DataTypeString>(), "http_user_agent"},
-        {std::make_shared<DataTypeString>(), "forwarded_for"},
-        {std::make_shared<DataTypeString>(), "quota_key"},
+        {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
+        {std::make_shared<DataTypeString>(),                                  "user"},
+        {std::make_shared<DataTypeString>(),                                  "query_id"},
+        {DataTypeFactory::instance().get("IPv6"),                             "address"},
+        {std::make_shared<DataTypeUInt16>(),                                  "port"},
+        {std::make_shared<DataTypeString>(),                                  "initial_user"},
+        {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
+        {DataTypeFactory::instance().get("IPv6"),                             "initial_address"},
+        {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
+        {std::make_shared<DataTypeUInt8>(),                                   "interface"},
+        {std::make_shared<DataTypeString>(),                                  "os_user"},
+        {std::make_shared<DataTypeString>(),                                  "client_hostname"},
+        {std::make_shared<DataTypeString>(),                                  "client_name"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_revision"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_major"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_minor"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_patch"},
+        {std::make_shared<DataTypeUInt8>(),                                   "http_method"},
+        {std::make_shared<DataTypeString>(),                                  "http_user_agent"},
+        {std::make_shared<DataTypeString>(),                                  "http_referer"},
+        {std::make_shared<DataTypeString>(),                                  "forwarded_for"},
+        {std::make_shared<DataTypeString>(),                                  "quota_key"},
 
-        {std::make_shared<DataTypeUInt32>(), "revision"},
+        {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
         {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents"},
@@ -207,6 +211,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(UInt64(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);
+    columns[i++]->insert(client_info.http_referer);
     columns[i++]->insert(client_info.forwarded_for);
 
     columns[i++]->insert(client_info.quota_key);
