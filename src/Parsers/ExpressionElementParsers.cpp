@@ -169,6 +169,10 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (pos->type == TokenType::BareWord)
     {
+        /// Reserved keyword.
+        if (pos->size() == strlen("FROM") && 0 == strncasecmp(pos->begin, "FROM", strlen("FROM")))
+            return false;
+
         node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
         ++pos;
         return true;
