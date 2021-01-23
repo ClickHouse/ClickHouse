@@ -10,11 +10,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 /**
  * In Dictionaries implementation String attribute is stored in arena and StringRefs are pointing to it.
  */
 template <typename DictionaryAttributeType>
-using DictionaryValueType = 
+using DictionaryValueType =
     std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, StringRef, DictionaryAttributeType>;
 
 /**
@@ -24,9 +29,9 @@ template <typename DictionaryAttributeType>
 class DictionaryAttributeColumnProvider
 {
 public:
-    using ColumnType = 
+    using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-            std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>, 
+            std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
                 ColumnVector<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
@@ -50,66 +55,60 @@ public:
 };
 
 /**
- * DictionaryDefaultValueExtractor used to simplify getting default value for IDictionary function `getColumn`.
- * Provides interface for getting default value with operator[];
- * 
- * If default_values_column is not null in constructor than this column values will be used as default values.
- * If default_values_column is null then attribute_default_value will be used.
+  * DictionaryDefaultValueExtractor used to simplify getting default value for IDictionary function `getColumn`.
+  * Provides interface for getting default value with operator[];
+  *
+  * If default_values_column is null then attribute_default_value will be used.
+  * If default_values_column is not null in constructor than this column values will be used as default values.
  */
-template <typename DefaultValueType>
+template <typename DictionaryAttributeType>
 class DictionaryDefaultValueExtractor
 {
-    using ResultColumnType = 
-        std::conditional_t< std::is_same_v<DefaultValueType, StringRef>, ColumnString,
-            std::conditional_t<IsDecimalNumber<DefaultValueType>, ColumnDecimal<DefaultValueType>,
-                ColumnVector<DefaultValueType>>>;
+    using DefaultColumnType = typename DictionaryAttributeColumnProvider<DictionaryAttributeType>::ColumnType;
 
 public:
-    DictionaryDefaultValueExtractor(DefaultValueType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
+    DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
     {
-        if (default_values_column_ != nullptr)
+        if (!default_values_column_)
+            default_value = { std::move(attribute_default_value) };
+        else
         {
-            if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_values_column))
+            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column))
             {
                 default_values_column = default_col;
             }
-            else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_values_column_.get()))
+            else if (const auto * const default_col_const = checkAndGetColumnConst<DefaultColumnType>(default_values_column_.get()))
             {
-                /// TODO: Check String lifetime safety
-                /// DefaultValueType for StringColumn is StringRef, but const column getValue will return String
-                using ConstColumnValue = std::conditional_t<std::is_same_v<DefaultValueType, StringRef>, String, DefaultValueType>;
-                default_value = std::make_optional<DefaultValueType>(default_col_const->template getValue<ConstColumnValue>());
+                default_value = { default_col_const->template getValue<DictionaryAttributeType>() };
             }
             else
-                throw Exception{"Type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
+                throw Exception{"Type of default column is not the same as dictionary attribute type.", ErrorCodes::TYPE_MISMATCH};
         }
-        else
-            default_value = std::make_optional<DefaultValueType>(attribute_default_value);
     }
 
-    DefaultValueType operator[](size_t row)
+    DictionaryValueType<DictionaryAttributeType> operator[](size_t row)
     {
         if (default_value)
-            return *default_value;
-        
-        if constexpr (std::is_same_v<ResultColumnType, ColumnString>)
+            return static_cast<DictionaryAttributeType>(*default_value);
+
+        if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
         else
             return default_values_column->getData()[row];
     }
 private:
-    const ResultColumnType * default_values_column = nullptr;
-    std::optional<DefaultValueType> default_value = {};
+    const DefaultColumnType * default_values_column = nullptr;
+    std::optional<DictionaryAttributeType> default_value = {};
 };
 
 /**
- * Returns ColumnVector data as PaddedPodArray. 
- * 
+ * Returns ColumnVector data as PaddedPodArray.
+
  * If column is constant parameter backup_storage is used to store values.
  */
 template <typename T>
 static const PaddedPODArray<T> & getColumnVectorData(
-    const IDictionaryBase * dictionary [[maybe_unused]],
+    const IDictionaryBase * dictionary,
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {

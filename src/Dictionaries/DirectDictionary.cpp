@@ -39,7 +39,7 @@ void DirectDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
     DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
-    
+
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
@@ -166,9 +166,10 @@ ColumnPtr DirectDictionary::getColumn(
 
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
- 
-        const auto null_value = std::get<ValueType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 

@@ -124,10 +124,11 @@ ColumnPtr RangeHashedDictionary::getColumn(
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = std::get<ValueType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -138,7 +139,8 @@ ColumnPtr RangeHashedDictionary::getColumn(
             getItemsImpl<ValueType, ValueType>(
                 attribute,
                 modified_key_columns,
-                [&](const size_t row, const StringRef value, bool is_null) {
+                [&](const size_t row, const StringRef value, bool is_null)
+                {
                     if (attribute.is_nullable)
                         (*vec_null_map_to)[row] = is_null;
 
@@ -153,7 +155,8 @@ ColumnPtr RangeHashedDictionary::getColumn(
             getItemsImpl<ValueType, ValueType>(
                 attribute,
                 modified_key_columns,
-                [&](const size_t row, const auto value, bool is_null) {
+                [&](const size_t row, const auto value, bool is_null)
+                {
                     if (attribute.is_nullable)
                         (*vec_null_map_to)[row] = is_null;
 
@@ -313,12 +316,12 @@ RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, con
     return attr;
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     PaddedPODArray<Key> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;

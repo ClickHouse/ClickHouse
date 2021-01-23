@@ -204,18 +204,18 @@ private:
     /* NOLINTNEXTLINE(readability-convert-member-functions-to-static) */
     Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType>
+    template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
     void getItemsNumberImpl(
         Attribute & attribute,
         const PaddedPODArray<Key> & ids,
         ResultArrayType<OutputType> & out,
-        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     void getItemsString(
         Attribute & attribute,
         const PaddedPODArray<Key> & ids,
         ColumnString * out,
-        DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const;
+        DictionaryDefaultValueExtractor<String> & default_value_extractor) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 

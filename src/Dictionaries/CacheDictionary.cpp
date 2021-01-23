@@ -271,11 +271,10 @@ ColumnPtr CacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
- 
-        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(attribute.null_value));
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        const auto null_value = std::get<AttributeType>(attribute.null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -297,12 +296,12 @@ ColumnPtr CacheDictionary::getColumn(
     return result;
 }
 
-template <typename AttributeType, typename OutputType>
+template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
 void CacheDictionary::getItemsNumberImpl(
-    Attribute & attribute, 
+    Attribute & attribute,
     const PaddedPODArray<Key> & ids,
     ResultArrayType<OutputType> & out,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     /// First fill everything with default values
     const auto rows = ext::size(ids);
@@ -427,7 +426,7 @@ void CacheDictionary::getItemsString(
     Attribute & attribute,
     const PaddedPODArray<Key> & ids,
     ColumnString * out,
-    DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const
+    DictionaryDefaultValueExtractor<String> & default_value_extractor) const
 {
     const auto rows = ext::size(ids);
 

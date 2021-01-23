@@ -91,11 +91,10 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = ValueType{std::get<AttributeType>(attribute.null_values)};
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto null_value = std::get<AttributeType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -248,12 +247,12 @@ ColumnUInt8::Ptr ComplexKeyCacheDictionary::hasKeys(const Columns & key_columns,
 }
 
 
-template <typename AttributeType, typename OutputType>
+template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
 void ComplexKeyCacheDictionary::getItemsNumberImpl(
-    Attribute & attribute, 
+    Attribute & attribute,
     const Columns & key_columns,
     PaddedPODArray<OutputType> & out,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     /// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
     MapType<std::vector<size_t>> outdated_keys;
@@ -335,7 +334,7 @@ void ComplexKeyCacheDictionary::getItemsString(
     Attribute & attribute,
     const Columns & key_columns,
     ColumnString * out,
-    DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const
+    DictionaryDefaultValueExtractor<String> & default_value_extractor) const
 {
     const auto rows_num = key_columns.front()->size();
     /// save on some allocations

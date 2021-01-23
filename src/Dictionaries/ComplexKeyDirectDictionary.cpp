@@ -64,9 +64,10 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
- 
-        const auto null_value = std::get<ValueType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -94,7 +95,8 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
             getItemsImpl<AttributeType, AttributeType>(
                 attribute,
                 key_columns,
-                [&](const size_t row, const auto value, bool is_null) {
+                [&](const size_t row, const auto value, bool is_null)
+                {
                     if (attribute.is_nullable)
                         (*vec_null_map_to)[row] = is_null;
 

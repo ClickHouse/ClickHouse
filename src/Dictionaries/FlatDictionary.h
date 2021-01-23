@@ -148,12 +148,12 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
         ValueSetter && set_value,
-        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     void resize(Attribute & attribute, const Key id);

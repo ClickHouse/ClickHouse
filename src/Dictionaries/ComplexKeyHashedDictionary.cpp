@@ -65,10 +65,11 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = std::get<ValueType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = attribute_null_value;
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -370,12 +371,12 @@ ComplexKeyHashedDictionary::createAttribute(const DictionaryAttribute & attribut
 }
 
 
-template <typename AttributeType, typename OutputType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void ComplexKeyHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto & attr = std::get<ContainerType<AttributeType>>(attribute.maps);
 

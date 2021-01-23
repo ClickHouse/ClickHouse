@@ -1348,11 +1348,10 @@ ColumnPtr SSDCacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(null_values[index]));
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto null_value = std::get<AttributeType>(null_values[index]);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
