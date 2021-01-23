@@ -1,21 +1,24 @@
-2	 worl	\N	50	4950	Nullable(UInt64)	50
-2	 worl	\N	50	4950	Nullable(UInt64)	50
+2	 worl	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
+2	 worl	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
 
 arraySort(used_aggregate_functions)
-['Array','If','OrDefault','OrNull','avg','count','sum','uniq']
+['avg','count','groupBitAnd','sum','uniq']
+
+arraySort(used_aggregate_function_combinators)
+['Array','If','OrDefault','OrNull']
 
 arraySort(used_table_functions)
 ['numbers']
 
 arraySort(used_functions)
-['addDays','cast','modulo','plus','substring','toDate','toDayOfYear','toTypeName']
+['addDays','array','arrayFlatten','cast','modulo','plus','substring','toDate','toDayOfYear','toTypeName','toWeek']
 
-arraySort(used_data_types)
-['Nullable','UInt8']
+arraySort(used_data_type_families)
+['Array','Int32','Nullable','String']
 
-used_databases
+used_database_engines
 ['Atomic']
 
-arraySort(used_data_types)	used_storages
-['DateTime','UInt64']	['Memory']
+arraySort(used_data_type_families)	used_storages
+['DateTime','Int64']	['Memory']
 

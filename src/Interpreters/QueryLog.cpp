@@ -98,8 +98,9 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_functions"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_databases"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_data_types"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_aggregate_function_combinators"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_database_engines"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_data_type_families"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_dictionaries"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_formats"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_functions"},
@@ -200,6 +201,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     {
         auto & column_aggregate_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_aggregate_function_combinator_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_database_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_data_type_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_dictionary_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -221,8 +223,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         };
 
         fill_column(used_aggregate_functions, column_aggregate_function_factory_objects);
-        fill_column(used_databases, column_database_factory_objects);
-        fill_column(used_data_types, column_data_type_factory_objects);
+        fill_column(used_aggregate_function_combinators, column_aggregate_function_combinator_factory_objects);
+        fill_column(used_database_engines, column_database_factory_objects);
+        fill_column(used_data_type_families, column_data_type_factory_objects);
         fill_column(used_dictionaries, column_dictionary_factory_objects);
         fill_column(used_formats, column_format_factory_objects);
         fill_column(used_functions, column_function_factory_objects);

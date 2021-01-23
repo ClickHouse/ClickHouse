@@ -736,8 +736,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 const auto & factories_info = context.getQueryFactoriesInfo();
                 elem.used_aggregate_functions = factories_info.aggregate_functions;
-                elem.used_databases = factories_info.databases;
-                elem.used_data_types = factories_info.data_types;
+                elem.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+                elem.used_database_engines = factories_info.database_engines;
+                elem.used_data_type_families = factories_info.data_type_families;
                 elem.used_dictionaries = factories_info.dictionaries;
                 elem.used_formats = factories_info.formats;
                 elem.used_functions = factories_info.functions;

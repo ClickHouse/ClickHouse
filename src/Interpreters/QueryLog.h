@@ -59,8 +59,9 @@ struct QueryLogElement
     std::set<String> query_columns;
 
     std::unordered_set<String> used_aggregate_functions;
-    std::unordered_set<String> used_databases;
-    std::unordered_set<String> used_data_types;
+    std::unordered_set<String> used_aggregate_function_combinators;
+    std::unordered_set<String> used_database_engines;
+    std::unordered_set<String> used_data_type_families;
     std::unordered_set<String> used_dictionaries;
     std::unordered_set<String> used_formats;
     std::unordered_set<String> used_functions;
