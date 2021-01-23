@@ -10,7 +10,8 @@ Creates a [settings profile](../../../operations/access-rights.md#settings-profi
 Syntax:
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name [ON CLUSTER cluster_name]
+CREATE SETTINGS {PROFILE | PROFILES} [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1] 
+        [, name2 [ON CLUSTER cluster_name2] ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
