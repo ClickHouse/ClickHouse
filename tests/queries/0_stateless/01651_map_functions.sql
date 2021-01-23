@@ -23,4 +23,5 @@ drop table if exists table_map;
 
 
 -- Const column
-select map( 'aa', 4, '44' , 5) as c, mapKeys(c), mapValues(c);
+select map( 'aa', 4, 'bb' , 5) as m, mapKeys(m), mapValues(m);
+select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k'); 

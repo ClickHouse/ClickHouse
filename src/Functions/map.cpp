@@ -177,6 +177,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
