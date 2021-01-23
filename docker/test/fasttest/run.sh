@@ -330,6 +330,9 @@ function run_tests
         # nc - command not found
         01601_proxy_protocol
         01622_defaults_for_url_engine
+
+        # JSON functions
+        01666_blns
     )
 
     time clickhouse-test -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
