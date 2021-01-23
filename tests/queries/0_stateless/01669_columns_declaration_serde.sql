@@ -17,3 +17,24 @@ INSERT INTO test (x) VALUES (1);
 SELECT * FROM test;
 
 DROP TABLE test;
+
+DROP TABLE IF EXISTS test_r1;
+DROP TABLE IF EXISTS test_r2;
+
+CREATE TABLE test_r1 (x UInt64, "\\" String DEFAULT '\r\n\t\\' || '
+') ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r1') ORDER BY "\\";
+
+INSERT INTO test_r1 ("\\") VALUES ('\\');
+
+CREATE TABLE test_r2 (x UInt64, "\\" String DEFAULT '\r\n\t\\' || '
+') ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r2') ORDER BY "\\";
+
+SYSTEM SYNC REPLICA test_r2;
+
+SELECT '---';
+SELECT * FROM test_r1;
+SELECT '---';
+SELECT * FROM test_r2;
+
+DROP TABLE test_r1;
+DROP TABLE test_r2;
