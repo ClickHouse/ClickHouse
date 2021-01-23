@@ -298,10 +298,19 @@ public:
                  out_offset += IPV6_BINARY_LENGTH, ++i)
             {
                 /// In case of failure, the function fills vec_res with zero bytes.
-                parseIPv6(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                String result;
+
+                if (DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&result)))
+                {
+                    result = std::string("::ffff:") + std::string(vec_src.raw_data());
+                }
+                else
+                {
+                    result = std::string(vec_res.raw_data());
+                }
+                parseIPv6(reinterpret_cast<const char *>(&result), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 src_offset = offsets_src[i];
             }
-
             return col_res;
         }
         else
