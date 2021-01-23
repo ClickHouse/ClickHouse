@@ -10,11 +10,12 @@ Creates a [filter for rows](../../../operations/access-rights.md#row-policy-mana
 Syntax:
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
+CREATE [ROW] {POLICY | POLICIES} [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...] 
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING condition]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
 
 `ON CLUSTER` clause allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).

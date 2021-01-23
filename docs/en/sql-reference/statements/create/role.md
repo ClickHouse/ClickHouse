@@ -10,7 +10,7 @@ Creates a new [role](../../../operations/access-rights.md#role-management). Role
 Syntax:
 
 ``` sql
-CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+CREATE {ROLE | ROLES} [IF NOT EXISTS | OR REPLACE] name1 [, name2 ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
