@@ -85,6 +85,20 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const Context & context) const
 {
     String name = getAliasToOrName(name_param);
+    FunctionOverloadResolverImplPtr res;
+
+    auto it = functions.find(name);
+    if (functions.end() != it)
+        res = it->second(context);
+    else
+    {
+        it = case_insensitive_functions.find(Poco::toLower(name));
+        if (case_insensitive_functions.end() != it)
+            res = it->second(context);
+    }
+
+    if (!res)
+        return nullptr;
 
     if (CurrentThread::isInitialized())
     {
@@ -93,15 +107,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
     }
 
-    auto it = functions.find(name);
-    if (functions.end() != it)
-        return it->second(context);
-
-    it = case_insensitive_functions.find(Poco::toLower(name));
-    if (case_insensitive_functions.end() != it)
-        return it->second(context);
-
-    return {};
+    return res;
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(

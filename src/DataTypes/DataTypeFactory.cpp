@@ -78,6 +78,8 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
+    DataTypePtr res = findCreatorByName(family_name)(parameters);
+
     if (CurrentThread::isInitialized())
     {
         const auto * query_context = CurrentThread::get().getQueryContext();
@@ -85,7 +87,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    return res;
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
