@@ -15,10 +15,6 @@ namespace DB
     {
         extern const int ILLEGAL_COLUMN;
         extern const int NOT_IMPLEMENTED;
-        extern const int FILE_DOESNT_EXIST;
-        extern const int CANNOT_OPEN_FILE;
-        extern const int CANNOT_CLOSE_FILE;
-        extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
         extern const int INCORRECT_FILE_NAME;
         extern const int DATABASE_ACCESS_DENIED;
     }
