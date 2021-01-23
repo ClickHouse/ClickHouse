@@ -45,7 +45,10 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
 [SETTINGS name=value, ...]
 ```
 
@@ -455,7 +458,10 @@ ALTER TABLE example_table
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ``` sql
-TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]   
 ```
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
@@ -464,9 +470,17 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 -   `TO DISK 'aaa'` - move part to the disk `aaa`;
 -   `TO VOLUME 'bbb'` - move part to the disk `bbb`.
 
-Examples:
+With `WHERE` clause you may specify which of the expired rows to delete or move.
 
-Creating a table with TTL
+With `GROUP BY` clause you may [aggregate](../../../sql-reference/aggregate-functions/index.md) expired rows. `GROUP BY` key expression must be a prefix of the table primary key. 
+
+If a column is part of primary key, but not present in `GROUP BY` key expression, in result rows it contains aggregated value across grouped rows. 
+
+If a column is not present neither in primary key, nor in `SET` clause, in result row it contains any occasional value from grouped rows.
+
+**Examples**
+
+Creating a table with TTL:
 
 ``` sql
 CREATE TABLE example_table
@@ -482,11 +496,41 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Altering TTL of the table
+Altering TTL of the table:
 
 ``` sql
 ALTER TABLE example_table
     MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+Creating a table, where the rows are expired after one month. The expired rows where dates are Mondays are deleted:
+
+``` sql
+CREATE TABLE table_with_where
+(
+    d DateTime, 
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
+```
+
+Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value accross the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
+
+``` sql
+CREATE TABLE table_for_aggregation
+(
+    d DateTime, 
+    k1 Int, 
+    k2 Int, 
+    x Int, 
+    y Int
+)
+ENGINE = MergeTree
+ORDER BY k1, k2
+TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
 **Removing Data**

@@ -37,7 +37,10 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
 [SETTINGS name=value, ...]
 ```
 
@@ -443,7 +446,10 @@ ALTER TABLE example_table
 Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, по срабатывании которых данные переместятся на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
 
 ``` sql
-TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+TTL expr 
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [WHERE conditions] 
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] 
 ```
 
 За каждым TTL выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату TTL выражения:
@@ -452,7 +458,17 @@ TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
 -   `TO DISK 'aaa'` - переместить данные на диск `aaa`;
 -   `TO VOLUME 'bbb'` - переместить данные на том `bbb`.
 
-Примеры:
+В секции `WHERE` можно задать условие удаления или перемещения устаревших строк.
+
+В секции `GROUP BY` можно [агрегировать](../../../sql-reference/aggregate-functions/index.md) данные из устаревших строк. Колонки, по которым агрегируются данные в `GROUP BY`, должны являться префиксом первичного ключа таблицы. 
+
+Если колонка является частью первичного ключа, но не фигурирует в списке полей в `GROUP BY`, в результирующих строках она будет содержать агрегированные данные по сгруппированным строкам. 
+
+Если колонка не является частью первичного ключа и не указана в секции `SET`, в результирующих строках она будет содержать случайное значение, взятое из одной из сгруппированных строк.
+
+**Примеры**
+
+Создание таблицы с TTL: 
 
 ``` sql
 CREATE TABLE example_table
@@ -468,11 +484,41 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Изменение TTL
+Изменение TTL:
 
 ``` sql
 ALTER TABLE example_table
     MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+Создание таблицы, в которой строки устаревают через месяц. Устаревшие строки удаляются, если дата выпадает на понедельник:
+
+``` sql
+CREATE TABLE table_with_where
+(
+    d DateTime, 
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
+```
+
+Создание таблицы, где устаревшие строки агрегируются. В результирующих строках колонка `x` содержит максимальное значение по сгруппированным строкам, `y` — минимальное значение, а `d` — случайное значение из одной из сгуппированных строк.
+
+``` sql
+CREATE TABLE table_for_aggregation
+(
+    d DateTime, 
+    k1 Int, 
+    k2 Int, 
+    x Int, 
+    y Int
+)
+ENGINE = MergeTree
+ORDER BY k1, k2
+TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
 **Удаление данных**
