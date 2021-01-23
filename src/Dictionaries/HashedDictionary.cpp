@@ -60,12 +60,13 @@ HashedDictionary::HashedDictionary(
 void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
 
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
         [&](const size_t row, const UInt64 value) { out[row] = value; },
-        [&](const size_t) { return null_value; });
+        extractor);
 }
 
 
@@ -138,7 +139,7 @@ ColumnPtr HashedDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto size = ids.size();
 
@@ -149,105 +150,36 @@ ColumnPtr HashedDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+ 
+        const auto null_value = std::get<ValueType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            if (default_values_column != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_values_column))
-                {
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        ids,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_values_column.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        ids,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t) { return def; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = std::get<StringRef>(attribute.null_values);
-
-                getItemsImpl<StringRef, StringRef>(
-                    attribute,
-                    ids,
-                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            getItemsImpl<StringRef, StringRef>(
+                attribute,
+                ids,
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            if (default_values_column != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_values_column))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_values_column.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    ids,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsImpl<AttributeType, AttributeType>(
+                attribute,
+                ids,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
         }
+        
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -271,10 +203,10 @@ ColumnPtr HashedDictionary::getColumn(
     return result;
 }
 
-ColumnUInt8::Ptr HashedDictionary::has(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr HashedDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     size_t ids_count = ext::size(ids);
 
@@ -586,28 +518,34 @@ HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAt
 }
 
 
-template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter>
 void HashedDictionary::getItemsAttrImpl(
-    const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const MapType & attr,
+    const PaddedPODArray<Key> & ids,
+    ValueSetter && set_value,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : default_value_extractor[i]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter>
 void HashedDictionary::getItemsImpl(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ValueSetter && set_value,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     if (!sparse)
-        return getItemsAttrImpl<OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, get_default);
-    return getItemsAttrImpl<OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, get_default);
+        return getItemsAttrImpl<AttributeType, OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, default_value_extractor);
+    return getItemsAttrImpl<AttributeType, OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, default_value_extractor);
 }
 
 

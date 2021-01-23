@@ -41,7 +41,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -50,13 +50,13 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const auto & attribute = getAttribute(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    auto size = key_columns.front()->size();
+    auto keys_size = key_columns.front()->size();
 
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
     if (attribute.is_nullable)
     {
-        col_null_map_to = ColumnUInt8::create(size, false);
+        col_null_map_to = ColumnUInt8::create(keys_size, false);
         vec_null_map_to = &col_null_map_to->getData();
     }
 
@@ -64,152 +64,48 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+
+        const auto null_value = std::get<ValueType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+            getItemsImpl<StringRef, StringRef>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const StringRef value, bool is_null)
                 {
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const StringRef value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
 
-                            out->insertData(value.data, value.size);
-                        },
-                        [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const StringRef value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
-
-                            out->insertData(value.data, value.size);
-                        },
-                        [&](const size_t) { return def; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = std::get<StringRef>(attribute.null_values);
-
-                getItemsImpl<StringRef, StringRef>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const StringRef value, bool is_null)
-                    {
-                        if (attribute.is_nullable)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                        }
-
-                        out->insertData(value.data, value.size);
-                    },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+                    out->insertData(value.data, value.size);
+                },
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
+            getItemsImpl<AttributeType, AttributeType>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const auto value, bool is_null)
                 {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
 
-                            out[row] = value;
-                        },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
-
-                            out[row] = value;
-                        },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const auto value, bool is_null)
-                    {
-                        if (attribute.is_nullable)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                        }
-
-                        out[row] = value;
-                    },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column);
+                    out[row] = value;
+                },
+                default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -222,7 +118,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     return result;
 }
 
-ColumnUInt8::Ptr ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr ComplexKeyHashedDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -236,15 +132,9 @@ ColumnUInt8::Ptr ComplexKeyHashedDictionary::has(const Columns & key_columns, co
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
 
-        if constexpr (std::is_same_v<AttributeType, String>)
-        {
-            has<StringRef>(attribute, key_columns, out);
-        }
-        else
-        {
-            has<AttributeType>(attribute, key_columns, out);
-        }
+        has<ValueType>(attribute, key_columns, out);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -480,9 +370,12 @@ ComplexKeyHashedDictionary::createAttribute(const DictionaryAttribute & attribut
 }
 
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter>
 void ComplexKeyHashedDictionary::getItemsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto & attr = std::get<ContainerType<AttributeType>>(attribute.maps);
 
@@ -505,9 +398,9 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         else
         {
             if (attribute.is_nullable && attribute.nullable_set->find(key) != nullptr)
-                set_value(i, get_default(i), true);
+                set_value(i, default_value_extractor[i], true);
             else
-                set_value(i, get_default(i), false);
+                set_value(i, default_value_extractor[i], false);
         }
 
         /// free memory allocated for the key

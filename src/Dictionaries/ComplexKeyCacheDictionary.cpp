@@ -76,7 +76,7 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -91,93 +91,26 @@ ColumnPtr ComplexKeyCacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+
+        const auto null_value = ValueType{std::get<AttributeType>(attribute.null_values)};
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsString(attribute, key_columns, out, [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
-
-                    getItemsString(attribute, key_columns, out, [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            auto * out = column.get();
+            getItemsString(attribute, key_columns, out, default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(keys_size);
-
             auto & out = column->getData();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        out,
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        out,
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsNumberImpl<AttributeType, AttributeType>(
-                    attribute,
-                    key_columns,
-                    out,
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsNumberImpl<AttributeType, AttributeType>(attribute, key_columns, out, default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -229,7 +162,7 @@ ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata
     return {oldest_id, false, false};
 }
 
-ColumnUInt8::Ptr ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr ComplexKeyCacheDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -315,9 +248,12 @@ ColumnUInt8::Ptr ComplexKeyCacheDictionary::has(const Columns & key_columns, con
 }
 
 
-template <typename AttributeType, typename OutputType, typename DefaultGetter>
+template <typename AttributeType, typename OutputType>
 void ComplexKeyCacheDictionary::getItemsNumberImpl(
-    Attribute & attribute, const Columns & key_columns, PaddedPODArray<OutputType> & out, DefaultGetter && get_default) const
+    Attribute & attribute, 
+    const Columns & key_columns,
+    PaddedPODArray<OutputType> & out,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     /// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
     MapType<std::vector<size_t>> outdated_keys;
@@ -359,7 +295,7 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
                 ++cache_hit;
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
-                out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
+                out[row] = cell.isDefault() ? default_value_extractor[row] : static_cast<OutputType>(attribute_array[cell_idx]);
             }
         }
     }
@@ -391,12 +327,15 @@ void ComplexKeyCacheDictionary::getItemsNumberImpl(
         [&](const StringRef key, const size_t)
         {
             for (const auto row : outdated_keys[key])
-                out[row] = get_default(row);
+                out[row] = default_value_extractor[row];
         });
 }
 
-template <typename DefaultGetter>
-void ComplexKeyCacheDictionary::getItemsString(Attribute & attribute, const Columns & key_columns, ColumnString * out, DefaultGetter && get_default) const
+void ComplexKeyCacheDictionary::getItemsString(
+    Attribute & attribute,
+    const Columns & key_columns,
+    ColumnString * out,
+    DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const
 {
     const auto rows_num = key_columns.front()->size();
     /// save on some allocations
@@ -431,7 +370,7 @@ void ComplexKeyCacheDictionary::getItemsString(Attribute & attribute, const Colu
             {
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
                 out->insertData(string_ref.data, string_ref.size);
             }
         }
@@ -480,7 +419,7 @@ void ComplexKeyCacheDictionary::getItemsString(Attribute & attribute, const Colu
                 ++cache_hit;
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
-                const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
 
                 if (!cell.isDefault())
                     map[key] = copyIntoArena(string_ref, temporary_keys_pool);
@@ -524,7 +463,7 @@ void ComplexKeyCacheDictionary::getItemsString(Attribute & attribute, const Colu
             [&](const StringRef key, const size_t)
             {
                 for (const auto row : outdated_keys[key])
-                    total_length += get_default(row).size + 1;
+                    total_length += default_value_extractor[row].size + 1;
             });
     }
 
@@ -534,7 +473,7 @@ void ComplexKeyCacheDictionary::getItemsString(Attribute & attribute, const Colu
     {
         const StringRef key = keys_array[row];
         const auto it = map.find(key);
-        const auto string_ref = it ? it->getMapped() : get_default(row);
+        const auto string_ref = it ? it->getMapped() : default_value_extractor[row];
         out->insertData(string_ref.data, string_ref.size);
     }
 }

@@ -12,6 +12,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -78,16 +79,16 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override;
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -142,8 +143,12 @@ private:
     void appendNullValue(AttributeUnderlyingType type, const Field & value);
 
     /** Helper function for retrieving the value of an attribute by key. */
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsImpl(size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
+        size_t attribute_ind,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     /** A mapping from the names of the attributes to their index in the two vectors defined below. */
     std::map<std::string, size_t> attribute_index_by_name;

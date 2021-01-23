@@ -273,7 +273,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     validateKeyTypes(key_types);
 
@@ -288,105 +288,37 @@ ColumnPtr IPAddressDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+
+        const auto null_value = ValueType{std::get<AttributeType>(attribute.null_values)};
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsImpl<StringRef, StringRef>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t) { return StringRef { def }; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
-
-                getItemsImpl<StringRef, StringRef>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                key_columns,
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -395,7 +327,7 @@ ColumnPtr IPAddressDictionary::getColumn(
 }
 
 
-ColumnUInt8::Ptr IPAddressDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     validateKeyTypes(key_types);
 
@@ -705,9 +637,12 @@ const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter>
 void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -744,7 +679,7 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
                 set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
             }
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
         return;
     }
@@ -779,13 +714,16 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
             mask_column[*found_it] == mask))
             set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
         else
-            set_value(i, get_default(i));
+            set_value(i, default_value_extractor[i]);
     }
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter>
 void IPAddressDictionary::getItemsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -794,7 +732,7 @@ void IPAddressDictionary::getItemsImpl(
     if (unlikely(key_columns.size() == 2))
     {
         getItemsByTwoKeyColumnsImpl<AttributeType, OutputType>(
-            attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
+            attribute, key_columns, std::forward<ValueSetter>(set_value), default_value_extractor);
         query_count.fetch_add(rows, std::memory_order_relaxed);
         return;
     }
@@ -812,7 +750,7 @@ void IPAddressDictionary::getItemsImpl(
             if (found != ipNotFound())
                 set_value(i, static_cast<OutputType>(vec[*found]));
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
     }
     else
@@ -827,7 +765,7 @@ void IPAddressDictionary::getItemsImpl(
             if (found != ipNotFound())
                 set_value(i, static_cast<OutputType>(vec[*found]));
             else
-                set_value(i, get_default(i));
+                set_value(i, default_value_extractor[i]);
         }
     }
 

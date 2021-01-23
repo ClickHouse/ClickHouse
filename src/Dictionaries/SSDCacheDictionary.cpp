@@ -446,7 +446,7 @@ void SSDCachePartition::flush()
 
 template <typename Out, typename GetDefault>
 void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-    ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
+    ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & default_value_extractor,
     std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
@@ -457,7 +457,7 @@ void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODAr
         if (metadata.expiresAt() > now)
         {
             if (metadata.isDefault())
-                out[index] = get_default(index);
+                out[index] = default_value_extractor[index];
             else
             {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
@@ -1333,12 +1333,13 @@ ColumnPtr SSDCacheDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+    auto keys_size = ids.size();
 
     const auto index = getAttributeIndex(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
@@ -1347,94 +1348,25 @@ ColumnPtr SSDCacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        auto identifiers_size = ids.size();
+        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(null_values[index]));
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsStringImpl(index, ids, column_string.get(), [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsStringImpl(index, ids, column_string.get(), [&](const size_t) { return StringRef{def}; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = StringRef{std::get<String>(null_values[index])};
-
-                getItemsStringImpl(index, ids, column_string.get(), [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            getItemsStringImpl(index, ids, column.get(), default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(identifiers_size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(identifiers_size);
-
             auto & out = column->getData();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        index,
-                        ids,
-                        out,
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        index,
-                        ids,
-                        out,
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(null_values[index]);
-
-                getItemsNumberImpl<AttributeType, AttributeType>(
-                    index,
-                    ids,
-                    out,
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsNumberImpl<AttributeType, AttributeType>(index, ids, out, default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
@@ -1444,12 +1376,15 @@ ColumnPtr SSDCacheDictionary::getColumn(
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
-        const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+        const size_t attribute_index,
+        const PaddedPODArray<Key> & ids,
+        ResultArrayType<OutputType> & out,
+        DefaultGetter & default_value_extractor) const
 {
     const auto now = std::chrono::system_clock::now();
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids, get_default, now);
+    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids, default_value_extractor, now);
     if (not_found_ids.empty())
         return;
 
@@ -1467,14 +1402,17 @@ void SSDCacheDictionary::getItemsNumberImpl(
             [&](const size_t id)
             {
                 for (const size_t row : not_found_ids[id])
-                    out[row] = get_default(row);
+                    out[row] = default_value_extractor[row];
             },
             getLifetime());
 }
 
 template <typename DefaultGetter>
-void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
-        ColumnString * out, DefaultGetter && get_default) const
+void SSDCacheDictionary::getItemsStringImpl(
+    const size_t attribute_index,
+    const PaddedPODArray<Key> & ids,
+    ColumnString * out,
+    DefaultGetter & default_value_extractor) const
 {
     const auto now = std::chrono::system_clock::now();
 
@@ -1493,7 +1431,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         {
             if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
             {
-                auto to_insert = get_default(row);
+                auto to_insert = default_value_extractor[row];
                 out->insertData(to_insert.data, to_insert.size);
                 ++default_index;
             }
@@ -1524,7 +1462,7 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         const auto & id = ids[row];
         if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
             ++default_index;
         }
@@ -1538,16 +1476,16 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         }
         else
         {
-            auto to_insert = get_default(row);
+            auto to_insert = default_value_extractor[row];
             out->insertData(to_insert.data, to_insert.size);
         }
     }
 }
 
-ColumnUInt8::Ptr SSDCacheDictionary::has(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr SSDCacheDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto result = ColumnUInt8::create(ext::size(ids));
     auto& out = result->getData();

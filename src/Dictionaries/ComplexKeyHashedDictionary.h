@@ -11,14 +11,13 @@
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <ext/range.h>
-#include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryStructure.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
@@ -61,16 +60,16 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -141,9 +140,12 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute & attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void
-    getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+    template <typename AttributeType, typename OutputType, typename ValueSetter>
+    void getItemsImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
     template <typename T>
     bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);

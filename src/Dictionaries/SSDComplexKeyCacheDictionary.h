@@ -2,11 +2,13 @@
 
 #if defined(OS_LINUX) || defined(__FreeBSD__)
 
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
 #include <atomic>
 #include <chrono>
+#include <list>
+#include <shared_mutex>
+#include <variant>
+#include <vector>
+#include <Poco/Logger.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
@@ -19,13 +21,11 @@
 #include <Dictionaries/BucketCache.h>
 #include <ext/scope_guard.h>
 #include <IO/HashingWriteBuffer.h>
-#include <list>
 #include <pcg_random.hpp>
-#include <Poco/Logger.h>
-#include <shared_mutex>
-#include <variant>
-#include <vector>
-
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -313,7 +313,7 @@ public:
     template <typename Out, typename GetDefault>
     void getValue(const size_t attribute_index,
             const Columns & key_columns, const DataTypes & key_types,
-            ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
+            ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & default_value_extractor,
             std::chrono::system_clock::time_point now) const;
 
     void getString(const size_t attribute_index,
@@ -321,7 +321,7 @@ public:
             StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
-    void has(const Columns & key_columns, const DataTypes & key_types,
+    void hasKeys(const Columns & key_columns, const DataTypes & key_types,
             ResultArrayType<UInt8> & out, std::vector<bool> & found,
             std::chrono::system_clock::time_point now) const;
 
@@ -459,7 +459,7 @@ public:
             TemporalComplexKeysPool & not_found_pool,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
-    void has(const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
+    void hasKeys(const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
             std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
             TemporalComplexKeysPool & not_found_pool, std::chrono::system_clock::time_point now) const;
 
@@ -569,16 +569,16 @@ public:
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     template <typename T>
     using ResultArrayType = SSDComplexKeyCacheStorage::ResultArrayType<T>;
@@ -593,17 +593,20 @@ private:
     AttributeValueVariant createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value);
     void createAttributes();
 
-    template <typename AttributeType, typename OutputType, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType>
     void getItemsNumberImpl(
         const size_t attribute_index,
-        const Columns & key_columns, const DataTypes & key_types,
-        ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        ResultArrayType<OutputType> & out,
+        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
-    template <typename DefaultGetter>
     void getItemsStringImpl(
         const size_t attribute_index,
-        const Columns & key_columns, const DataTypes & key_types,
-        ColumnString * out, DefaultGetter && get_default) const;
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        ColumnString * out,
+        DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

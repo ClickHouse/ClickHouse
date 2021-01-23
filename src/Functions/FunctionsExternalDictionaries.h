@@ -192,21 +192,21 @@ private:
             return result_type->createColumn();
 
         auto dictionary = helper.getDictionary(arguments[0]);
-        auto dictionary_identifier_type = dictionary->getIdentifierType();
+        auto dictionary_key_type = dictionary->getKeyType();
 
         const ColumnWithTypeAndName & key_column_with_type = arguments[1];
         const auto key_column = key_column_with_type.column;
         const auto key_column_type = WhichDataType(key_column_with_type.type);
 
-        if (dictionary_identifier_type == DictionaryIdentifierType::simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (!key_column_type.isUInt64())
                 throw Exception{"Second argument of function " + getName() + " must be " + dictionary->getStructure().getKeyDescription(),
                     ErrorCodes::TYPE_MISMATCH};
 
-            return dictionary->has({key_column}, {std::make_shared<DataTypeUInt64>()});
+            return dictionary->hasKeys({key_column}, {std::make_shared<DataTypeUInt64>()});
         }
-        else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
+        else if (dictionary_key_type == DictionaryKeyType::complex)
         {
             if (!key_column_type.isTuple())
                 throw Exception{"Second argument of function " + getName() + " must be " + dictionary->getStructure().getKeyDescription(),
@@ -218,7 +218,7 @@ private:
             const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_column_full).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_column_with_type.type).getElements();
 
-            return dictionary->has(key_columns, key_types);
+            return dictionary->hasKeys(key_columns, key_types);
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Has not supported for range dictionary", dictionary->getDictionaryID().getNameForLogs());
@@ -296,16 +296,14 @@ public:
                     + getName() + ", must be UInt64 or tuple(...).",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        auto dictionary_identifier_type = dictionary->getIdentifierType();
+        auto dictionary_key_type = dictionary->getKeyType();
 
         size_t current_arguments_index = 3;
-
-        /// TODO: Add more information to error messages
 
         ColumnPtr range_col = nullptr;
         DataTypePtr range_col_type = nullptr;
 
-        if (dictionary_identifier_type == DictionaryIdentifierType::range)
+        if (dictionary_key_type == DictionaryKeyType::range)
         {
             if (current_arguments_index >= arguments.size())
                 throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
@@ -336,11 +334,11 @@ public:
         const ColumnWithTypeAndName & key_col_with_type = arguments[2];
         const auto key_column = key_col_with_type.column;
 
-        if (dictionary_identifier_type == DictionaryIdentifierType::simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
         {
             result = dictionary->getColumn(attribute_name, result_type, {key_column}, {std::make_shared<DataTypeUInt64>()}, default_col);
         }
-        else if (dictionary_identifier_type == DictionaryIdentifierType::complex)
+        else if (dictionary_key_type == DictionaryKeyType::complex)
         {
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             ColumnPtr key_column_full = key_col_with_type.column->convertToFullColumnIfConst();
@@ -350,7 +348,7 @@ public:
 
             result = dictionary->getColumn(attribute_name, result_type, key_columns, key_types, default_col);
         }
-        else if (dictionary_identifier_type == DictionaryIdentifierType::range)
+        else if (dictionary_key_type == DictionaryKeyType::range)
         {
             result = dictionary->getColumn(
                 attribute_name, result_type, {key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type}, default_col);

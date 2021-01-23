@@ -12,14 +12,13 @@
 #include <ext/range.h>
 #include <ext/size.h>
 #include <ext/map.h>
-#include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryStructure.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class ComplexKeyDirectDictionary final : public IDictionaryBase
 {
@@ -60,16 +59,16 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -117,9 +116,12 @@ private:
     StringRef placeKeysInPool(
         const size_t row, const Columns & key_columns, StringRefs & keys, const std::vector<DictionaryAttribute> & key_attributes, Pool & pool) const;
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);

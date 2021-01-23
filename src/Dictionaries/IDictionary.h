@@ -28,13 +28,26 @@ namespace ErrorCodes
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-enum class DictionaryIdentifierType
+/** DictionaryKeyType provides IDictionary client information about 
+  *  which key type is supported by dictionary.
+  * 
+  *  Simple is for dictionaries that support UInt64 key column.
+  * 
+  *  Complex is for dictionaries that support any combination of key columns.
+  * 
+  *  Range is for dictionary that support combination of UInt64 key column,
+  *  and Integer representable range key column.
+  */
+enum class DictionaryKeyType
 {
     simple,
     complex,
     range
 };
 
+/**
+ * Base class for Dictionaries implementation.
+ */ 
 struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
@@ -91,28 +104,32 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
-    virtual DictionaryIdentifierType getIdentifierType() const /* = 0; */
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Get identifier type not supported", getDictionaryID().getNameForLogs());
-    }
+    /** Subclass must provide key type that is supported by dictionary.
+      * Client will use that key type to provide valid key columns for `getColumn` and `has` functions.
+      */
+    virtual DictionaryKeyType getKeyType() const = 0;
 
+    /** Subclass must validate key columns and keys types 
+      * and return column representation of dictionary attribute.
+      * 
+      * Parameter default_values_column must be used to provide default values
+      * for keys that are not in dictionary. If null pointer is passed, 
+      * then default attribute value must be used.
+      */
     virtual ColumnPtr getColumn(
-        const std::string & attribute_name [[maybe_unused]],
-        const DataTypePtr & result_type [[maybe_unused]],
-        const Columns & key_columns [[maybe_unused]],
-        const DataTypes & key_types [[maybe_unused]],
-        const ColumnPtr default_values_column [[maybe_unused]]) const /* = 0; */
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Get column not supported", getDictionaryID().getNameForLogs());
-    }
+        const std::string & attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr default_values_column) const = 0;
 
-    virtual ColumnUInt8::Ptr has(const Columns & key_columns [[maybe_unused]], const DataTypes & key_types [[maybe_unused]]) const /* = 0; */
-    {
-         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Has not supported", getDictionaryID().getNameForLogs());
-    }
+    /** Subclass must validate key columns and key types and return ColumnUInt8 that 
+      * is bitmask representation of is key in dictionary or not. 
+      * If key is in dictionary then value of associated row will be 1, otherwise 0.
+      */
+    virtual ColumnUInt8::Ptr hasKeys(
+        const Columns & key_columns,
+        const DataTypes & key_types) const = 0;
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
@@ -184,43 +201,4 @@ struct IDictionary : IDictionaryBase
     }
 };
 
-/// Implicit conversions in dictGet functions is disabled.
-inline void checkAttributeType(const IDictionaryBase * dictionary, const std::string & attribute_name,
-                               AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
-{
-    if (attribute_type != to)
-        throw Exception{ErrorCodes::TYPE_MISMATCH, "{}: type mismatch: attribute {} has type {}, expected {}",
-                        dictionary->getDictionaryID().getNameForLogs(),
-                        attribute_name, toString(attribute_type), toString(to)};
-}
-
-template <typename T>
-static const PaddedPODArray<T> &
-getColumnDataAsPaddedPODArray(const IDictionaryBase * dictionary, const ColumnPtr column, PaddedPODArray<T> & backup_storage)
-{
-    bool is_const_column = isColumnConst(*column);
-    auto full_column = column->convertToFullColumnIfConst();
-    auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
-
-    if (!vector_col)
-    {
-        throw Exception{ErrorCodes::TYPE_MISMATCH,
-            "{}: type mismatch: column has wrong type expected {}",
-            dictionary->getDictionaryID().getNameForLogs(),
-            "" /* TODO: Type name*/};
-    }
-
-    if (is_const_column)
-    {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
-        return backup_storage;
-    }
-    else
-    {
-        return vector_col->getData();
-    }
-}
 }

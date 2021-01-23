@@ -99,120 +99,50 @@ ColumnPtr IPolygonDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
-    /// TODO: Validate input types
-
     ColumnPtr result;
 
     const auto index = getAttributeIndex(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    auto size = key_columns.front()->size();
+    auto keys_size = key_columns.front()->size();
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+ 
+        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(null_values[index]));
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsImpl<String, StringRef>(
-                        index,
-                        key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsImpl<String, StringRef>(
-                        index,
-                        key_columns,
-                        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                        [&](const size_t) { return def; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = StringRef{std::get<String>(null_values[index])};
-
-                getItemsImpl<String, StringRef>(
-                    index,
-                    key_columns,
-                    [&](const size_t, const StringRef & value) { out->insertData(value.data, value.size); },
-                    [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            getItemsImpl<String, StringRef>(
+                index,
+                key_columns,
+                [&](const size_t, const StringRef & value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        index,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        index,
-                        key_columns,
-                        [&](const size_t row, const auto value) { return out[row] = value; },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(null_values[index]);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    index,
-                    key_columns,
-                    [&](const size_t row, const auto value) { return out[row] = value; },
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsImpl<AttributeType, AttributeType>(
+                index,
+                key_columns,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(dict_struct.attributes[index].underlying_type, type_call);
@@ -383,7 +313,7 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-ColumnUInt8::Ptr IPolygonDictionary::has(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
     auto size = key_columns.front()->size();
     auto result = ColumnUInt8::create(size);
@@ -410,9 +340,12 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
     return it->second;
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPolygonDictionary::getItemsImpl(
-        size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+        size_t attribute_ind,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const
 {
     const auto points = extractPoints(key_columns);
 
@@ -428,7 +361,7 @@ void IPolygonDictionary::getItemsImpl(
         id = ids[id];
         if (!found)
         {
-            set_value(i, static_cast<OutputType>(get_default(i)));
+            set_value(i, static_cast<OutputType>(default_value_extractor[i]));
             continue;
         }
         if constexpr (std::is_same<AttributeType, String>::value)

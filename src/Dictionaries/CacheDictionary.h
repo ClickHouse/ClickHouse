@@ -21,6 +21,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace CurrentMetrics
 {
@@ -119,16 +120,16 @@ public:
 
     std::exception_ptr getLastException() const override;
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -203,12 +204,18 @@ private:
     /* NOLINTNEXTLINE(readability-convert-member-functions-to-static) */
     Attribute createAttributeWithTypeAndName(const AttributeUnderlyingType type, const String & name, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType>
     void getItemsNumberImpl(
-        Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+        Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ResultArrayType<OutputType> & out,
+        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
-    template <typename DefaultGetter>
-    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsString(
+        Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ColumnString * out,
+        DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -399,5 +406,6 @@ private:
     mutable std::condition_variable is_update_finished;
 
     std::atomic<bool> finished{false};
-    };
+};
+
 }
