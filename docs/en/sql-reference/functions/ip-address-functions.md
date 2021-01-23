@@ -250,7 +250,9 @@ Determines if the input string is an IPv4 address or not. Returns `1` if true `0
 
 ``` sql
 SELECT isIPv4String('127.0.0.1')
+```
 
+``` text
 ┌─isIPv4String('127.0.0.1')─┐
 │                         1 │
 └───────────────────────────┘
@@ -262,7 +264,9 @@ Determines if the input string is an IPv6 address or not. Returns `1` if true `0
 
 ``` sql
 SELECT isIPv6String('2001:438:ffff::407d:1bc1')
+```
 
+``` text
 ┌─isIPv6String('2001:438:ffff::407d:1bc1')─┐
 │                                        1 │
 └──────────────────────────────────────────┘
