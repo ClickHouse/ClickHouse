@@ -8,6 +8,7 @@
 #include <sys/resource.h>
 #if defined(__linux__)
     #include <sys/prctl.h>
+    #include <sys/ptrace.h>
 #endif
 #include <fcntl.h>
 #include <errno.h>
@@ -38,6 +39,7 @@
 
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
+#include <common/errnoToString.h>
 #include <common/argsToConfig.h>
 #include <common/getThreadId.h>
 #include <common/coverage.h>
@@ -918,6 +920,11 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
+    bool enable_ptrace = false;
+    const char * env_watchdog_ptrace = getenv("CLICKHOUSE_WATCHDOG_PTRACE");
+    if (env_watchdog_ptrace && 0 == strcmp(env_watchdog_ptrace, "1"))
+        enable_ptrace = true;
+
     while (true)
     {
         static pid_t pid = -1;
@@ -931,7 +938,7 @@ void BaseDaemon::setupWatchdog()
             logger().information("Forked a child process to watch");
 #if defined(__linux__)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
-                logger().warning("Cannot do prctl to ask termination with parent.");
+                logger().warning(fmt::format("Cannot do prctl to ask termination with parent: {}.", errnoToString(errno)));
 #endif
             return;
         }
@@ -947,6 +954,16 @@ void BaseDaemon::setupWatchdog()
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
+
+#if defined(__linux__)
+        if (enable_ptrace)
+        {
+            logger().warning("Ptrace is enabled. This is only intended for debugging. Server will work slowly.");
+
+            if (0 != ptrace(PTRACE_ATTACH, pid, nullptr, nullptr))
+                logger().warning(fmt::format("Cannot attach to the child process: {}.", errnoToString(errno)));
+        }
+#endif
 
         /// Forward signals to the child process.
         addSignalHandler(
@@ -968,20 +985,48 @@ void BaseDaemon::setupWatchdog()
             nullptr);
 
         int status = 0;
-        do
+        while (true)
         {
-            if (-1 != waitpid(pid, &status, WUNTRACED | WCONTINUED) || errno == ECHILD)
+            pid_t waited_tid = waitpid(pid, &status, __WALL);
+            if (-1 != waited_tid || errno == ECHILD)
             {
                 if (WIFSTOPPED(status))
-                    logger().warning(fmt::format("Child process was stopped by signal {}.", WSTOPSIG(status)));
+                {
+                    int signal_num = WSTOPSIG(status);
+                    logger().warning(fmt::format("Child process {} was stopped by signal {} ({}).",
+                        waited_tid, signal_num, strsignal(signal_num)));
+
+#if defined(__linux__)
+                    if (enable_ptrace)
+                    {
+                        if (waited_tid == pid
+                            && 0 != ptrace(PTRACE_SETOPTIONS, waited_tid, nullptr, reinterpret_cast<void*>(PTRACE_O_TRACECLONE)))
+                        {
+                            logger().warning(fmt::format("Cannot do ptrace of threads: {}.", errnoToString(errno)));
+                        }
+
+                        if (signal_num == SIGSTOP
+                            || (status >> 8 == (SIGTRAP | (PTRACE_EVENT_CLONE << 8))))
+                        {
+                            /// Continue and ignore the signal.
+                            signal_num = 0;
+                        }
+
+                        if (0 != ptrace(PTRACE_CONT, waited_tid, nullptr, reinterpret_cast<void*>(signal_num)))
+                        {
+                            logger().warning(fmt::format("Cannot request child process to continue by ptrace: {}.", errnoToString(errno)));
+                        }
+                    }
+#endif
+                }
                 else if (WIFCONTINUED(status))
-                    logger().warning(fmt::format("Child process was continued."));
+                    logger().warning(fmt::format("Child process {} was continued.", waited_tid));
                 else
                     break;
             }
             else if (errno != EINTR)
-                throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
-        } while (true);
+                throw Poco::Exception(fmt::format("Cannot waitpid: {}", errnoToString(errno)));
+        }
 
         if (errno == ECHILD)
         {
@@ -1001,13 +1046,15 @@ void BaseDaemon::setupWatchdog()
 
             if (sig == SIGKILL)
             {
-                logger().fatal(fmt::format("Child process was terminated by signal {} (KILL)."
+                logger().fatal(fmt::format("Child process was terminated by signal {} ({})."
                     " If it is not done by 'forcestop' command or manually,"
-                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).", sig));
+                    " the possible cause is OOM Killer (see 'dmesg' and look at the '/var/log/kern.log' for the details).",
+                    sig, strsignal(sig)));
             }
             else
             {
-                logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
+                logger().fatal(fmt::format("Child process was terminated by signal {}. ({})",
+                    sig, strsignal(sig)));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
                     _exit(128 + sig);
