@@ -229,8 +229,12 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
+        UInt16 idx = year - DATE_LUT_MIN_YEAR;
+        if (unlikely(idx >= DATE_LUT_YEARS))
+            return 31;  /// Implementation specific behaviour on overflow.
+
         /// 32 makes arithmetic more simple.
-        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
+        DayNum any_day_of_month = DayNum(years_lut[idx] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
