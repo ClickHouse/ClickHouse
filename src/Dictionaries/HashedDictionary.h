@@ -182,19 +182,19 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter>
+    template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsAttrImpl(
         const MapType & attr,
         const PaddedPODArray<Key> & ids,
         ValueSetter && set_value,
-        DictionaryDefaultValueExtractor<AttributeType> & extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
         ValueSetter && set_value,
-        DictionaryDefaultValueExtractor<AttributeType> & extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);

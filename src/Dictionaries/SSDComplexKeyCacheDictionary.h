@@ -593,20 +593,20 @@ private:
     AttributeValueVariant createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value);
     void createAttributes();
 
-    template <typename AttributeType, typename OutputType>
+    template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
     void getItemsNumberImpl(
         const size_t attribute_index,
         const Columns & key_columns,
         const DataTypes & key_types,
         ResultArrayType<OutputType> & out,
-        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     void getItemsStringImpl(
         const size_t attribute_index,
         const Columns & key_columns,
         const DataTypes & key_types,
         ColumnString * out,
-        DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const;
+        DictionaryDefaultValueExtractor<String> & default_value_extractor) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;

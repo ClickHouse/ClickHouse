@@ -152,12 +152,12 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
-        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);

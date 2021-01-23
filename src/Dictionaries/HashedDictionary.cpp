@@ -152,9 +152,10 @@ ColumnPtr HashedDictionary::getColumn(
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
- 
-        const auto null_value = std::get<ValueType>(attribute.null_values);
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
@@ -178,7 +179,7 @@ ColumnPtr HashedDictionary::getColumn(
                 [&](const size_t row, const auto value) { return out[row] = value; },
                 default_value_extractor);
         }
-        
+
         result = std::move(column);
     };
 
@@ -518,12 +519,12 @@ HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAt
 }
 
 
-template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary::getItemsAttrImpl(
     const MapType & attr,
     const PaddedPODArray<Key> & ids,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto rows = ext::size(ids);
 
@@ -536,12 +537,12 @@ void HashedDictionary::getItemsAttrImpl(
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const PaddedPODArray<Key> & ids,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     if (!sparse)
         return getItemsAttrImpl<AttributeType, OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, default_value_extractor);

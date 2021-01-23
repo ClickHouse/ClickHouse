@@ -175,18 +175,18 @@ private:
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType>
+    template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
     void getItemsNumberImpl(
         Attribute & attribute,
         const Columns & key_columns,
         PaddedPODArray<OutputType> & out,
-        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        DefaultValueExtractor & default_value_extractor) const;
 
     void getItemsString(
         Attribute & attribute,
         const Columns & key_columns,
         ColumnString * out,
-        DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const;
+        DictionaryDefaultValueExtractor<String> & default_value_extractor) const;
 
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(

@@ -1401,12 +1401,10 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-
-        using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(null_values[index]));
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto null_value = std::get<AttributeType>(null_values[index]);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
@@ -1434,13 +1432,13 @@ ColumnPtr SSDComplexKeyCacheDictionary::getColumn(
     return result;
 }
 
-template <typename AttributeType, typename OutputType>
+template <typename AttributeType, typename OutputType, typename DefaultValueExtractor>
 void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     const size_t attribute_index,
     const Columns & key_columns,
     const DataTypes & key_types,
     ResultArrayType<OutputType> & out,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     assert(dict_struct.key);
     assert(key_columns.size() == key_types.size());
@@ -1488,7 +1486,7 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     const Columns & key_columns,
     const DataTypes & key_types,
     ColumnString * out,
-    DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const
+    DictionaryDefaultValueExtractor<String> & default_value_extractor) const
 {
     dict_struct.validateKeyTypes(key_types);
 

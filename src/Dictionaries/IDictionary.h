@@ -22,21 +22,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int TYPE_MISMATCH;
 }
 
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-/** DictionaryKeyType provides IDictionary client information about 
-  *  which key type is supported by dictionary.
-  * 
-  *  Simple is for dictionaries that support UInt64 key column.
-  * 
-  *  Complex is for dictionaries that support any combination of key columns.
-  * 
-  *  Range is for dictionary that support combination of UInt64 key column,
-  *  and Integer representable range key column.
+/** DictionaryKeyType provides IDictionary client information about
+  * which key type is supported by dictionary.
+  *
+  * Simple is for dictionaries that support UInt64 key column.
+  *
+  * Complex is for dictionaries that support any combination of key columns.
+  *
+  * Range is for dictionary that support combination of UInt64 key column,
+  * and numeric representable range key column.
   */
 enum class DictionaryKeyType
 {
@@ -47,7 +46,7 @@ enum class DictionaryKeyType
 
 /**
  * Base class for Dictionaries implementation.
- */ 
+ */
 struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
@@ -109,11 +108,11 @@ struct IDictionaryBase : public IExternalLoadable
       */
     virtual DictionaryKeyType getKeyType() const = 0;
 
-    /** Subclass must validate key columns and keys types 
+    /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
-      * 
+      *
       * Parameter default_values_column must be used to provide default values
-      * for keys that are not in dictionary. If null pointer is passed, 
+      * for keys that are not in dictionary. If null pointer is passed,
       * then default attribute value must be used.
       */
     virtual ColumnPtr getColumn(
@@ -123,8 +122,8 @@ struct IDictionaryBase : public IExternalLoadable
         const DataTypes & key_types,
         const ColumnPtr default_values_column) const = 0;
 
-    /** Subclass must validate key columns and key types and return ColumnUInt8 that 
-      * is bitmask representation of is key in dictionary or not. 
+    /** Subclass must validate key columns and key types and return ColumnUInt8 that
+      * is bitmask representation of is key in dictionary or not.
       * If key is in dictionary then value of associated row will be 1, otherwise 0.
       */
     virtual ColumnUInt8::Ptr hasKeys(

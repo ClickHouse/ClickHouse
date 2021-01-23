@@ -233,7 +233,7 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
             else
             {
                 column = dictionary->getColumn(
-                    attribute.name, 
+                    attribute.name,
                     attribute.type,
                     keys,
                     data_types,

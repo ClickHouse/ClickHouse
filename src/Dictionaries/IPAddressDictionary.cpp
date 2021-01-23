@@ -289,10 +289,10 @@ ColumnPtr IPAddressDictionary::getColumn(
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>; 
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = ValueType{std::get<AttributeType>(attribute.null_values)};
-        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+        const auto null_value = std::get<AttributeType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
@@ -637,12 +637,12 @@ const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -718,12 +718,12 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     }
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
