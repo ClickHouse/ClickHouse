@@ -964,11 +964,14 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
         case QueryLogFactories::AggregateFunction:
             query_factories_info.aggregate_functions.emplace(created_object);
             break;
+        case QueryLogFactories::AggregateFunctionCombinator:
+            query_factories_info.aggregate_function_combinators.emplace(created_object);
+            break;
         case QueryLogFactories::Database:
-            query_factories_info.databases.emplace(created_object);
+            query_factories_info.database_engines.emplace(created_object);
             break;
         case QueryLogFactories::DataType:
-            query_factories_info.data_types.emplace(created_object);
+            query_factories_info.data_type_families.emplace(created_object);
             break;
         case QueryLogFactories::Dictionary:
             query_factories_info.dictionaries.emplace(created_object);

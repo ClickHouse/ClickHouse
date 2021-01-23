@@ -205,8 +205,9 @@ private:
     struct QueryFactoriesInfo
     {
         std::unordered_set<std::string> aggregate_functions;
-        std::unordered_set<std::string> databases;
-        std::unordered_set<std::string> data_types;
+        std::unordered_set<std::string> aggregate_function_combinators;
+        std::unordered_set<std::string> database_engines;
+        std::unordered_set<std::string> data_type_families;
         std::unordered_set<std::string> dictionaries;
         std::unordered_set<std::string> formats;
         std::unordered_set<std::string> functions;
@@ -389,6 +390,7 @@ public:
     enum class QueryLogFactories
     {
         AggregateFunction,
+        AggregateFunctionCombinator,
         Database,
         DataType,
         Dictionary,
