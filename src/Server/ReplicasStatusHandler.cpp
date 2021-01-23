@@ -1,17 +1,18 @@
-#include "ReplicasStatusHandler.h"
+#include <Server/ReplicasStatusHandler.h>
 
+#include <Databases/IDatabase.h>
+#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/IServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/HTMLForm.h>
 #include <Common/typeid_cast.h>
-#include <Databases/IDatabase.h>
-#include <IO/HTTPCommon.h>
 
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
 }
 
 
-void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -110,9 +111,11 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
     }
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server), server.config(), config_prefix);
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    factory->addFiltersFromConfig(server.config(), config_prefix);
+    return factory;
 }
 
 }

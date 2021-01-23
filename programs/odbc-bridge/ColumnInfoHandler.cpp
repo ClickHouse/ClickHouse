@@ -159,7 +159,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
         }
 
-        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         writeStringBinary(columns.toString(), out);
     }
     catch (...)

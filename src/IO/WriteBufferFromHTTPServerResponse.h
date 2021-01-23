@@ -1,31 +1,17 @@
 #pragma once
 
-#include <optional>
-#include <mutex>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Version.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/CompressionMethod.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Server/HTTP/HTTPServerResponse.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-
-namespace Poco
-{
-    namespace Net
-    {
-        class HTTPServerResponse;
-    }
-}
+#include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -47,9 +33,9 @@ namespace DB
 class WriteBufferFromHTTPServerResponse final : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
-    Poco::Net::HTTPServerRequest & request;
-    Poco::Net::HTTPServerResponse & response;
+    HTTPServerResponse & response;
 
+    bool is_http_method_head;
     bool add_cors_header = false;
     unsigned keep_alive_timeout = 0;
     bool compress = false;
@@ -91,8 +77,8 @@ private:
 
 public:
     WriteBufferFromHTTPServerResponse(
-        Poco::Net::HTTPServerRequest & request_,
-        Poco::Net::HTTPServerResponse & response_,
+        HTTPServerResponse & response_,
+        bool is_http_method_head_,
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);

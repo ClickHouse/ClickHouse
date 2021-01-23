@@ -49,7 +49,7 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         auto identifier = getIdentifierQuote(hdbc);
 
-        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         writeStringBinary(identifier, out);
     }
     catch (...)

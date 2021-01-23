@@ -1,18 +1,18 @@
-#include "InterserverIOHTTPHandler.h"
+#include <Server/InterserverIOHTTPHandler.h>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <common/logger_useful.h>
-#include <Common/HTMLForm.h>
-#include <Common/setThreadName.h>
+#include <Server/IServer.h>
+
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Context.h>
-#include "IServer.h"
+#include <Interpreters/InterserverIOHandler.h>
+#include <Common/HTMLForm.h>
+#include <Common/setThreadName.h>
+#include <common/logger_useful.h>
+
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB
 {
@@ -51,7 +51,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net:
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
     HTMLForm params(request);
 
@@ -80,18 +80,19 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
 
     /// In order to work keep-alive.
-    if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+    if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
     const auto & config = server.config();
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive_timeout);
+    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
@@ -102,7 +103,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         }
         else
         {
-            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
+            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());

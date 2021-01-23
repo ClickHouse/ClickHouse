@@ -136,7 +136,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
-    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {

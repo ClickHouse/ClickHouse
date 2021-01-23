@@ -1,16 +1,13 @@
-#include "HTTPHandler.h"
+#include <Server/HTTPHandler.h>
 
-#include "HTTPHandlerFactory.h"
-#include "HTTPHandlerRequestFilter.h"
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/IServer.h>
 
 #include <chrono>
 #include <iomanip>
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerRequestImpl.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/NetException.h>
 #include <ext/scope_guard.h>
 #include <Core/ExternalTable.h>
@@ -234,9 +231,9 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 void HTTPHandler::processQuery(
     Context & context,
-    Poco::Net::HTTPServerRequest & request,
+    HTTPServerRequest & request,
     HTMLForm & params,
-    Poco::Net::HTTPServerResponse & response,
+    HTTPServerResponse & response,
     Output & used_output,
     std::optional<CurrentThread::QueryScope> & query_scope)
 {
@@ -401,7 +398,11 @@ void HTTPHandler::processQuery(
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        request, response, keep_alive_timeout, client_supports_http_compression, http_response_compression_method);
+        response,
+        request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+        keep_alive_timeout,
+        client_supports_http_compression,
+        http_response_compression_method);
 
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
@@ -652,9 +653,8 @@ void HTTPHandler::processQuery(
     used_output.out->finalize();
 }
 
-void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
-    Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
-    Output & used_output)
+void HTTPHandler::trySendExceptionToClient(
+    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
     try
     {
@@ -722,7 +722,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 }
 
 
-void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
@@ -794,7 +794,7 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
 
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
@@ -839,7 +839,7 @@ bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::s
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & request, DB::Context & context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::Context & context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -875,7 +875,7 @@ void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & req
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -887,10 +887,14 @@ std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & requ
     return predefined_query;
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    std::string query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
+    const auto & query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
+
+    factory->addFiltersFromConfig(server.config(), config_prefix);
+
+    return factory;
 }
 
 static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
@@ -908,18 +912,20 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
-                        compiled_regex->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception(
+            "Cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error()
+                + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
+            ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     return compiled_regex;
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     Poco::Util::AbstractConfiguration & configuration = server.config();
 
     if (!configuration.has(config_prefix + ".handler.query"))
-        throw Exception("There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
@@ -941,6 +947,8 @@ Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & 
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
+    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
+
     if (configuration.has(config_prefix + ".url"))
     {
         auto url_expression = configuration.getString(config_prefix + ".url");
@@ -950,14 +958,23 @@ Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & 
 
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
-            return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
-                server, std::move(analyze_receive_params), std::move(predefined_query), std::move(regex),
-                std::move(headers_name_with_regex)), configuration, config_prefix);
+        {
+            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+                server,
+                std::move(analyze_receive_params),
+                std::move(predefined_query),
+                std::move(regex),
+                std::move(headers_name_with_regex));
+            factory->addFiltersFromConfig(configuration, config_prefix);
+            return factory;
+        }
     }
 
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
-        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{} ,std::move(headers_name_with_regex)),
-        configuration, config_prefix);
+    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex));
+    factory->addFiltersFromConfig(configuration, config_prefix);
+
+    return factory;
 }
 
 }

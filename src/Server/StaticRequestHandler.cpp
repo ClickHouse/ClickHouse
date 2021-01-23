@@ -55,7 +55,11 @@ static inline WriteBufferPtr responseWriteBuffer(Poco::Net::HTTPServerRequest & 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
     return std::make_shared<WriteBufferFromHTTPServerResponse>(
-        request, response, keep_alive_timeout, client_supports_http_compression, http_response_compression_method);
+        response,
+        request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+        keep_alive_timeout,
+        client_supports_http_compression,
+        http_response_compression_method);
 }
 
 static inline void trySendExceptionToClient(
@@ -94,7 +98,7 @@ static inline void trySendExceptionToClient(
     }
 }
 
-void StaticRequestHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
@@ -159,14 +163,17 @@ StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & exp
 {
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     int status = server.config().getInt(config_prefix + ".handler.status", 200);
     std::string response_content = server.config().getRawString(config_prefix + ".handler.response_content", "Ok.\n");
     std::string response_content_type = server.config().getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(
+        server, std::move(response_content), std::move(status), std::move(response_content_type));
 
-    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<StaticRequestHandler>(
-        server, std::move(response_content), std::move(status), std::move(response_content_type)), server.config(), config_prefix);
+    factory->addFiltersFromConfig(server.config(), config_prefix);
+
+    return factory;
 }
 
 }

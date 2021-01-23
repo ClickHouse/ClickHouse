@@ -33,7 +33,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
 #if defined(POCO_CLICKHOUSE_PATCH)
-        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        if (!is_http_method_head)
             std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #endif
     }
@@ -74,7 +74,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
         writeHeaderSummary();
         headers_finished_sending = true;
 
-        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        if (!is_http_method_head)
         {
 #if defined(POCO_CLICKHOUSE_PATCH)
             /// Send end of headers delimiter.
@@ -103,7 +103,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
         startSendHeaders();
 
-        if (!out && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        if (!out && !is_http_method_head)
         {
             if (compress)
             {
@@ -149,14 +149,14 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
-    Poco::Net::HTTPServerRequest & request_,
     Poco::Net::HTTPServerResponse & response_,
+    bool is_http_method_head_,
     unsigned keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
-    , request(request_)
     , response(response_)
+    , is_http_method_head(is_http_method_head_)
     , keep_alive_timeout(keep_alive_timeout_)
     , compress(compress_)
     , compression_method(compression_method_)

@@ -1,13 +1,10 @@
 #pragma once
 
-#include "IServer.h"
-
-#include <Poco/Net/HTTPRequestHandler.h>
-
-#include <Common/CurrentThread.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/HTMLForm.h>
 #include <Core/Names.h>
+#include <Server/HTTP/HTTPRequestHandler.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/HTMLForm.h>
 
 #include <re2/re2.h>
 
@@ -21,23 +18,24 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class IServer;
 class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
-class HTTPHandler : public Poco::Net::HTTPRequestHandler
+class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    explicit HTTPHandler(IServer & server_, const std::string & name);
+    HTTPHandler(IServer & server_, const std::string & name);
 
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(Poco::Net::HTTPServerRequest & /*request*/, Context & /* context */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, Context & /* context */) {}
 
     virtual bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) = 0;
 
-    virtual std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) = 0;
+    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) = 0;
 
 private:
     struct Output
@@ -74,17 +72,17 @@ private:
     /// Also initializes 'used_output'.
     void processQuery(
         Context & context,
-        Poco::Net::HTTPServerRequest & request,
+        HTTPServerRequest & request,
         HTMLForm & params,
-        Poco::Net::HTTPServerResponse & response,
+        HTTPServerResponse & response,
         Output & used_output,
         std::optional<CurrentThread::QueryScope> & query_scope);
 
     void trySendExceptionToClient(
         const std::string & s,
         int exception_code,
-        Poco::Net::HTTPServerRequest & request,
-        Poco::Net::HTTPServerResponse & response,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
         Output & used_output);
 
     static void pushDelayedResults(Output & used_output);
@@ -97,7 +95,7 @@ private:
 public:
     explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query");
 
-    std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) override;
 
     bool customizeQueryParam(Context &context, const std::string &key, const std::string &value) override;
 };
@@ -114,9 +112,9 @@ public:
         IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
 
-    virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & context) override;
+    virtual void customizeContext(HTTPServerRequest & request, Context & context) override;
 
-    std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context) override;
 
     bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) override;
 };

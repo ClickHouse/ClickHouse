@@ -1,18 +1,11 @@
-#include "NotFoundHandler.h"
+#include <Server/NotFoundHandler.h>
 
 #include <IO/HTTPCommon.h>
-
 #include <Common/Exception.h>
-
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
 
 namespace DB
 {
-
-void NotFoundHandler::handleRequest(
-    Poco::Net::HTTPServerRequest & request,
-    Poco::Net::HTTPServerResponse & response)
+void NotFoundHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
