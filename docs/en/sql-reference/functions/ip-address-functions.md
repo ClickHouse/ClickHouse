@@ -243,4 +243,37 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
+
+## isIPv4String
+
+Determines if the input string is an IPv4 address or not. Returns `1` if true `0` otherwise.
+
+``` sql
+SELECT isIPv4String('127.0.0.1')
+
+Query id: 031fdb77-fa98-456e-9323-c68c7788fdde
+
+┌─isIPv4String('127.0.0.1')─┐
+│                         1 │
+└───────────────────────────┘
+
+1 rows in set. Elapsed: 0.009 sec. 
+```
+
+## isIPv6String
+
+Determines if the input string is an IPv6 address or not. Returns `1` if true `0` otherwise.
+
+``` sql
+SELECT isIPv6String('2001:438:ffff::407d:1bc1')
+
+Query id: f8e3cd94-b1f6-4f3b-bfd6-955b6e3d278d
+
+┌─isIPv6String('2001:438:ffff::407d:1bc1')─┐
+│                                        1 │
+└──────────────────────────────────────────┘
+
+1 rows in set. Elapsed: 0.009 sec. 
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->
