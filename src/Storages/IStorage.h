@@ -50,8 +50,8 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class StoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;

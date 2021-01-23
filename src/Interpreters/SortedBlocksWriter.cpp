@@ -3,7 +3,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 
 namespace DB
 {
