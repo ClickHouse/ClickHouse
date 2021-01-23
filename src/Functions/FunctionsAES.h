@@ -303,6 +303,10 @@ private:
             if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
+
+                /// If the length is zero (empty string is passed) it should be treat as no IV.
+                if (iv_value.size == 0)
+                    iv_value.data = nullptr;
             }
 
             const auto input_value = input_column->getDataAt(r);
@@ -571,6 +575,10 @@ private:
             if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
+
+                /// If the length is zero (empty string is passed) it should be treat as no IV.
+                if (iv_value.size == 0)
+                    iv_value.data = nullptr;
             }
 
             auto input_value = input_column->getDataAt(r);
