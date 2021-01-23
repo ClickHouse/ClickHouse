@@ -85,12 +85,24 @@ function fuzz
     fi
 
     ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+
     server_pid=$!
     kill -0 $server_pid
     while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
     ./clickhouse-client --query "select 1"
     kill -0 $server_pid
     echo Server started
+
+    echo "
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+continue
+thread apply all backtrace
+continue
+" > script.gdb
+
+    gdb -batch -command test.gdb -p $server_pid &
 
     fuzzer_exit_code=0
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
