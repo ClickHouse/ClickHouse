@@ -68,7 +68,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
         const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
-        AttributeType null_value = attribute_null_value;
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
