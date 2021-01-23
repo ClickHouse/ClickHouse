@@ -10,7 +10,7 @@ Creates one [user account](../../../operations/access-rights.md#user-account-man
 Syntax:
 
 ``` sql
-CREATE {USER | USERS} [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name] 
+CREATE {USER | USERS} [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
         [, name2 [ON CLUSTER cluster_name2] ...]
     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
