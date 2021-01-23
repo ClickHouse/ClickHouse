@@ -18,4 +18,6 @@ You can also use the following database engines:
 
 -   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
+-   [Atomic](../../engines/database-engines/atomic.md)
+
 [Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
