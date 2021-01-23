@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -170,6 +171,7 @@ namespace
     bool isFileBrokenErrorCode(int code, bool remote_error)
     {
         return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::EMPTY_DATA_PASSED
             || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
             || code == ErrorCodes::CANNOT_READ_ALL_DATA
             || code == ErrorCodes::UNKNOWN_CODEC
