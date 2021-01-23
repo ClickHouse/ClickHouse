@@ -269,6 +269,7 @@ function run_tests
         01281_group_by_limit_memory_tracking    # max_memory_usage_for_user can interfere another queries running concurrently
         01318_encrypt                           # Depends on OpenSSL
         01318_decrypt                           # Depends on OpenSSL
+        01663_aes_msan                          # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -332,7 +333,7 @@ function run_tests
         01622_defaults_for_url_engine
     )
 
-    time clickhouse-test -j 8 --order=random --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+    time clickhouse-test -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
     # substr is to remove semicolon after test name
     readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
