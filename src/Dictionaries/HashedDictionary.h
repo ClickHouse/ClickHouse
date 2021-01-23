@@ -14,6 +14,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 /** This dictionary stores all content in a hash table in memory
   * (a separate Key -> Value map for each attribute)
@@ -22,7 +23,6 @@
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class HashedDictionary final : public IDictionary
 {
@@ -68,7 +68,7 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -77,7 +77,7 @@ public:
         const DataTypes & key_types,
         const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     void isInVectorVector(
         const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
@@ -182,12 +182,19 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter>
     void getItemsAttrImpl(
-        const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+        const MapType & attr,
+        const PaddedPODArray<Key> & ids,
+        ValueSetter && set_value,
+        DictionaryDefaultValueExtractor<AttributeType> & extractor) const;
+
+    template <typename AttributeType, typename OutputType, typename ValueSetter>
     void getItemsImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ValueSetter && set_value,
+        DictionaryDefaultValueExtractor<AttributeType> & extractor) const;
 
     template <typename T>
     bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);

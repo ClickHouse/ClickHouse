@@ -13,9 +13,10 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <ext/range.h>
 #include <ext/size.h>
+#include <ext/map.h>
+#include <ext/chrono_io.h>
 #include <Common/setThreadName.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <Functions/FunctionHelpers.h>
@@ -131,8 +132,8 @@ const IDictionarySource * CacheDictionary::getSource() const
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_value);
-
-    getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, [&](const size_t) { return null_value; });
+    DictionaryDefaultValueExtractor<UInt64> default_value_extractor(null_value);
+    getItemsNumberImpl<UInt64, UInt64>(*hierarchical_attribute, ids, out, default_value_extractor);
 }
 
 
@@ -255,12 +256,13 @@ ColumnPtr CacheDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes &,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto & keys = getColumnVectorData(this, key_columns.front(), backup_storage);
+    auto keys_size = keys.size();
 
     auto & attribute = getAttribute(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
@@ -269,100 +271,364 @@ ColumnPtr CacheDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+ 
+        const auto null_value = static_cast<ValueType>(std::get<AttributeType>(attribute.null_value));
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
 
-        auto identifiers_size = ids.size();
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
-                {
-                    getItemsString(attribute, ids, column_string.get(), [&](const size_t row) { return default_col->getDataAt(row); });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsString(attribute, ids, column_string.get(), [&](const size_t) { return StringRef{def}; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH}; 
-            }
-            else
-            {
-                const auto null_value = StringRef{std::get<String>(attribute.null_value)};
-
-                getItemsString(attribute, ids, column_string.get(), [&](const size_t) { return null_value; });
-            }
-
-            result = std::move(column_string);
+            getItemsString(attribute, keys, column.get(), default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(identifiers_size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(identifiers_size);
-
             auto & out = column->getData();
-
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        out,
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsNumberImpl<AttributeType, AttributeType>(
-                        attribute,
-                        ids,
-                        out,
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_value);
-
-                getItemsNumberImpl<AttributeType, AttributeType>(
-                    attribute,
-                    ids,
-                    out,
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+            getItemsNumberImpl<AttributeType, AttributeType>(attribute, keys, out, default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     return result;
 }
+
+template <typename AttributeType, typename OutputType>
+void CacheDictionary::getItemsNumberImpl(
+    Attribute & attribute, 
+    const PaddedPODArray<Key> & ids,
+    ResultArrayType<OutputType> & out,
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
+{
+    /// First fill everything with default values
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = default_value_extractor[row];
+
+    /// Maybe there are duplicate keys, so we remember their indices.
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
+
+    auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
+
+    size_t cache_hit = 0;
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_cound = 0;
+
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        auto insert_to_answer_routine = [&](size_t row, size_t idx)
+        {
+            auto & cell = cells[idx];
+            if (!cell.isDefault())
+                out[row] = static_cast<OutputType>(attribute_array[idx]);
+        };
+
+        /// fetch up-to-date values, decide which ones require update
+        for (const auto row : ext::range(0, rows))
+        {
+            const auto id = ids[row];
+
+            /** cell should be updated if either:
+                *    1. ids do not match,
+                *    2. cell has expired,
+                *    3. explicit defaults were specified and cell was set default. */
+
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                ++cache_hit;
+                insert_to_answer_routine(row, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                cache_expired_cound++;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_to_answer_routine(row, cell_idx);
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_cound);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    hit_count.fetch_add(rows - cache_not_found_count - cache_expired_cound, std::memory_order_release);
+
+    if (!cache_not_found_count)
+    {
+        /// Nothing to update - return
+        if (!cache_expired_cound)
+            return;
+
+        /// Update async only if allow_read_expired_keys_is_enabledadd condvar usage and better code
+        if (allow_read_expired_keys)
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_cound);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                           std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
+
+            /// request new values
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
+
+            tryPushToUpdateQueueOrThrow(update_unit_ptr);
+
+            /// Nothing to do - return
+            return;
+        }
+    }
+
+    /// From this point we have to update all keys sync.
+    /// Maybe allow_read_expired_keys_from_cache_dictionary is disabled
+    /// and there no cache_not_found_ids but some cache_expired.
+
+    std::vector<Key> required_ids;
+    required_ids.reserve(cache_not_found_count + cache_expired_cound);
+    std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                   std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    /// Request new values
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
+
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
+
+    /// Add updated keys to answer.
+
+    const size_t attribute_index = getAttributeIndex(attribute.name);
+
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            for (const size_t row : cache_expired_or_not_found_ids[key])
+                out[row] = std::get<OutputType>(value.values[attribute_index]);
+        }
+    }
+}
+
+void CacheDictionary::getItemsString(
+    Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ColumnString * out,
+    DictionaryDefaultValueExtractor<StringRef> & default_value_extractor) const
+{
+    const auto rows = ext::size(ids);
+
+    /// Save on some allocations.
+    out->getOffsets().reserve(rows);
+
+    auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
+
+    auto found_outdated_values = false;
+
+    /// Perform optimistic version, fallback to pessimistic if failed.
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        /// Fetch up-to-date values, discard on fail.
+        for (const auto row : ext::range(0, rows))
+        {
+            const auto id = ids[row];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                auto & cell = cells[cell_idx];
+                const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
+                out->insertData(string_ref.data, string_ref.size);
+            }
+            else
+            {
+                found_outdated_values = true;
+                break;
+            }
+        }
+    }
+
+    /// Optimistic code completed successfully.
+    if (!found_outdated_values)
+    {
+        query_count.fetch_add(rows, std::memory_order_relaxed);
+        hit_count.fetch_add(rows, std::memory_order_release);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, ids.size());
+        return;
+    }
+
+    /// Now onto the pessimistic one, discard possible partial results from the optimistic path.
+    out->getChars().resize_assume_reserved(0);
+    out->getOffsets().resize_assume_reserved(0);
+
+    /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_or_not_found_ids;
+    /// we are going to store every string separately
+    std::unordered_map<Key, String> local_cache;
+
+    size_t cache_not_found_count = 0;
+    size_t cache_expired_count = 0;
+
+    size_t total_length = 0;
+    size_t cache_hit = 0;
+    {
+        const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+        const auto now = std::chrono::system_clock::now();
+
+        auto insert_value_routine = [&](size_t row, size_t id, size_t cell_idx)
+        {
+            const auto & cell = cells[cell_idx];
+            const auto string_ref = cell.isDefault() ? default_value_extractor[row] : attribute_array[cell_idx];
+
+            /// Do not store default, but count it in total length.
+            if (!cell.isDefault())
+                local_cache[id] = String{string_ref};
+
+            total_length += string_ref.size + 1;
+        };
+
+        for (const auto row : ext::range(0, ids.size()))
+        {
+            const auto id = ids[row];
+            const auto [cell_idx, state] = findCellIdxForGet(id, now);
+
+            if (state == ResultState::FoundAndValid)
+            {
+                ++cache_hit;
+                insert_value_routine(row, id, cell_idx);
+            }
+            else if (state == ResultState::NotFound || state == ResultState::FoundButExpiredPermanently)
+            {
+                ++cache_not_found_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+            }
+            else if (state == ResultState::FoundButExpired)
+            {
+                ++cache_expired_count;
+                cache_expired_or_not_found_ids[id].push_back(row);
+
+                if (allow_read_expired_keys)
+                    insert_value_routine(row, id, cell_idx);
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_count);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    hit_count.fetch_add(rows - cache_expired_count - cache_not_found_count, std::memory_order_release);
+
+    /// Async update of expired keys.
+    if (!cache_not_found_count)
+    {
+        if (allow_read_expired_keys && cache_expired_count)
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_count);
+            std::transform(std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+                           std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
+
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_expired_ids));
+
+            tryPushToUpdateQueueOrThrow(update_unit_ptr);
+
+            /// Insert all found keys and defaults to output array.
+            out->getChars().reserve(total_length);
+
+            for (const auto row : ext::range(0, ext::size(ids)))
+            {
+                const auto id = ids[row];
+                StringRef value;
+
+                /// Previously we stored found keys in map.
+                const auto it = local_cache.find(id);
+                if (it != local_cache.end())
+                    value = StringRef(it->second);
+                else
+                    value = default_value_extractor[row];
+
+                out->insertData(value.data, value.size);
+            }
+
+            /// Nothing to do else.
+            return;
+        }
+    }
+
+    /// We will request both cache_not_found_ids and cache_expired_ids sync.
+    std::vector<Key> required_ids;
+    required_ids.reserve(cache_not_found_count + cache_expired_count);
+    std::transform(
+        std::begin(cache_expired_or_not_found_ids), std::end(cache_expired_or_not_found_ids),
+        std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(std::move(required_ids));
+
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
+
+    const size_t attribute_index = getAttributeIndex(attribute.name);
+
+    /// Only calculate the total length.
+    for (auto & [key, value] : update_unit_ptr->found_ids)
+    {
+        if (value.found)
+        {
+            const auto found_value_ref = std::get<String>(value.values[attribute_index]);
+            total_length += (found_value_ref.size() + 1) * cache_expired_or_not_found_ids[key].size();
+        }
+        else
+        {
+            for (const auto row : cache_expired_or_not_found_ids[key])
+                total_length += default_value_extractor[row].size + 1;
+        }
+    }
+
+    out->getChars().reserve(total_length);
+
+    for (const auto row : ext::range(0, ext::size(ids)))
+    {
+        const auto id = ids[row];
+        StringRef value;
+
+        /// We have two maps: found in cache and found in source.
+        const auto local_it = local_cache.find(id);
+        if (local_it != local_cache.end())
+            value = StringRef(local_it->second);
+        else
+        {
+            const auto found_it = update_unit_ptr->found_ids.find(id);
+
+            /// Previously we didn't store defaults in local cache.
+            if (found_it != update_unit_ptr->found_ids.end() && found_it->second.found)
+                value = std::get<String>(found_it->second.values[attribute_index]);
+            else
+                value = default_value_extractor[row];
+        }
+
+        out->insertData(value.data, value.size);
+    }
+}
+
 
 template<class... Ts>
 struct Overloaded : Ts... {using Ts::operator()...;};
@@ -462,10 +728,10 @@ size_t CacheDictionary::findCellIdxForSet(const Key & id) const
     return oldest_id;
 }
 
-ColumnUInt8::Ptr CacheDictionary::has(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr CacheDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto result = ColumnUInt8::create(ext::size(ids));
     auto& out = result->getData();

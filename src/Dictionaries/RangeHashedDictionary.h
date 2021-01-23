@@ -1,5 +1,10 @@
 #pragma once
 
+#include <atomic>
+#include <memory>
+#include <variant>
+#include <optional>
+
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
@@ -7,11 +12,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
-#include <atomic>
-#include <memory>
-#include <variant>
-#include <optional>
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -53,16 +54,16 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::range; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::range; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     using RangeStorageType = Int64;
 
@@ -151,12 +152,12 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
-        DefaultGetter && get_default) const;
+        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);

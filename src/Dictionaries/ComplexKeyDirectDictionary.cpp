@@ -39,7 +39,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_untyped) const
+    const ColumnPtr default_values_column) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -48,13 +48,13 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     const auto & attribute = getAttribute(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    auto size = key_columns.front()->size();
+    auto keys_size = key_columns.front()->size();
 
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
     if (attribute.is_nullable)
     {
-        col_null_map_to = ColumnUInt8::create(size, false);
+        col_null_map_to = ColumnUInt8::create(keys_size, false);
         vec_null_map_to = &col_null_map_to->getData();
     }
 
@@ -62,160 +62,49 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+ 
+        const auto null_value = std::get<ValueType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ColumnString>(*default_untyped))
+            getItemsImpl<String, String>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const String value, bool is_null)
                 {
-                    getItemsImpl<String, String>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const String value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
 
-                            const auto ref = StringRef{value};
-                            out->insertData(ref.data, ref.size);
-                        },
-                        [&](const size_t row)
-                        {
-                            const auto ref = default_col->getDataAt(row);
-                            return String(ref.data, ref.size);
-                        });
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ColumnString>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<String>();
-
-                    getItemsImpl<String, String>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const String value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
-
-                            const auto ref = StringRef{value};
-                            out->insertData(ref.data, ref.size);
-                        },
-                        [&](const size_t) { return def; });
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto & null_value = std::get<StringRef>(attribute.null_values);
-
-                getItemsImpl<String, String>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const String value, bool is_null)
-                    {
-                        if (attribute.is_nullable)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                        }
-
-                        const auto ref = StringRef{value};
-                        out->insertData(ref.data, ref.size);
-                    },
-                    [&](const size_t) { return String(null_value.data, null_value.size); });
-            }
-
-            result = std::move(column_string);
+                    const auto ref = StringRef{value};
+                    out->insertData(ref.data, ref.size);
+                },
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            if (default_untyped != nullptr)
-            {
-                if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_untyped))
-                {
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
+            getItemsImpl<AttributeType, AttributeType>(
+                attribute,
+                key_columns,
+                [&](const size_t row, const auto value, bool is_null) {
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
 
-                            out[row] = value;
-                        },
-                        [&](const size_t row) { return default_col->getData()[row]; }
-                    );
-                }
-                else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_untyped.get()))
-                {
-                    const auto & def = default_col_const->template getValue<AttributeType>();
-
-                    getItemsImpl<AttributeType, AttributeType>(
-                        attribute,
-                        key_columns,
-                        [&](const size_t row, const auto value, bool is_null)
-                        {
-                            if (attribute.is_nullable)
-                            {
-                                (*vec_null_map_to)[row] = is_null;
-                            }
-
-                            out[row] = value;
-                        },
-                        [&](const size_t) { return def; }
-                    );
-                }
-                else
-                    throw Exception{full_name + ": type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-            }
-            else
-            {
-                const auto null_value = std::get<AttributeType>(attribute.null_values);
-
-                getItemsImpl<AttributeType, AttributeType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t row, const auto value, bool is_null)
-                    {
-                        if (attribute.is_nullable)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                        }
-
-                        out[row] = value;
-                    },
-                    [&](const size_t) { return null_value; }
-                );
-            }
-
-            result = std::move(column);
+                    out[row] = value;
+                },
+                default_value_extractor);
         }
+
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -228,7 +117,7 @@ ColumnPtr ComplexKeyDirectDictionary::getColumn(
     return result;
 }
 
-ColumnUInt8::Ptr ComplexKeyDirectDictionary::has(const Columns & key_columns, const DataTypes & key_types) const
+ColumnUInt8::Ptr ComplexKeyDirectDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -384,9 +273,12 @@ StringRef ComplexKeyDirectDictionary::placeKeysInPool(
 }
 
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void ComplexKeyDirectDictionary::getItemsImpl(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto rows = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
@@ -401,7 +293,7 @@ void ComplexKeyDirectDictionary::getItemsImpl(
     {
         const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
-        value_by_key[key] = get_default(row);
+        value_by_key[key] = static_cast<AttributeType>(default_value_extractor[row]);
         to_load[row] = row;
         value_is_null[key] = false;
     }
@@ -443,13 +335,9 @@ void ComplexKeyDirectDictionary::getItemsImpl(
                     auto value = attribute_column[row_idx];
 
                     if (value.isNull())
-                    {
                         value_is_null[key] = true;
-                    }
                     else
-                    {
                         value_by_key[key] = static_cast<OutputType>(value.template get<NearestFieldType<AttributeType>>());
-                    }
                 }
             }
         }

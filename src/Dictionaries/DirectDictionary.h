@@ -13,11 +13,10 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class DirectDictionary final : public IDictionary
 {
@@ -65,16 +64,16 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_untyped) const override;
+        const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -114,9 +113,12 @@ private:
 
     Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value, const std::string & name);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);

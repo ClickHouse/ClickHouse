@@ -79,14 +79,14 @@ private:
     GetColumnsFunction get_key_columns_function;
     GetColumnsFunction get_view_columns_function;
 
-    enum class DictionaryKeyType
+    enum class DictionaryInputStreamKeyType
     {
         Id,
         ComplexKey,
         Callback
     };
 
-    DictionaryKeyType key_type;
+    DictionaryInputStreamKeyType key_type;
 };
 
 
@@ -97,7 +97,7 @@ DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     , dictionary(dictionary_)
     , column_names(column_names_)
     , ids(std::move(ids_))
-    , key_type(DictionaryKeyType::Id)
+    , key_type(DictionaryInputStreamKeyType::Id)
 {
 }
 
@@ -110,7 +110,7 @@ DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size_)
     , dictionary(dictionary_)
     , column_names(column_names_)
-    , key_type(DictionaryKeyType::ComplexKey)
+    , key_type(DictionaryInputStreamKeyType::ComplexKey)
 {
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
     fillKeyColumns(keys, 0, keys.size(), dictionary_structure, key_columns);
@@ -130,7 +130,7 @@ DictionaryBlockInputStream<Key>::DictionaryBlockInputStream(
     , data_columns(data_columns_)
     , get_key_columns_function(std::move(get_key_columns_function_))
     , get_view_columns_function(std::move(get_view_columns_function_))
-    , key_type(DictionaryKeyType::Callback)
+    , key_type(DictionaryInputStreamKeyType::Callback)
 {
 }
 
@@ -141,7 +141,7 @@ Block DictionaryBlockInputStream<Key>::getBlock(size_t start, size_t length) con
     /// TODO: Rewrite
     switch (key_type)
     {
-        case DictionaryKeyType::ComplexKey:
+        case DictionaryInputStreamKeyType::ComplexKey:
         {
             Columns columns;
             ColumnsWithTypeAndName view_columns;
@@ -155,13 +155,13 @@ Block DictionaryBlockInputStream<Key>::getBlock(size_t start, size_t length) con
             return fillBlock({}, columns, {}, std::move(view_columns));
         }
 
-        case DictionaryKeyType::Id:
+        case DictionaryInputStreamKeyType::Id:
         {
             PaddedPODArray<Key> ids_to_fill(ids.begin() + start, ids.begin() + start + length);
             return fillBlock(ids_to_fill, {}, {}, {});
         }
 
-        case DictionaryKeyType::Callback:
+        case DictionaryInputStreamKeyType::Callback:
         {
             Columns columns;
             columns.reserve(data_columns.size());
@@ -182,7 +182,7 @@ Block DictionaryBlockInputStream<Key>::getBlock(size_t start, size_t length) con
         }
     }
 
-    throw Exception("Unexpected DictionaryKeyType.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Unexpected DictionaryInputStreamKeyType.", ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename Key>
@@ -212,8 +212,7 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
         block_columns.emplace_back(ids_column, std::make_shared<DataTypeUInt64>(), structure.id->name);
     }
 
-    /// TODO: This can be optimized
-    auto dictionary_identifier_type = dictionary->getIdentifierType();
+    auto dictionary_key_type = dictionary->getKeyType();
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
@@ -222,15 +221,23 @@ Block DictionaryBlockInputStream<Key>::fillBlock(
         {
             ColumnPtr column;
 
-            if (dictionary_identifier_type == DictionaryIdentifierType::simple)
+            if (dictionary_key_type == DictionaryKeyType::simple)
             {
                 column = dictionary->getColumn(
-                    attribute.name, attribute.type, {ids_column}, {std::make_shared<DataTypeUInt64>()}, nullptr /* default_untyped*/);
+                    attribute.name,
+                    attribute.type,
+                    {ids_column},
+                    {std::make_shared<DataTypeUInt64>()},
+                    nullptr /* default_values_column */);
             }
             else
             {
                 column = dictionary->getColumn(
-                    attribute.name, attribute.type, keys, data_types, nullptr /* default_untyped*/);
+                    attribute.name, 
+                    attribute.type,
+                    keys,
+                    data_types,
+                    nullptr /* default_values_column*/);
             }
 
             block_columns.emplace_back(column, attribute.type, attribute.name);

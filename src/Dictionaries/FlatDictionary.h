@@ -18,55 +18,10 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
-
-template <typename DefaultValue>
-class DefaultValueExtractor
-{
-public:
-    using ResultColumnType = std::conditional_t<
-        std::is_same_v<DefaultValue, StringRef>,
-        ColumnString,
-        std::conditional_t<IsDecimalNumber<DefaultValue>, ColumnDecimal<DefaultValue>, ColumnVector<DefaultValue>>>;
-
-    DefaultValueExtractor(DefaultValue default_value_, ColumnPtr default_values_)
-    {
-        if (default_values_ != nullptr)
-        {
-            if (const auto * const default_col = checkAndGetColumn<ResultColumnType>(*default_values_))
-            {
-                default_values = default_col;
-            }
-            else if (const auto * const default_col_const = checkAndGetColumnConst<ResultColumnType>(default_values_.get()))
-            {
-                using ConstColumnValue = std::conditional_t<std::is_same_v<DefaultValue, StringRef>, String, DefaultValue>;
-                default_value = std::make_optional<DefaultValue>(default_col_const->template getValue<ConstColumnValue>());
-            }
-            else
-                throw Exception{"Type of default column is not the same as result type.", ErrorCodes::TYPE_MISMATCH};
-        }
-        else
-            default_value = std::make_optional<DefaultValue>(default_value_);
-    }
-
-    DefaultValue operator[](size_t row)
-    {
-        if (default_value)
-            return *default_value;
-        
-        if constexpr (std::is_same_v<ResultColumnType, ColumnString>)
-            return default_values->getDataAt(row);
-        else
-            return default_values->getData()[row];
-    }
-private:
-    const ResultColumnType * default_values = nullptr;
-    std::optional<DefaultValue> default_value = {};
-};
 
 class FlatDictionary final : public IDictionary
 {
@@ -116,7 +71,7 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    DictionaryIdentifierType getIdentifierType() const override { return DictionaryIdentifierType::simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -125,7 +80,7 @@ public:
         const DataTypes & key_types,
         const ColumnPtr default_values_column) const override;
 
-    ColumnUInt8::Ptr has(const Columns & key_columns, const DataTypes & key_types) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -195,7 +150,10 @@ private:
 
     template <typename AttributeType, typename OutputType, typename ValueSetter>
     void getItemsImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultValueExtractor<AttributeType> & default_value_extractor) const;
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ValueSetter && set_value,
+        DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
 
     template <typename T>
     void resize(Attribute & attribute, const Key id);

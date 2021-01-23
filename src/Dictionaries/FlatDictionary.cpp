@@ -49,7 +49,7 @@ FlatDictionary::FlatDictionary(
 void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    DefaultValueExtractor<UInt64> extractor(null_value, nullptr);
+    DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
 
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
@@ -118,7 +118,7 @@ ColumnPtr FlatDictionary::getColumn(
     ColumnPtr result;
 
     PaddedPODArray<Key> backup_storage;
-    const auto & ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto size = ids.size();
 
@@ -129,52 +129,36 @@ ColumnPtr FlatDictionary::getColumn(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+        
+        const auto null_value = std::get<ValueType>(attribute.null_values);
+        DictionaryDefaultValueExtractor<ValueType> default_value_extractor(null_value, default_values_column);
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+
+        if constexpr (std::is_same_v<ValueType, StringRef>)
         {
-            auto column_string = ColumnString::create();
-            auto * out = column_string.get();
+            auto * out = column.get();
 
-            const auto & null_value = std::get<StringRef>(attribute.null_values);
-            DefaultValueExtractor<StringRef> extractor(null_value, default_values_column);
-
-            getItemsImpl<StringRef, StringRef>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 ids,
                 [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                extractor);
-
-            result = std::move(column_string);
+                default_value_extractor);
         }
         else
         {
-            using ResultColumnType
-                = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
-            using ResultColumnPtr = typename ResultColumnType::MutablePtr;
-
-            ResultColumnPtr column;
-
-            if constexpr (IsDecimalNumber<AttributeType>)
-            {
-                auto scale = getDecimalScale(*dictionary_attribute.nested_type);
-                column = ColumnDecimal<AttributeType>::create(size, scale);
-            }
-            else if constexpr (IsNumber<AttributeType>)
-                column = ColumnVector<AttributeType>::create(size);
-
             auto & out = column->getData();
 
-            const auto null_value = std::get<AttributeType>(attribute.null_values);
-            DefaultValueExtractor<AttributeType> extractor(null_value, default_values_column);
-
-            getItemsImpl<AttributeType, AttributeType>(
-                attribute, 
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
                 ids, 
                 [&](const size_t row, const auto value) { out[row] = value; },
-                extractor);
-
-            result = std::move(column);
+                default_value_extractor);
         }
+
+        result = std::move(column);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -199,10 +183,10 @@ ColumnPtr FlatDictionary::getColumn(
 }
 
 
-ColumnUInt8::Ptr FlatDictionary::has(const Columns & key_columns, const DataTypes &) const
+ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
     PaddedPODArray<Key> backup_storage;
-    const auto& ids = getColumnDataAsPaddedPODArray(this, key_columns.front(), backup_storage);
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto result = ColumnUInt8::create(ext::size(ids));
     auto& out = result->getData();
@@ -425,7 +409,7 @@ void FlatDictionary::getItemsImpl(
     const Attribute & attribute,
     const PaddedPODArray<Key> & ids,
     ValueSetter && set_value,
-    DefaultValueExtractor<AttributeType> & default_value_extractor) const
+    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const
 {
     const auto & attr = std::get<ContainerType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
