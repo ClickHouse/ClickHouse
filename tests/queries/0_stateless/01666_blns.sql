@@ -538,7 +538,7 @@ CREATE TABLE test
   "گچپژ" String,
   "{% print 'x' * 64 * 1024**3 %}" String,
   "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}" String
-) ENGINE = MergeTree ORDER BY "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}";
+) ENGINE = MergeTree ORDER BY "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}" SETTINGS min_bytes_for_wide_part = '100G';
 
 INSERT INTO test ("0") SELECT 'Hello, world!';
 SELECT count() FROM test;
@@ -554,9 +554,9 @@ SELECT count() FROM test;
 DROP TABLE IF EXISTS test_r1;
 DROP TABLE IF EXISTS test_r2;
 
-CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r1') ORDER BY "\\";
+CREATE TABLE test_r1 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r1') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 INSERT INTO test_r1 SELECT * FROM test;
-CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r2') ORDER BY "\\";
+CREATE TABLE test_r2 AS test ENGINE = ReplicatedMergeTree('/clickhouse/test', 'r2') ORDER BY "\\" SETTINGS min_bytes_for_wide_part = '100G';
 
 SYSTEM SYNC REPLICA test_r2;
 
