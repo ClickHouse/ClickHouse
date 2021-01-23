@@ -82,7 +82,7 @@
 	url = https://github.com/google/brotli.git
 [submodule "contrib/h3"]
 	path = contrib/h3
-	url = https://github.com/uber/h3
+	url = https://github.com/ClickHouse-Extras/h3
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
