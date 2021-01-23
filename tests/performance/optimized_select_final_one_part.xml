@@ -13,7 +13,7 @@
 
     <fill_query>OPTIMIZE TABLE optimized_select_final FINAL</fill_query>
 
-    <query>SELECT max(x) FROM optimized_select_final FINAL where s = 'string' FORMAT Null</query>
+    <query>SELECT * FROM optimized_select_final FINAL where s = 'string' FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS  optimized_select_final</drop_query>
 
