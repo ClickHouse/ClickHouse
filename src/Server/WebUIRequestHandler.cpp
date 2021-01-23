@@ -29,7 +29,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
 
     setResponseDefaultHeaders(response, keep_alive_timeout);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    response.send() << getResource(resource_name);
+    *response.send() << getResource(resource_name);
 }
 
 }

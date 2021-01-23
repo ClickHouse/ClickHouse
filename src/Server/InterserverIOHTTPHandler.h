@@ -43,7 +43,7 @@ private:
 
     void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
 
-    std::pair<String, bool> checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
+    std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
 };
 
 }

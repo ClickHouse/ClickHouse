@@ -83,7 +83,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
 
         if (verbose)
-            response.send() << message.str();
+            *response.send() << message.str();
         else
         {
             const char * data = "Ok.\n";
@@ -101,7 +101,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                response.send() << getCurrentExceptionMessage(false) << std::endl;
+                *response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }
         catch (...)

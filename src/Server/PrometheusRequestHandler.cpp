@@ -1,7 +1,7 @@
 #include <Server/PrometheusRequestHandler.h>
 
 #include <IO/HTTPCommon.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
 #include <Common/CurrentMetrics.h>

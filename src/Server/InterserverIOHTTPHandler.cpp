@@ -4,7 +4,7 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Common/HTMLForm.h>
@@ -23,7 +23,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
+std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
     const auto & config = server.config();
 
@@ -60,7 +60,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    ReadBufferFromIStream body(request.stream());
+    ReadBufferFromIStream body(request.getStream());
 
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing

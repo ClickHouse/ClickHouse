@@ -1,9 +1,8 @@
-#include <Poco/Version.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteBufferFromString.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
@@ -11,6 +10,8 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
+
+#include <Poco/Version.h>
 
 
 namespace DB
@@ -32,16 +33,13 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
         if (!is_http_method_head)
             std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-#endif
     }
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
-#if defined(POCO_CLICKHOUSE_PATCH)
     if (headers_finished_sending)
         return;
 
@@ -50,12 +48,10 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
-#endif
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-#if defined(POCO_CLICKHOUSE_PATCH)
     if (headers_finished_sending)
         return;
 
@@ -64,7 +60,6 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
-#endif
 }
 
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()
@@ -76,21 +71,14 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
         if (!is_http_method_head)
         {
-#if defined(POCO_CLICKHOUSE_PATCH)
             /// Send end of headers delimiter.
             if (response_header_ostr)
                 *response_header_ostr << "\r\n" << std::flush;
-#else
-            /// Newline autosent by response.send()
-            /// if nothing to send in body:
-            if (!response_body_ostr)
-                response_body_ostr = &(response.send());
-#endif
         }
         else
         {
             if (!response_body_ostr)
-                response_body_ostr = &(response.send());
+                response_body_ostr = response.send();
         }
     }
 }
@@ -109,16 +97,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
             {
                 auto content_encoding_name = toContentEncodingName(compression_method);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
                 *response_header_ostr << "Content-Encoding: " << content_encoding_name << "\r\n";
-#else
-                response.set("Content-Encoding", content_encoding_name);
-#endif
             }
-
-#if !defined(POCO_CLICKHOUSE_PATCH)
-            response_body_ostr = &(response.send());
-#endif
 
             /// We reuse our buffer in "out" to avoid extra allocations and copies.
 
@@ -149,7 +129,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
-    Poco::Net::HTTPServerResponse & response_,
+    HTTPServerResponse & response_,
     bool is_http_method_head_,
     unsigned keep_alive_timeout_,
     bool compress_,

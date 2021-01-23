@@ -1,45 +1,46 @@
 #include <Server/HTTPHandler.h>
 
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/ExternalTable.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Disks/StoragePolicy.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/QueryParameterVisitor.h>
+#include <Interpreters/executeQuery.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
-
-#include <chrono>
-#include <iomanip>
-#include <Poco/File.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/NetException.h>
-#include <ext/scope_guard.h>
-#include <Core/ExternalTable.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
-#include <Common/SettingsChanges.h>
-#include <Disks/StoragePolicy.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/CascadeWriteBuffer.h>
-#include <IO/MemoryReadWriteBuffer.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/QueryParameterVisitor.h>
-#include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-#include <Poco/Net/HTTPStream.h>
+#include <common/getFQDNOrHostName.h>
+#include <ext/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
+
+#include <Poco/File.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPStream.h>
+#include <Poco/Net/NetException.h>
+
+#include <chrono>
+#include <iomanip>
 
 
 namespace DB
@@ -239,7 +240,7 @@ void HTTPHandler::processQuery(
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    std::istream & istr = request.stream();
+    std::istream & istr = request.getStream();
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -285,9 +286,9 @@ void HTTPHandler::processQuery(
     client_info.interface = ClientInfo::Interface::HTTP;
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
         http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
+    else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
     client_info.http_method = http_method;
@@ -510,7 +511,7 @@ void HTTPHandler::processQuery(
     const auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
             context.setSetting("readonly", 2);
@@ -605,7 +606,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
+        Poco::Net::StreamSocket & socket = request.socket();
 
         append_callback([&context, &socket](const Progress &)
         {
@@ -664,10 +665,10 @@ void HTTPHandler::trySendExceptionToClient(
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
             && response.getKeepAlive()
-            && !request.stream().eof()
+            && !request.getStream().eof()
             && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
-            request.stream().ignore(std::numeric_limits<std::streamsize>::max());
+            request.getStream().ignore(std::numeric_limits<std::streamsize>::max());
         }
 
         bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||
@@ -686,7 +687,7 @@ void HTTPHandler::trySendExceptionToClient(
         if (!response.sent() && !used_output.out_maybe_compressed)
         {
             /// If nothing was sent yet and we don't even know if we must compress the response.
-            response.send() << s << std::endl;
+            *response.send() << s << std::endl;
         }
         else if (used_output.out_maybe_compressed)
         {
@@ -743,17 +744,18 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
-        if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+        if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
-            !request.hasContentLength())
+        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
-            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception(
+                "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request",
+                ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(context, request, params, response, used_output, query_scope);
@@ -809,7 +811,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.stream(), handler);
+    params.load(request, request.getStream(), handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -881,7 +883,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.stream(), handler);
+        params.load(request, request.getStream(), handler);
     }
 
     return predefined_query;

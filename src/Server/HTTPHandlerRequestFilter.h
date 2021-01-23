@@ -49,7 +49,7 @@ static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, con
     for (const auto & iterator : tokenizer)
         methods.emplace_back(Poco::toUpper(Poco::trim(iterator)));
 
-    return [methods](const Poco::Net::HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
+    return [methods](const HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
 }
 
 static inline auto getExpression(const std::string & expression)

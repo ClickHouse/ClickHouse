@@ -42,11 +42,8 @@ private:
     CompressionMethod compression_method;
     int compression_level = 1;
 
-    std::ostream * response_body_ostr = nullptr;
-
-#if defined(POCO_CLICKHOUSE_PATCH)
-    std::ostream * response_header_ostr = nullptr;
-#endif
+    std::shared_ptr<std::ostream> response_body_ostr;
+    std::shared_ptr<std::ostream> response_header_ostr;
 
     std::unique_ptr<WriteBuffer> out;
 

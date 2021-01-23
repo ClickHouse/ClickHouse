@@ -7,7 +7,7 @@
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -73,19 +73,19 @@ ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
     return pool_map->at(connection_str);
 }
 
-void ODBCHandler::processError(Poco::Net::HTTPServerResponse & response, const std::string & message)
+void ODBCHandler::processError(HTTPServerResponse & response, const std::string & message)
 {
-    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+    response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        response.send() << message << std::endl;
+        *response.send() << message << std::endl;
     LOG_WARNING(log, message);
 }
 
-void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request);
     if (mode == "read")
-        params.read(request.stream());
+        params.read(request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
@@ -163,7 +163,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 #endif
 
             auto pool = getPool(connection_string);
-            ReadBufferFromIStream read_buf(request.stream());
+            ReadBufferFromIStream read_buf(request.getStream());
             auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
                                                                    context, max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);

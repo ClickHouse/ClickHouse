@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -32,7 +32,8 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static inline WriteBufferPtr responseWriteBuffer(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, unsigned int keep_alive_timeout)
+static inline WriteBufferPtr
+responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, unsigned int keep_alive_timeout)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -63,8 +64,7 @@ static inline WriteBufferPtr responseWriteBuffer(Poco::Net::HTTPServerRequest & 
 }
 
 static inline void trySendExceptionToClient(
-    const std::string & s, int exception_code,
-    Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response , WriteBuffer & out)
+    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, WriteBuffer & out)
 {
     try
     {
@@ -73,13 +73,13 @@ static inline void trySendExceptionToClient(
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive() && !request.stream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
-            request.stream().ignore(std::numeric_limits<std::streamsize>::max());
+            && response.getKeepAlive() && !request.getStream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
+            request.getStream().ignore(std::numeric_limits<std::streamsize>::max());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            response.send() << s << std::endl;
+            *response.send() << s << std::endl;
         else
         {
             if (out.count() != out.offset())
