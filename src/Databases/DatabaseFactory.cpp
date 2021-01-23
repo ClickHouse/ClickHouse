@@ -60,7 +60,14 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
         created = Poco::File(metadata_path).createDirectory();
-        return getImpl(create, metadata_path, context);
+
+        DatabasePtr impl = getImpl(create, metadata_path, context);
+
+        if (impl && context.hasQueryContext() && context.getSettingsRef().log_queries)
+            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+
+        return impl;
+
     }
     catch (...)
     {
@@ -96,9 +103,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         engine_define->sample_by || (!endsWith(engine_name, "MySQL") && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
-
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);

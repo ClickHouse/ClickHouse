@@ -45,15 +45,6 @@ TableFunctionPtr TableFunctionFactory::get(
     }
 
     res->parseArguments(ast_function, context);
-
-    if (CurrentThread::isInitialized())
-    {
-        const auto * query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, table_function->name);
-    }
-
-
     return res;
 }
 
@@ -62,16 +53,29 @@ TableFunctionPtr TableFunctionFactory::tryGet(
         const Context &) const
 {
     String name = getAliasToOrName(name_param);
+    TableFunctionPtr res;
 
     auto it = table_functions.find(name);
     if (table_functions.end() != it)
-        return it->second();
+        res = it->second();
+    else
+    {
+        it = case_insensitive_table_functions.find(Poco::toLower(name));
+        if (case_insensitive_table_functions.end() != it)
+            res = it->second();
+    }
 
-    it = case_insensitive_table_functions.find(Poco::toLower(name));
-    if (case_insensitive_table_functions.end() != it)
-        return it->second();
+    if (!res)
+        return nullptr;
 
-    return {};
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
+    }
+
+    return res;
 }
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
