@@ -29,11 +29,14 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-/// There is no dragonbox in Arcadia
-#if !defined(ARCADIA_BUILD)
-#   include <dragonbox/dragonbox_to_chars.h>
-#else
-#   include <ryu/ryu.h>
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#endif
+#include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
 #endif
 
 #include <Formats/FormatSettings.h>
@@ -233,22 +236,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-#else
-            result = d2s_buffered_n(x, buffer);
-#endif
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-#else
-            result = f2s_buffered_n(x, buffer);
-#endif
     }
 
     if (result <= 0)
@@ -488,6 +483,10 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
+inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeEscapedString(ref.data(), ref.size(), buf);
+}
 
 template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
@@ -517,15 +516,29 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(s, buf);
 }
 
-
 inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
+inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
+}
+
+inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s, buf);
+}
+
 inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
+}
+
+inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
 
 /// Outputs a string in backquotes.
@@ -594,9 +607,65 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
+inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
+{
+    const char * pos = begin;
+    while (true)
+    {
+        const char * next_pos = find_first_symbols<'<', '&', '>', '"', '\''>(pos, end);
+
+        if (next_pos == end)
+        {
+            buf.write(pos, end - pos);
+            break;
+        }
+        else if (*next_pos == '<')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&lt;", buf);
+        }
+        else if (*next_pos == '&')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&amp;", buf);
+        }
+        else if (*next_pos == '>')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&gt;", buf);
+        }
+        else if (*next_pos == '"')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&quot;", buf);
+        }
+        else if (*next_pos == '\'')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&apos;", buf);
+        }
+
+        pos = next_pos;
+    }
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
+}
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
-inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -626,14 +695,14 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-inline void writeXMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -679,7 +748,7 @@ static const char digits100[201] =
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
-    if (buf.position() + 10 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 10 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[date.year() / 100 * 2], 2);
         buf.position() += 2;
@@ -716,7 +785,7 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
-    if (buf.position() + 19 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 19 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[datetime.year() / 100 * 2], 2);
         buf.position() += 2;
@@ -850,6 +919,7 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
@@ -950,6 +1020,10 @@ writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
+inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
+inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
 inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
@@ -991,6 +1065,10 @@ inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {

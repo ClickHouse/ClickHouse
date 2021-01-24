@@ -3,7 +3,6 @@
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
 
@@ -152,6 +151,7 @@ public:
     void reserve(size_t n) override { idx.reserve(n); }
 
     size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
     void forEachSubcolumn(ColumnCallback callback) override

@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 #include <mutex>
@@ -19,6 +18,8 @@
 namespace DB
 {
 
+class Context;
+
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
@@ -28,7 +29,6 @@ class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, pub
 public:
     std::string getName() const override { return "RabbitMQ"; }
 
-    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;

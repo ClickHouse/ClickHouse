@@ -26,6 +26,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
+    bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         auto target_table = getTargetTable();
@@ -46,6 +47,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;

@@ -1,10 +1,19 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=20.13.1.*
+ARG version=21.2.1.*
 ARG gosu_ver=1.10
 
-RUN apt-get update \
+# user/group precreated explicitly with fixed uid/gid on purpose.
+# It is especially important for rootless containers: in that case entrypoint
+# can't do chown and owners of mounted volumes should be configured externally.
+# We do that in advance at the begining of Dockerfile before any packages will be
+# installed to prevent picking those uid / gid by some unrelated software.
+# The same uid / gid (101) is used both for alpine and ubuntu.
+
+RUN groupadd -r clickhouse --gid=101 \
+    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
+    && apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \
@@ -27,7 +36,12 @@ RUN apt-get update \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
         /tmp/* \
-    && apt-get clean
+    && apt-get clean \
+    && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
+    && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+
+# we need to allow "others" access to clickhouse folder, because docker container
+# can be started with arbitrary uid (openshift usecase)
 
 ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
 

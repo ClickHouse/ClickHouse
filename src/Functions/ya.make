@@ -53,6 +53,7 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
+    FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
@@ -120,6 +121,7 @@ SRCS(
     appendTrailingCharIfAbsent.cpp
     array/array.cpp
     array/arrayAUC.cpp
+    array/arrayAggregation.cpp
     array/arrayAll.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
@@ -155,7 +157,6 @@ SRCS(
     array/arraySlice.cpp
     array/arraySort.cpp
     array/arraySplit.cpp
-    array/arraySum.cpp
     array/arrayUniq.cpp
     array/arrayWithConstant.cpp
     array/arrayZip.cpp
@@ -185,6 +186,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitHammingDistance.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -202,6 +204,7 @@ SRCS(
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
@@ -218,6 +221,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
@@ -226,6 +230,7 @@ SRCS(
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
+    encodeXMLComponent.cpp
     encrypt.cpp
     endsWith.cpp
     equals.cpp
@@ -324,6 +329,7 @@ SRCS(
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
+    map.cpp
     match.cpp
     materialize.cpp
     minus.cpp
@@ -502,6 +508,7 @@ SRCS(
     tryBase64Decode.cpp
     tuple.cpp
     tupleElement.cpp
+    tupleHammingDistance.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

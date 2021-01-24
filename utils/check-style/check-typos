@@ -3,12 +3,11 @@
 # Check for typos in code.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-CURDIR=$(dirname "${BASH_SOURCE[0]}")
 
 codespell \
-    --skip '*generated*,*gperf*,*.bin,*.mrk*,*.idx,checksums.txt,*.dat,*.pyc,*.kate-swp' \
-    --ignore-words "${CURDIR}/codespell-ignore-words.list" \
-    --exclude-file "${CURDIR}/codespell-ignore-lines.list" \
+    --skip '*generated*,*gperf*,*.bin,*.mrk*,*.idx,checksums.txt,*.dat,*.pyc,*.kate-swp,*obfuscateQueries.cpp' \
+    --ignore-words "${ROOT_PATH}/utils/check-style/codespell-ignore-words.list" \
+    --exclude-file "${ROOT_PATH}/utils/check-style/codespell-ignore-lines.list" \
     --quiet-level 2 \
     "$ROOT_PATH"/{src,base,programs,utils} \
     $@ | grep -P '.' \

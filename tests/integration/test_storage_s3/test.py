@@ -306,7 +306,8 @@ def test_multipart_put(cluster, maybe_auth, positive):
         cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, maybe_auth, table_format)
 
     try:
-        run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
+        run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes,
+                                                                 's3_max_single_part_upload_size': 0})
     except helpers.client.QueryRuntimeException:
         if positive:
             raise

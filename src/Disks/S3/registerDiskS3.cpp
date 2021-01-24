@@ -37,7 +37,7 @@ namespace
             throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
     }
 
-    void checkRemoveAccess(IDisk & disk) { disk.remove("test_acl"); }
+    void checkRemoveAccess(IDisk & disk) { disk.removeFile("test_acl"); }
 
     std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
         const String & prefix, const Poco::Util::AbstractConfiguration & proxy_resolver_config)
@@ -120,6 +120,7 @@ void registerDiskS3(DiskFactory & factory)
 
         cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
         cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
+        cfg.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
         cfg.endpointOverride = uri.endpoint;
 
         auto proxy_config = getProxyConfiguration(config_prefix, config);
@@ -148,7 +149,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.key,
             metadata_path,
             context.getSettingsRef().s3_min_upload_part_size,
-            config.getUInt64(config_prefix + ".min_multi_part_upload_size", 10 * 1024 * 1024),
+            context.getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
             config.getBool(config_prefix + ".send_object_metadata", false));
 
