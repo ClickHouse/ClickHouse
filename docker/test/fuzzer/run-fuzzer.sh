@@ -102,7 +102,7 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    gdb -batch -command script.gdb -p $(pidof clickhouse-server) &
 
     fuzzer_exit_code=0
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
