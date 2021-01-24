@@ -10,6 +10,7 @@
 
 using int64_t = long;
 using ssize_t = long;
+using intptr_t = long;
 using size_t = unsigned long;
 
 
@@ -55,7 +56,7 @@ size_t strlen(const char * s)
     return end - s;
 }
 
-void print_error(const char * message)
+void print_string(const char * message)
 {
     write(STDERR_FILENO, message, __builtin_strlen(message));
 }
@@ -80,12 +81,16 @@ void print_number(size_t num)
 
 [[noreturn]] void _start()
 {
-    long * stack = static_cast<long *>(__builtin_frame_address(0));
+    intptr_t * stack = static_cast<long *>(__builtin_frame_address(0));
     size_t argc = stack[1];
+    char ** argv = reinterpret_cast<char **>(&stack[2]);
 
     print_number(argc);
 
-    print_error("Hello, world!\n");
+    for (size_t i = 0; i < argc; ++i)
+        print_string(argv[i]);
+
+    print_string("Hello, world!\n");
     _exit(0);
 }
 
