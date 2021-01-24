@@ -63,7 +63,6 @@ ASTPtr ICompressionCodec::getFullCodecDesc() const
 
 ASTPtr ICompressionCodec::getCodecDesc() const
 {
-
     auto arguments = getFullCodecDesc()->as<ASTFunction>()->arguments;
     /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
