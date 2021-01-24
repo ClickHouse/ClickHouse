@@ -76,6 +76,12 @@ void print_number(size_t num)
     write(STDERR_FILENO, pos, &buf[20] - pos);
 }
 
+void assert(bool x)
+{
+    if (!x)
+        __builtin_trap();
+}
+
 }
 
 
@@ -84,11 +90,16 @@ void print_number(size_t num)
     intptr_t * stack = static_cast<long *>(__builtin_frame_address(0));
     size_t argc = stack[1];
     char ** argv = reinterpret_cast<char **>(&stack[2]);
+    assert(argv[argc] == nullptr);
+    char ** envp = &argv[argc + 1];
 
     print_number(argc);
 
     for (size_t i = 0; i < argc; ++i)
         print_string(argv[i]);
+
+    for (size_t i = 0; envp[i]; ++i)
+        print_string(envp[i]);
 
     print_string("Hello, world!\n");
     _exit(0);
