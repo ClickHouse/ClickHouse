@@ -64,25 +64,27 @@ public:
         ColumnWithTypeAndName left{arguments[0].column, arguments[0].type, {}};
         ColumnWithTypeAndName right{zero_column, arguments[0].type, {}};
 
+        auto func_arg = ColumnsWithTypeAndName{left, right};
+
         auto greater = FunctionFactory::instance().get("greater", context);
-        auto greater_compare = greater->build(ColumnsWithTypeAndName{left, right});
+        auto greater_compare = greater->build(func_arg);
 
         /// Unsigned number: sign(n) = greater(n, 0)
         if (isUnsignedInteger(arguments[0].type.get()))
         {
-            return greater_compare->execute({left, right}, greater_compare->getResultType(), input_rows_count);
+            return greater_compare->execute(func_arg, greater_compare->getResultType(), input_rows_count);
         }
 
-        /// Signed number: sign(n) = minus (greater(n, 0), less(n, 0))
+        /// Signed number: sign(n) = minus(greater(n, 0), less(n, 0))
         auto less = FunctionFactory::instance().get("less", context);
-        auto less_compare = less->build(ColumnsWithTypeAndName{left, right});
+        auto less_compare = less->build(func_arg);
 
         ColumnsWithTypeAndName columns(2);
 
         columns[0].type = greater_compare->getResultType();
-        columns[0].column = greater_compare->execute({left, right}, greater_compare->getResultType(), input_rows_count);
+        columns[0].column = greater_compare->execute(func_arg, greater_compare->getResultType(), input_rows_count);
         columns[1].type = less_compare->getResultType();
-        columns[1].column = less_compare->execute({left, right}, less_compare->getResultType(), input_rows_count);
+        columns[1].column = less_compare->execute(func_arg, less_compare->getResultType(), input_rows_count);
 
         auto minus = FunctionFactory::instance().get("minus", context);
         auto elem_minus = minus->build(columns);
