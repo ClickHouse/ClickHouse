@@ -160,7 +160,7 @@ protected:
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-        c_end_of_storage = c_start + adjustBytesToRealAllocationSize(c_start, bytes) - pad_right - pad_left;
+        c_end_of_storage = c_start + adjustBytesToRealAllocationSize(c_start - pad_left, bytes) - pad_right - pad_left;
 
         if (pad_left)
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
@@ -192,7 +192,7 @@ protected:
         c_start = reinterpret_cast<char *>(
                 TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
             + pad_left;
-        bytes = adjustBytesToRealAllocationSize(c_start, bytes);
+        bytes = adjustBytesToRealAllocationSize(c_start - pad_left, bytes);
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
