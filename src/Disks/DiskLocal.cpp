@@ -34,6 +34,60 @@ std::mutex DiskLocal::reservation_mutex;
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
+static void loadDiskLocalConfig(const String & name,
+                      const Poco::Util::AbstractConfiguration & config,
+                      const String & config_prefix,
+                      const Context & context,
+                      String & path,
+                      UInt64 & keep_free_space_bytes)
+{
+    path = config.getString(config_prefix + ".path", "");
+    if (name == "default")
+    {
+        if (!path.empty())
+            throw Exception(
+                "\"default\" disk path should be provided in <path> not in <storage_configuration>",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        path = context.getPath();
+    }
+    else
+    {
+        if (path.empty())
+            throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (path.back() != '/')
+            throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+    }
+
+    if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
+    {
+        throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
+    bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
+
+    if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
+        throw Exception(
+            "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+    keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
+
+    if (has_space_ratio)
+    {
+        auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
+        if (ratio < 0 || ratio > 1)
+            throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        String tmp_path = path;
+        if (tmp_path.empty())
+            tmp_path = context.getPath();
+
+        // Create tmp disk for getting total disk space.
+        keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
+    }
+}
+
+
+
 class DiskLocalReservation : public IReservation
 {
 public:
@@ -337,6 +391,19 @@ void DiskLocal::sync(int fd) const
         throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
 }
 
+void DiskLocal::updateFromConfig(const Poco::Util::AbstractConfiguration & config, 
+                        const String & config_prefix,
+                        const Context & context)
+{
+    String new_disk_path;
+    UInt64 new_keep_free_space_bytes;
+    loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
+    if (disk_path != new_disk_path)
+        throw Exception("Disk path can't update from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+    keep_free_space_bytes = new_keep_free_space_bytes;
+}
+
+
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -388,50 +455,9 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       const Context & context) -> DiskPtr {
-        String path = config.getString(config_prefix + ".path", "");
-        if (name == "default")
-        {
-            if (!path.empty())
-                throw Exception(
-                    "\"default\" disk path should be provided in <path> not it <storage_configuration>",
-                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            path = context.getPath();
-        }
-        else
-        {
-            if (path.empty())
-                throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            if (path.back() != '/')
-                throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        }
-
-        if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
-        {
-            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
-        }
-
-        bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
-
-        if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-            throw Exception(
-                "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-        UInt64 keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
-
-        if (has_space_ratio)
-        {
-            auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
-            if (ratio < 0 || ratio > 1)
-                throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-            String tmp_path = path;
-            if (tmp_path.empty())
-                tmp_path = context.getPath();
-
-            // Create tmp disk for getting total disk space.
-            keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
-        }
-
+        String path;
+        UInt64 keep_free_space_bytes;
+        loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
         return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);
