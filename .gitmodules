@@ -53,7 +53,8 @@
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/apache/arrow
+	url = https://github.com/ClickHouse-Extras/arrow
+	branch = clickhouse-arrow-2.0.0
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift.git
@@ -83,7 +84,7 @@
 	url = https://github.com/google/brotli.git
 [submodule "contrib/h3"]
 	path = contrib/h3
-	url = https://github.com/uber/h3
+	url = https://github.com/ClickHouse-Extras/h3
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
@@ -124,9 +125,6 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/ClickHouse-Extras/openssl.git
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse-Extras/icudata.git
@@ -183,7 +181,7 @@
 	url = https://github.com/kthohr/stats.git
 [submodule "contrib/krb5"]
 	path = contrib/krb5
-	url = https://github.com/krb5/krb5
+	url = https://github.com/ClickHouse-Extras/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/cyrusimap/cyrus-sasl
@@ -211,3 +209,15 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/libpqxx"]
+	path = contrib/libpqxx
+	url = https://github.com/jtv/libpqxx
+[submodule "contrib/libpq"]
+	path = contrib/libpq
+	url = https://github.com/ClickHouse-Extras/libpq
+[submodule "contrib/boringssl"]
+	path = contrib/boringssl
+	url = https://github.com/ClickHouse-Extras/boringssl.git
+[submodule "contrib/NuRaft"]
+	path = contrib/NuRaft
+	url = https://github.com/eBay/NuRaft.git

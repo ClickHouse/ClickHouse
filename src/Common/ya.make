@@ -7,7 +7,7 @@ ADDINCL (
     GLOBAL clickhouse/src
     contrib/libs/libcpuid
     contrib/libs/libunwind/include
-    GLOBAL contrib/restricted/ryu
+    GLOBAL contrib/restricted/dragonbox
 )
 
 PEERDIR(
@@ -18,7 +18,7 @@ PEERDIR(
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/restricted/ryu
+    contrib/restricted/dragonbox
 )
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
@@ -33,9 +33,11 @@ SRCS(
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
     Config/configReadClient.cpp
+    CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
+    DirectorySyncGuard.cpp
     Dwarf.cpp
     Elf.cpp
     ErrorCodes.cpp
@@ -75,6 +77,7 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
@@ -82,6 +85,7 @@ SRCS(
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/TestKeeperStorage.cpp
+    ZooKeeper/TestKeeperStorageDispatcher.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp
@@ -96,6 +100,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getHashOfLoadedBinary.cpp
     getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp

@@ -71,15 +71,6 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, Context & quer
     }
 }
 
-static inline DatabaseMaterializeMySQL & getDatabase(const String & database_name)
-{
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (DatabaseMaterializeMySQL * database_materialize = typeid_cast<DatabaseMaterializeMySQL *>(database.get()))
-        return *database_materialize;
-
-    throw Exception("LOGICAL_ERROR: cannot cast to DatabaseMaterializeMySQL, it is a bug.", ErrorCodes::LOGICAL_ERROR);
-}
 
 MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
 {
@@ -104,19 +95,22 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
          "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
          "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
          "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
+         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
+         "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
 
     MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
 
     Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 4)
+    if (!variables_block || variables_block.rows() != 5)
     {
         std::unordered_map<String, String> variables_error_message{
             {"log_bin", "log_bin = 'ON'"},
             {"binlog_format", "binlog_format='ROW'"},
             {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
+            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
+            {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
         };
+
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
@@ -190,7 +184,8 @@ void MaterializeMySQLSyncThread::synchronization()
     {
         client.disconnect();
         tryLogCurrentException(log);
-        getDatabase(database_name).setException(std::current_exception());
+        auto db = DatabaseCatalog::instance().getDatabase(database_name);
+        setSynchronizationThreadException(db, std::current_exception());
     }
 }
 
@@ -343,7 +338,7 @@ std::optional<MaterializeMetadata> MaterializeMySQLSyncThread::prepareSynchroniz
             opened_transaction = false;
 
             MaterializeMetadata metadata(
-                connection, getDatabase(database_name).getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
+                connection, DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", mysql_database_name, opened_transaction);
 
             if (!metadata.need_dumping_tables.empty())
             {

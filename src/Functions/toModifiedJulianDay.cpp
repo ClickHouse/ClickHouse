@@ -62,11 +62,11 @@ namespace DB
             typename ColVecTo::Container & vec_to = col_to->getData();
 
             ColumnUInt8::MutablePtr col_null_map_to;
-            ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
+            UInt8 * vec_null_map_to [[maybe_unused]] = nullptr;
             if constexpr (nullOnErrors)
             {
                 col_null_map_to = ColumnUInt8::create(input_rows_count);
-                vec_null_map_to = &col_null_map_to->getData();
+                vec_null_map_to = col_null_map_to->getData().data();
             }
 
             size_t current_offset = 0;
@@ -83,12 +83,15 @@ namespace DB
                     {
                         const GregorianDate<> date(read_buffer);
                         vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
-                        (*vec_null_map_to)[i] = false;
+                        vec_null_map_to[i] = false;
                     }
                     catch (const Exception & e)
                     {
                         if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
-                            (*vec_null_map_to)[i] = true;
+                        {
+                            vec_to[i] = static_cast<Int32>(0);
+                            vec_null_map_to[i] = true;
+                        }
                         else
                             throw;
                     }

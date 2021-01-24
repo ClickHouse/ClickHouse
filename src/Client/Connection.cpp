@@ -1,5 +1,6 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -53,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -544,6 +546,9 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
+
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -741,8 +746,11 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT(in->setAsyncCallback({}));
+
     try
     {
         Packet res;
@@ -799,6 +807,9 @@ Packet Connection::receivePacket()
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -888,7 +899,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 

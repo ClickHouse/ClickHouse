@@ -2,6 +2,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -133,7 +134,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
+        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
         formatIDs(output_stream, ids);
     };
 
@@ -152,7 +153,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
+        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
         formatKeys(dict_struct, output_stream, key_columns, requested_rows);
     };
 

@@ -36,6 +36,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryParameterVisitor.h>
+#include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -294,6 +295,7 @@ void HTTPHandler::processQuery(
 
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
+    client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
 
     /// This will also set client_info.current_user and current_address

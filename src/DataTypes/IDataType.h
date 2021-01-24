@@ -3,7 +3,9 @@
 #include <memory>
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
-#include <DataTypes/DataTypeCustom.h>
+#include <Core/Names.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypeCustom_fwd.h>
 
 
 namespace DB
@@ -26,6 +28,8 @@ using DataTypes = std::vector<DataTypePtr>;
 
 class ProtobufReader;
 class ProtobufWriter;
+
+struct NameAndTypePair;
 
 
 /** Properties of data type.
@@ -67,7 +71,7 @@ public:
       * If the data type require single stream (it's true for most of data types), the stream will have empty path.
       * Otherwise, the path can have components like "array elements", "array sizes", etc.
       *
-      * For multidimensional arrays, path can have arbiraty length.
+      * For multidimensional arrays, path can have arbitrary length.
       * As an example, for 2-dimensional arrays of numbers we have at least three streams:
       * - array sizes;                      (sizes of top level arrays)
       * - array elements / array sizes;     (sizes of second level (nested) arrays)
@@ -96,22 +100,36 @@ public:
         };
         Type type;
 
-        /// Index of tuple element, starting at 1.
+        /// Index of tuple element, starting at 1 or name.
         String tuple_element_name;
 
+        /// Do we need to escape a dot in filenames for tuple elements.
+        bool escape_tuple_delimiter = true;
+
         Substream(Type type_) : type(type_) {}
+
+        String toString() const;
     };
 
-    using SubstreamPath = std::vector<Substream>;
+    struct SubstreamPath : public std::vector<Substream>
+    {
+        String toString() const;
+    };
+
+    /// Cache for common substreams of one type, but possible different its subcolumns.
+    /// E.g. sizes of arrays of Nested data type.
+    using SubstreamsCache = std::unordered_map<String, ColumnPtr>;
 
     using StreamCallback = std::function<void(const SubstreamPath &, const IDataType &)>;
 
-    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
-    {
-        callback(path, *this);
-    }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+
+    virtual DataTypePtr tryGetSubcolumnType(const String & /* subcolumn_name */) const { return nullptr; }
+    DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
+    virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+    Names getSubcolumnNames() const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -153,19 +171,19 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
-    virtual void serializeBinaryBulkStatePrefix(
-            SerializeBinaryBulkSettings & /*settings*/,
-            SerializeBinaryBulkStatePtr & /*state*/) const {}
+    void serializeBinaryBulkStatePrefix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
-    virtual void serializeBinaryBulkStateSuffix(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
-    virtual void deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & /*settings*/,
-        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const;
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -173,27 +191,20 @@ public:
       * offset + limit could be greater than size of column
       *  - in that case, column is serialized till the end.
       */
-    virtual void serializeBinaryBulkWithMultipleStreams(
+    void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
         size_t limit,
         SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (WriteBuffer * stream = settings.getter(settings.path))
-            serializeBinaryBulk(column, *stream, offset, limit);
-    }
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Read no more than limit values and append them into column.
-    virtual void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & /*state*/) const
-    {
-        if (ReadBuffer * stream = settings.getter(settings.path))
-            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
-    }
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache = nullptr) const;
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
@@ -266,6 +277,41 @@ public:
 protected:
     virtual String doGetName() const;
 
+    virtual void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+    {
+        callback(path, *this);
+    }
+
+    virtual void serializeBinaryBulkStatePrefixImpl(
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void serializeBinaryBulkStateSuffixImpl(
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void deserializeBinaryBulkStatePrefixImpl(
+        DeserializeBinaryBulkSettings & /*settings*/,
+        DeserializeBinaryBulkStatePtr & /*state*/) const {}
+
+    virtual void serializeBinaryBulkWithMultipleStreamsImpl(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & /*state*/) const
+    {
+        if (WriteBuffer * stream = settings.getter(settings.path))
+            serializeBinaryBulk(column, *stream, offset, limit);
+    }
+
+    virtual void deserializeBinaryBulkWithMultipleStreamsImpl(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+
     /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
 
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
@@ -284,6 +330,9 @@ protected:
     }
 
 public:
+    static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
+    static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+
     /** Create empty column for corresponding type.
       */
     virtual MutableColumnPtr createColumn() const = 0;
@@ -441,23 +490,27 @@ public:
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 
-    static String getFileNameForStream(const String & column_name, const SubstreamPath & path);
+    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
 
     /// Substream path supports special compression methods like codec Delta.
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-private:
+protected:
     friend class DataTypeFactory;
+    friend class AggregateFunctionSimpleState;
     /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+    mutable DataTypeCustomStreamsPtr custom_streams;
 
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
+    const IDataTypeCustomStreams * getCustomStreams() const { return custom_streams.get(); }
 };
 
 
@@ -517,6 +570,7 @@ struct WhichDataType
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
 

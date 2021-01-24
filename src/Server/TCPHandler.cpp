@@ -83,7 +83,7 @@ void TCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_INFO(log, "Client has not sent any data.");
         return;
     }
 
@@ -102,7 +102,7 @@ void TCPHandler::runImpl()
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_WARNING(log, "Client has gone away.");
+            LOG_INFO(log, "Client has gone away.");
             return;
         }
 
@@ -1181,7 +1181,7 @@ void TCPHandler::receiveUnexpectedData()
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
 
     if (last_block_in.compression == Protocol::Compression::Enable)
-        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
     else
         maybe_compressed_in = in;
 
@@ -1198,8 +1198,11 @@ void TCPHandler::initBlockInput()
 {
     if (!state.block_in)
     {
+        /// 'allow_different_codecs' is set to true, because some parts of compressed data can be precompressed in advance
+        /// with another codec that the rest of the data. Example: data sent by Distributed tables.
+
         if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
         else
             state.maybe_compressed_in = in;
 

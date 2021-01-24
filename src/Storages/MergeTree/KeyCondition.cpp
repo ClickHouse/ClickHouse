@@ -444,7 +444,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    String column_name = expr->getColumnName();
+    String column_name = expr->getColumnNameWithoutAlias();
 
     if (const auto * lit = expr->as<ASTLiteral>())
     {
@@ -607,7 +607,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (strict)
         return false;
 
-    String expr_name = node->getColumnName();
+    String expr_name = node->getColumnNameWithoutAlias();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -675,7 +675,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (strict)
         return false;
 
-    String expr_name = ast->getColumnName();
+    String expr_name = ast->getColumnNameWithoutAlias();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -874,6 +874,74 @@ bool KeyCondition::tryPrepareSetIndex(
 }
 
 
+/** Allow to use two argument function with constant argument to be analyzed as a single argument function.
+  * In other words, it performs "currying" (binding of arguments).
+  * This is needed, for example, to support correct analysis of `toDate(time, 'UTC')`.
+  */
+class FunctionWithOptionalConstArg : public IFunctionBase
+{
+public:
+    enum Kind
+    {
+        NO_CONST = 0,
+        LEFT_CONST,
+        RIGHT_CONST,
+    };
+
+    explicit FunctionWithOptionalConstArg(const FunctionBasePtr & func_) : func(func_) {}
+    FunctionWithOptionalConstArg(const FunctionBasePtr & func_, const ColumnWithTypeAndName & const_arg_, Kind kind_)
+        : func(func_), const_arg(const_arg_), kind(kind_)
+    {
+    }
+
+    String getName() const override { return func->getName(); }
+
+    const DataTypes & getArgumentTypes() const override { return func->getArgumentTypes(); }
+
+    const DataTypePtr & getResultType() const override { return func->getResultType(); }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const override { return func->prepare(arguments); }
+
+    ColumnPtr
+    execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const override
+    {
+        if (kind == Kind::LEFT_CONST)
+        {
+            ColumnsWithTypeAndName new_arguments;
+            new_arguments.reserve(arguments.size() + 1);
+            new_arguments.push_back(const_arg);
+            for (const auto & arg : arguments)
+                new_arguments.push_back(arg);
+            return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
+        }
+        else if (kind == Kind::RIGHT_CONST)
+        {
+            auto new_arguments = arguments;
+            new_arguments.push_back(const_arg);
+            return func->prepare(new_arguments)->execute(new_arguments, result_type, input_rows_count, dry_run);
+        }
+        else
+            return func->prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+    }
+
+    bool isDeterministic() const override { return func->isDeterministic(); }
+
+    bool isDeterministicInScopeOfQuery() const override { return func->isDeterministicInScopeOfQuery(); }
+
+    bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
+
+    IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        return func->getMonotonicityForRange(type, left, right);
+    }
+
+private:
+    FunctionBasePtr func;
+    ColumnWithTypeAndName const_arg;
+    Kind kind = Kind::NO_CONST;
+};
+
+
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const ASTPtr & node,
     const Context & context,
@@ -892,19 +960,25 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
         ColumnsWithTypeAndName arguments;
+        ColumnWithTypeAndName const_arg;
+        FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
         if (args.size() == 2)
         {
             if (const auto * arg_left = args[0]->as<ASTLiteral>())
             {
                 auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
-                arguments.push_back({ left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" });
+                const_arg = { left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" };
+                arguments.push_back(const_arg);
                 arguments.push_back({ nullptr, key_column_type, "" });
+                kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
             }
             else if (const auto * arg_right = args[1]->as<ASTLiteral>())
             {
                 arguments.push_back({ nullptr, key_column_type, "" });
                 auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
-                arguments.push_back({ right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" });
+                const_arg = { right_arg_type->createColumnConst(0, arg_right->value), right_arg_type, "" };
+                arguments.push_back(const_arg);
+                kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
             }
         }
         else
@@ -916,7 +990,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
             return false;
 
         key_column_type = func->getResultType();
-        out_functions_chain.push_back(func);
+        if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
+            out_functions_chain.push_back(func);
+        else
+            out_functions_chain.push_back(std::make_shared<FunctionWithOptionalConstArg>(func, const_arg, kind));
     }
 
     out_key_res_column_type = key_column_type;
@@ -934,7 +1011,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
-    String name = node->getColumnName();
+    String name = node->getColumnNameWithoutAlias();
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -1135,7 +1212,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
                         FunctionOverloadResolverPtr func_builder_cast
-                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
+                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
@@ -1394,7 +1471,6 @@ BoolMask KeyCondition::checkInRange(
         return res;
     });
 }
-
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,

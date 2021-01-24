@@ -19,6 +19,7 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
+#    include <boost/algorithm/string/case_conv.hpp>
 #    include <common/logger_useful.h>
 
 namespace
@@ -279,7 +280,7 @@ namespace S3
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        Aws::Client::ClientConfiguration & cfg,
+        const Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
@@ -305,7 +306,7 @@ namespace S3
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        const String & endpoint,
+        const Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
@@ -314,10 +315,7 @@ namespace S3
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
-        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter, s3_max_redirects);
-
-        if (!endpoint.empty())
-            client_configuration.endpointOverride = endpoint;
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter, s3_max_redirects);
 
         client_configuration.updateSchemeAndRegion();
 
@@ -367,8 +365,12 @@ namespace S3
                 throw Exception(
                     "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
-            /// Remove leading '/' from path to extract key.
-            key = uri.getPath().substr(1);
+            if (!uri.getPath().empty())
+            {
+                /// Remove leading '/' from path to extract key.
+                key = uri.getPath().substr(1);
+            }
+
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             boost::to_upper(name);

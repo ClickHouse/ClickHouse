@@ -18,7 +18,7 @@ public:
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         COMPACT,
 
-        /// Format with buffering data in RAM. Not implemented yet.
+        /// Format with buffering data in RAM.
         IN_MEMORY,
 
         UNKNOWN,
@@ -37,8 +37,20 @@ public:
         return !(*this == other);
     }
 
+    bool operator<(const MergeTreeDataPartType & other) const
+    {
+        return value < other.value;
+    }
+
+    bool operator>(const MergeTreeDataPartType & other) const
+    {
+        return value > other.value;
+    }
+
     void fromString(const String & str);
     String toString() const;
+
+    Value getValue() const { return value; }
 
 private:
     Value value;

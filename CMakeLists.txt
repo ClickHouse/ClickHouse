@@ -68,7 +68,15 @@ include (cmake/find/ccache.cmake)
 
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --rss=10000000 --cpu=600)
+    # set DATA (since RSS does not work since 2.6.x+) to 2G
+    set (RLIMIT_DATA 5000000000)
+    # set VIRT (RLIMIT_AS) to 10G (DATA*10)
+    set (RLIMIT_AS 10000000000)
+    # gcc10/gcc10/clang -fsanitize=memory is too heavy
+    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
+       set (RLIMIT_DATA 10000000000)
+    endif()
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=600)
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -111,6 +119,12 @@ if (ENABLE_FUZZING)
     set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
 endif()
+
+# Global libraries
+# See:
+# - default_libs.cmake
+# - sanitize.cmake
+add_library(global-libs INTERFACE)
 
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
@@ -181,13 +195,14 @@ endif ()
 option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    if (LINKER_NAME STREQUAL "lld")
+    # Can be lld or ld-lld.
+    if (LINKER_NAME MATCHES "lld$")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
     # we use another tool for gdb-index, because gold linker removes section .debug_aranges, which used inside clickhouse stacktraces
     # http://sourceware-org.1504.n7.nabble.com/gold-No-debug-aranges-section-when-linking-with-gdb-index-td540965.html#a556932
-    elseif (LINKER_NAME STREQUAL "gold" AND ADD_GDB_INDEX_FOR_GOLD)
+    elseif (LINKER_NAME MATCHES "gold$" AND ADD_GDB_INDEX_FOR_GOLD)
         find_program (GDB_ADD_INDEX_EXE NAMES "gdb-add-index" DOC "Path to gdb-add-index executable")
         if (NOT GDB_ADD_INDEX_EXE)
             set (USE_GDB_ADD_INDEX 0)
@@ -198,6 +213,19 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         endif()
     endif ()
 endif()
+
+# Create BuildID when using lld. For other linkers it is created by default.
+if (LINKER_NAME MATCHES "lld$")
+    # SHA1 is not cryptographically secure but it is the best what lld is offering.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
+endif ()
+
+# Add a section with the hash of the compiled machine code for integrity checks.
+# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
+# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+if (OBJCOPY_PATH AND YANDEX_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE))
+    set (USE_BINARY_HASH 1)
+endif ()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -225,14 +253,14 @@ endif ()
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     # to make numeric_limits<__int128> works with GCC
-    set (_CXX_STANDARD "-std=gnu++2a")
+    set (_CXX_STANDARD "gnu++2a")
 else()
-    set (_CXX_STANDARD "-std=c++2a")
+    set (_CXX_STANDARD "c++2a")
 endif()
 
 # cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
 # set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_CXX_STANDARD}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
 
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -462,6 +490,8 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/rocksdb.cmake)
+include (cmake/find/libpqxx.cmake)
+include (cmake/find/nuraft.cmake)
 
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
@@ -513,8 +543,11 @@ macro (add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # operator::new/delete for executables (MemoryTracker stuff)
-        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        # disabled for TSAN and gcc since libtsan.a provides overrides too
+        if (TARGET clickhouse_new_delete)
+            # operator::new/delete for executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        endif()
     endif()
 endmacro()
 
@@ -525,8 +558,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 
 add_subdirectory (base)
-add_subdirectory (programs)
 add_subdirectory (src)
+add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
 

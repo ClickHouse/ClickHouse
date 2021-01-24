@@ -58,6 +58,7 @@ The supported formats are:
 | [XML](#xml)                                                                             | ✗     | ✔      |
 | [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
+| [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
@@ -514,9 +515,9 @@ Example:
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If input has several JSON objects (comma separated) they will be interpreted as a sepatate rows.
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
 
-This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
+This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
 
 **Example**
 
@@ -525,7 +526,7 @@ Query:
 ``` sql
 DROP TABLE IF EXISTS json_as_string;
 CREATE TABLE json_as_string (json String) ENGINE = Memory;
-INSERT INTO json_as_string FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
 SELECT * FROM json_as_string;
 ```
 
@@ -538,7 +539,6 @@ Result:
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
 ```
-
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactString {#jsoncompactstring}
@@ -1323,6 +1323,91 @@ $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT OR
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
 
+## LineAsString {#lineasstring}
+
+In this format, every line of input data is interpreted as a single string value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
+
+**Example**
+
+Query:
+
+``` sql
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+Result:
+
+``` text
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
+
+## Regexp {#data-format-regexp}
+
+Each line of imported data is parsed according to the regular expression.
+
+When working with the `Regexp` format, you can use the following settings:
+
+- `format_regexp` — [String](../sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). The following escaping rules are supported:
+    - CSV (similarly to [CSV](#csv))
+    - JSON (similarly to [JSONEachRow](#jsoneachrow))
+    - Escaped (similarly to [TSV](#tabseparated))
+    - Quoted (similarly to [Values](#data-format-values))
+    - Raw (extracts subpatterns as a whole, no escaping rules)
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`. 
+
+**Usage** 
+
+The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset. 
+
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`. 
+
+The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting. 
+
+If the regular expression does not match the line and `format_regexp_skip_unmatched` is set to 1, the line is silently skipped. If `format_regexp_skip_unmatched` is set to 0, exception is thrown.
+
+**Example**
+
+Consider the file data.tsv:
+
+```text
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+and the table:
+
+```sql
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+Import command:
+
+```bash
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+```
+
+Query:
+
+```sql
+SELECT * FROM imp_regex_table;
+```
+
+Result:
+
+```text
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
+
 ## Format Schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
@@ -1347,29 +1432,6 @@ Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
-
-## LineAsString {#lineasstring}
-
-In this format, a sequence of string objects separated by a newline character is interpreted as a single value. This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted.
-
-**Example**
-
-Query:
-
-``` sql
-DROP TABLE IF EXISTS line_as_string;
-CREATE TABLE line_as_string (field String) ENGINE = Memory;
-INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
-SELECT * FROM line_as_string;
-```
-
-Result:
-
-``` text
-┌─field─────────────────────────────────────────────┐
-│ "I love apple", "I love banana", "I love orange"; │
-└───────────────────────────────────────────────────┘
-```
 
 ## RawBLOB {#rawblob}
 

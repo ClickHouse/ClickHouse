@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <common/extended_types.h>
+#include <common/defines.h>
 
 
 namespace DB
@@ -56,6 +57,7 @@ enum class TypeIndex
     Function,
     AggregateFunction,
     LowCardinality,
+    Map,
 };
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -165,6 +167,9 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
+    /// This is to avoid UB for sumWithOverflow()
+    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
+
     T value;
 };
 
@@ -184,7 +189,7 @@ using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
-// Distinguishable type to allow function resultion/deduction based on value type,
+// Distinguishable type to allow function resolution/deduction based on value type,
 // but also relatively easy to convert to/from Decimal64.
 class DateTime64 : public Decimal64
 {
@@ -267,6 +272,7 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::Function:   return "Function";
         case TypeIndex::AggregateFunction: return "AggregateFunction";
         case TypeIndex::LowCardinality: return "LowCardinality";
+        case TypeIndex::Map:        return "Map";
     }
 
     __builtin_unreachable();
