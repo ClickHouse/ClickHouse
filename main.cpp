@@ -60,11 +60,31 @@ void print_error(const char * message)
     write(STDERR_FILENO, message, __builtin_strlen(message));
 }
 
+void print_number(size_t num)
+{
+    char buf[20];
+    char * pos = &buf[19];
+
+    do
+    {
+        *pos = '0' + (num % 10);
+        num /= 10;
+        --pos;
+    } while (num);
+
+    write(STDERR_FILENO, pos, &buf[20] - pos);
+}
+
 }
 
 
-[[noreturn]] void _start(long * p)
+[[noreturn]] void _start()
 {
+    long * stack = static_cast<long *>(__builtin_frame_address(0));
+    size_t argc = stack[1];
+
+    print_number(argc);
+
     print_error("Hello, world!\n");
     _exit(0);
 }
