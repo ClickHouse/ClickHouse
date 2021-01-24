@@ -324,7 +324,7 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         object_name = local_debug_info_path;
     else if (std::filesystem::exists(debug_info_path))
         object_name = debug_info_path;
-    else if (!build_id.empty())
+    else if (build_id.size() >= 2)
     {
         // Check if there is a .debug file in .build-id folder. For example:
         // /usr/lib/debug/.build-id/e4/0526a12e9a8f3819a18694f6b798f10c624d5c.debug
