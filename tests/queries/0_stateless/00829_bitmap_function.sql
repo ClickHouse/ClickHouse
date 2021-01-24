@@ -139,8 +139,8 @@ CREATE TABLE bitmap_column_expr_test3
     tag_id String,
     z AggregateFunction(groupBitmap, UInt64),
     replace Nested (
-        from UInt16,
-        to UInt64
+        `from` UInt16,
+        `to` UInt64
     )
 )
 ENGINE = MergeTree
@@ -149,12 +149,12 @@ ORDER BY tag_id;
 DROP TABLE IF EXISTS numbers10;
 CREATE VIEW numbers10 AS SELECT number FROM system.numbers LIMIT 10;
 
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag1', groupBitmapState(toUInt64(number)), cast([] as Array(UInt16)), cast([] as Array(UInt64)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag2', groupBitmapState(toUInt64(number)), cast([0] as Array(UInt16)), cast([2] as Array(UInt64)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag3', groupBitmapState(toUInt64(number)), cast([0,7] as Array(UInt16)), cast([3,101] as Array(UInt64)) FROM numbers10;
-INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag4', groupBitmapState(toUInt64(number)), cast([5,999,2] as Array(UInt16)), cast([2,888,20] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.`from`, replace.`to`) SELECT 'tag1', groupBitmapState(toUInt64(number)), cast([] as Array(UInt16)), cast([] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.`from`, replace.`to`) SELECT 'tag2', groupBitmapState(toUInt64(number)), cast([0] as Array(UInt16)), cast([2] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.`from`, replace.`to`) SELECT 'tag3', groupBitmapState(toUInt64(number)), cast([0,7] as Array(UInt16)), cast([3,101] as Array(UInt64)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.`from`, replace.`to`) SELECT 'tag4', groupBitmapState(toUInt64(number)), cast([5,999,2] as Array(UInt16)), cast([2,888,20] as Array(UInt64)) FROM numbers10;
 
-SELECT tag_id, bitmapToArray(z), replace.from, replace.to, bitmapToArray(bitmapTransform(z, replace.from, replace.to)) FROM bitmap_column_expr_test3 ORDER BY tag_id;
+SELECT tag_id, bitmapToArray(z), replace.`from`, replace.`to`, bitmapToArray(bitmapTransform(z, replace.`from`, replace.`to`)) FROM bitmap_column_expr_test3 ORDER BY tag_id;
 
 
 DROP TABLE IF EXISTS bitmap_test;
