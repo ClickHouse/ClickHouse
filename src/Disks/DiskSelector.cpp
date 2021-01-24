@@ -66,9 +66,9 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
+        auto disk_config_prefix = config_prefix + "." + disk_name;
         if (result->getDisksMap().count(disk_name) == 0)
         {
-            auto disk_config_prefix = config_prefix + "." + disk_name;
             result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
         }
         else
@@ -77,6 +77,9 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
             /// TODO: Ideally ClickHouse shall complain if disk has changed, but
             /// implementing that may appear as not trivial task.
+            auto disk = std::static_pointer_cast<DiskLocal>(result->getDisksMap().find(disk_name)->second);
+            if (disk)
+                disk->updateFromConfig(config, disk_config_prefix, context);
         }
     }
 

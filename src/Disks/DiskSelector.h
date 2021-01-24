@@ -34,7 +34,7 @@ public:
 
     /// Get all disks with names
     const DisksMap & getDisksMap() const { return disks; }
-    void addToDiskMap(String name, DiskPtr disk)
+    void addToDiskMap(const String & name, DiskPtr disk)
     {
         disks.emplace(name, disk);
     }

@@ -7,6 +7,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ namespace ErrorCodes
 
 class DiskLocalReservation;
 
+class Context;
 class DiskLocal : public IDisk
 {
 public:
@@ -106,18 +108,23 @@ public:
 
     const String getType() const override { return "local"; }
 
+    void updateFromConfig(const Poco::Util::AbstractConfiguration & config, 
+                        const String & config_prefix,
+                        const Context & context);
+
 private:
     bool tryReserve(UInt64 bytes);
 
 private:
     const String name;
     const String disk_path;
-    const UInt64 keep_free_space_bytes;
+    UInt64 keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
 };
+
 
 }
