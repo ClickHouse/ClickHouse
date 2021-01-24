@@ -767,7 +767,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline time_t addDays(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
