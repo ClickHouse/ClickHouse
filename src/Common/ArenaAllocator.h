@@ -79,6 +79,11 @@ protected:
     {
         return 0;
     }
+
+    static constexpr size_t getMmapThreshold()
+    {
+        return 0;
+    }
 };
 
 
@@ -113,6 +118,8 @@ public:
         if (size >= REAL_ALLOCATION_TRESHOLD)
             TRealAllocator::free(buf, size);
     }
+
+    using TRealAllocator::getMmapThreshold;
 
 protected:
     static constexpr size_t getStackThreshold()

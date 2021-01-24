@@ -169,6 +169,11 @@ public:
         return buf;
     }
 
+    static size_t getMmapThreshold()
+    {
+        return MMAP_THRESHOLD;
+    }
+
 protected:
     static constexpr size_t getStackThreshold()
     {
@@ -335,6 +340,7 @@ public:
         return new_buf;
     }
 
+    using Base::getMmapThreshold;
 protected:
     static constexpr size_t getStackThreshold()
     {

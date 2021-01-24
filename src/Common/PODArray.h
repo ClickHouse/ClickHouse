@@ -31,6 +31,10 @@ template <typename T, typename U>
 constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
     || (std::is_integral_v<T> && std::is_integral_v<U> && sizeof(T) == sizeof(U));
 
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+#endif
+
 namespace DB
 {
 
@@ -84,6 +88,44 @@ extern const char empty_pod_array[empty_pod_array_size];
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
+
+#if USE_JEMALLOC
+
+static constexpr bool UseJemalloc = true;
+
+size_t resizeChunkToRealSize(void *ptr)
+{
+    size_t real_size = sallocx(ptr, 0);
+    rallocx(ptr, real_size, 0);
+    return real_size;
+}
+
+#else
+
+static constexpr bool UseJemalloc = false;
+
+size_t resizeChunkToRealSize(void *)
+{
+    return 0;
+}
+
+#endif
+
+size_t adjustBytesToRealAllocationSize(void * ptr, size_t allocated_bytes)
+{
+    if constexpr (UseJemalloc)
+    {
+        if (allocated_bytes < TAllocator::getMmapThreshold()
+            && allocated_bytes > TAllocator::getStackThreshold())
+        {
+            size_t real_size = resizeChunkToRealSize(ptr);
+            return minimum_memory_for_elements(real_size / ELEMENT_SIZE);
+        }
+    }
+
+    return allocated_bytes;
+}
+
 protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
@@ -118,7 +160,7 @@ protected:
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        c_end_of_storage = c_start + adjustBytesToRealAllocationSize(c_start, bytes) - pad_right - pad_left;
 
         if (pad_left)
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
@@ -150,6 +192,7 @@ protected:
         c_start = reinterpret_cast<char *>(
                 TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
             + pad_left;
+        bytes = adjustBytesToRealAllocationSize(c_start, bytes);
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;

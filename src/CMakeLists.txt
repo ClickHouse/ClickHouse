@@ -131,6 +131,7 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+target_link_libraries(clickhouse_common_io PUBLIC jemalloc)
 
 if (SPLIT_SHARED_LIBRARIES)
     target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
