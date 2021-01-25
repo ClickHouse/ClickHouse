@@ -547,8 +547,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
         .max_read_buffer_size = settings.max_read_buffer_size,
-        .checksum_on_read = settings.checksum_on_read,
         .save_marks_in_cache = true,
+        .checksum_on_read = settings.checksum_on_read,
     };
 
     /// PREWHERE
