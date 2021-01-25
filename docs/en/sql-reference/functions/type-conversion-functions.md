@@ -462,7 +462,22 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
 if the casted value is not representable in the target type.
 
-Example:
+**Syntax**
+
+```sql
+accurateCastOrNull(x, T);
+```
+
+**Parameters**
+
+- `x` — some value, could be number or text. []().
+- `T` — resulting data type. []().
+
+**Returned value**
+
+- 
+
+**Example**
 
 ``` sql
 SELECT
