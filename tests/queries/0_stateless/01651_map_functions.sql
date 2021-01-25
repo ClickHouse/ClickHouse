@@ -20,3 +20,8 @@ select mapContains(b, 'aaa') from table_map; -- { serverError 43 }
 select mapKeys(a) from table_map;
 select mapValues(a) from table_map;
 drop table if exists table_map;
+
+
+-- Const column
+select map( 'aa', 4, 'bb' , 5) as m, mapKeys(m), mapValues(m);
+select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k'); 
