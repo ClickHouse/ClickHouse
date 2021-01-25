@@ -14,7 +14,7 @@ By default, tables are created only on the current server. Distributed DDL queri
 ### With Explicit Schema {#with-explicit-schema}
 
 ``` sql
-CREATE [OR REPLACE] TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
     name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
@@ -34,7 +34,7 @@ If necessary, primary key can be specified, with one or more key expressions.
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
 ``` sql
-CREATE [OR REPLACE]  TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
@@ -42,13 +42,13 @@ Creates a table with the same structure as another table. You can specify a diff
 ### From a Table Function {#from-a-table-function}
 
 ``` sql
-CREATE [OR REPLACE] TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
 Creates a table with the structure and data returned by a [table function](../../../sql-reference/table-functions/index.md#table-functions).
 
 ``` sql
-CREATE [OR REPLACE] TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
 Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
@@ -268,21 +268,11 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 !!!note "Note"
     This query is supported only for [Atomic](../../../engines/database_engines/atomic.md) database engine.
 
-If you need to reject(delete) some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then rename it to old table name:
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then drop the old table and rename the new one:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
-```
-
-Then load data with:
-
-```sql
 INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
-```
-
-Drop old table and rename:
-
-```sql
 DROP TABLE myOldTable;
 RENAME TABLE myNewTable TO myOldTable;
 ```
@@ -293,18 +283,18 @@ Instead of above, you can use the following:
 REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 ```
 
-**Examples:**
+### Syntax
 
-`REPLACE` for a non-existent table will cause an error.
+{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
 
-```sql
-CREATE DATABASE base ENGINE = Atomic;
-REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n; -- { serverError 60 }
-```
+All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
+
+### Examples:
 
 Using `REPLACE` query to change data in columns.
 
 ```sql
+CREATE DATABASE base ENGINE = Atomic;
 CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (1, 'test');
 SELECT * FROM base.t1;

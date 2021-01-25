@@ -8,7 +8,7 @@ toc_title: Introduction
 
 Database engines allow you to work with tables.
 
-By default, ClickHouse uses its native database engine, which provides configurable [table engines](../../engines/table-engines/index.md) and an [SQL dialect](../../sql-reference/syntax.md).
+By default, ClickHouse uses database engine [Atomic](../../engines/database-engines/atomic.md). It is provides configurable [table engines](../../engines/table-engines/index.md) and an [SQL dialect](../../sql-reference/syntax.md).
 
 You can also use the following database engines:
 
@@ -17,7 +17,5 @@ You can also use the following database engines:
 -   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
-
--   [Atomic](../../engines/database-engines/atomic.md)
 
 [Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
