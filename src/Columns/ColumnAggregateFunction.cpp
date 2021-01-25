@@ -76,19 +76,19 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
     {
-      for(size_t i=0;i<data.size();++i)
-      {
-            auto  val = data[i];
-            if(val == nullptr)
+	for (size_t i = 0; i < data.size(); ++i)
+        {
+            auto val = data[i];
+            if (val == nullptr)
             {
                 continue;
             }
 
-            for(size_t j=i;j<data.size();++j)
+            for (size_t j = i; j < data.size(); ++j)
             {
-                if(data[j]== val)
+                if (data[j] == val)
                 {
-                    data[j]= nullptr;
+                    data[j] = nullptr;
                 }
             }
 
@@ -487,7 +487,7 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 {
     std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
     iter = copiedDataInfo.find(place);
-    if( iter == copiedDataInfo.end() )
+    if (iter == copiedDataInfo.end())
     {
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
