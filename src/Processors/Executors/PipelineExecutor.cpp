@@ -435,7 +435,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
 #ifndef NDEBUG
     context.total_time_ns += total_time_watch.elapsed();
-    context.wait_time_ns = context.total_time_ns - context.execution_time_ns - context->processing_time_ns;
+    context.wait_time_ns = context.total_time_ns - context.execution_time_ns - context.processing_time_ns;
 #endif
 }
 
