@@ -197,11 +197,14 @@ def need_retry(stderr):
     return any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
-def get_processlist(client_cmd):
+def get_processlist(args):
     try:
-        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True).decode('utf-8')
-    except:
-        return "" #  server seems dead
+        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=10)
+        return False, stdout.decode('utf-8')
+    except Exception as ex:
+        print("Exception", ex)
+        return True, ""
 
 
 # collect server stacktraces using gdb
@@ -334,9 +337,13 @@ def run_tests_array(all_tests_with_params):
 
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                        failed_to_check = False
+                        try:
+                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                        except:
+                            failed_to_check = True
 
-                        if clickhouse_proc.returncode != 0:
+                        if failed_to_check or clickhouse_proc.returncode != 0:
                             failures += 1
                             print("Server does not respond to health check")
                             SERVER_DIED = True
@@ -649,7 +656,10 @@ def main(args):
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
         (name, ext) = os.path.splitext(case)
-        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py')
+        # We could also test for executable files (os.access(case_file, os.X_OK),
+        # but it interferes with 01610_client_spawn_editor.editor, which is invoked
+        # as a query editor in the test, and must be marked as executable.
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect')
 
     def sute_key_func(item):
        if args.order == 'random':
@@ -757,14 +767,17 @@ def main(args):
 
         # Some queries may execute in background for some time after test was finished. This is normal.
         for n in range(1, 60):
-            processlist = get_processlist(args.client)
-            if not processlist:
+            timeout, processlist = get_processlist(args)
+            if timeout or not processlist:
                 break
             sleep(1)
 
-        if processlist:
-            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
-            print(processlist)
+        if timeout or processlist:
+            if processlist:
+                print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+                print(processlist)
+            else:
+                print(colored("Seems like server hung and cannot respond to queries", "red", attrs=["bold"]))
 
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)

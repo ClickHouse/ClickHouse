@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Creates a table named `name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
-The structure of the table is a list of column descriptions, secondary indexes and constraints . If primary key is supported by the engine, it will be indicated as parameter for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
@@ -111,7 +111,7 @@ It is not possible to set default values for elements in nested data structures.
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
 
-- inside the column list
+- Inside the column list
 
 ``` sql
 CREATE TABLE db.table_name 
@@ -122,7 +122,7 @@ CREATE TABLE db.table_name
 ENGINE = engine;
 ```
 
-- outside the column list
+- Outside the column list
 
 ``` sql
 CREATE TABLE db.table_name
@@ -133,7 +133,8 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-You can't combine both ways in one query.
+!!! warning "Warning"
+    You can't combine both ways in one query.
 
 ## Constraints {#constraints}
 

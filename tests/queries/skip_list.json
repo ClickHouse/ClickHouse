@@ -16,7 +16,8 @@
         "01474_executable_dictionary", /// informational stderr from sanitizer at start
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
-        "01646_system_restart_replicas_smoke" /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
+        "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
+        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy for TSan
     ],
     "address-sanitizer": [
         "00877",
@@ -62,7 +63,8 @@
         "hyperscan",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
-        "01396_inactive_replica_cleanup_nodes"
+        "01396_inactive_replica_cleanup_nodes",
+        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy in debug build
     ],
     "unbundled-build": [
         "00429",
@@ -307,6 +309,7 @@
         "01638_div_mod_ambiguities",
         "01642_if_nullable_regression",
         "01643_system_suspend",
+        "01655_plan_optimizations",
         "01475_read_subcolumns_storages"
     ],
     "parallel":
