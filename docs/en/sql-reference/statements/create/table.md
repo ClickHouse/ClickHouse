@@ -291,27 +291,47 @@ All syntax forms for `CREATE` query also work for this query. `REPLACE` for a no
 
 ### Examples:
 
-Using `REPLACE` query to change data in columns.
+Consider the table:
 
 ```sql
 CREATE DATABASE base ENGINE = Atomic;
 CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (1, 'test');
 SELECT * FROM base.t1;
+```
 
+```text
+┌─n─┬─s────┐
+│ 1 │ test │
+└───┴──────┘
+```
+
+Using `REPLACE` query to clear all data:
+
+```sql
 CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (2, null);
 SELECT * FROM base.t1;
+```
 
+```text
+┌─n─┬─s──┐
+│ 2 │ \N │
+└───┴────┘
+```
+
+Using `REPLACE` query to change table structure:
+
+```sql
 REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO base.t1 VALUES (3);
 SELECT * FROM base.t1;
 ```
 
 ```text
-1   test
-2   \N
-3
+┌─n─┐
+│ 3 │
+└───┘
 ```
 
  [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/table) <!--hide-->
