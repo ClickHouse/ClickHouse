@@ -266,7 +266,7 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 'REPLACE' query allows you to update the data in the table atomically.
 
 !!!note "Note"
-    This query is supported only for [Atomic](../../../engines/database_engines/atomic.md) database engine.
+    This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
 
 If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then drop the old table and rename the new one:
 
