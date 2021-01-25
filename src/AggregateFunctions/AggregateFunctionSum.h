@@ -274,7 +274,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if constexpr (is_big_int_v<T>)
             this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
         else
@@ -296,7 +296,7 @@ public:
         }
         else
         {
-            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
             this->data(place).addMany(column.getData().data(), batch_size);
         }
     }
@@ -314,7 +314,7 @@ public:
         }
         else
         {
-            const auto & column = static_cast<const ColVecType &>(*columns[0]);
+            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
             this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
         }
     }
@@ -336,7 +336,7 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
-        auto & column = static_cast<ColVecResult &>(to);
+        auto & column = assert_cast<ColVecResult &>(to);
         column.getData().push_back(this->data(place).get());
     }
 
