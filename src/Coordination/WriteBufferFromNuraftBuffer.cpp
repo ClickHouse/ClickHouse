@@ -14,15 +14,18 @@ void WriteBufferFromNuraftBuffer::nextImpl()
     if (is_finished)
         throw Exception("WriteBufferFromNuraftBuffer is finished", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
-    size_t old_size = buffer->size();
     /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data
     size_t pos_offset = pos - reinterpret_cast<Position>(buffer->data_begin());
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "BUFFER SIZE {}", old_size * size_multiplier);
-    nuraft::ptr<nuraft::buffer> new_buffer = nuraft::buffer::alloc(old_size * size_multiplier);
-    memcpy(new_buffer->data_begin(), buffer->data_begin(), buffer->size());
-    buffer = new_buffer;
+    size_t old_size = buffer->size();
+    if (pos_offset == old_size)
+    {
+        nuraft::ptr<nuraft::buffer> new_buffer = nuraft::buffer::alloc(old_size * size_multiplier);
+        memcpy(new_buffer->data_begin(), buffer->data_begin(), buffer->size());
+        buffer = new_buffer;
+    }
     internal_buffer = Buffer(reinterpret_cast<Position>(buffer->data_begin() + pos_offset), reinterpret_cast<Position>(buffer->data_begin() + buffer->size()));
     working_buffer = internal_buffer;
+
 }
 
 WriteBufferFromNuraftBuffer::WriteBufferFromNuraftBuffer()
@@ -38,7 +41,7 @@ void WriteBufferFromNuraftBuffer::finalize()
         return;
 
     is_finished = true;
-    size_t real_size = position() - reinterpret_cast<Position>(buffer->data_begin());
+    size_t real_size = pos - reinterpret_cast<Position>(buffer->data_begin());
     nuraft::ptr<nuraft::buffer> new_buffer = nuraft::buffer::alloc(real_size);
     memcpy(new_buffer->data_begin(), buffer->data_begin(), real_size);
     buffer = new_buffer;
