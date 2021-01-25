@@ -361,8 +361,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
     executeStepImpl(thread_num);
 
 #ifndef NDEBUG
-    auto & context = executor_contexts[thread_num];
-    LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
+    auto & context = tasks.getThreadContext(thread_num);
+    LOG_TRACE(log,
+              "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
+              (context.total_time_ns / 1e9),
+              (context.execution_time_ns / 1e9),
+              (context.processing_time_ns / 1e9),
+              (context.wait_time_ns / 1e9));
 #endif
 }
 
@@ -419,7 +424,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             }
 
 #ifndef NDEBUG
-            context->processing_time_ns += processing_time_watch.elapsed();
+            context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -429,8 +434,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     }
 
 #ifndef NDEBUG
-    context->total_time_ns += total_time_watch.elapsed();
-    context->wait_time_ns = context->total_time_ns - context->execution_time_ns - context->processing_time_ns;
+    context.total_time_ns += total_time_watch.elapsed();
+    context.wait_time_ns = context.total_time_ns - context.execution_time_ns - context->processing_time_ns;
 #endif
 }
 

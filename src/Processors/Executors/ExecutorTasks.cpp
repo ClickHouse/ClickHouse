@@ -1,4 +1,5 @@
 #include <Processors/Executors/ExecutorTasks.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -70,7 +71,7 @@ bool ExecutionThreadContext::executeTask()
     }
 
 #ifndef NDEBUG
-    context->execution_time_ns += execution_time_watch.elapsed();
+    execution_time_ns += execution_time_watch.elapsed();
 #endif
 
     return node->exception != nullptr;
