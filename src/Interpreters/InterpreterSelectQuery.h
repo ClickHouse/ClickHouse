@@ -108,12 +108,7 @@ private:
 
     /// Different stages of query execution.
 
-    void executeFetchColumns(
-        QueryProcessingStage::Enum processing_stage,
-        QueryPlan & query_plan,
-        const PrewhereDAGInfoPtr & prewhere_info,
-        const NameSet & columns_to_remove_after_prewhere);
-
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan, bool filter_in_prewhere);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final);
