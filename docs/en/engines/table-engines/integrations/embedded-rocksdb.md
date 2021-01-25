@@ -1,4 +1,4 @@
-.---
+---
 toc_priority: 6
 toc_title: EmbeddedRocksDB
 ---
