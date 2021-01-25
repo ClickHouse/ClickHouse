@@ -297,21 +297,21 @@ public:
                  out_offset < vec_res.size();
                  out_offset += IPV6_BINARY_LENGTH, ++i)
             {
+                auto src_string = std::string(reinterpret_cast<const char *>(&vec_src[src_offset]));
+                auto out = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
+                auto subnet_prefix = std::string("::ffff:");
+
+                /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
+                /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
+                if (DB::parseIPv4(src_string.c_str(), out))
+                {
+                    src_string = subnet_prefix + src_string;
+                }
                 /// In case of failure, the function fills vec_res with zero bytes.
-                String result;
-                auto src = reinterpret_cast<const char *>(&vec_src[src_offset]);
-                auto res = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
-                if (DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&result)))
-                {
-                    auto ipv4_src = std::string("::ffff:") + std::string(src);
-                    parseIPv6(ipv4_src.c_str(), res);
-                }
-                else
-                {
-                    parseIPv6(src, res);
-                }
+                parseIPv6(src_string.c_str(), out);
                 src_offset = offsets_src[i];
             }
+
             return col_res;
         }
         else
