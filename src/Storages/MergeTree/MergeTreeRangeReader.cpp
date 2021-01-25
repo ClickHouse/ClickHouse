@@ -484,10 +484,10 @@ void MergeTreeRangeReader::ReadResult::addFilter(const ColumnPtr & new_filter)
                 throw Exception("addFilter function expected ColumnUInt8.", ErrorCodes::LOGICAL_ERROR);
 
             const auto & data = filter->getData();
-            auto it = data.begin();
+            auto * it = data.begin();
 
             auto & new_data = new_mutable_holder_cast->getData();
-            auto n_it = new_data.begin();
+            auto * n_it = new_data.begin();
 
             while (it != data.end() && n_it != new_data.end())
             {
