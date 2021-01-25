@@ -213,7 +213,7 @@ struct Relocation
     char * address;
     uint64_t type;
 
-    void process(uintptr_t base_address)
+    ALWAYS_INLINE void process(uintptr_t base_address)
     {
         size_t * corrected_address = reinterpret_cast<size_t *>(address + base_address);
         *corrected_address += base_address;
@@ -228,7 +228,7 @@ struct RelocationWithAddend
     uint64_t type;
     int64_t addend;
 
-    void process(uintptr_t base_address)
+    ALWAYS_INLINE void process(uintptr_t base_address)
     {
         size_t * corrected_address = reinterpret_cast<size_t *>(address + base_address);
         *corrected_address += base_address + addend;
