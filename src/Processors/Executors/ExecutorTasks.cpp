@@ -1,5 +1,4 @@
 #include <Processors/Executors/ExecutorTasks.h>
-#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -9,49 +8,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool ExecutorTasks::runExpandPipeline(size_t thread_number, std::function<bool()> callback)
+bool ExecutorTasks::executeStoppingTask(ExecutionThreadContext & context, std::function<bool()> callback)
 {
-    auto & task = executor_contexts[thread_number]->addStoppingPipelineTask(std::move(callback));
-    ExecutionThreadContext::StoppingPipelineTask * desired = &task;
-    ExecutionThreadContext::StoppingPipelineTask * expected = nullptr;
-
-    while (!expand_pipeline_task.compare_exchange_strong(expected, desired))
-    {
-        if (!doExpandPipeline(expected, true))
-            return false;
-
-        expected = nullptr;
-    }
-
-    return doExpandPipeline(desired, true);
-}
-
-bool ExecutorTasks::doExpandPipeline(ExecutionThreadContext::StoppingPipelineTask * task, bool processing)
-{
-    std::unique_lock lock(task->mutex);
-
-    if (processing)
-        ++task->num_waiting_processing_threads;
-
-    task->condvar.wait(lock, [&]()
-    {
-        return task->num_waiting_processing_threads >= num_processing_executors || expand_pipeline_task != task;
-    });
-
-    bool result = true;
-
-    /// After condvar.wait() task may point to trash. Can change it only if it is still in expand_pipeline_task.
-    if (expand_pipeline_task == task)
-    {
-        result = task->callback();
-
-        expand_pipeline_task = nullptr;
-
-        lock.unlock();
-        task->condvar.notify_all();
-    }
-
-    return result;
+    auto & task = context.addStoppingPipelineTask(std::move(callback));
+    return task.executeTask(stopping_pipeline_task_data);
 }
 
 void ExecutorTasks::finish()
@@ -74,18 +34,14 @@ void ExecutorTasks::rethrowFirstThreadException()
         executor_context->rethrowExceptionIfHas();
 }
 
-void ExecutorTasks::expandPipelineStart()
+void ExecutorTasks::enterConcurrentReadSection()
 {
-    ++num_processing_executors;
-    while (auto * task = expand_pipeline_task.load())
-        doExpandPipeline(task, true);
+    StoppingPipelineTask::enterConcurrentReadSection(stopping_pipeline_task_data);
 }
 
-void ExecutorTasks::expandPipelineEnd()
+void ExecutorTasks::exitConcurrentReadSection()
 {
-    --num_processing_executors;
-    while (auto * task = expand_pipeline_task.load())
-        doExpandPipeline(task, false);
+    StoppingPipelineTask::exitConcurrentReadSection(stopping_pipeline_task_data);
 }
 
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)

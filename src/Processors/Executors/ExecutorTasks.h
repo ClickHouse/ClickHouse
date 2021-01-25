@@ -10,6 +10,7 @@
 namespace DB
 {
 
+/// Manage tasks which are ready for execution. Used in PipelineExecutor.
 class ExecutorTasks
 {
     /// If query is finished (or cancelled).
@@ -20,9 +21,8 @@ class ExecutorTasks
     /// This mutex protects only executor_contexts vector. Needed to avoid race between init() and finish().
     std::mutex executor_contexts_mutex;
 
-    /// This fields are used to expand pipeline.
-    std::atomic<size_t> num_processing_executors = 0;
-    std::atomic<ExecutionThreadContext::StoppingPipelineTask *> expand_pipeline_task = nullptr;
+    /// Data used by stopping pipeline task.
+    StoppingPipelineTask::Data stopping_pipeline_task_data;
 
     /// Common mutex for all the following fields.
     std::mutex mutex;
@@ -49,11 +49,10 @@ public:
     using Stack = std::stack<UInt64>;
     using Queue = std::queue<ExecutingGraph::Node *>;
 
-    bool doExpandPipeline(ExecutionThreadContext::StoppingPipelineTask * task, bool processing);
-    bool runExpandPipeline(size_t thread_number, std::function<bool()> callback);
+    bool executeStoppingTask(ExecutionThreadContext & context, std::function<bool()> callback);
 
-    void expandPipelineStart();
-    void expandPipelineEnd();
+    void enterConcurrentReadSection();
+    void exitConcurrentReadSection();
 
     void finish();
     bool isFinished() const { return finished; }

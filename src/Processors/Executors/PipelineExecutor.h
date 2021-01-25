@@ -69,12 +69,12 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    bool tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, size_t thread_number);
+    bool tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, ExecutionThreadContext & thread_context);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock);
+    bool prepareProcessor(UInt64 pid, ExecutionThreadContext & thread_context, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock);
 
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.

@@ -116,7 +116,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     return true;
 }
 
-bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, size_t thread_number)
+bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, ExecutionThreadContext & thread_context)
 {
     /// In this method we have ownership on edge, but node can be concurrently accessed.
 
@@ -137,7 +137,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & ed
     if (status == ExecutingGraph::ExecStatus::Idle)
     {
         node.status = ExecutingGraph::ExecStatus::Preparing;
-        return prepareProcessor(edge.to, thread_number, queue, async_queue, std::move(lock));
+        return prepareProcessor(edge.to, thread_context, queue, async_queue, std::move(lock));
     }
     else
         graph->nodes[edge.to]->processor->onUpdatePorts();
@@ -145,7 +145,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & ed
     return true;
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, ExecutionThreadContext & thread_context, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
     auto & node = *graph->nodes[pid];
@@ -234,13 +234,13 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     {
         for (auto & edge : updated_direct_edges)
         {
-            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_number))
+            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_context))
                 return false;
         }
 
         for (auto & edge : updated_back_edges)
         {
-            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_number))
+            if (!tryAddProcessorToStackIfUpdated(*edge, queue, async_queue, thread_context))
                 return false;
         }
     }
@@ -251,7 +251,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
 
         auto callback = [this, &stack, pid = node.processors_id]() { return expandPipeline(stack, pid); };
 
-        if (!tasks.runExpandPipeline(thread_number, std::move(callback)))
+        if (!tasks.executeStoppingTask(thread_context, std::move(callback)))
             return false;
 
         /// Add itself back to be prepared again.
@@ -260,7 +260,8 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         while (!stack.empty())
         {
             auto item = stack.top();
-            if (!prepareProcessor(item, thread_number, queue, async_queue, std::unique_lock<std::mutex>(graph->nodes[item]->status_mutex)))
+            auto lock = std::unique_lock<std::mutex>(graph->nodes[item]->status_mutex);
+            if (!prepareProcessor(item, thread_context, queue, async_queue, std::move(lock)))
                 return false;
 
             stack.pop();
@@ -408,19 +409,20 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue queue;
                 Queue async_queue;
 
-                tasks.expandPipelineStart();
+                tasks.enterConcurrentReadSection();
 
                 /// Prepare processor after execution.
                 {
                     auto lock = context.lockStatus();
-                    if (!prepareProcessor(context.getProcessorID(), thread_num, queue, async_queue, std::move(lock)))
+                    if (!prepareProcessor(context.getProcessorID(), context, queue, async_queue, std::move(lock)))
                         finish();
                 }
+
+                tasks.exitConcurrentReadSection();
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);
 
-                tasks.expandPipelineEnd();
             }
 
 #ifndef NDEBUG
@@ -447,6 +449,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     addChildlessProcessorsToStack(stack);
 
     tasks.init(num_threads);
+    auto & context = tasks.getThreadContext(0);
 
     Queue queue;
     Queue async_queue;
@@ -456,7 +459,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
         UInt64 proc = stack.top();
         stack.pop();
 
-        prepareProcessor(proc, 0, queue, async_queue, std::unique_lock<std::mutex>(graph->nodes[proc]->status_mutex));
+        prepareProcessor(proc, context, queue, async_queue, std::unique_lock<std::mutex>(graph->nodes[proc]->status_mutex));
 
         if (!async_queue.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
