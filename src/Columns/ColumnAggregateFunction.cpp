@@ -78,7 +78,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
     {
         for (size_t i = 0; i < data.size(); ++i)
         {
-            auto val = data[i];
+            auto * val = data[i];
             if (val == nullptr)
             {
                 continue;
