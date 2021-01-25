@@ -488,7 +488,7 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
     std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
     iter = copiedDataInfo.find(place);
     if (iter == copiedDataInfo.end())
-    {   
+    {
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
     }
