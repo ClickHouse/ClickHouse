@@ -62,7 +62,6 @@ struct ExpressionAnalyzerData
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
 
-    bool has_window = false;
     WindowDescriptions window_descriptions;
     NamesAndTypesList window_columns;
 
@@ -125,6 +124,8 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
+    void makeWindowDescriptions(ActionsDAGPtr actions);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
@@ -167,8 +168,6 @@ protected:
       */
     void analyzeAggregation();
     bool makeAggregateDescriptions(ActionsDAGPtr & actions);
-
-    bool makeWindowDescriptions(ActionsDAGPtr & actions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
@@ -272,7 +271,7 @@ public:
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
-    bool hasWindow() const { return has_window; }
+    bool hasWindow() const { return !syntax->window_function_asts.empty(); }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
     bool hasTableJoin() const { return syntax->ast_join; }
 
