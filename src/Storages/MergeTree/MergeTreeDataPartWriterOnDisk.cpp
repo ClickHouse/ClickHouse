@@ -182,27 +182,30 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
             index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
-
-    /// Write index. The index contains Primary Key value for each `index_granularity` row.
-    for (const auto & granule : granules_to_write)
     {
-        if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
+        /** While filling index (index_columns), disable memory tracker.
+         * Because memory is allocated here (maybe in context of INSERT query),
+         *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
+         * And otherwise it will look like excessively growing memory consumption in context of query.
+         *  (observed in long INSERT SELECTs)
+         */
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+
+        /// Write index. The index contains Primary Key value for each `index_granularity` row.
+        for (const auto & granule : granules_to_write)
         {
-            for (size_t j = 0; j < primary_columns_num; ++j)
+            if (metadata_snapshot->hasPrimaryKey() && granule.mark_on_start)
             {
-                const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                for (size_t j = 0; j < primary_columns_num; ++j)
+                {
+                    const auto & primary_column = primary_index_block.getByPosition(j);
+                    index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
+                    primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                }
             }
         }
     }
+
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
         last_block_index_columns[j] = primary_index_block.getByPosition(j).column;
