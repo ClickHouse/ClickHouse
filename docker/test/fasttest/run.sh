@@ -183,6 +183,7 @@ function run_cmake
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
+        "-DENABLE_NURAFT=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
