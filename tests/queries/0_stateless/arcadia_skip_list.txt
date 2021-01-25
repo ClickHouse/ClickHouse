@@ -191,3 +191,5 @@
 01655_agg_if_nullable
 01182_materialized_view_different_structure
 01660_sum_ubsan
+01669_columns_declaration_serde
+01666_blns
