@@ -263,6 +263,14 @@ public:
     static constexpr auto name = "IPv6StringToNum";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
+    static inline UInt32 parseIPv4(const char * pos)
+    {
+        UInt32 result = 0;
+        DB::parseIPv4(pos, reinterpret_cast<unsigned char *>(&result));
+
+        return result;
+    }
+
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -270,8 +278,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
     }
@@ -293,22 +301,26 @@ public:
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
 
-            for (size_t out_offset = 0, i = 0;
-                 out_offset < vec_res.size();
-                 out_offset += IPV6_BINARY_LENGTH, ++i)
+            char subnet_prefix[] = "::ffff:";
+            char src_ipv4_buf[sizeof(subnet_prefix) + IPV4_MAX_TEXT_LENGTH + 1];
+            strcpy(src_ipv4_buf, subnet_prefix);
+
+            for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
             {
-                auto src_string = std::string(reinterpret_cast<const char *>(&vec_src[src_offset]));
-                auto out = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
-                auto subnet_prefix = std::string("::ffff:");
+                /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
 
                 /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
                 /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
-                if (DB::parseIPv4(src_string.c_str(), out))
+                if (parseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset])))
                 {
-                    src_string = subnet_prefix + src_string;
+                    std::strcat(src_ipv4_buf, reinterpret_cast<const char *>(&vec_src[src_offset]));
+                    parseIPv6(reinterpret_cast<const char *>(&src_ipv4_buf), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 }
-                /// In case of failure, the function fills vec_res with zero bytes.
-                parseIPv6(src_string.c_str(), out);
+                else
+                {
+                    parseIPv6(
+                        reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                }
                 src_offset = offsets_src[i];
             }
 
