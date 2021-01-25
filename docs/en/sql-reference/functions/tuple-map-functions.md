@@ -5,6 +5,68 @@ toc_title: Working with maps
 
 # Functions for maps {#functions-for-working-with-tuple-maps}
 
+## map {#function-map}
+
+Arranges `key:value` pairs into a JSON data structure.
+
+**Syntax** 
+
+``` sql
+map(key1, value1[, key2, value2, ...])
+```
+
+**Parameters** 
+
+-   `key` — Key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
+-   `value` — Value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
+
+**Returned value**
+
+-   JSON with `key:value` pairs.
+
+Type: [Map(key, value)](../../sql-reference/data-types/map.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
+```
+
+Result:
+
+``` text
+┌─map('key1', number, 'key2', multiply(number, 2))─┐
+│ {'key1':0,'key2':0}                              │
+│ {'key1':1,'key2':2}                              │
+│ {'key1':2,'key2':4}                              │
+└──────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+CREATE TABLE table_map (a Map(String, UInt64)) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO table_map SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
+SELECT a['key2'] FROM table_map;
+```
+
+Result:
+
+``` text
+┌─arrayElement(a, 'key2')─┐
+│                       0 │
+│                       2 │
+│                       4 │
+└─────────────────────────┘
+```
+
+**See Also** 
+
+-   [Map(key, value)](../../sql-reference/data-types/map.md) data type
+
+
 ## mapAdd {#function-mapadd}
 
 Collect all the keys and sum corresponding values.
@@ -112,4 +174,4 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/tuple-map-functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->
