@@ -9,6 +9,7 @@ PEERDIR(
     clickhouse/src/Columns
     clickhouse/src/Common
     clickhouse/src/Compression
+    clickhouse/src/Coordination
     clickhouse/src/Core
     clickhouse/src/Databases
     clickhouse/src/DataStreams
