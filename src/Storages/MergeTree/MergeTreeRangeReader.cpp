@@ -470,7 +470,7 @@ void MergeTreeRangeReader::ReadResult::addFilter(const ColumnPtr & new_filter)
     {
         FilterDescription description(*new_filter);
         auto new_holder = (description.data_holder ? description.data_holder : new_filter);
-        auto * new_holder_cast = typeid_cast<const ColumnUInt8 *>(new_holder.get());
+        const auto * new_holder_cast = typeid_cast<const ColumnUInt8 *>(new_holder.get());
 
         if (!new_holder_cast)
             throw Exception("addFilter function expected ColumnUInt8.", ErrorCodes::LOGICAL_ERROR);
