@@ -69,11 +69,11 @@ class DictionaryDefaultValueExtractor
 public:
     DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
     {
-        if (!default_values_column_)
+        if (default_values_column_ == nullptr)
             default_value = { std::move(attribute_default_value) };
         else
         {
-            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column))
+            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column_))
             {
                 default_values_column = default_col;
             }
