@@ -291,7 +291,7 @@ ColumnPtr IPAddressDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = std::get<AttributeType>(attribute.null_values);
+        const auto & null_value = std::get<AttributeType>(attribute.null_values);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);

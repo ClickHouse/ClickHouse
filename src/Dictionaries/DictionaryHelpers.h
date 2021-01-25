@@ -67,6 +67,8 @@ class DictionaryDefaultValueExtractor
     using DefaultColumnType = typename DictionaryAttributeColumnProvider<DictionaryAttributeType>::ColumnType;
 
 public:
+    using DefaultValueType = DictionaryValueType<DictionaryAttributeType>;
+
     DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
     {
         if (default_values_column_ == nullptr)
@@ -86,10 +88,10 @@ public:
         }
     }
 
-    DictionaryValueType<DictionaryAttributeType> operator[](size_t row)
+    DefaultValueType operator[](size_t row)
     {
         if (default_value)
-            return static_cast<DictionaryAttributeType>(*default_value);
+            return static_cast<DefaultValueType>(*default_value);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);

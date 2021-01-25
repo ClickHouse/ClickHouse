@@ -940,14 +940,14 @@ SSDCacheStorage::~SSDCacheStorage()
 template <typename Out, typename GetDefault>
 void SSDCacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
       ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-      GetDefault & get_default, std::chrono::system_clock::time_point now) const
+      GetDefault & default_value_extractor, std::chrono::system_clock::time_point now) const
 {
     std::vector<bool> found(ids.size(), false);
 
     {
         std::shared_lock lock(rw_lock);
         for (const auto & partition : partitions)
-            partition->getValue<Out>(attribute_index, ids, out, found, get_default, now);
+            partition->getValue<Out>(attribute_index, ids, out, found, default_value_extractor, now);
     }
 
     for (size_t i = 0; i < ids.size(); ++i)
@@ -1350,7 +1350,7 @@ ColumnPtr SSDCacheDictionary::getColumn(
         using AttributeType = typename Type::AttributeType;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = std::get<AttributeType>(null_values[index]);
+        const auto & null_value = std::get<AttributeType>(null_values[index]);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
