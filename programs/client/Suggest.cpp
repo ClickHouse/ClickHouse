@@ -1,5 +1,6 @@
 #include "Suggest.h"
 
+#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 
@@ -125,12 +126,16 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
     query << ") WHERE notEmpty(res)";
 
-    fetch(connection, timeouts, query.str());
+    Settings settings;
+    /// To show all rows from:
+    /// - system.errors
+    settings.system_events_show_zero_values = true;
+    fetch(connection, timeouts, query.str(), settings);
 }
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
+void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
 {
-    connection.sendQuery(timeouts, query);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
 
     while (true)
     {
