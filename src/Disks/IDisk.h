@@ -175,7 +175,7 @@ public:
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
     /// Wrapper for POSIX open
-    virtual int open(const String & path, mode_t mode) const = 0;
+    virtual int open(const String & path, int flags) const = 0;
 
     /// Wrapper for POSIX close
     virtual void close(int fd) const = 0;

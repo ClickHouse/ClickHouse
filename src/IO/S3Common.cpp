@@ -280,7 +280,7 @@ namespace S3
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        Aws::Client::ClientConfiguration & cfg,
+        const Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
@@ -306,7 +306,7 @@ namespace S3
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        const String & endpoint,
+        const Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
@@ -315,10 +315,7 @@ namespace S3
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
-        PocoHTTPClientConfiguration client_configuration({}, remote_host_filter, s3_max_redirects);
-
-        if (!endpoint.empty())
-            client_configuration.endpointOverride = endpoint;
+        PocoHTTPClientConfiguration client_configuration(cfg, remote_host_filter, s3_max_redirects);
 
         client_configuration.updateSchemeAndRegion();
 
