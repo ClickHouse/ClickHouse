@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int RAFT_ERROR;
+}
 
 NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_)
     : server_id(server_id_)
@@ -24,22 +29,22 @@ NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, in
 {
 }
 
-NuraftError NuKeeperServer::addServer(int server_id_, const std::string & server_uri_)
+bool NuKeeperServer::addServer(int server_id_, const std::string & server_uri_)
 {
     nuraft::srv_config config(server_id_, server_uri_);
     auto ret1 = raft_instance->add_srv(config);
-    return NuraftError{ret1->get_result_code(), ret1->get_result_str()};
+    return ret1->get_result_code() == nuraft::cmd_result_code::OK;
 }
 
 
-NuraftError NuKeeperServer::startup()
+void NuKeeperServer::startup()
 {
     nuraft::raft_params params;
     params.heart_beat_interval_ = 100;
     params.election_timeout_lower_bound_ = 200;
     params.election_timeout_upper_bound_ = 400;
-    params.reserved_log_items_ = 5;
-    params.snapshot_distance_ = 50;
+    params.reserved_log_items_ = 5000;
+    params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = 3000;
     params.return_method_ = nuraft::raft_params::blocking;
 
@@ -48,25 +53,26 @@ NuraftError NuKeeperServer::startup()
         nuraft::asio_service::options{}, params);
 
     if (!raft_instance)
-        return NuraftError{nuraft::cmd_result_code::TIMEOUT, "Cannot create RAFT instance"};
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 
     static constexpr auto MAX_RETRY = 30;
     for (size_t i = 0; i < MAX_RETRY; ++i)
     {
         if (raft_instance->is_initialized())
-            return NuraftError{nuraft::cmd_result_code::OK, ""};
+            return;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    return NuraftError{nuraft::cmd_result_code::TIMEOUT, "Cannot start RAFT instance"};
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot start RAFT server within startup timeout");
 }
 
-NuraftError NuKeeperServer::shutdown()
+TestKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests)
 {
+    auto responses = putRequests(expired_requests);
     if (!launcher.shutdown(5))
-        return NuraftError{nuraft::cmd_result_code::TIMEOUT, "Temout waiting RAFT instance to shutdown"};
-    return NuraftError{nuraft::cmd_result_code::OK, ""};
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
+    return responses;
 }
 
 namespace
@@ -96,6 +102,7 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
         int64_t zxid;
         Coordination::Error err;
 
+        /// FIXME (alesap) We don't need to parse responses here
         Coordination::read(length, buf);
         Coordination::read(xid, buf);
         Coordination::read(zxid, buf);
@@ -135,10 +142,10 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
 
     auto result = raft_instance->append_entries(entries);
     if (!result->get_accepted())
-        return {};
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader");
 
     if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        return {};
+        throw Exception(ErrorCodes::RAFT_ERROR, "Requests failed");
 
     return readZooKeeperResponses(result->get());
 }
@@ -146,16 +153,17 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
 
 int64_t NuKeeperServer::getSessionID()
 {
-    auto entry = nuraft::buffer::alloc(sizeof(size_t));
+    auto entry = nuraft::buffer::alloc(sizeof(int64_t));
+    /// Just special session request
     nuraft::buffer_serializer bs(entry);
     bs.put_i64(0);
 
     auto result = raft_instance->append_entries({entry});
     if (!result->get_accepted())
-        return -1;
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send session_id request to RAFT");
 
     if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        return -1;
+        throw Exception(ErrorCodes::RAFT_ERROR, "session_id request failed to RAFT");
 
     auto resp = result->get();
     nuraft::buffer_serializer bs_resp(resp);

@@ -50,7 +50,6 @@ NuKeeperStateMachine::NuKeeperStateMachine()
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
-    //LOG_DEBUG(log, "Commiting logidx {}", log_idx);
     if (data.size() == sizeof(size_t))
     {
         LOG_DEBUG(log, "Session ID response {}", log_idx);
@@ -66,7 +65,6 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
     else
     {
         auto request_for_session = parseRequest(data);
-        //LOG_DEBUG(log, "GOT REQUEST {}", Coordination::toString(request_for_session.request->getOpNum()));
         TestKeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
@@ -74,7 +72,6 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
         }
 
         last_committed_idx = log_idx;
-        //LOG_DEBUG(log, "TOTAL RESPONSES {} FIRST XID {} FOR LOG IDX {}", responses_for_sessions.size(), responses_for_sessions[0].response->xid, log_idx);
         return writeResponses(responses_for_sessions);
     }
 }
@@ -98,7 +95,6 @@ bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
 nuraft::ptr<nuraft::snapshot> NuKeeperStateMachine::last_snapshot()
 {
-    LOG_DEBUG(log, "Trying to get last snapshot");
    // Just return the latest snapshot.
     std::lock_guard<std::mutex> lock(snapshots_lock);
     auto entry = snapshots.rbegin();

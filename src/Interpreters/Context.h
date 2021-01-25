@@ -574,6 +574,7 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 
+    void initializeTestKeeperStorageDispatcher() const;
     std::shared_ptr<TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.

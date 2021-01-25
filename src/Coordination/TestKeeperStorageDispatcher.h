@@ -30,7 +30,7 @@ private:
 
     ThreadFromGlobalPool processing_thread;
 
-    NuKeeperServer server;
+    std::unique_ptr<NuKeeperServer> server;
     std::mutex session_id_mutex;
 
 private:
@@ -39,16 +39,18 @@ private:
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
-    TestKeeperStorageDispatcher();
+    TestKeeperStorageDispatcher() = default;
+
+    void initialize(const Poco::Util::AbstractConfiguration & config);
 
     ~TestKeeperStorageDispatcher();
 
-    void putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     int64_t getSessionID()
     {
         std::lock_guard lock(session_id_mutex);
-        return server.getSessionID();
+        return server->getSessionID();
     }
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);

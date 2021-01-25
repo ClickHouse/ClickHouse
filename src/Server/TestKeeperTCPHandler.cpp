@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 struct PollResult
@@ -423,7 +424,8 @@ std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveR
     request->xid = xid;
     request->readImpl(*in);
 
-    test_keeper_storage_dispatcher->putRequest(request, session_id);
+    if (!test_keeper_storage_dispatcher->putRequest(request, session_id))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Sesssion {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }
 
