@@ -273,7 +273,7 @@ ColumnPtr CacheDictionary::getColumn(
         using AttributeType = typename Type::AttributeType;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto null_value = std::get<AttributeType>(attribute.null_value);
+        const auto & null_value = std::get<AttributeType>(attribute.null_value);
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
