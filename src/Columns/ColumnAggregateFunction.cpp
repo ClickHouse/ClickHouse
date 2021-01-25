@@ -78,13 +78,13 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
     {
       for(size_t i=0;i<data.size();++i){
             auto  val = data[i];
-            if(val==NULL){
+            if(val == nullptr){
                 continue;
             }
 
             for(size_t j=i;j<data.size();++j){
-                if(data[j]==val){
-                    data[j]= NULL;
+                if(data[j]== val){
+                    data[j]= nullptr;
                 }
             }
 
