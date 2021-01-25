@@ -302,6 +302,13 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+
+    /// Do not add special virtual parts to parts_to_do
+    auto max_level = MergeTreePartInfo::MAX_LEVEL;      /// DROP/DETACH PARTITION
+    auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
+    if (part_info.level == max_level || part_info.level == another_max_level)
+        return;
+    
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
@@ -310,11 +317,6 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
     for (auto it = from_it; it != in_partition->second.end(); ++it)
     {
         MutationStatus & status = *it->second;
-        /// Do not add special virtual parts to parts_to_do
-        auto max_level = MergeTreePartInfo::MAX_LEVEL;      /// DROP/DETACH PARTITION
-        auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
-        if (part_info.level == max_level || part_info.level == another_max_level)
-            continue;
         status.parts_to_do.add(part_name);
     }
 }
