@@ -10,7 +10,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -89,7 +88,6 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
         {
             ast = addTypeConversionToAST(col.default_desc.expression->clone(), col.type->getName(), data.columns.getAll(), data.context);
-            auto str = queryToString(ast);
             // revisit ast to track recursive alias columns
             Visitor(data).visit(ast);
         }
