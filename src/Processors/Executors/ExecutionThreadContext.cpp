@@ -129,7 +129,7 @@ bool ExecutionThreadContext::executeTask()
     execution_time_ns += execution_time_watch.elapsed();
 #endif
 
-    return node->exception != nullptr;
+    return node->exception == nullptr;
 }
 
 void ExecutionThreadContext::rethrowExceptionIfHas()
