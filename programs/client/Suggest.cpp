@@ -107,6 +107,12 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         " UNION ALL "
         "SELECT name FROM system.errors"
         " UNION ALL "
+        "SELECT event FROM system.events"
+        " UNION ALL "
+        "SELECT metric FROM system.asynchronous_metrics"
+        " UNION ALL "
+        "SELECT metric FROM system.metrics"
+        " UNION ALL "
         "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
@@ -129,6 +135,7 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     Settings settings;
     /// To show all rows from:
     /// - system.errors
+    /// - system.events
     settings.system_events_show_zero_values = true;
     fetch(connection, timeouts, query.str(), settings);
 }
