@@ -308,7 +308,7 @@ void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
     auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
     if (part_info.level == max_level || part_info.level == another_max_level)
         return;
-    
+
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
