@@ -50,7 +50,7 @@ NuKeeperStateMachine::NuKeeperStateMachine()
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
-    LOG_DEBUG(log, "Commiting logidx {}", log_idx);
+    //LOG_DEBUG(log, "Commiting logidx {}", log_idx);
     if (data.size() == sizeof(size_t))
     {
         LOG_DEBUG(log, "Session ID response {}", log_idx);
@@ -72,9 +72,9 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
             std::lock_guard lock(storage_lock);
             responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
         }
-        //LOG_DEBUG(log, "TOTAL RESPONSES {} FIRST XID {}", responses_for_sessions.size(), responses_for_sessions[0].response->xid);
 
         last_committed_idx = log_idx;
+        //LOG_DEBUG(log, "TOTAL RESPONSES {} FIRST XID {} FOR LOG IDX {}", responses_for_sessions.size(), responses_for_sessions[0].response->xid, log_idx);
         return writeResponses(responses_for_sessions);
     }
 }
