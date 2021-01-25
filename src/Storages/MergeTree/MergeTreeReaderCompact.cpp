@@ -92,6 +92,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             if (profile_callback_)
                 buffer->setProfileCallback(profile_callback_, clock_type_);
 
+            if (!settings.checksum_on_read)
+                buffer->disableChecksumming();
+
             cached_buffer = std::move(buffer);
             data_buffer = cached_buffer.get();
         }
@@ -105,6 +108,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
             if (profile_callback_)
                 buffer->setProfileCallback(profile_callback_, clock_type_);
+
+            if (!settings.checksum_on_read)
+                buffer->disableChecksumming();
 
             non_cached_buffer = std::move(buffer);
             data_buffer = non_cached_buffer.get();
