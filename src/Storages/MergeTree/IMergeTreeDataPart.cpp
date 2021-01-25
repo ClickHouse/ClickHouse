@@ -28,6 +28,10 @@ namespace CurrentMetrics
     extern const Metric PartsOutdated;
     extern const Metric PartsDeleting;
     extern const Metric PartsDeleteOnDestroy;
+
+    extern const Metric PartsWide;
+    extern const Metric PartsCompact;
+    extern const Metric PartsInMemory;
 }
 
 namespace DB
@@ -150,7 +154,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-static void incrementMetric(IMergeTreeDataPart::State state)
+static void incrementStateMetric(IMergeTreeDataPart::State state)
 {
     switch (state)
     {
@@ -173,11 +177,9 @@ static void incrementMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
-
-    __builtin_unreachable();
 }
 
-static void decrementMetric(IMergeTreeDataPart::State state)
+static void decrementStateMetric(IMergeTreeDataPart::State state)
 {
     switch (state)
     {
@@ -200,8 +202,42 @@ static void decrementMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
+}
 
-    __builtin_unreachable();
+static void incrementTypeMetric(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::WIDE:
+            CurrentMetrics::add(CurrentMetrics::PartsWide);
+            return;
+        case MergeTreeDataPartType::COMPACT:
+            CurrentMetrics::add(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::IN_MEMORY:
+            CurrentMetrics::add(CurrentMetrics::PartsInMemory);
+            return;
+        case MergeTreeDataPartType::UNKNOWN:
+            return;
+    }
+}
+
+static void decrementTypeMetric(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::WIDE:
+            CurrentMetrics::sub(CurrentMetrics::PartsWide);
+            return;
+        case MergeTreeDataPartType::COMPACT:
+            CurrentMetrics::sub(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::IN_MEMORY:
+            CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
+            return;
+        case MergeTreeDataPartType::UNKNOWN:
+            return;
+    }
 }
 
 
@@ -215,7 +251,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
+    incrementStateMetric(state);
+    incrementTypeMetric(part_type);
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -233,12 +270,14 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
+    incrementStateMetric(state);
+    incrementTypeMetric(part_type);
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
 {
-    decrementMetric(state);
+    decrementStateMetric(state);
+    decrementTypeMetric(part_type);
 }
 
 
@@ -270,9 +309,9 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 
 void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
 {
-    decrementMetric(state);
+    decrementStateMetric(state);
     state = new_state;
-    incrementMetric(state);
+    incrementStateMetric(state);
 }
 
 IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
@@ -879,6 +918,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    NamesAndTypesList loaded_columns;
+
     if (!volume->getDisk()->exists(path))
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -888,25 +929,23 @@ void IMergeTreeDataPart::loadColumns(bool require)
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
             if (volume->getDisk()->exists(getFullRelativePath() + getFileNameForColumn(column) + ".bin"))
-                columns.push_back(column);
+                loaded_columns.push_back(column);
 
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         {
             auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
-            columns.writeText(*buf);
+            loaded_columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);
     }
     else
     {
-        columns.readText(*volume->getDisk()->readFile(path));
+        loaded_columns.readText(*volume->getDisk()->readFile(path));
     }
 
-    size_t pos = 0;
-    for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
+    setColumns(loaded_columns);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const

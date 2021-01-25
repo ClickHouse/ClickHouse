@@ -385,7 +385,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
-        /// Just travers graph and prepare any processor.
+        /// Just traverse graph and prepare any processor.
         while (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 

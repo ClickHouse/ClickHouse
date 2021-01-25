@@ -49,7 +49,7 @@ void TestKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordina
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_writer = session_to_response_callback.find(session_id);
     if (session_writer == session_to_response_callback.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown session id {}", session_id);
+        return;
 
     session_writer->second(response);
     /// Session closed, no more writes
@@ -126,6 +126,14 @@ void TestKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperR
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
+}
+
+void TestKeeperStorageDispatcher::finishSession(int64_t session_id)
+{
+    std::lock_guard lock(session_to_response_callback_mutex);
+    auto session_it = session_to_response_callback.find(session_id);
+    if (session_it != session_to_response_callback.end())
+        session_to_response_callback.erase(session_it);
 }
 
 }

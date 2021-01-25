@@ -22,6 +22,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Описание столбца, это `name type`, в простейшем случае. Пример: `RegionID UInt32`.
 Также могут быть указаны выражения для значений по умолчанию - смотрите ниже.
 
+При необходимости можно указать [первичный ключ](#primary-key) с одним или несколькими ключевыми выражениями.
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
@@ -87,6 +88,35 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 Если добавить в таблицу новый столбец, а через некоторое время изменить его выражение по умолчанию, то используемые значения для старых данных (для данных, где значения не хранились на диске) поменяются. Также заметим, что при выполнении фоновых слияний, данные для столбцов, отсутствующих в одном из сливаемых кусков, записываются в объединённый кусок.
 
 Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
+
+## Первичный ключ {#primary-key}
+
+Вы можете определить [первичный ключ](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) при создании таблицы. Первичный ключ может быть указан двумя способами:
+
+- в списке столбцов:
+
+``` sql
+CREATE TABLE db.table_name 
+( 
+    name1 type1, name2 type2, ..., 
+    PRIMARY KEY(expr1[, expr2,...])]
+) 
+ENGINE = engine;
+```
+
+- вне списка столбцов:
+
+``` sql
+CREATE TABLE db.table_name
+( 
+    name1 type1, name2 type2, ...
+) 
+ENGINE = engine
+PRIMARY KEY(expr1[, expr2,...]);
+```
+
+!!! warning "Предупреждение"
+    Вы не можете сочетать оба способа в одном запросе.
 
 ### Ограничения (constraints) {#constraints}
 
