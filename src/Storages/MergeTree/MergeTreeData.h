@@ -702,6 +702,12 @@ public:
     /// section from config.xml.
     CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
+    /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
+    void insertQueryIdOrThrow(const String & query_id, size_t max_queries) const;
+
+    /// Remove current query id after query finished.
+    void removeQueryId(const String & query_id) const;
+
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -958,6 +964,10 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
+
+    // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
+    mutable std::set<String> query_id_set;
+    mutable std::mutex query_id_set_mutex;
 };
 
 }

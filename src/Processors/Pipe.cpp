@@ -105,6 +105,8 @@ Pipe::Holder & Pipe::Holder::operator=(Holder && rhs)
     for (auto & plan : rhs.query_plans)
         query_plans.emplace_back(std::move(plan));
 
+    query_id_holder = std::move(rhs.query_id_holder);
+
     return *this;
 }
 
