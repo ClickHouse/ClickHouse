@@ -28,6 +28,10 @@ namespace CurrentMetrics
     extern const Metric PartsOutdated;
     extern const Metric PartsDeleting;
     extern const Metric PartsDeleteOnDestroy;
+
+    extern const Metric PartsWide;
+    extern const Metric PartsCompact;
+    extern const Metric PartsInMemory;
 }
 
 namespace DB
@@ -150,7 +154,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-static void incrementMetric(IMergeTreeDataPart::State state)
+static void incrementStateMetric(IMergeTreeDataPart::State state)
 {
     switch (state)
     {
@@ -173,11 +177,9 @@ static void incrementMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
-
-    __builtin_unreachable();
 }
 
-static void decrementMetric(IMergeTreeDataPart::State state)
+static void decrementStateMetric(IMergeTreeDataPart::State state)
 {
     switch (state)
     {
@@ -200,8 +202,42 @@ static void decrementMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
+}
 
-    __builtin_unreachable();
+static void incrementTypeMetric(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::WIDE:
+            CurrentMetrics::add(CurrentMetrics::PartsWide);
+            return;
+        case MergeTreeDataPartType::COMPACT:
+            CurrentMetrics::add(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::IN_MEMORY:
+            CurrentMetrics::add(CurrentMetrics::PartsInMemory);
+            return;
+        case MergeTreeDataPartType::UNKNOWN:
+            return;
+    }
+}
+
+static void decrementTypeMetric(MergeTreeDataPartType type)
+{
+    switch (type.getValue())
+    {
+        case MergeTreeDataPartType::WIDE:
+            CurrentMetrics::sub(CurrentMetrics::PartsWide);
+            return;
+        case MergeTreeDataPartType::COMPACT:
+            CurrentMetrics::sub(CurrentMetrics::PartsCompact);
+            return;
+        case MergeTreeDataPartType::IN_MEMORY:
+            CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
+            return;
+        case MergeTreeDataPartType::UNKNOWN:
+            return;
+    }
 }
 
 
@@ -215,7 +251,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
+    incrementStateMetric(state);
+    incrementTypeMetric(part_type);
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -233,12 +270,14 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
+    incrementStateMetric(state);
+    incrementTypeMetric(part_type);
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
 {
-    decrementMetric(state);
+    decrementStateMetric(state);
+    decrementTypeMetric(part_type);
 }
 
 
@@ -270,9 +309,9 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 
 void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
 {
-    decrementMetric(state);
+    decrementStateMetric(state);
     state = new_state;
-    incrementMetric(state);
+    incrementStateMetric(state);
 }
 
 IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
