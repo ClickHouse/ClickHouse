@@ -39,32 +39,10 @@ struct WindowTransformBlock
     size_t numRows() const { return input_columns[0]->size(); }
 };
 
-/*
-// Use half the range of the unsigned int data type, to allow wraparound and
-// comparison. I.e. even when the counter overflows we can still tell that it is
-// greater than another counter, unless they are more than half the range apart.
-template <typename T>
-struct Wraparound
-{
-    T value;
-
-    // exclusive?
-    constexpr auto max_value = T(1) << (sizeof(T) * 8 - 1);
-
-    operator T() const { return value; }
-    operator T&() { return value; }
-    bool operator == (const T & other) { return other.value = value; }
-    Wraparound & operator ++ () { value++; return *this; }
-    bool operator < (const T & other) { return value % max_value < other.value % max_value; }
-    Wraparound & operator + (const T & other) { value = value + other.value; return *this; }
-};
-*/
-
-
 struct RowNumber
 {
     uint64_t block = 0;
-    uint16_t row = 0;
+    uint64_t row = 0;
 
     bool operator < (const RowNumber & other) const
     {
@@ -155,7 +133,7 @@ private:
         assert(x.block >= first_block_number);
         assert(x.block - first_block_number < blocks.size());
 
-        const int block_rows = inputAt(x)[0]->size();
+        const auto block_rows = inputAt(x)[0]->size();
         assert(x.row < block_rows);
 
         x.row++;
