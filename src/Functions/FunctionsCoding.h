@@ -299,16 +299,17 @@ public:
             {
                 /// In case of failure, the function fills vec_res with zero bytes.
                 String result;
-
+                auto src = reinterpret_cast<const char *>(&vec_src[src_offset]);
+                auto res = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
                 if (DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&result)))
                 {
-                    result = std::string("::ffff:") + std::string(vec_src.raw_data());
+                    auto ipv4_src = std::string("::ffff:") + std::string(src);
+                    parseIPv6(ipv4_src.c_str(), res);
                 }
                 else
                 {
-                    result = std::string(vec_res.raw_data());
+                    parseIPv6(src, res);
                 }
-                parseIPv6(reinterpret_cast<const char *>(&result), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 src_offset = offsets_src[i];
             }
             return col_res;
