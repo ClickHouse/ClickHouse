@@ -1,4 +1,3 @@
-#pragma once
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -14,14 +13,12 @@
 
 #include <Core/iostream_debug_helpers.h>
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -72,12 +69,12 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         static const auto MAX_GROUPS_COUNT = 128;
 
-        const ColumnPtr column_haystack = arguments[0].column;
-        const ColumnPtr column_needle = arguments[1].column;
+        const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
 
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
@@ -147,11 +144,11 @@ public:
         }
         else
         {
-            PODArray<StringPiece, 0> all_matches;
-            /// Number of times RE matched on each row of haystack column.
-            PODArray<size_t, 0> number_of_matches_per_row;
+            std::vector<StringPiece> all_matches;
+            // number of times RE matched on each row of haystack column.
+            std::vector<size_t> number_of_matches_per_row;
 
-            /// We expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
+            // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
             all_matches.reserve(input_rows_count * groups_count * 8);
             number_of_matches_per_row.reserve(input_rows_count);
 
@@ -171,12 +168,6 @@ public:
                     // 1 is to exclude group #0 which is whole re match.
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
-
-                    /// Additional limit to fail fast on supposedly incorrect usage.
-                    static constexpr size_t MAX_GROUPS_PER_ROW = 1000000;
-
-                    if (all_matches.size() > MAX_GROUPS_PER_ROW)
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in the result of function {}", getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
@@ -242,7 +233,7 @@ public:
 
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
-        return root_array_col;
+        block.getByPosition(result).column = std::move(root_array_col);
     }
 };
 

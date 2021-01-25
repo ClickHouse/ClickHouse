@@ -141,7 +141,7 @@ Si necesita restringir el consumo de memoria de la operación de unión, use la 
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-Cuando se alcanza cualquiera de estos límites, ClickHouse actúa como el [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) configuración instruye.
+Cuando se alcanza cualquiera de estos límites, ClickHouse actúa como el [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) configuración instruye.
 
 ## Ejemplos {#examples}
 

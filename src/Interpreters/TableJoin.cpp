@@ -28,6 +28,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
+    if (settings.partial_merge_join)
+        join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
 }
 
 void TableJoin::resetCollected()
@@ -230,8 +232,16 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 void TableJoin::addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const
 {
     for (auto & col : columns)
+    {
+        /// Materialize column.
+        /// Column is not empty if it is constant, but after Join all constants will be materialized.
+        /// So, we need remove constants from header.
+        if (col.column)
+            col.column = nullptr;
+
         if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
+    }
 
     for (const auto & col : columns_added_by_join)
     {

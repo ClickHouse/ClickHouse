@@ -1,4 +1,3 @@
-#pragma once
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/Stopwatch.h>

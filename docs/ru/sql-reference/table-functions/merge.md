@@ -1,8 +1,3 @@
----
-toc_priority: 38
-toc_title: merge
----
-
 # merge {#merge}
 
 `merge(db_name, 'tables_regexp')` - создаёт временную таблицу типа Merge. Подробнее смотрите раздел «Движки таблиц, Merge».

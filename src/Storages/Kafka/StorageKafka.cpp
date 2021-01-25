@@ -2,6 +2,7 @@
 #include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -33,7 +34,6 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
 #include <common/getFQDNOrHostName.h>
@@ -170,7 +170,7 @@ namespace
 
 StorageKafka::StorageKafka(
     const StorageID & table_id_,
-    const Context & context_,
+    Context & context_,
     const ColumnsDescription & columns_,
     std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
@@ -247,14 +247,16 @@ Names StorageKafka::parseTopics(String topic_list)
 
 String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 {
-    return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
+    std::stringstream ss;
+    ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
+    return ss.str();
 }
 
 
 Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /* query_info */,
+    const SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
@@ -398,7 +400,9 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     conf.set("group.id", group);
     if (num_consumers > 1)
     {
-        conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));
+        std::stringstream ss;
+        ss << client_id << "-" << consumer_number;
+        conf.set("client.id", ss.str());
     }
     else
     {

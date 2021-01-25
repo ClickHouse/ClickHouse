@@ -1,5 +1,5 @@
 ---
-toc_priority: 67
+toc_priority: 66
 toc_title: Other
 ---
 
@@ -181,14 +181,6 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
-
-## byteSize(...) {#function-bytesize}
-
-Get an estimate of uncompressed byte size of its arguments in memory.
-E.g. for UInt32 argument it will return constant 4, for String argument - the string length + 9 (terminating zero + length).
-The function can take multiple arguments. The typical application is byteSize(*).
-
-Use case: Suppose you have a service that stores data for multiple clients in one table. Users will pay per data volume. So, you need to implement accounting of users data volume. The function will allow to calculate the data size on per-row basis.
 
 ## materialize(x) {#materializex}
 
@@ -425,7 +417,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -445,7 +437,7 @@ Types:
 Where the same letter is indicated (T or U), for numeric types these might not be matching types, but types that have a common type.
 For example, the first argument can have the Int64 type, while the second has the Array(UInt16) type.
 
-If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the existing element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array_from’, it returns one of the matches.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the existing element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘default’. If there are multiple matching elements in ‘array\_from’, it returns one of the matches.
 
 Example:
 
@@ -467,10 +459,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to) {#transformx-array-from-array-to}
+### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Differs from the first variation in that the ‘default’ argument is omitted.
-If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the matching element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘x’.
+If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the matching element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘x’.
 
 Types:
 
@@ -546,51 +538,6 @@ SELECT
 └────────────────┴───────────────────┘
 ```
 
-## formatReadableTimeDelta {#formatreadabletimedelta}
-
-Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
-
-**Syntax**
-
-``` sql
-formatReadableTimeDelta(column[, maximum_unit])
-```
-
-**Parameters**
-
--   `column` — A column with numeric time delta.
--   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed) AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                              │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
 ## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
@@ -634,12 +581,7 @@ neighbor(column, offset[, default_value])
 ```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
-
-!!! warning "Warning"
-    It can reach the neighbor rows only inside the currently processed data block.
-
-The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
 **Parameters**
 
@@ -744,13 +686,8 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-!!! warning "Warning"
-    It can reach the previos row only inside the currently processed data block.
-    
 The result of the function depends on the affected data blocks and the order of data in the block.
-
-The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
 Example:
 
@@ -1180,104 +1117,7 @@ Result:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
-
-**Syntax** 
-
-``` sql
-finalizeAggregation(state)
-```
-
-**Parameters**
-
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-
-**Returned value(s)**
-
--   Value/values that was aggregated.
-
-Type: Value of any types that was aggregated. 
-
-**Examples**
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery16)─┐
-│                               10 │
-└──────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(_subquery20)─┐
-│                               45 │
-└──────────────────────────────────┘
-```
-
-Note that `NULL` values are ignored. 
-
-Query:
-
-```sql
-SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
-```
-
-Result:
-
-```text
-┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
-│                                                          2 │
-└────────────────────────────────────────────────────────────┘
-```
-
-Combined example:
-
-Query:
-
-```sql
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(10);
-```
-
-Result:
-
-```text
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-│      5 │           5 │             15 │
-│      6 │           6 │             21 │
-│      7 │           7 │             28 │
-│      8 │           8 │             36 │
-│      9 │           9 │             45 │
-└────────┴─────────────┴────────────────┘
-```
-
-**See Also** 
-
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+Takes state of aggregate function. Returns result of aggregation (finalized state).
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1408,7 +1248,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1447,15 +1287,15 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
 
 Throw an exception if the argument is non zero.
-custom_message - is an optional parameter: a constant string, provides an error message
+custom\_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1468,7 +1308,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions.
 
 **Syntax**
 
@@ -1655,13 +1495,13 @@ Result:
 
 Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
 
-**Syntax**
+**Syntax** 
 
 ```sql
-getSetting('custom_setting');
+getSetting('custom_setting');    
 ```
 
-**Parameter**
+**Parameter** 
 
 -   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
 
@@ -1673,7 +1513,7 @@ getSetting('custom_setting');
 
 ```sql
 SET custom_a = 123;
-SELECT getSetting('custom_a');
+SELECT getSetting('custom_a');    
 ```
 
 **Result**
@@ -1682,13 +1522,13 @@ SELECT getSetting('custom_a');
 123
 ```
 
-**See Also**
+**See Also** 
 
 -   [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
+Checks whether the [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value is out of its (or specified) precision.
 
 **Syntax**
 
@@ -1696,10 +1536,10 @@ Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is
 isDecimalOverflow(d, [p])
 ```
 
-**Parameters**
+**Parameters** 
 
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
+-   `p` — precision. Optional. If omitted, the initial presicion of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
 
 **Returned values**
 
@@ -1733,9 +1573,9 @@ Returns number of decimal digits you need to represent the value.
 countDigits(x)
 ```
 
-**Parameters**
+**Parameters** 
 
--   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
+-   `x` — [Int](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) or [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) value.
 
 **Returned value**
 
@@ -1761,65 +1601,5 @@ Result:
 ``` text
 10	10	19	19	39	39
 ```
-
-## errorCodeToName {#error-code-to-name}
-
-**Returned value**
-
--   Variable name for the error code.
-
-Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
-
-**Syntax**
-
-``` sql
-errorCodeToName(1)
-```
-
-Result:
-
-``` text
-UNSUPPORTED_METHOD
-```
-
-## tcpPort {#tcpPort}
-
-Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
-
-**Syntax**
-
-``` sql
-tcpPort()
-```
-
-**Parameters**
-
--   None.
-
-**Returned value**
-
--   The TCP port number.
-
-Type: [UInt16](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT tcpPort();
-```
-
-Result:
-
-``` text
-┌─tcpPort()─┐
-│      9000 │
-└───────────┘
-```
-
-**See Also**
-
--   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->

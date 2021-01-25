@@ -8,6 +8,7 @@
 
 #    include <ext/shared_ptr_helper.h>
 
+#    include <Interpreters/Context.h>
 #    include <Storages/IStorage.h>
 #    include <mysqlxx/Pool.h>
 
@@ -39,7 +40,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -56,7 +57,7 @@ private:
     std::string on_duplicate_clause;
 
     mysqlxx::Pool pool;
-    const Context & global_context;
+    Context global_context;
 };
 
 }

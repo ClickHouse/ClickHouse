@@ -23,7 +23,7 @@ GradientComputer class computes gradient according to its loss function
 class IGradientComputer
 {
 public:
-    IGradientComputer() = default;
+    IGradientComputer() {}
 
     virtual ~IGradientComputer() = default;
 
@@ -39,9 +39,10 @@ public:
 
     virtual void predict(
         ColumnVector<Float64>::Container & container,
-        const ColumnsWithTypeAndName & arguments,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
+        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const = 0;
@@ -51,7 +52,7 @@ public:
 class LinearRegression : public IGradientComputer
 {
 public:
-    LinearRegression() = default;
+    LinearRegression() {}
 
     void compute(
         std::vector<Float64> & batch_gradient,
@@ -64,9 +65,10 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        const ColumnsWithTypeAndName & arguments,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
+        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const override;
@@ -76,7 +78,7 @@ public:
 class LogisticRegression : public IGradientComputer
 {
 public:
-    LogisticRegression() = default;
+    LogisticRegression() {}
 
     void compute(
         std::vector<Float64> & batch_gradient,
@@ -89,9 +91,10 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        const ColumnsWithTypeAndName & arguments,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
+        const ColumnNumbers & arguments,
         const std::vector<Float64> & weights,
         Float64 bias,
         const Context & context) const override;
@@ -147,9 +150,9 @@ public:
 class Momentum : public IWeightsUpdater
 {
 public:
-    Momentum() = default;
+    Momentum() {}
 
-    explicit Momentum(Float64 alpha_) : alpha(alpha_) {}
+    Momentum(Float64 alpha) : alpha_(alpha) {}
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
@@ -160,7 +163,7 @@ public:
     void read(ReadBuffer & buf) override;
 
 private:
-    Float64 alpha{0.1};
+    Float64 alpha_{0.1};
     std::vector<Float64> accumulated_gradient;
 };
 
@@ -168,9 +171,9 @@ private:
 class Nesterov : public IWeightsUpdater
 {
 public:
-    Nesterov() = default;
+    Nesterov() {}
 
-    explicit Nesterov(Float64 alpha_) : alpha(alpha_) {}
+    Nesterov(Float64 alpha) : alpha_(alpha) {}
 
     void addToBatch(
         std::vector<Float64> & batch_gradient,
@@ -191,7 +194,7 @@ public:
     void read(ReadBuffer & buf) override;
 
 private:
-    const Float64 alpha = 0.9;
+    const Float64 alpha_ = 0.9;
     std::vector<Float64> accumulated_gradient;
 };
 
@@ -201,8 +204,8 @@ class Adam : public IWeightsUpdater
 public:
     Adam()
     {
-        beta1_powered = beta1;
-        beta2_powered = beta2;
+        beta1_powered_ = beta1_;
+        beta2_powered_ = beta2_;
     }
 
     void addToBatch(
@@ -225,11 +228,11 @@ public:
 
 private:
     /// beta1 and beta2 hyperparameters have such recommended values
-    const Float64 beta1 = 0.9;
-    const Float64 beta2 = 0.999;
-    const Float64 eps = 0.000001;
-    Float64 beta1_powered;
-    Float64 beta2_powered;
+    const Float64 beta1_ = 0.9;
+    const Float64 beta2_ = 0.999;
+    const Float64 eps_ = 0.000001;
+    Float64 beta1_powered_;
+    Float64 beta2_powered_;
 
     std::vector<Float64> average_gradient;
     std::vector<Float64> average_squared_gradient;
@@ -241,7 +244,7 @@ private:
 class LinearModelData
 {
 public:
-    LinearModelData() = default;
+    LinearModelData() {}
 
     LinearModelData(
         Float64 learning_rate_,
@@ -261,9 +264,10 @@ public:
 
     void predict(
         ColumnVector<Float64>::Container & container,
-        const ColumnsWithTypeAndName & arguments,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
+        const ColumnNumbers & arguments,
         const Context & context) const;
 
     void returnWeights(IColumn & to) const;
@@ -360,9 +364,10 @@ public:
     void predictValues(
         ConstAggregateDataPtr place,
         IColumn & to,
-        const ColumnsWithTypeAndName & arguments,
+        ColumnsWithTypeAndName & columns,
         size_t offset,
         size_t limit,
+        const ColumnNumbers & arguments,
         const Context & context) const override
     {
         if (arguments.size() != param_num + 1)
@@ -377,7 +382,7 @@ public:
             throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
                             ErrorCodes::LOGICAL_ERROR);
 
-        this->data(place).predict(column->getData(), arguments, offset, limit, context);
+        this->data(place).predict(column->getData(), columns, offset, limit, arguments, context);
     }
 
     /** This function is called if aggregate function without State modifier is selected in a query.
