@@ -56,6 +56,7 @@
 #define AT_MINSIGSTKSZ          51
 
 
+using uint16_t = unsigned short;
 using int32_t = int;
 using uint32_t = unsigned int;
 using int64_t = long;
@@ -235,6 +236,16 @@ struct RelocationWithAddend
     }
 };
 
+struct Symbol
+{
+    uint32_t st_name;       /* Symbol name (string table index) */
+    unsigned char st_info;  /* Symbol type and binding */
+    unsigned char st_other; /* Symbol visibility */
+    uint16_t st_shndx;      /* Section index */
+    void * value;           /* Symbol value */
+    size_t size;            /* Symbol size */
+};
+
 
 NO_INLINE long internal_syscall_asm(long x0 = 0, long x1 = 0, long x2 = 0, long x3 = 0, long x4 = 0, long x5 = 0, long x6 = 0)
 {
@@ -405,10 +416,15 @@ int main(int argc, char ** argv, char ** envp)
             DynamicTableEntry * dynamic_table_entries = reinterpret_cast<DynamicTableEntry *>(
                 base_address + program_headers[i].virtual_address);
 
-            const DynamicTableEntry * rel = nullptr;
-            const DynamicTableEntry * relsz = nullptr;
-            const DynamicTableEntry * rela = nullptr;
-            const DynamicTableEntry * relasz = nullptr;
+            Relocation * rel = nullptr;
+            size_t relsz = 0;
+            RelocationWithAddend * rela = nullptr;
+            size_t relasz = 0;
+
+            const char * strings = nullptr;
+            size_t strings_size = 0;
+
+            DynamicTableEntry::Tag type_of_plt_relocations{};
 
             for (const auto * it = dynamic_table_entries; it->tag != DynamicTableEntry::NULL; ++it)
             {
@@ -416,29 +432,33 @@ int main(int argc, char ** argv, char ** envp)
                 print_string("\n");
 
                 if (it->tag == DynamicTableEntry::REL)
-                    rel = it;
+                    rel = reinterpret_cast<Relocation *>(base_address + it->ptr);
                 else if (it->tag == DynamicTableEntry::RELSZ)
-                    relsz = it;
+                    relsz = it->value / sizeof(Relocation);
                 else if (it->tag == DynamicTableEntry::RELA)
-                    rela = it;
+                    rela = reinterpret_cast<RelocationWithAddend *>(base_address + it->ptr);
                 else if (it->tag == DynamicTableEntry::RELASZ)
-                    relasz = it;
+                    relasz = it->value / sizeof(RelocationWithAddend);
+                else if (it->tag == DynamicTableEntry::STRTAB)
+                    strings = reinterpret_cast<const char *>(base_address + it->ptr);
+                else if (it->tag == DynamicTableEntry::STRSZ)
+                    strings_size = it->value;
+                else if (it->tag == DynamicTableEntry::PLTREL)
+                    type_of_plt_relocations = static_cast<DynamicTableEntry::Tag>(it->value);
             }
 
             /// Perform simple relocations
 
             if (rel && relsz)
             {
-                Relocation * entries = reinterpret_cast<Relocation *>(base_address + rel->ptr);
-                for (size_t j = 0; j < relsz->value; ++j)
-                    entries[j].process(base_address);
+                for (size_t j = 0; j < relsz; ++j)
+                    rel[j].process(base_address);
             }
 
             if (rela && relasz)
             {
-                RelocationWithAddend * entries = reinterpret_cast<RelocationWithAddend *>(base_address + rela->ptr);
-                for (size_t j = 0; j < relasz->value; ++j)
-                    entries[j].process(base_address);
+                for (size_t j = 0; j < relasz; ++j)
+                    rela[j].process(base_address);
             }
         }
     }
