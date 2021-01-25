@@ -76,7 +76,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
     {
-	for (size_t i = 0; i < data.size(); ++i)
+        for (size_t i = 0; i < data.size(); ++i)
         {
             auto val = data[i];
             if (val == nullptr)
