@@ -2375,11 +2375,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Рассмотрим запрос с агрегирующими функциями:
 ```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 ```
 
 Результат запроса с настройкой `aggregate_functions_null_for_empty = 0`:

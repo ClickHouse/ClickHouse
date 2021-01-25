@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -546,6 +547,9 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
+
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -804,6 +808,9 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -893,7 +900,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
