@@ -383,7 +383,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
@@ -449,9 +449,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         filter_info->actions_dag->getRequiredColumns().getNames(), storage->getVirtuals(), storage->getStorageID());
             }
         }
-
-        if (!options.only_analyze && storage && filter_info && query.prewhere())
-            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
@@ -806,11 +803,29 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     bool intermediate_stage = false;
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
+    const bool filter_in_prewhere = (
+        (settings.optimize_move_to_prewhere || expressions.prewhere_info) &&
+        !input && !input_pipe && storage && storage->supportsPrewhere()
+    );
 
     if (options.only_analyze)
     {
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
         query_plan.addStep(std::move(read_nothing));
+
+        if (expressions.filter_info && filter_in_prewhere)
+        {
+            auto row_level_security_step = std::make_unique<FilterStep>(
+                query_plan.getCurrentDataStream(),
+                expressions.filter_info->actions_dag,
+                expressions.filter_info->column_name,
+                expressions.filter_info->do_remove_column);
+
+            row_level_security_step->setStepDescription("Row-level security filter (PREWHERE)");
+            query_plan.addStep(std::move(row_level_security_step));
+
+            // TODO: handle filter like prewhere, remove unnecessary columns after it, etc.?
+        }
 
         if (expressions.prewhere_info)
         {
@@ -862,11 +877,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
         if (options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
             to_aggregation_stage = true;
 
-        if (storage && expressions.filter_info && expressions.prewhere_info)
-            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
-
-        /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, query_plan, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
+        executeFetchColumns(from_stage, query_plan, filter_in_prewhere);
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
@@ -931,7 +943,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
         if (expressions.first_stage)
         {
-            if (expressions.hasFilter())
+            if (expressions.filter_info && !filter_in_prewhere)
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                         query_plan.getCurrentDataStream(),
@@ -941,6 +953,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
+
+                // TODO: handle filter like prewhere, remove unnecessary columns after it, etc.?
             }
 
             if (expressions.before_array_join)
@@ -1228,12 +1242,13 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
     query_plan.addStep(std::move(read_from_pipe));
 }
 
-void InterpreterSelectQuery::executeFetchColumns(
-    QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan,
-    const PrewhereDAGInfoPtr & prewhere_info, const NameSet & columns_to_remove_after_prewhere)
+void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan, bool filter_in_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
+    auto & expressions = analysis_result;
+    auto & prewhere_info = expressions.prewhere_info;
+    auto & columns_to_remove_after_prewhere = expressions.columns_to_remove_after_prewhere;
 
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
@@ -1241,7 +1256,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         && (settings.max_parallel_replicas <= 1)
         && storage
         && storage->getName() != "MaterializeMySQL"
-        && !filter_info
+        && !expressions.filter_info
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -1553,6 +1568,22 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
+
+        if (expressions.filter_info && filter_in_prewhere)
+        {
+            if (!query_info.prewhere_info_list)
+                query_info.prewhere_info_list = std::make_shared<PrewhereInfoList>();
+
+            query_info.prewhere_info_list->emplace(
+                query_info.prewhere_info_list->begin(),
+                std::make_shared<ExpressionActions>(expressions.filter_info->actions_dag),
+                expressions.filter_info->column_name);
+
+            auto & new_filter_info = query_info.prewhere_info_list->front();
+
+            new_filter_info.remove_prewhere_column = expressions.filter_info->do_remove_column;
+            new_filter_info.need_filter = true;
+        }
 
         if (prewhere_info)
         {
