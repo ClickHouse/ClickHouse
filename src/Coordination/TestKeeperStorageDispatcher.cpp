@@ -27,7 +27,7 @@ void TestKeeperStorageDispatcher::processingThread()
                 if (shutdown)
                     break;
 
-                auto responses = server.putRequests({request});
+                auto responses = server->putRequests({request});
                 for (const auto & response_for_session : responses)
                     setResponse(response_for_session.session_id, response_for_session.response);
             }
@@ -67,26 +67,27 @@ void TestKeeperStorageDispatcher::finalize()
             processing_thread.join();
     }
 
-    //TestKeeperStorage::RequestsForSessions expired_requests;
-    //TestKeeperStorage::RequestForSession request;
-    //while (requests_queue.tryPop(request))
-    //    expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
+    if (server)
+    {
+        TestKeeperStorage::RequestsForSessions expired_requests;
+        TestKeeperStorage::RequestForSession request;
+        while (requests_queue.tryPop(request))
+            expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
 
-    //auto expired_responses = storage.finalize(expired_requests);
+        auto expired_responses = server->shutdown(expired_requests);
 
-    //for (const auto & response_for_session : expired_responses)
-    //    setResponse(response_for_session.session_id, response_for_session.response);
-    /// TODO FIXME
-    server.shutdown();
+        for (const auto & response_for_session : expired_responses)
+            setResponse(response_for_session.session_id, response_for_session.response);
+    }
 }
 
-void TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+bool TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
 
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         if (session_to_response_callback.count(session_id) == 0)
-            throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown session id {}", session_id);
+            return false;
     }
 
     TestKeeperStorage::RequestForSession request_info;
@@ -99,13 +100,43 @@ void TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperReques
         requests_queue.push(std::move(request_info));
     else if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+    return true;
 }
 
-TestKeeperStorageDispatcher::TestKeeperStorageDispatcher()
-    : server(1, "localhost", 44444)
+
+void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
-    server.startup();
+    int myid = config.getInt("test_keeper_server.server_id");
+    std::string myhostname;
+    int myport;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("test_keeper_server.raft_configuration", keys);
+
+    std::vector<std::tuple<int, std::string, int>> server_configs;
+    for (const auto & server_key : keys)
+    {
+        int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
+        std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
+        int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
+        if (server_id == myid)
+        {
+            myhostname = hostname;
+            myport = port;
+        }
+        else
+        {
+            server_configs.emplace_back(server_id, hostname, port);
+        }
+    }
+
+    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
+    server->startup();
+    for (const auto & [id, hostname, port] : server_configs)
+        server->addServer(id, hostname + ":" + std::to_string(port));
+
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
+
 }
 
 TestKeeperStorageDispatcher::~TestKeeperStorageDispatcher()

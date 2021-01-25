@@ -10,12 +10,6 @@
 namespace DB
 {
 
-struct NuraftError
-{
-    nuraft::cmd_result_code code;
-    std::string message;
-};
-
 class NuKeeperServer
 {
 private:
@@ -46,15 +40,15 @@ private:
 public:
     NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
 
-    NuraftError startup();
+    void startup();
 
     TestKeeperStorage::ResponsesForSessions putRequests(const TestKeeperStorage::RequestsForSessions & requests);
 
     int64_t getSessionID();
 
-    NuraftError addServer(int server_id_, const std::string & server_uri);
+    bool addServer(int server_id_, const std::string & server_uri);
 
-    NuraftError shutdown();
+    TestKeeperStorage::ResponsesForSessions shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests);
 };
 
 }

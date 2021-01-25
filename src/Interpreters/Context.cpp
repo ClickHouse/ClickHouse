@@ -1568,11 +1568,26 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::initializeTestKeeperStorageDispatcher() const
+{
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+
+    if (shared->test_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize TestKeeper multiple times");
+
+    auto & config = getConfigRef();
+    if (config.has("test_keeper_server"))
+    {
+        shared->test_keeper_storage_dispatcher = std::make_shared<TestKeeperStorageDispatcher>();
+        shared->test_keeper_storage_dispatcher->initialize(config);
+    }
+}
+
 std::shared_ptr<TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
     std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
     if (!shared->test_keeper_storage_dispatcher)
-        shared->test_keeper_storage_dispatcher = std::make_shared<TestKeeperStorageDispatcher>();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TestKeeper must be initialized before requests");
 
     return shared->test_keeper_storage_dispatcher;
 }

@@ -34,7 +34,7 @@ size_t InMemoryLogStore::next_slot() const
 
 nuraft::ptr<nuraft::log_entry> InMemoryLogStore::last_entry() const
 {
-    ulong next_idx = next_slot();
+    size_t next_idx = next_slot();
     std::lock_guard<std::mutex> lock(logs_lock);
     auto entry = logs.find(next_idx - 1);
     if (entry == logs.end())
@@ -105,7 +105,7 @@ nuraft::ptr<nuraft::log_entry> InMemoryLogStore::entry_at(size_t index)
 
 size_t InMemoryLogStore::term_at(size_t index)
 {
-    ulong term = 0;
+    size_t term = 0;
     {
         std::lock_guard<std::mutex> l(logs_lock);
         auto entry = logs.find(index);
@@ -121,7 +121,7 @@ nuraft::ptr<nuraft::buffer> InMemoryLogStore::pack(size_t index, Int32 cnt)
     std::vector<nuraft::ptr<nuraft::buffer>> returned_logs;
 
     size_t size_total = 0;
-    for (ulong ii = index; ii < index + cnt; ++ii)
+    for (size_t ii = index; ii < index + cnt; ++ii)
     {
         ptr<log_entry> le = nullptr;
         {
@@ -180,7 +180,7 @@ void InMemoryLogStore::apply_pack(size_t index, nuraft::buffer & pack)
 bool InMemoryLogStore::compact(size_t last_log_index)
 {
     std::lock_guard<std::mutex> l(logs_lock);
-    for (ulong ii = start_idx; ii <= last_log_index; ++ii)
+    for (size_t ii = start_idx; ii <= last_log_index; ++ii)
     {
         auto entry = logs.find(ii);
         if (entry != logs.end())
