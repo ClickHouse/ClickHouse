@@ -4,16 +4,13 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
-#include <Interpreters/Cluster.h>
 
-#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -24,11 +21,11 @@ class Context;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -54,26 +51,16 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    void read(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -107,9 +94,9 @@ public:
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
     /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors(const DiskPtr & disk);
+    void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
@@ -129,15 +116,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
-
-    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
-
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & global_context;
+    std::unique_ptr<Context> global_context;
     Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.
@@ -168,7 +151,6 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
         bool attach_,
         ClusterPtr owned_cluster_ = {});
 
@@ -182,7 +164,6 @@ protected:
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
         bool attach,
         ClusterPtr owned_cluster_ = {});
 
@@ -196,8 +177,6 @@ protected:
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
 
-    DistributedSettings distributed_settings;
-
     struct ClusterNodeData
     {
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
@@ -209,9 +188,6 @@ protected:
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;
 
-    // For random shard index generation
-    mutable std::mutex rng_mutex;
-    pcg64 rng;
 };
 
 }

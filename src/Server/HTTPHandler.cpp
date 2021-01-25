@@ -36,7 +36,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryParameterVisitor.h>
-#include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -281,31 +280,9 @@ void HTTPHandler::processQuery(
         }
     }
 
-    /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo & client_info = context.getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.interface = ClientInfo::Interface::HTTP;
-
-    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
-        http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
-        http_method = ClientInfo::HTTPMethod::POST;
-
-    client_info.http_method = http_method;
-    client_info.http_user_agent = request.get("User-Agent", "");
-    client_info.http_referer = request.get("Referer", "");
-    client_info.forwarded_for = request.get("X-Forwarded-For", "");
-
-    /// This will also set client_info.current_user and current_address
     context.setUser(user, password, request.clientAddress());
     if (!quota_key.empty())
         context.setQuotaKey(quota_key);
-
-    /// Query sent through HTTP interface is initial.
-    client_info.initial_user = client_info.current_user;
-    client_info.initial_address = client_info.current_address;
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -341,7 +318,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!context.getClientInfo().parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -349,7 +326,7 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        context.getClientInfo().opentelemetry_tracestate = request.get("tracestate", "");
     }
 #endif
 
@@ -357,8 +334,6 @@ void HTTPHandler::processQuery(
     // OpenTelemetry fields.
     context.setCurrentQueryId(params.get("query_id",
         request.get("X-ClickHouse-Query-Id", "")));
-
-    client_info.initial_query_id = client_info.current_query_id;
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -376,10 +351,6 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Gzip;
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             http_response_compression_method = CompressionMethod::Zlib;
-        else if (std::string::npos != http_response_compression_methods.find("xz"))
-            http_response_compression_method = CompressionMethod::Xz;
-        else if (std::string::npos != http_response_compression_methods.find("zstd"))
-            http_response_compression_method = CompressionMethod::Zstd;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
@@ -585,6 +556,24 @@ void HTTPHandler::processQuery(
     /// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
+
+    ClientInfo & client_info = context.getClientInfo();
+    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    client_info.interface = ClientInfo::Interface::HTTP;
+
+    /// Query sent through HTTP interface is initial.
+    client_info.initial_user = client_info.current_user;
+    client_info.initial_query_id = client_info.current_query_id;
+    client_info.initial_address = client_info.current_address;
+
+    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
+    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+        http_method = ClientInfo::HTTPMethod::GET;
+    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
+        http_method = ClientInfo::HTTPMethod::POST;
+
+    client_info.http_method = http_method;
+    client_info.http_user_agent = request.get("User-Agent", "");
 
     auto append_callback = [&context] (ProgressCallback callback)
     {

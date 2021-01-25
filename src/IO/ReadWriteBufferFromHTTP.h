@@ -72,7 +72,10 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
+            std::stringstream error_message;
+            error_message << "Too many redirects while trying to access " << initial_uri.toString();
+
+            throw Exception(error_message.str(), ErrorCodes::TOO_MANY_REDIRECTS);
         }
     }
 

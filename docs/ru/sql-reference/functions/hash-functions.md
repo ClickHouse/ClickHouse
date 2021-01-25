@@ -153,18 +153,15 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 `URLHash(s, N)` - вычислить хэш от строки до N-го уровня в иерархии URL, без одного завершающего символа `/`, `?` или `#` на конце, если там такой есть.
 Уровни аналогичные URLHierarchy. Функция специфична для Яндекс.Метрики.
 
-## farmFingerprint64 {#farmfingerprint64}
-
 ## farmHash64 {#farmhash64}
 
-Создает 64-битное значение [FarmHash](https://github.com/google/farmhash), независимое от платформы (архитектуры сервера), что важно, если значения сохраняются или используются для разбиения данных на группы.
+Генерирует 64-х битное значение [FarmHash](https://github.com/google/farmhash).
 
 ``` sql
-farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
 
-Эти функции используют методы `Fingerprint64` и `Hash64` из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h).
+Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h) функция использует `Hash64`.
 
 **Параметры**
 

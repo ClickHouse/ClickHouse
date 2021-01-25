@@ -20,11 +20,9 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
@@ -35,7 +33,6 @@
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -197,17 +194,12 @@ try
     ThreadStatus thread_status;
     UseSSL use_ssl;
 
-    if (!config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
+    if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
         if (config().hasOption("verbose"))
             std::cerr << "There are no queries to process." << '\n';
 
         return Application::EXIT_OK;
-    }
-
-    if (config().has("query") && config().has("queries-file"))
-    {
-        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
     }
 
     shared_context = Context::createShared();
@@ -232,7 +224,6 @@ try
     registerStorages();
     registerDictionaries();
     registerDisks();
-    registerFormats();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -273,10 +264,9 @@ try
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(*global_context);
 
-    if (config().has("path"))
+    String path = global_context->getPath();
+    if (!path.empty())
     {
-        String path = global_context->getPath();
-
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 
@@ -289,7 +279,7 @@ try
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else if (!config().has("no-system-tables"))
+    else
     {
         attachSystemTables(*global_context);
     }
@@ -348,17 +338,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query;
-
-    if (config().has("query"))
-        queries_str += config().getRawString("query");
-    else
-    {
-        String queries_from_file;
-        ReadBufferFromFile in(config().getString("queries-file"));
-        readStringUntilEOF(queries_from_file, in);
-        queries_str += queries_from_file;
-    }
+    String queries_str = initial_create_query + config().getRawString("query");
 
     const auto & settings = global_context->getSettingsRef();
 
@@ -440,7 +420,7 @@ static const char * minimal_default_user_xml =
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
-    std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::stringstream ss{std::string{xml_data}};
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
@@ -523,7 +503,6 @@ void LocalServer::init(int argc, char ** argv)
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
         ("query,q", po::value<std::string>(), "query")
-        ("queries-file, qf", po::value<std::string>(), "file path with queries to execute")
         ("database,d", po::value<std::string>(), "database")
 
         ("table,N", po::value<std::string>(), "name of the initial table")
@@ -541,7 +520,6 @@ void LocalServer::init(int argc, char ** argv)
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
-        ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ;
 
@@ -572,8 +550,6 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("query"))
         config().setString("query", options["query"].as<std::string>());
-    if (options.count("queries-file"))
-        config().setString("queries-file", options["queries-file"].as<std::string>());
     if (options.count("database"))
         config().setString("default_database", options["database"].as<std::string>());
 
@@ -604,8 +580,6 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
-    if (options.count("no-system-tables"))
-        config().setBool("no-system-tables", true);
 
     std::vector<std::string> arguments;
     for (int arg_num = 1; arg_num < argc; ++arg_num)
