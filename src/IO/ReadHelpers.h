@@ -561,7 +561,7 @@ template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
     /// Optimistic path, when whole value is in buffer.
-    if (buf.position() + 10 <= buf.buffer().end())
+    if (!buf.eof() && buf.position() + 10 <= buf.buffer().end())
     {
         UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
         buf.position() += 5;
@@ -1073,7 +1073,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-Exception readException(ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 

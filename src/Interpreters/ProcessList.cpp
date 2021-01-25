@@ -60,12 +60,6 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::ProcessList(size_t max_size_)
-    : max_size(max_size_)
-{
-}
-
-
 ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, Context & query_context)
 {
     EntryPtr res;

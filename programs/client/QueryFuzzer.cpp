@@ -22,6 +22,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -403,10 +404,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (fn->is_window_function)
+        if (fn->is_window_function && fn->window_definition)
         {
-            fuzzColumnLikeExpressionList(fn->window_partition_by);
-            fuzzOrderByList(fn->window_order_by);
+            auto & def = fn->window_definition->as<ASTWindowDefinition &>();
+            fuzzColumnLikeExpressionList(def.partition_by.get());
+            fuzzOrderByList(def.order_by.get());
         }
 
         fuzz(fn->children);
@@ -477,7 +479,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
-        return;
+        table_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -491,7 +493,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
-        return;
+        column_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -505,10 +507,12 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
-        if (aliases_set.size() < 1000)
+        if (aliases_set.size() > 1000)
         {
-            aliases_set.insert(impl->alias);
+            aliases_set.clear();
         }
+
+        aliases_set.insert(impl->alias);
     }
 
     if (typeid_cast<ASTLiteral *>(ast.get()))
