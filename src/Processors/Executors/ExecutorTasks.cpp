@@ -3,6 +3,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int QUOTA_EXPIRED;
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
@@ -15,11 +23,91 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
     wake_flag = false;
 }
 
+void ExecutionThreadContext::wakeUp()
+{
+    std::lock_guard guard(mutex);
+    wake_flag = true;
+    condvar.notify_one();
+}
+
+static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
+{
+    /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
+    return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
+           && exception.code() != ErrorCodes::QUOTA_EXPIRED
+           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
+}
+
+static void executeJob(IProcessor * processor)
+{
+    try
+    {
+        processor->work();
+    }
+    catch (Exception & exception)
+    {
+        if (checkCanAddAdditionalInfoToException(exception))
+            exception.addMessage("While executing " + processor->getName());
+        throw;
+    }
+}
+
+bool ExecutionThreadContext::executeTask()
+{
+#ifndef NDEBUG
+    Stopwatch execution_time_watch;
+#endif
+
+    try
+    {
+        executeJob(node->processor);
+
+        ++node->num_executed_jobs;
+    }
+    catch (...)
+    {
+        node->exception = std::current_exception();
+    }
+
+#ifndef NDEBUG
+    context->execution_time_ns += execution_time_watch.elapsed();
+#endif
+
+    return node->exception != nullptr;
+}
+
+void ExecutionThreadContext::rethrowExceptionIfHas()
+{
+    if (exception)
+        std::rethrow_exception(exception);
+}
+
+ExecutingGraph::Node * ExecutionThreadContext::tryPopAsyncTask()
+{
+    ExecutingGraph::Node * task = nullptr;
+
+    if (!async_tasks.empty())
+    {
+        task = async_tasks.front();
+        async_tasks.pop();
+
+        if (async_tasks.empty())
+            has_async_tasks = false;
+    }
+
+    return task;
+}
+
+void ExecutionThreadContext::pushAsyncTask(ExecutingGraph::Node * async_task)
+{
+    async_tasks.push(async_task);
+    has_async_tasks = true;
+}
+
 bool ExecutorTasks::runExpandPipeline(size_t thread_number, std::function<bool()> callback)
 {
-    executor_contexts[thread_number]->task_list.emplace_back(std::move(callback));
-
-    ExecutionThreadContext::ExpandPipelineTask * desired = &executor_contexts[thread_number]->task_list.back();
+    auto & task = executor_contexts[thread_number]->addExpandPipelineTask(std::move(callback));
+    ExecutionThreadContext::ExpandPipelineTask * desired = &task;
     ExecutionThreadContext::ExpandPipelineTask * expected = nullptr;
 
     while (!expand_pipeline_task.compare_exchange_strong(expected, desired))
@@ -72,30 +160,14 @@ void ExecutorTasks::finish()
     std::lock_guard guard(executor_contexts_mutex);
 
     for (auto & context : executor_contexts)
-    {
-        {
-            std::lock_guard lock(context->mutex);
-            context->wake_flag = true;
-        }
-
-        context->condvar.notify_one();
-    }
+        context->wakeUp();
 }
 
 void ExecutorTasks::rethrowFirstThreadException()
 {
     for (auto & executor_context : executor_contexts)
-        if (executor_context->exception)
-            std::rethrow_exception(executor_context->exception);
+        executor_context->rethrowExceptionIfHas();
 }
-
-void ExecutorTasks::wakeUpExecutor(size_t thread_num)
-{
-    std::lock_guard guard(executor_contexts[thread_num]->mutex);
-    executor_contexts[thread_num]->wake_flag = true;
-    executor_contexts[thread_num]->condvar.notify_one();
-}
-
 
 void ExecutorTasks::expandPipelineStart()
 {
@@ -111,31 +183,25 @@ void ExecutorTasks::expandPipelineEnd()
         doExpandPipeline(task, false);
 }
 
-ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num)
+void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 {
-    ExecutingGraph::Node * node = nullptr;
-    auto & context = executor_contexts[thread_num];
-
     {
         std::unique_lock lock(task_queue_mutex);
 
-        if (!context->async_tasks.empty())
+        if (auto * async_task = context.tryPopAsyncTask())
         {
-            node = context->async_tasks.front();
-            context->async_tasks.pop();
+            context.setTask(async_task);
             --num_waiting_async_tasks;
-
-            if (context->async_tasks.empty())
-                context->has_async_tasks = false;
         }
         else if (!task_queue.empty())
-            node = task_queue.pop(thread_num);
+            context.setTask(task_queue.pop(context.thread_number));
 
-        if (node)
+        if (context.hasTask())
         {
             if (!task_queue.empty() && !threads_queue.empty())
             {
-                auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+                size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
+                auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
 
                 if (threads_queue.has(thread_to_wake))
                     threads_queue.pop(thread_to_wake);
@@ -143,17 +209,17 @@ ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num)
                     thread_to_wake = threads_queue.popAny();
 
                 lock.unlock();
-                wakeUpExecutor(thread_to_wake);
+                executor_contexts[thread_to_wake]->wakeUp();
             }
 
-            return node;
+            return;
         }
 
         if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
         {
             lock.unlock();
             finish();
-            return nullptr;
+            return;
         }
 
     #if defined(OS_LINUX)
@@ -164,25 +230,24 @@ ExecutingGraph::Node * ExecutorTasks::tryGetTask(size_t thread_num)
             if (!res)
                 throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
 
-            return  static_cast<ExecutingGraph::Node *>(res.data);
+            context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
         }
     #endif
 
-        threads_queue.push(thread_num);
+        threads_queue.push(context.thread_number);
     }
 
-    context->wait(finished);
-
-    return nullptr;
+    context.wait(finished);
 }
 
-void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_num)
+void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)
 {
-    auto & context = executor_contexts[thread_num];
+    context.setTask(nullptr);
+
     /// Take local task from queue if has one.
-    if (!queue.empty() && !context->has_async_tasks)
+    if (!queue.empty() && !context.hasAsyncTasks())
     {
-        context->node = queue.front();
+        context.setTask(queue.front());
         queue.pop();
     }
 
@@ -193,20 +258,22 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_
 #if defined(OS_LINUX)
         while (!async_queue.empty() && !finished)
         {
-            async_task_queue.addTask(thread_num, async_queue.front(), async_queue.front()->processor->schedule());
+            int fd = async_queue.front()->processor->schedule();
+            async_task_queue.addTask(context.thread_number, async_queue.front(), fd);
             async_queue.pop();
         }
 #endif
 
         while (!queue.empty() && !finished)
         {
-            task_queue.push(queue.front(), thread_num);
+            task_queue.push(queue.front(), context.thread_number);
             queue.pop();
         }
 
         if (!threads_queue.empty() && !task_queue.empty() && !finished)
         {
-            auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+            size_t next_thread = context.thread_number + 1 == num_threads ? 0 : (context.thread_number + 1);
+            auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
 
             if (threads_queue.has(thread_to_wake))
                 threads_queue.pop(thread_to_wake);
@@ -215,7 +282,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, size_t thread_
 
             lock.unlock();
 
-            wakeUpExecutor(thread_to_wake);
+            executor_contexts[thread_to_wake]->wakeUp();
         }
     }
 }
@@ -231,7 +298,7 @@ void ExecutorTasks::init(size_t num_threads_)
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>());
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i));
     }
 }
 
@@ -260,14 +327,13 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            executor_contexts[task.thread_num]->async_tasks.push(node);
-            executor_contexts[task.thread_num]->has_async_tasks = true;
+            executor_contexts[task.thread_num]->pushAsyncTask(node);
             ++num_waiting_async_tasks;
 
             if (threads_queue.has(task.thread_num))
             {
                 threads_queue.pop(task.thread_num);
-                wakeUpExecutor(task.thread_num);
+                executor_contexts[task.thread_num]->wakeUp();
             }
         }
     }
