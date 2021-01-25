@@ -23,7 +23,7 @@ public:
         Block header,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const PrewhereInfoPtr & prewhere_info_,
+        const PrewhereInfoListPtr & prewhere_info_list_,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
@@ -33,7 +33,7 @@ public:
 
     ~MergeTreeBaseSelectProcessor() override;
 
-    static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
+    static void executePrewhereActions(Block & block, const PrewhereInfoListPtr & prewhere_info_list);
 
 protected:
     Chunk generate() final;
@@ -49,7 +49,7 @@ protected:
     static void injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns);
     static void injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns);
 
-    static Block getHeader(Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns);
+    static Block getHeader(Block block, const PrewhereInfoListPtr & prewhere_info_list, const Names & virtual_columns);
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 
@@ -57,7 +57,7 @@ protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    PrewhereInfoPtr prewhere_info;
+    PrewhereInfoListPtr prewhere_info_list;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;

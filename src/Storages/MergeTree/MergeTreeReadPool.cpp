@@ -24,7 +24,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
     const MergeTreeData & data_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const PrewhereInfoPtr & prewhere_info_,
+    const PrewhereInfoListPtr & prewhere_info_list_,
     const bool check_columns_,
     const Names & column_names_,
     const BackoffSettings & backoff_settings_,
@@ -37,7 +37,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     , column_names{column_names_}
     , do_not_steal_tasks{do_not_steal_tasks_}
     , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
-    , prewhere_info{prewhere_info_}
+    , prewhere_info_list{prewhere_info_list_}
     , parts_ranges{std::move(parts_)}
 {
     /// parts don't contain duplicate MergeTreeDataPart's.
@@ -139,7 +139,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
+        per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
 MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const
@@ -229,7 +229,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
         per_part_sum_marks.push_back(sum_marks);
 
         auto [required_columns, required_pre_columns, should_reorder] =
-            getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
+            getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info_list, check_columns);
 
         /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
         const auto & required_column_names = required_columns.getNames();

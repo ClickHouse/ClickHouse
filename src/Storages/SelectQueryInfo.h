@@ -32,6 +32,8 @@ struct PrewhereInfo
         : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
+using PrewhereInfoList = std::vector<PrewhereInfo>;
+
 /// Same as PrewhereInfo, but with ActionsDAG
 struct PrewhereDAGInfo
 {
@@ -75,7 +77,7 @@ struct InputOrderInfo
     bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+using PrewhereInfoListPtr = std::shared_ptr<PrewhereInfoList>;
 using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
@@ -104,7 +106,7 @@ struct SelectQueryInfo
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
-    PrewhereInfoPtr prewhere_info;
+    PrewhereInfoListPtr prewhere_info_list;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
