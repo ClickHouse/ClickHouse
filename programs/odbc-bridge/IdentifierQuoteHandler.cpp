@@ -3,6 +3,7 @@
 #if USE_ODBC
 
 #    include <DataTypes/DataTypeFactory.h>
+#    include <Server/HTTP/HTMLForm.h>
 #    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #    include <IO/WriteHelpers.h>
 #    include <Parsers/ParserQueryWithOutput.h>
@@ -10,7 +11,6 @@
 #    include <Poco/Data/ODBC/ODBCException.h>
 #    include <Poco/Data/ODBC/SessionImpl.h>
 #    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTMLForm.h>
 #    include <Poco/Net/HTTPServerRequest.h>
 #    include <Poco/Net/HTTPServerResponse.h>
 #    include <common/logger_useful.h>
@@ -24,7 +24,7 @@ namespace DB
 {
 void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    Poco::Net::HTMLForm params(request, request.getStream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)

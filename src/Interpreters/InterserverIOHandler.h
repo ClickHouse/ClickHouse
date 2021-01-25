@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
 }
 
+class HTMLForm;
 class HTTPServerResponse;
 
 /** Query processor from other servers.
@@ -33,7 +34,7 @@ class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+    virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.

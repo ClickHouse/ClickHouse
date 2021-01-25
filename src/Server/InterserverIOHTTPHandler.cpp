@@ -4,10 +4,10 @@
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Common/HTMLForm.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 
@@ -60,7 +60,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
-    ReadBufferFromIStream body(request.getStream());
+    auto & body = request.getStream();
 
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing

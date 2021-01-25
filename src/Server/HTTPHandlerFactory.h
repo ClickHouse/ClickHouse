@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Interpreters/AsynchronousMetrics.h>
+#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
-#include <Common/HTMLForm.h>  // TODO: move to Server/HTTP
 #include <Common/StringUtils/StringUtils.h>
 #include <common/logger_useful.h>
 

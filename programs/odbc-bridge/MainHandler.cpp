@@ -17,6 +17,7 @@
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
+#include <Server/HTTP/HTMLForm.h>
 
 #include <mutex>
 #include <memory>
@@ -83,7 +84,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 
 void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    Poco::Net::HTMLForm params(request);
+    HTMLForm params(request);
     if (mode == "read")
         params.read(request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -163,9 +164,8 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 #endif
 
             auto pool = getPool(connection_string);
-            ReadBufferFromIStream read_buf(request.getStream());
-            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
-                                                                   context, max_block_size);
+            auto & read_buf = request.getStream();
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);

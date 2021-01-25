@@ -72,7 +72,7 @@ public:
             next();
     }
 
-    virtual ~ReadBuffer() {}
+    virtual ~ReadBuffer() = default;
 
 
     /** Unlike std::istream, it returns true if all data was read
@@ -192,7 +192,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] void throwReadAfterEOF()
+    [[noreturn]] static inline void throwReadAfterEOF()
     {
         throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
@@ -200,6 +200,37 @@ private:
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+
+/// Due to inconsistencies in ReadBuffer-family interfaces:
+///  - some require to fully wrap underlying buffer and own it,
+///  - some just wrap the reference without ownership,
+/// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
+/// The uniqueness of such wraps is responsibility of the code author.
+inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
+{
+    class ReadBufferWrapper : public ReadBuffer
+    {
+        public:
+            explicit ReadBufferWrapper(ReadBuffer & buf_) : ReadBuffer(buf_.position(), 0), buf(buf_) {}
+
+        private:
+            ReadBuffer & buf;
+
+            bool nextImpl() override
+            {
+                buf.position() = position();
+
+                if (!buf.next())
+                    return false;
+
+                working_buffer = buf.buffer();
+
+                return true;
+            }
+    };
+
+    return std::make_unique<ReadBufferWrapper>(buf);
+}
 
 
 }

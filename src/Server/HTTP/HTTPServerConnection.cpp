@@ -25,7 +25,7 @@ void HTTPServerConnection::run()
             if (!stopped)
             {
                 HTTPServerResponse response(session);
-                HTTPServerRequest request(response, session, params);
+                HTTPServerRequest request(response, session);
 
                 Poco::Timestamp now;
                 response.setDate(now);

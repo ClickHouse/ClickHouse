@@ -240,8 +240,6 @@ void HTTPHandler::processQuery(
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    std::istream & istr = request.getStream();
-
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
     std::string user = request.get("X-ClickHouse-User", "");
@@ -350,10 +348,8 @@ void HTTPHandler::processQuery(
     }
 #endif
 
-    // Set the query id supplied by the user, if any, and also update the
-    // OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id",
-        request.get("X-ClickHouse-Query-Id", "")));
+    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context.setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
     client_info.initial_query_id = client_info.current_query_id;
 
@@ -457,8 +453,8 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromIStream>(istr), chooseCompressionMethod({}, http_request_compression_method_str));
+    auto in_post = wrapReadBufferWithCompressionMethod(
+        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -606,27 +602,30 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        Poco::Net::StreamSocket & socket = request.socket();
+        /// FIXME: with ReadBufferFromPocoSocket this code should become unnecessary,
+        ///        check this statement with 00834_cancel_http_readonly_queries_on_client_close.sh
 
-        append_callback([&context, &socket](const Progress &)
-        {
-            /// Assume that at the point this method is called no one is reading data from the socket any more.
-            /// True for read-only queries.
-            try
-            {
-                char b;
-                int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
-                if (status == 0)
-                    context.killCurrentQuery();
-            }
-            catch (Poco::TimeoutException &)
-            {
-            }
-            catch (...)
-            {
-                context.killCurrentQuery();
-            }
-        });
+        // Poco::Net::StreamSocket & socket = request.socket();
+
+        // append_callback([&context, &socket](const Progress &)
+        // {
+        //     /// Assume that at the point this method is called no one is reading data from the socket any more.
+        //     /// True for read-only queries.
+        //     try
+        //     {
+        //         char b;
+        //         int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
+        //         if (status == 0)
+        //             context.killCurrentQuery();
+        //     }
+        //     catch (Poco::TimeoutException &)
+        //     {
+        //     }
+        //     catch (...)
+        //     {
+        //         context.killCurrentQuery();
+        //     }
+        // });
     }
 
     customizeContext(request, context);
@@ -661,6 +660,8 @@ void HTTPHandler::trySendExceptionToClient(
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
+        /// FIXME: make sure that no one else is reading from the same stream at the moment.
+
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
@@ -668,7 +669,7 @@ void HTTPHandler::trySendExceptionToClient(
             && !request.getStream().eof()
             && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
-            request.getStream().ignore(std::numeric_limits<std::streamsize>::max());
+            request.getStream().ignoreAll();
         }
 
         bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||

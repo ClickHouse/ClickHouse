@@ -3,11 +3,11 @@
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
+#include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/HTMLForm.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/Net/HTTPRequestHandlerFactory.h>

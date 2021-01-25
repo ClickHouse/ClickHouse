@@ -13,7 +13,9 @@ namespace DB
 class LimitReadBuffer : public ReadBuffer
 {
 private:
-    ReadBuffer & in;
+    ReadBuffer * in;
+    bool owns_in;
+
     UInt64 limit;
     bool throw_exception;
     std::string exception_message;
@@ -22,6 +24,7 @@ private:
 
 public:
     LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_, std::string exception_message_ = {});
+    LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_, bool throw_exception_, std::string exception_message_ = {});
     ~LimitReadBuffer() override;
 };
 
