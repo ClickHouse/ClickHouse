@@ -151,7 +151,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     pattern = '{test} > {stdout} 2> {stderr}'
 
     if ext == '.sql':
-        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} --log_comment='{test}' < " + pattern
 
     command = pattern.format(**params)
 
