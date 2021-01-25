@@ -62,6 +62,8 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
 void ColumnDescription::writeText(WriteBuffer & buf) const
 {
+    /// NOTE: Serialization format is insane.
+
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
     writeEscapedString(type->getName(), buf);
@@ -99,32 +101,41 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
 
 void ColumnDescription::readText(ReadBuffer & buf)
 {
-    ParserColumnDeclaration column_parser(/* require type */ true);
-    String column_line;
-    readEscapedStringUntilEOL(column_line, buf);
-    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
+    readBackQuotedString(name, buf);
+    assertChar(' ', buf);
+
+    String type_string;
+    readEscapedString(type_string, buf);
+    type = DataTypeFactory::instance().get(type_string);
+
+    if (checkChar('\t', buf))
     {
-        name = col_ast->name;
-        type = DataTypeFactory::instance().get(col_ast->type);
+        String modifiers;
+        readEscapedStringUntilEOL(modifiers, buf);
 
-        if (col_ast->default_expression)
+        ParserColumnDeclaration column_parser(/* require type */ true);
+        ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+        if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
-            default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-            default_desc.expression = std::move(col_ast->default_expression);
+            if (col_ast->default_expression)
+            {
+                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
+                default_desc.expression = std::move(col_ast->default_expression);
+            }
+
+            if (col_ast->comment)
+                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
+
+            if (col_ast->codec)
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
+
+            if (col_ast->ttl)
+                ttl = col_ast->ttl;
         }
-
-        if (col_ast->comment)
-            comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
-
-        if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false);
-
-        if (col_ast->ttl)
-            ttl = col_ast->ttl;
+        else
+            throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
     }
-    else
-        throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 

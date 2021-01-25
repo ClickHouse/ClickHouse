@@ -3,12 +3,14 @@
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
 
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
 
 namespace DB
 {
@@ -58,6 +60,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
         else
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}{}", name, extra_info);
     }
+
     return res;
 }
 
@@ -82,16 +85,29 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const Context & context) const
 {
     String name = getAliasToOrName(name_param);
+    FunctionOverloadResolverImplPtr res;
 
     auto it = functions.find(name);
     if (functions.end() != it)
-        return it->second(context);
+        res = it->second(context);
+    else
+    {
+        it = case_insensitive_functions.find(Poco::toLower(name));
+        if (case_insensitive_functions.end() != it)
+            res = it->second(context);
+    }
 
-    it = case_insensitive_functions.find(Poco::toLower(name));
-    if (case_insensitive_functions.end() != it)
-        return it->second(context);
+    if (!res)
+        return nullptr;
 
-    return {};
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+    }
+
+    return res;
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(

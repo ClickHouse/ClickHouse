@@ -197,11 +197,14 @@ def need_retry(stderr):
     return any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
-def get_processlist(client_cmd):
+def get_processlist(args):
     try:
-        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True).decode('utf-8')
-    except:
-        return "" #  server seems dead
+        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=10)
+        return False, stdout.decode('utf-8')
+    except Exception as ex:
+        print("Exception", ex)
+        return True, ""
 
 
 # collect server stacktraces using gdb
@@ -274,7 +277,9 @@ def run_tests_array(all_tests_with_params):
 
     def print_test_time(test_time):
         if args.print_time:
-            print(" {0:.2f} sec.".format(test_time), end='')
+            return " {0:.2f} sec.".format(test_time)
+        else:
+            return ''
 
     if len(all_tests):
         print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
@@ -291,41 +296,54 @@ def run_tests_array(all_tests_with_params):
         (name, ext) = os.path.splitext(case)
 
         try:
-            sys.stdout.flush()
-            sys.stdout.write("{0:72}".format(name + ": "))
+            status = ''
+            is_concurrent = multiprocessing.current_process().name != "MainProcess";
+            if not is_concurrent:
+                sys.stdout.flush()
+                sys.stdout.write("{0:72}".format(name + ": "))
+                # This flush is needed so you can see the test name of the long
+                # running test before it will finish. But don't do it in parallel
+                # mode, so that the lines don't mix.
+                sys.stdout.flush()
+            else:
+                status = "{0:72}".format(name + ": ");
 
             if args.skip and any(s in name for s in args.skip):
-                print(MSG_SKIPPED + " - skip")
+                status += MSG_SKIPPED + " - skip\n"
                 skipped_total += 1
             elif not args.zookeeper and ('zookeeper' in name
                     or 'replica' in name):
-                print(MSG_SKIPPED + " - no zookeeper")
+                status += MSG_SKIPPED + " - no zookeeper\n"
                 skipped_total += 1
             elif not args.shard and ('shard' in name
                     or 'distributed' in name
                     or 'global' in name):
-                print(MSG_SKIPPED + " - no shard")
+                status += MSG_SKIPPED + " - no shard\n"
                 skipped_total += 1
             elif not args.no_long and ('long' in name
                     # Tests for races and deadlocks usually are runned in loop
                     #  for significant amount of time
                     or 'deadlock' in name
                     or 'race' in name):
-                print(MSG_SKIPPED + " - no long")
+                status += MSG_SKIPPED + " - no long\n"
                 skipped_total += 1
             else:
                 disabled_file = os.path.join(suite_dir, name) + '.disabled'
 
                 if os.path.exists(disabled_file) and not args.disabled:
                     message = open(disabled_file, 'r').read()
-                    print(MSG_SKIPPED + " - " + message)
+                    status += MSG_SKIPPED + " - " + message + "\n"
                 else:
 
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-                        clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                        failed_to_check = False
+                        try:
+                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                        except:
+                            failed_to_check = True
 
-                        if clickhouse_proc.returncode != 0:
+                        if failed_to_check or clickhouse_proc.returncode != 0:
                             failures += 1
                             print("Server does not respond to health check")
                             SERVER_DIED = True
@@ -345,11 +363,11 @@ def run_tests_array(all_tests_with_params):
                                 raise
 
                         failures += 1
-                        print(MSG_FAIL, end='')
-                        print_test_time(total_time)
-                        print(" - Timeout!")
+                        status += MSG_FAIL
+                        status += print_test_time(total_time)
+                        status += " - Timeout!\n"
                         if stderr:
-                            print(stderr)
+                            status += stderr
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
@@ -362,12 +380,12 @@ def run_tests_array(all_tests_with_params):
                         if proc.returncode != 0:
                             failures += 1
                             failures_chain += 1
-                            print(MSG_FAIL, end='')
-                            print_test_time(total_time)
-                            print(" - return code {}".format(proc.returncode))
+                            status += MSG_FAIL
+                            status += print_test_time(total_time)
+                            status += ' - return code {}\n'.format(proc.returncode)
 
                             if stderr:
-                                print(stderr)
+                                status += stderr
 
                             # Stop on fatal errors like segmentation fault. They are sent to client via logs.
                             if ' <Fatal> ' in stderr:
@@ -377,46 +395,51 @@ def run_tests_array(all_tests_with_params):
                                 SERVER_DIED = True
 
                             if os.path.isfile(stdout_file):
-                                print(", result:\n")
-                                print('\n'.join(open(stdout_file).read().split('\n')[:100]))
+                                status += ", result:\n\n"
+                                status += '\n'.join(
+                                    open(stdout_file).read().split('\n')[:100])
+                                status += '\n';
 
                         elif stderr:
                             failures += 1
                             failures_chain += 1
-                            print(MSG_FAIL, end='')
-                            print_test_time(total_time)
-                            print(" - having stderror:\n{}".format(
-                                '\n'.join(stderr.split('\n')[:100])))
+                            status += MSG_FAIL
+                            status += print_test_time(total_time)
+                            status += " - having stderror:\n{}\n".format(
+                                '\n'.join(stderr.split('\n')[:100]))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
-                            print(MSG_FAIL, end='')
-                            print_test_time(total_time)
-                            print(" - having exception:\n{}".format(
-                                '\n'.join(stdout.split('\n')[:100])))
+                            status += MSG_FAIL
+                            status += print_test_time(total_time)
+                            status += " - having exception:\n{}\n".format(
+                                '\n'.join(stdout.split('\n')[:100]))
                         elif not os.path.isfile(reference_file):
-                            print(MSG_UNKNOWN, end='')
-                            print_test_time(total_time)
-                            print(" - no reference file")
+                            status += MSG_UNKNOWN
+                            status += print_test_time(total_time)
+                            status += " - no reference file\n"
                         else:
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout=PIPE)
 
                             if result_is_different:
                                 diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
                                 failures += 1
-                                print(MSG_FAIL, end='')
-                                print_test_time(total_time)
-                                print(" - result differs with reference:\n{}".format(diff))
+                                status += MSG_FAIL
+                                status += print_test_time(total_time)
+                                status += " - result differs with reference:\n{}\n".format(diff)
                             else:
                                 passed_total += 1
                                 failures_chain = 0
-                                print(MSG_OK, end='')
-                                print_test_time(total_time)
-                                print()
+                                status += MSG_OK
+                                status += print_test_time(total_time)
+                                status += "\n"
                                 if os.path.exists(stdout_file):
                                     os.remove(stdout_file)
                                 if os.path.exists(stderr_file):
                                     os.remove(stderr_file)
+
+            sys.stdout.write(status)
+            sys.stdout.flush()
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
             raise e
@@ -568,7 +591,7 @@ def main(args):
     if not check_server_started(args.client, args.server_check_retries):
         raise Exception(
             "Server is not responding. Cannot execute 'SELECT 1' query. \
-            Note: if you are using unbundled mode, you also have to specify -c option.")
+            Note: if you are using split build, you may have to specify -c option.")
 
     build_flags = collect_build_flags(args.client)
     if args.antlr:
@@ -633,7 +656,10 @@ def main(args):
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
         (name, ext) = os.path.splitext(case)
-        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py')
+        # We could also test for executable files (os.access(case_file, os.X_OK),
+        # but it interferes with 01610_client_spawn_editor.editor, which is invoked
+        # as a query editor in the test, and must be marked as executable.
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect')
 
     def sute_key_func(item):
        if args.order == 'random':
@@ -741,14 +767,17 @@ def main(args):
 
         # Some queries may execute in background for some time after test was finished. This is normal.
         for n in range(1, 60):
-            processlist = get_processlist(args.client)
-            if not processlist:
+            timeout, processlist = get_processlist(args)
+            if timeout or not processlist:
                 break
             sleep(1)
 
-        if processlist:
-            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
-            print(processlist)
+        if timeout or processlist:
+            if processlist:
+                print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+                print(processlist)
+            else:
+                print(colored("Seems like server hung and cannot respond to queries", "red", attrs=["bold"]))
 
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)
@@ -846,10 +875,10 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', help='Path to tmp dir')
 
     parser.add_argument('-b', '--binary', default='clickhouse',
-        help='Path to clickhouse (if bundled, clickhouse-server otherwise) binary or name of binary in PATH')
+        help='Path to clickhouse (if monolithic build, clickhouse-server otherwise) binary or name of binary in PATH')
 
     parser.add_argument('-c', '--client',
-        help='Path to clickhouse-client (if unbundled, useless otherwise) binary of name of binary in PATH')
+        help='Path to clickhouse-client (if split build, useless otherwise) binary of name of binary in PATH')
 
     parser.add_argument('--extract_from_config', help='extract-from-config program')
     parser.add_argument('--configclient', help='Client config (if you use not default ports)')
@@ -930,11 +959,11 @@ if __name__ == '__main__':
         if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
 
-            print("Using " + args.client + " as client program (expecting unbundled mode)")
+            print("Using " + args.client + " as client program (expecting split build)")
         elif find_binary(args.binary):
             args.client = args.binary + ' client'
 
-            print("Using " + args.client + " as client program (expecting bundled mode)")
+            print("Using " + args.client + " as client program (expecting monolithic build)")
         else:
             print("No 'clickhouse' or 'clickhouse-client' client binary found", file=sys.stderr)
             parser.print_help()

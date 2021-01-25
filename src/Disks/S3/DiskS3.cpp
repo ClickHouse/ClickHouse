@@ -878,7 +878,7 @@ void DiskS3::setReadOnly(const String & path)
     metadata.save();
 }
 
-int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
+int DiskS3::open(const String & /*path*/, int /*flags*/) const
 {
     throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
 }

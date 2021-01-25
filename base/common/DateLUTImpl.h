@@ -229,8 +229,12 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
+        UInt16 idx = year - DATE_LUT_MIN_YEAR;
+        if (unlikely(idx >= DATE_LUT_YEARS))
+            return 31;  /// Implementation specific behaviour on overflow.
+
         /// 32 makes arithmetic more simple.
-        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
+        DayNum any_day_of_month = DayNum(years_lut[idx] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
@@ -767,7 +771,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline time_t addDays(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -780,7 +784,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline time_t addWeeks(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
@@ -812,7 +816,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addMonths(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addMonths(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -836,12 +840,12 @@ public:
         }
     }
 
-    inline time_t addQuarters(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addQuarters(time_t t, Int64 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addQuarters(DayNum d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
