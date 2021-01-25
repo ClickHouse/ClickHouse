@@ -314,21 +314,26 @@ void StorageBuffer::read(
     }
     else
     {
-        if (query_info.prewhere_info)
+        if (query_info.prewhere_info_list)
         {
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<FilterTransform>(
-                        header, query_info.prewhere_info->prewhere_actions,
-                        query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
-            });
-
-            if (query_info.prewhere_info->alias_actions)
+            for (const auto & prewhere_info : *query_info.prewhere_info_list)
             {
                 pipe_from_buffers.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+                    return std::make_shared<FilterTransform>(
+                        header, prewhere_info.prewhere_actions,
+                        prewhere_info.prewhere_column_name,
+                        prewhere_info.remove_prewhere_column);
                 });
+
+                if (prewhere_info.alias_actions)
+                {
+                    pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(
+                            header, prewhere_info.alias_actions);
+                    });
+                }
             }
         }
 

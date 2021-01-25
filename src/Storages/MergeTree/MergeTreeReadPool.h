@@ -71,10 +71,9 @@ private:
 public:
     MergeTreeReadPool(
         const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
-        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_, const PrewhereInfoPtr & prewhere_info_,
-        const bool check_columns_, const Names & column_names_,
-        const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
-        const bool do_not_steal_tasks_ = false);
+        RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_,
+        const PrewhereInfoListPtr & prewhere_info_list, const bool check_columns_, const Names & column_names_,
+        const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_, const bool do_not_steal_tasks_ = false);
 
     MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
 
@@ -107,7 +106,7 @@ private:
     std::vector<NamesAndTypesList> per_part_pre_columns;
     std::vector<char> per_part_should_reorder;
     std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
-    PrewhereInfoPtr prewhere_info;
+    PrewhereInfoListPtr prewhere_info_list;
 
     struct Part
     {

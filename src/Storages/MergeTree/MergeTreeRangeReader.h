@@ -13,7 +13,8 @@ using ColumnUInt8 = ColumnVector<UInt8>;
 class IMergeTreeReader;
 class MergeTreeIndexGranularity;
 struct PrewhereInfo;
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+using PrewhereInfoList = std::vector<PrewhereInfo>;
+using PrewhereInfoListPtr = std::shared_ptr<PrewhereInfoList>;
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
@@ -24,7 +25,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereInfoPtr & prewhere_,
+        const PrewhereInfoListPtr & prewhere_info_list,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
@@ -153,8 +154,8 @@ public:
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
 
-        /// Set filter or replace old one. Filter must have more zeroes than previous.
-        void setFilter(const ColumnPtr & new_filter);
+        /// Apply a filter on top of the existing one (AND'ed) or set it if there isn't any.
+        void addFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
         void optimize(bool can_read_incomplete_granules);
         /// Remove all rows from granules.
@@ -212,12 +213,12 @@ private:
 
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
-    void executePrewhereActionsAndFilterColumns(ReadResult & result);
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, const PrewhereInfo & prewhere_info);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
-    PrewhereInfoPtr prewhere;
+    PrewhereInfoListPtr prewhere_info_list;
 
     Stream stream;
 

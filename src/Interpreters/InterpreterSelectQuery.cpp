@@ -1186,36 +1186,40 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
 
-    if (query_info.prewhere_info)
+    if (query_info.prewhere_info_list)
     {
-        if (query_info.prewhere_info->alias_actions)
+        for (const auto & prewhere_info : *query_info.prewhere_info_list)
         {
+            if (prewhere_info.alias_actions)
+            {
+                pipe.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                        header, prewhere_info.alias_actions);
+                });
+            }
+
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ExpressionTransform>(header, query_info.prewhere_info->alias_actions);
+                return std::make_shared<FilterTransform>(
+                    header,
+                    prewhere_info.prewhere_actions,
+                    prewhere_info.prewhere_column_name,
+                    prewhere_info.remove_prewhere_column);
             });
-        }
 
-        pipe.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<FilterTransform>(
-                header,
-                query_info.prewhere_info->prewhere_actions,
-                query_info.prewhere_info->prewhere_column_name,
-                query_info.prewhere_info->remove_prewhere_column);
-        });
-
-        // To remove additional columns
-        // In some cases, we did not read any marks so that the pipeline.streams is empty
-        // Thus, some columns in prewhere are not removed as expected
-        // This leads to mismatched header in distributed table
-        if (query_info.prewhere_info->remove_columns_actions)
-        {
-            pipe.addSimpleTransform([&](const Block & header)
+            // To remove additional columns
+            // In some cases, we did not read any marks so that the pipeline.streams is empty
+            // Thus, some columns in prewhere are not removed as expected
+            // This leads to mismatched header in distributed table
+            if (prewhere_info.remove_columns_actions)
             {
-                return std::make_shared<ExpressionTransform>(
-                        header, query_info.prewhere_info->remove_columns_actions);
-            });
+                pipe.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                        header, prewhere_info.remove_columns_actions);
+                });
+            }
         }
     }
 
@@ -1552,17 +1556,23 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (prewhere_info)
         {
-            query_info.prewhere_info = std::make_shared<PrewhereInfo>(
-                    std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions),
-                    prewhere_info->prewhere_column_name);
+            if (!query_info.prewhere_info_list)
+                query_info.prewhere_info_list = std::make_shared<PrewhereInfoList>();
+
+            query_info.prewhere_info_list->emplace_back(
+                std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions),
+                prewhere_info->prewhere_column_name);
+
+            auto & new_prewhere_info = query_info.prewhere_info_list->back();
 
             if (prewhere_info->alias_actions)
-                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
-            if (prewhere_info->remove_columns_actions)
-                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
+                new_prewhere_info.alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
 
-            query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-            query_info.prewhere_info->need_filter = prewhere_info->need_filter;
+            if (prewhere_info->remove_columns_actions)
+                new_prewhere_info.remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
+
+            new_prewhere_info.remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            new_prewhere_info.need_filter = prewhere_info->need_filter;
         }
 
         /// Create optimizer with prepared actions.
