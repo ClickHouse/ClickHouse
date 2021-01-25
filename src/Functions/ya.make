@@ -332,6 +332,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    leftPadString.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
