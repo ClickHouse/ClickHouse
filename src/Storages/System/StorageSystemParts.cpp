@@ -139,9 +139,6 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insertDefault();
         }
 
-        if (has_state_column)
-            columns_[i++]->insert(part->stateString());
-
         MinimalisticDataPartChecksums helper;
         helper.computeTotalChecksums(part->checksums);
 
@@ -184,6 +181,10 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
+
+        /// _state column should be the latest.
+        if (has_state_column)
+            columns_[i++]->insert(part->stateString());
     }
 }
 
