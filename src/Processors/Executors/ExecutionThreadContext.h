@@ -5,23 +5,43 @@
 namespace DB
 {
 
+/// Task to stop execution of all threads (now used to expand pipeline).
+/// Is needed to ensure that graph is not changed by any other thread while calling the callback.
+class StoppingPipelineTask
+{
+public:
+    /// Data which is needed to manage many StoppingPipelineTasks
+    struct Data
+    {
+        std::atomic<size_t> num_processing_executors = 0;
+        std::atomic<StoppingPipelineTask *> task = nullptr;
+    };
+
+private:
+    std::function<bool()> callback;
+    bool result = true;
+
+    size_t num_waiting_processing_threads = 0;
+    std::mutex mutex;
+    std::condition_variable condvar;
+
+public:
+    explicit StoppingPipelineTask(std::function<bool()> callback_) : callback(callback_) {}
+
+    bool executeTask(Data & data);
+
+    /// This methods are called to start/stop concurrent reading of pipeline graph.
+    /// Do not use RAII cause exception may be thrown.
+    static void enterConcurrentReadSection(Data & data);
+    static void exitConcurrentReadSection(Data & data);
+
+private:
+    bool executeTask(Data & data, bool on_enter);
+};
+
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
 {
-public:
-
-    /// Task to stop execution of all threads (now used to expand pipeline).
-    /// Is needed to ensure that graph is not changed by any other thread while calling the callback.
-    struct StoppingPipelineTask
-    {
-        std::function<bool()> callback;
-        size_t num_waiting_processing_threads = 0;
-        std::mutex mutex;
-        std::condition_variable condvar;
-
-        explicit StoppingPipelineTask(std::function<bool()> callback_) : callback(callback_) {}
-    };
-
 private:
     /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
     /// This can be solved by using atomic shard ptr.
