@@ -112,28 +112,34 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys("test_keeper_server.raft_configuration", keys);
+    bool my_can_become_leader = true;
 
-    std::vector<std::tuple<int, std::string, int>> server_configs;
+    std::vector<std::tuple<int, std::string, int, bool>> server_configs;
     for (const auto & server_key : keys)
     {
         int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
         std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
         int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
+        bool can_become_leader = config.getBool("test_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
         if (server_id == myid)
         {
             myhostname = hostname;
             myport = port;
+            my_can_become_leader = can_become_leader;
         }
         else
         {
-            server_configs.emplace_back(server_id, hostname, port);
+            server_configs.emplace_back(server_id, hostname, port, can_become_leader);
         }
     }
 
-    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
+    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, my_can_become_leader);
     server->startup();
-    for (const auto & [id, hostname, port] : server_configs)
-        server->addServer(id, hostname + ":" + std::to_string(port));
+    if (my_can_become_leader)
+    {
+        for (const auto & [id, hostname, port, can_become_leader] : server_configs)
+            server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader);
+    }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 

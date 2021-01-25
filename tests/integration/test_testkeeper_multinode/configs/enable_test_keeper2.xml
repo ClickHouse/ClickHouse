@@ -1,0 +1,28 @@
+<yandex>
+    <test_keeper_server>
+        <tcp_port>9181</tcp_port>
+        <operation_timeout_ms>10000</operation_timeout_ms>
+        <session_timeout_ms>30000</session_timeout_ms>
+        <server_id>2</server_id>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>44444</port>
+                <can_become_leader>true</can_become_leader>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>node2</hostname>
+                <port>44444</port>
+                <can_become_leader>false</can_become_leader>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>44444</port>
+                <can_become_leader>false</can_become_leader>
+            </server>
+        </raft_configuration>
+    </test_keeper_server>
+</yandex>

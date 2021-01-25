@@ -842,8 +842,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    /// Initialize test keeper RAFT. Do nothing if no test_keeper_server in config.
-    global_context->initializeTestKeeperStorageDispatcher();
+    if (config().has("test_keeper_server"))
+    {
+        /// Initialize test keeper RAFT. Do nothing if no test_keeper_server in config.
+        global_context->initializeTestKeeperStorageDispatcher();
+    }
 
     for (const auto & listen_host : listen_hosts)
     {

@@ -19,19 +19,20 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_)
+NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_, bool can_become_leader_)
     : server_id(server_id_)
     , hostname(hostname_)
     , port(port_)
     , endpoint(hostname + ":" + std::to_string(port))
+    , can_become_leader(can_become_leader_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>())
     , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, endpoint))
 {
 }
 
-bool NuKeeperServer::addServer(int server_id_, const std::string & server_uri_)
+bool NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_)
 {
-    nuraft::srv_config config(server_id_, server_uri_);
+    nuraft::srv_config config(server_id_, 0, server_uri_, "", /*FIXME follower=*/ !can_become_leader_);
     auto ret1 = raft_instance->add_srv(config);
     return ret1->get_result_code() == nuraft::cmd_result_code::OK;
 }
@@ -69,7 +70,9 @@ void NuKeeperServer::startup()
 
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests)
 {
-    auto responses = putRequests(expired_requests);
+    TestKeeperStorage::ResponsesForSessions responses;
+    if (can_become_leader)
+        responses = putRequests(expired_requests);
     if (!launcher.shutdown(5))
         LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
     return responses;
