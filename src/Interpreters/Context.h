@@ -228,6 +228,23 @@ private:
 
     QueryAccessInfo query_access_info;
 
+    /// Record names of created objects of factories (for testing, etc)
+    struct QueryFactoriesInfo
+    {
+        std::unordered_set<std::string> aggregate_functions;
+        std::unordered_set<std::string> aggregate_function_combinators;
+        std::unordered_set<std::string> database_engines;
+        std::unordered_set<std::string> data_type_families;
+        std::unordered_set<std::string> dictionaries;
+        std::unordered_set<std::string> formats;
+        std::unordered_set<std::string> functions;
+        std::unordered_set<std::string> storages;
+        std::unordered_set<std::string> table_functions;
+    };
+
+    /// Needs to be chandged while having const context in factories methods
+    mutable QueryFactoriesInfo query_factories_info;
+
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
@@ -395,6 +412,23 @@ public:
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
+
+    /// Supported factories for records in query_log
+    enum class QueryLogFactories
+    {
+        AggregateFunction,
+        AggregateFunctionCombinator,
+        Database,
+        DataType,
+        Dictionary,
+        Format,
+        Function,
+        Storage,
+        TableFunction
+    };
+
+    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
