@@ -263,7 +263,7 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 ## REPLACE TABLE {#replace-table-query}
 
-'REPLACE' query allows you to update the data in the table atomically.
+'REPLACE' query allows you to update the table atomically.
 
 !!!note "Note"
     This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
