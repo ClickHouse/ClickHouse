@@ -44,7 +44,9 @@ xfails = {
     "compatibility/mysql/:engine/encrypt/mysql_datatype='TEXT'/:":
      [(Fail, issue_18250)],
     "compatibility/mysql/:engine/encrypt/mysql_datatype='VARCHAR(100)'/:":
-     [(Fail, issue_18250)]
+     [(Fail, issue_18250)],
+    "compatibility/mysql/:engine/encrypt/datatype='UInt8'/:":
+     [(Fail, "Not expected to work at all. The test is added by mistake. The TestFlows system is so overengineered that I don't know how to remove the test properly.")],
 }
 
 @TestFeature
