@@ -270,6 +270,7 @@ function run_tests
         01318_encrypt                           # Depends on OpenSSL
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
+        01667_aes_args_check                    # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -331,6 +332,9 @@ function run_tests
         # nc - command not found
         01601_proxy_protocol
         01622_defaults_for_url_engine
+
+        # JSON functions
+        01666_blns
     )
 
     time clickhouse-test -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
