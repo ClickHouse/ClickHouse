@@ -665,4 +665,42 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 └────────────────────────────────────────────┘
 ```
 
+## FROM\_UNIXTIME {#fromunixfime}
+
+Когда есть только один аргумент целочисленного типа, он действует так же, как `toDateTime` и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT FROM_UNIXTIME(423543535);
+```
+
+Ответ:
+
+```text
+┌─FROM_UNIXTIME(423543535)─┐
+│      1983-06-04 10:58:55 │
+└──────────────────────────┘
+```
+
+В случае, когда есть два аргумента, первый типа `Integer` или `DateTime`, а второй — является строкой постоянного формата, функция работает таким же образом, как `formatdatetime` и возвращает значение типа `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
+```
+
+Ответ:
+
+```text
+┌─DateTime────────────┐
+│ 2009-02-11 14:42:23 │
+└─────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/date_time_functions/) <!--hide-->
