@@ -202,6 +202,11 @@ struct DynamicTableEntry
 };
 
 
+/// These symbols have hidden linkage to avoid them being called through PLT.
+/// It allows to use it before dynamic linking being performed.
+namespace
+{
+
 /// Relocations relative to the base address. The meaning - simply add the base address.
 struct Relocation
 {
@@ -230,12 +235,6 @@ struct RelocationWithAddend
     }
 };
 
-
-
-/// These symbols have hidden linkage to avoid them being called through PLT.
-/// It allows to use it before dynamic linking being performed.
-namespace
-{
 
 NO_INLINE long internal_syscall_asm(long x0 = 0, long x1 = 0, long x2 = 0, long x3 = 0, long x4 = 0, long x5 = 0, long x6 = 0)
 {
