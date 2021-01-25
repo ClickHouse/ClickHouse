@@ -196,7 +196,7 @@ public:
         MutableColumnPtr res = return_type->createColumn();
 
         /// Special case if first instruction condition is always true and source is constant
-        if (instructions.size() == 1 && instructions.front().source_is_constant 
+        if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
         {
             auto & instruction = instructions.front();
