@@ -81,8 +81,7 @@ public:
         ExecStatus status = ExecStatus::Idle;
         std::mutex status_mutex;
 
-        /// Job and exception. Job calls processor->work() inside and catch exception.
-        std::function<void()> job;
+        /// Exception which happened after processor execution.
         std::exception_ptr exception;
 
         /// Last state for profiling.

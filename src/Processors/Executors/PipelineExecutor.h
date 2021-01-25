@@ -70,7 +70,6 @@ private:
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
     bool tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & edge, Queue & queue, Queue & async_queue, size_t thread_number);
-    static void addJob(ExecutingGraph::Node * execution_state);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.

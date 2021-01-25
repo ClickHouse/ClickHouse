@@ -12,8 +12,10 @@ namespace DB
 {
 
 /// Context for each thread.
-struct ExecutionThreadContext
+class ExecutionThreadContext
 {
+public:
+
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
     {
@@ -25,6 +27,7 @@ struct ExecutionThreadContext
         explicit ExpandPipelineTask(std::function<bool()> callback_) : callback(callback_) {}
     };
 
+private:
     /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
     /// This can be solved by using atomic shard ptr.
     std::list<ExpandPipelineTask> task_list;
@@ -42,15 +45,37 @@ struct ExecutionThreadContext
     /// Exception from executing thread itself.
     std::exception_ptr exception;
 
+public:
 #ifndef NDEBUG
     /// Time for different processing stages.
-        UInt64 total_time_ns = 0;
-        UInt64 execution_time_ns = 0;
-        UInt64 processing_time_ns = 0;
-        UInt64 wait_time_ns = 0;
+    UInt64 total_time_ns = 0;
+    UInt64 execution_time_ns = 0;
+    UInt64 processing_time_ns = 0;
+    UInt64 wait_time_ns = 0;
 #endif
 
+    const size_t thread_number;
+
     void wait(std::atomic_bool & finished);
+    void wakeUp();
+
+    bool hasTask() const { return node != nullptr; }
+    void setTask(ExecutingGraph::Node * task) { node = task; }
+    bool executeTask();
+    uint64_t getProcessorID() const { return node->processors_id; }
+
+    ExecutingGraph::Node * tryPopAsyncTask();
+    void pushAsyncTask(ExecutingGraph::Node * async_task);
+    bool hasAsyncTasks() const { return has_async_tasks; }
+
+    ExpandPipelineTask & addExpandPipelineTask(std::function<bool()> callback) { return task_list.emplace_back(std::move(callback)); }
+
+    std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
+
+    void setException(std::exception_ptr exception_) { exception = std::move(exception_); }
+    void rethrowExceptionIfHas();
+
+    explicit ExecutionThreadContext(size_t thread_number_) : thread_number(thread_number_) {}
 };
 
 class ExecutorTasks
@@ -72,9 +97,6 @@ class ExecutorTasks
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
 
-    using Stack = std::stack<UInt64>;
-    using Queue = std::queue<ExecutingGraph::Node *>;
-
     std::atomic<size_t> num_processing_executors = 0;
     std::atomic<ExecutionThreadContext::ExpandPipelineTask *> expand_pipeline_task = nullptr;
 
@@ -82,6 +104,9 @@ class ExecutorTasks
     std::mutex executor_contexts_mutex;
 
 public:
+    using Stack = std::stack<UInt64>;
+    using Queue = std::queue<ExecutingGraph::Node *>;
+
     bool doExpandPipeline(ExecutionThreadContext::ExpandPipelineTask * task, bool processing);
     bool runExpandPipeline(size_t thread_number, std::function<bool()> callback);
 
@@ -93,17 +118,15 @@ public:
 
     void rethrowFirstThreadException();
 
-    void wakeUpExecutor(size_t thread_num);
-
-    ExecutingGraph::Node * tryGetTask(size_t thread_num);
-    void pushTasks(Queue & queue, Queue & async_queue, size_t thread_num);
+    void tryGetTask(ExecutionThreadContext & context);
+    void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_);
     void fill(Queue & queue);
 
     void processAsyncTasks();
 
-    ExecutingGraph::Node *& getNode(size_t thread_num) { return executor_contexts[thread_num]->node; }
+    ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 };
 
 }

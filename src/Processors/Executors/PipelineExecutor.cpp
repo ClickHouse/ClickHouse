@@ -20,18 +20,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXPIRED;
     extern const int QUERY_WAS_CANCELLED;
 }
 
-static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
-{
-    /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
-    return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-           && exception.code() != ErrorCodes::QUOTA_EXPIRED
-           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
-}
 
 PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     : processors(processors_)
@@ -66,41 +57,6 @@ void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
             graph->nodes[proc]->status = ExecutingGraph::ExecStatus::Preparing;
         }
     }
-}
-
-static void executeJob(IProcessor * processor)
-{
-    try
-    {
-        processor->work();
-    }
-    catch (Exception & exception)
-    {
-        if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + processor->getName());
-        throw;
-    }
-}
-
-void PipelineExecutor::addJob(ExecutingGraph::Node * execution_state)
-{
-    auto job = [execution_state]()
-    {
-        try
-        {
-            // Stopwatch watch;
-            executeJob(execution_state->processor);
-            // execution_state->execution_time_ns += watch.elapsed();
-
-            ++execution_state->num_executed_jobs;
-        }
-        catch (...)
-        {
-            execution_state->exception = std::current_exception();
-        }
-    };
-
-    execution_state->job = std::move(job);
 }
 
 bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
@@ -416,38 +372,23 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     Stopwatch total_time_watch;
 #endif
 
-    auto & node = tasks.getNode(thread_num);
+    // auto & node = tasks.getNode(thread_num);
+    auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
 
     while (!tasks.isFinished() && !yield)
     {
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
-        while (!tasks.isFinished() && node == nullptr)
-        {
-            node = tasks.tryGetTask(thread_num);
-        }
+        while (!tasks.isFinished() && !context.hasTask())
+            tasks.tryGetTask(context);
 
-        while (node && !yield)
+        while (context.hasTask() && !yield)
         {
             if (tasks.isFinished())
                 break;
 
-            addJob(node);
-
-            {
-#ifndef NDEBUG
-                Stopwatch execution_time_watch;
-#endif
-
-                node->job();
-
-#ifndef NDEBUG
-                context->execution_time_ns += execution_time_watch.elapsed();
-#endif
-            }
-
-            if (node->exception)
+            if (!context.executeTask())
                 cancel();
 
             if (tasks.isFinished())
@@ -466,15 +407,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
                 /// Prepare processor after execution.
                 {
-                    auto lock = std::unique_lock<std::mutex>(node->status_mutex);
-                    if (!prepareProcessor(node->processors_id, thread_num, queue, async_queue, std::move(lock)))
+                    auto lock = context.lockStatus();
+                    if (!prepareProcessor(context.getProcessorID(), thread_num, queue, async_queue, std::move(lock)))
                         finish();
                 }
 
-                node = nullptr;
-
                 /// Push other tasks to global queue.
-                tasks.pushTasks(queue, async_queue, thread_num);
+                tasks.pushTasks(queue, async_queue, context);
 
                 tasks.expandPipelineEnd();
             }
@@ -573,7 +512,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 {
                     /// In case of exception from executor itself, stop other threads.
                     finish();
-                    tasks.getNode(thread_num)->exception = std::current_exception();
+                    tasks.getThreadContext(thread_num).setException(std::current_exception());
                 }
             });
         }
