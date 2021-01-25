@@ -1,25 +1,25 @@
 ---
-title: Which ClickHouse version to use in production?
+title: Какой версией ClickHouse пользоваться в продакшне?
 toc_hidden: true
 toc_priority: 10
 ---
 
 # Какую версию ClickHouse использовать в Production? {#which-clickhouse-version-to-use-in-production}
 
-First of all, let’s discuss why people ask this question in the first place. There are two key reasons:
+Во-первых, давайте обсудим, почему люди задают этот вопрос сразу. Две основные причины:
 
-1.  ClickHouse is developed with pretty high velocity and usually, there are 10+ stable releases per year. It makes a wide range of releases to choose from, which is not so trivial choice.
-2.  Some users want to avoid spending time figuring out which version works best for their use case and just follow someone else’s advice.
+1.  ClickHouse разработали достаточно быстро и обычно есть более 10-ти стабильных релизов в год. Так что есть из чего выбирать, а это не всегда просто. 
+2.  Некоторые пользователи хотят избежать трат времени на выяснение, какая версия работает лучше для их сценария использования и просто хотят послушать толковый совет.
 
-The second reason is more fundamental, so we’ll start with it and then get back to navigating through various ClickHouse releases.
+Вторая причина более весомая, так что начнем с нее и затем вернемся к навигации по существующим релизам ClickHouse.
 
-## Which ClickHouse Version Do You Recommend? {#which-clickhouse-version-do-you-recommend}
+## Какую версию ClickHouse вы посоветуете? {#which-clickhouse-version-do-you-recommend}
 
-It’s tempting to hire consultants or trust some known experts to get rid of responsibility for your production environment. You install some specific ClickHouse version that someone else recommended, now if there’s some issue with it - it’s not your fault, it’s someone else’s. This line of reasoning is a big trap. No external person knows better what’s going on in your company’s production environment.
+Очень удобный вариант — нанять консультанта или довериться известному эксперту, чтобы делегировать ответственность за вашу производственную среду. Вы устанавливаете одну из верси ClickHouse, которую порекомендовал кто-то, а теперь если с ней что-то идет не так — это уже не ваша вина, а тех, кто давал совет. Такая линия причинно-следственной связи очень большая ловушка. Никто другой, кроме вас не знает, что происходит в производственной среде вашей компании. 
 
-So how to properly choose which ClickHouse version to upgrade to? Or how to choose your first ClickHouse version? First of all, you need to invest in setting up a **realistic pre-production environment**. In an ideal world, it could be a completely identical shadow copy, but that’s usually expensive.
+Так что как верно выбрать версию ClickHouse, до которой стоит обновиться? Или как выбрать версию, если вы только начинаете пользоваться ClickHouse? Во-первых, вам стоит вложить деньги в настройку **реалистичной предпроизводственной среды**. В идеальном мире, это может быть полностью идентичная теневая копия, чаще всего дорогостоящая.
 
-Here’re some key points to get reasonable fidelity in a pre-production environment with not so high costs:
+Вот некоторые ключевые моменты для получения разумной точности в предпроизводственной среде с невысокой стоимостью:
 
 -   Pre-production environment needs to run an as close set of queries as you intend to run in production:
     -   Don’t make it read-only with some frozen data.
@@ -31,7 +31,7 @@ Here’re some key points to get reasonable fidelity in a pre-production environ
 -   If your production uses complex features like replication, distributed table, cascading materialize views, make sure they are configured similarly in pre-production.
 -   There’s a trade-off on using the roughly same number of servers or VMs in pre-production as in production, but of smaller size, or much less of them, but of the same size. The first option might catch extra network-related issues, while the latter is easier to manage.
 
-The second area to invest in is **automated testing infrastructure**. Don’t assume that if some kind of query has executed successfully once, it’ll continue to do so forever. It’s ok to have some unit tests where ClickHouse is mocked but make sure your product has a reasonable set of automated tests that are run against real ClickHouse and check that all important use cases are still working as expected.
+Второе направление инвестиций — **инфраструктура автоматизированного тестирования**. Не думайте, что если некоторый вид запроса был успешно выполнен однажды, то так будет продолжаться всегда. Это нормально иметь некоторые юнит-тесты, где It’s ok to have some unit tests where ClickHouse is mocked but make sure your product has a reasonable set of automated tests that are run against real ClickHouse and check that all important use cases are still working as expected.
 
 Extra step forward could be contributing those automated tests to [ClickHouse’s open-source test infrastructure](https://github.com/ClickHouse/ClickHouse/tree/master/tests) that’s continuously used in its day-to-day development. It definitely will take some additional time and effort to learn [how to run it](../../development/tests.md) and then how to adapt your tests to this framework, but it’ll pay off by ensuring that ClickHouse releases are already tested against them when they are announced stable, instead of repeatedly losing time on reporting the issue after the fact and then waiting for a bugfix to be implemented, backported and released. Some companies even have such test contributions to infrastructure by its use as an internal policy, most notably it’s called [Beyonce’s Rule](https://www.oreilly.com/library/view/software-engineering-at/9781492082781/ch01.html#policies_that_scale_well) at Google.
 
@@ -44,7 +44,7 @@ When you have your pre-production environment and testing infrastructure in plac
 
 As you might have noticed, there’s nothing specific to ClickHouse in the approach described above, people do that for any piece of infrastructure they rely on if they take their production environment seriously.
 
-## How to Choose Between ClickHouse Releases? {#how-to-choose-between-clickhouse-releases}
+## Как выбрать между релизами ClickHouse? {#how-to-choose-between-clickhouse-releases}
 
 If you look into contents of ClickHouse package repository, you’ll see four kinds of packages:
 
