@@ -96,12 +96,6 @@ public:
         }
         else if (const ColumnMap* col_map = checkAndGetColumn<ColumnMap>(column.get()))
         {
-            // only function length is implemented for ColumnMap
-            // TODO implemented other functions which use FunctionStringOrArrayToT
-            if (getName() != "length")
-                throw Exception("Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-
             auto col_res = ColumnVector<ResultType>::create();
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col_map->size());
