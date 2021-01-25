@@ -163,6 +163,7 @@ function clone_submodules
             contrib/xz
             contrib/dragonbox
             contrib/fast_float
+            contrib/NuRaft
         )
 
         git submodule sync
