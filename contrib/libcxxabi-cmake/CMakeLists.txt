@@ -11,6 +11,7 @@ ${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/stdlib_exception.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_demangle.cpp
+${LIBCXXABI_SOURCE_DIR}/src/cxa_unexpected.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_exception.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp

@@ -11,6 +11,7 @@
 | FastMemcpy         | [MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libmemcpy/impl/LICENSE)                                             |
 | googletest         | [BSD3-条款许可](https://github.com/google/googletest/blob/master/LICENSE)                                                           |
 | 超扫描             | [BSD3-条款许可](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                             |
+| libbtrie           | [BSD2-条款许可](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                      |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                 |
 | libdivide          | [Zlib许可证](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                    |
 | libgsasl           | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                    |

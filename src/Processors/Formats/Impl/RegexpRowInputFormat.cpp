@@ -173,11 +173,10 @@ void registerInputFormatProcessorRegexp(FormatFactory & factory)
     });
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool need_more_data = true;
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -197,12 +196,12 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
             need_more_data = false;
 
         ++pos;
-        ++number_of_rows;
+
     }
 
     saveUpToPosition(in, memory, pos);
 
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)

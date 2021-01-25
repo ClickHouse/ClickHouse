@@ -37,23 +37,6 @@ class Node(object):
 
         self.cluster.command(None, f'{self.cluster.docker_compose} restart {self.name}', timeout=timeout)
 
-    def start(self, timeout=300, safe=True):
-        """Start node.
-        """
-        self.cluster.command(None, f'{self.cluster.docker_compose} start {self.name}', timeout=timeout)
-
-
-    def stop(self, timeout=300, safe=True):
-        """Stop node.
-        """
-        with self.cluster.lock:
-            for key in list(self.cluster._bash.keys()):
-                if key.endswith(f"-{self.name}"):
-                    shell = self.cluster._bash.pop(key)
-                    shell.__exit__(None, None, None)
-
-        self.cluster.command(None, f'{self.cluster.docker_compose} stop {self.name}', timeout=timeout)
-
     def command(self, *args, **kwargs):
         return self.cluster.command(self.name, *args, **kwargs)
 

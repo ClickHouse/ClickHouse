@@ -24,8 +24,6 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
-
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;

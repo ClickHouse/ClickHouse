@@ -11,7 +11,7 @@
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Tuple(Int32, Int64)', 0, 10, 10) LIMIT 1000000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Array(Int8)', 0, 10, 10) LIMIT 100000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Array(Nullable(Int32))', 0, 10, 10) LIMIT 100000000);</query>
-    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Tuple(Int32, Array(Int64))', 0, 10, 10) LIMIT 500000000);</query>
+    <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Tuple(Int32, Array(Int64))', 0, 10, 10) LIMIT 1000000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Nullable(String)', 0, 10, 10) LIMIT 100000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i Array(String)', 0, 10, 10) LIMIT 100000000);</query>
     <query>SELECT sum(NOT ignore(*)) FROM (SELECT * FROM generateRandom('i UUID', 0, 10, 10) LIMIT 1000000000);</query>
