@@ -35,6 +35,7 @@ void registerFunctionNormalizedQueryHash(FunctionFactory &);
 void registerFunctionCountMatches(FunctionFactory &);
 void registerFunctionEncodeXMLComponent(FunctionFactory & factory);
 void registerFunctionDecodeXMLComponent(FunctionFactory & factory);
+void registerFunctionPrependString(FunctionFactory & factory);
 
 
 #if USE_BASE64
@@ -73,6 +74,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionCountMatches(factory);
     registerFunctionEncodeXMLComponent(factory);
     registerFunctionDecodeXMLComponent(factory);
+    registerFunctionPrependString(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

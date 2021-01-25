@@ -379,6 +379,7 @@ SRCS(
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    prependString.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
