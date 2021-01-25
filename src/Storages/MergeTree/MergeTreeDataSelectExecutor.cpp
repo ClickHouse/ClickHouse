@@ -33,6 +33,7 @@
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingFinal.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -707,8 +708,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (parts_with_ranges.empty())
         return std::make_unique<QueryPlan>();
 
+    const auto data_settings = data.getSettings();
     auto max_partitions_to_read
-        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data.getSettings()->max_partitions_to_read;
+        = settings.max_partitions_to_read.changed ? settings.max_partitions_to_read : data_settings->max_partitions_to_read;
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;
@@ -720,6 +722,18 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 "Too many partitions to read. Current {}, max {}",
                 partitions.size(),
                 max_partitions_to_read);
+    }
+
+    String query_id;
+    if (data_settings->max_concurrent_queries > 0)
+    {
+        if (data_settings->min_marks_to_honor_max_concurrent_queries > 0
+            && sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
+        {
+            query_id = context.getCurrentQueryId();
+            if (!query_id.empty())
+                data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, parts_with_ranges.size());
@@ -758,7 +772,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings,
             reader_settings,
-            result_projection);
+            result_projection,
+            query_id);
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.input_order_info)
     {
@@ -781,7 +796,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings,
             reader_settings,
-            result_projection);
+            result_projection,
+            query_id);
     }
     else
     {
@@ -795,7 +811,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             query_info,
             virt_column_names,
             settings,
-            reader_settings);
+            reader_settings,
+            query_id);
     }
 
     if (!plan)
@@ -895,13 +912,17 @@ size_t minMarksForConcurrentRead(
 
 }
 
-static QueryPlanPtr createPlanFromPipe(Pipe pipe, const std::string & description = "")
+static QueryPlanPtr createPlanFromPipe(Pipe pipe, const String & query_id, const MergeTreeData & data, const std::string & description = "")
 {
     auto plan = std::make_unique<QueryPlan>();
 
     std::string storage_name = "MergeTree";
     if (!description.empty())
         storage_name += ' ' + description;
+
+    // Attach QueryIdHolder if needed
+    if (!query_id.empty())
+        pipe.addQueryIdHolder(std::make_shared<QueryIdHolder>(query_id, data));
 
     auto step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name);
     plan->addStep(std::move(step));
@@ -918,7 +939,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const SelectQueryInfo & query_info,
     const Names & virt_columns,
     const Settings & settings,
-    const MergeTreeReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings,
+    const String & query_id) const
 {
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
@@ -1003,7 +1025,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             res.emplace_back(std::move(source));
         }
 
-        return createPlanFromPipe(Pipe::unitePipes(std::move(res)));
+        return createPlanFromPipe(Pipe::unitePipes(std::move(res)), query_id, data);
     }
     else
     {
@@ -1027,7 +1049,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         if (pipe.numOutputPorts() > 1)
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
 
-        return createPlanFromPipe(std::move(pipe));
+        return createPlanFromPipe(std::move(pipe), query_id, data);
     }
 }
 
@@ -1051,7 +1073,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ActionsDAGPtr & out_projection) const
+    ActionsDAGPtr & out_projection,
+    const String & query_id) const
 {
     size_t sum_marks = 0;
     const InputOrderInfoPtr & input_order_info = query_info.input_order_info;
@@ -1242,7 +1265,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
 
-        auto plan = createPlanFromPipe(Pipe::unitePipes(std::move(pipes)), " with order");
+        auto plan = createPlanFromPipe(Pipe::unitePipes(std::move(pipes)), query_id, data, " with order");
 
         if (input_order_info->direction != 1)
         {
@@ -1310,7 +1333,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     const Names & virt_columns,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    ActionsDAGPtr & out_projection) const
+    ActionsDAGPtr & out_projection,
+    const String & query_id) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
@@ -1406,7 +1430,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             if (!out_projection)
                 out_projection = createProjection(pipe.getHeader());
 
-            plan = createPlanFromPipe(std::move(pipe), "with final");
+            plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
         }
 
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
