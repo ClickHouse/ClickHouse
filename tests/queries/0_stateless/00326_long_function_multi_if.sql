@@ -1947,5 +1947,6 @@ INSERT INTO multi_if_check VALUES ('1');
 SELECT multiIf(2 > 1, 'Value', 'ElseValue') as a, isConstant(a) FROM multi_if_check;
 SELECT multiIf(2 > 1, 'Value', value) as a, isConstant(a) FROM multi_if_check;
 SELECT multiIf(value == '1', 'ValueFirst', 2 > 1, 'ValueSecond', 'ElseValue') as a, isConstant(a) FROM multi_if_check;
+SELECT multiIf(1 > 2, 'Value', 'ElseValue') as a, isConstant(a);
 
 DROP TABLE IF EXISTS multi_if_check;
