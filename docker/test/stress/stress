@@ -22,12 +22,15 @@ def get_options(i):
     if 0 < i:
         options += " --order=random"
 
-    if i % 2 == 1:
+    if i % 3 == 1:
         options += " --db-engine=Ordinary"
+
+    if i % 3 == 2:
+        options += ''' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
-    if i % 3 == 1:
+    if i % 2 == 1:
         options += " --database=test_{}".format(i)
 
     if i == 13:

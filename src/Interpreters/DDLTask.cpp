@@ -140,7 +140,7 @@ bool DDLTask::findCurrentHostID(const Context & global_context, Poco::Logger * l
 
 void DDLTask::setClusterInfo(const Context & context, Poco::Logger * log)
 {
-    auto query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
+    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
         throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 

@@ -718,7 +718,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind == ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception("Table UUID is not specified in DDL log", ErrorCodes::LOGICAL_ERROR);
