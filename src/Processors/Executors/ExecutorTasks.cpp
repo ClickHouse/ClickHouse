@@ -7,109 +7,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXPIRED;
-    extern const int QUERY_WAS_CANCELLED;
-}
-
-void ExecutionThreadContext::wait(std::atomic_bool & finished)
-{
-    std::unique_lock lock(mutex);
-
-    condvar.wait(lock, [&]
-    {
-        return finished || wake_flag;
-    });
-
-    wake_flag = false;
-}
-
-void ExecutionThreadContext::wakeUp()
-{
-    std::lock_guard guard(mutex);
-    wake_flag = true;
-    condvar.notify_one();
-}
-
-static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
-{
-    /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
-    return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-           && exception.code() != ErrorCodes::QUOTA_EXPIRED
-           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
-}
-
-static void executeJob(IProcessor * processor)
-{
-    try
-    {
-        processor->work();
-    }
-    catch (Exception & exception)
-    {
-        if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + processor->getName());
-        throw;
-    }
-}
-
-bool ExecutionThreadContext::executeTask()
-{
-#ifndef NDEBUG
-    Stopwatch execution_time_watch;
-#endif
-
-    try
-    {
-        executeJob(node->processor);
-
-        ++node->num_executed_jobs;
-    }
-    catch (...)
-    {
-        node->exception = std::current_exception();
-    }
-
-#ifndef NDEBUG
-    execution_time_ns += execution_time_watch.elapsed();
-#endif
-
-    return node->exception != nullptr;
-}
-
-void ExecutionThreadContext::rethrowExceptionIfHas()
-{
-    if (exception)
-        std::rethrow_exception(exception);
-}
-
-ExecutingGraph::Node * ExecutionThreadContext::tryPopAsyncTask()
-{
-    ExecutingGraph::Node * task = nullptr;
-
-    if (!async_tasks.empty())
-    {
-        task = async_tasks.front();
-        async_tasks.pop();
-
-        if (async_tasks.empty())
-            has_async_tasks = false;
-    }
-
-    return task;
-}
-
-void ExecutionThreadContext::pushAsyncTask(ExecutingGraph::Node * async_task)
-{
-    async_tasks.push(async_task);
-    has_async_tasks = true;
 }
 
 bool ExecutorTasks::runExpandPipeline(size_t thread_number, std::function<bool()> callback)
 {
-    auto & task = executor_contexts[thread_number]->addExpandPipelineTask(std::move(callback));
-    ExecutionThreadContext::ExpandPipelineTask * desired = &task;
-    ExecutionThreadContext::ExpandPipelineTask * expected = nullptr;
+    auto & task = executor_contexts[thread_number]->addStoppingPipelineTask(std::move(callback));
+    ExecutionThreadContext::StoppingPipelineTask * desired = &task;
+    ExecutionThreadContext::StoppingPipelineTask * expected = nullptr;
 
     while (!expand_pipeline_task.compare_exchange_strong(expected, desired))
     {
@@ -122,7 +26,7 @@ bool ExecutorTasks::runExpandPipeline(size_t thread_number, std::function<bool()
     return doExpandPipeline(desired, true);
 }
 
-bool ExecutorTasks::doExpandPipeline(ExecutionThreadContext::ExpandPipelineTask * task, bool processing)
+bool ExecutorTasks::doExpandPipeline(ExecutionThreadContext::StoppingPipelineTask * task, bool processing)
 {
     std::unique_lock lock(task->mutex);
 
@@ -153,7 +57,7 @@ bool ExecutorTasks::doExpandPipeline(ExecutionThreadContext::ExpandPipelineTask 
 void ExecutorTasks::finish()
 {
     {
-        std::lock_guard lock(task_queue_mutex);
+        std::lock_guard lock(mutex);
         finished = true;
         async_task_queue.finish();
     }
@@ -187,7 +91,7 @@ void ExecutorTasks::expandPipelineEnd()
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 {
     {
-        std::unique_lock lock(task_queue_mutex);
+        std::unique_lock lock(mutex);
 
         if (auto * async_task = context.tryPopAsyncTask())
         {
@@ -254,7 +158,7 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 
     if (!queue.empty() || !async_queue.empty())
     {
-        std::unique_lock lock(task_queue_mutex);
+        std::unique_lock lock(mutex);
 
 #if defined(OS_LINUX)
         while (!async_queue.empty() && !finished)
@@ -305,7 +209,7 @@ void ExecutorTasks::init(size_t num_threads_)
 
 void ExecutorTasks::fill(Queue & queue)
 {
-    std::lock_guard lock(task_queue_mutex);
+    std::lock_guard lock(mutex);
 
     size_t next_thread = 0;
     while (!queue.empty())
@@ -324,7 +228,7 @@ void ExecutorTasks::processAsyncTasks()
 #if defined(OS_LINUX)
     {
         /// Wait for async tasks.
-        std::unique_lock lock(task_queue_mutex);
+        std::unique_lock lock(mutex);
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
