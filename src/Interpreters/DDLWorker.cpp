@@ -201,16 +201,17 @@ void DDLWorker::shutdown()
     stop_flag = true;
     queue_updated_event->set();
     cleanup_event->set();
-}
 
-DDLWorker::~DDLWorker()
-{
-    shutdown();
     worker_pool.reset();
     if (main_thread.joinable())
         main_thread.join();
     if (cleanup_thread.joinable())
         cleanup_thread.join();
+}
+
+DDLWorker::~DDLWorker()
+{
+    shutdown();
 }
 
 
@@ -490,9 +491,14 @@ void DDLWorker::processTask(DDLTaskBase & task)
             }
 
             if (task.execute_on_leader)
+            {
                 tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
+            }
             else
+            {
+                storage.reset();
                 tryExecuteQuery(rewritten_query, task);
+            }
         }
         catch (const Coordination::Exception &)
         {
@@ -892,6 +898,7 @@ void DDLWorker::initializeMainThread()
         {
             tryLogCurrentException(log, "Cannot initialize DDL queue.");
             reset_state(false);
+            sleepForSeconds(5);
         }
     }
     while (!initialized && !stop_flag);
@@ -949,11 +956,13 @@ void DDLWorker::runMainThread()
                 LOG_ERROR(log, "Unexpected ZooKeeper error: {}", getCurrentExceptionMessage(true));
                 reset_state();
             }
+            sleepForSeconds(5);
         }
         catch (...)
         {
             tryLogCurrentException(log, "Unexpected error, will try to restart main thread:");
             reset_state();
+            sleepForSeconds(5);
         }
     }
 }
