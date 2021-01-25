@@ -485,17 +485,24 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 {
-    std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
+std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
     iter = copiedDataInfo.find(place);
     if (iter == copiedDataInfo.end())
-    {
+    {   
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
     }
     else
     {
         size_t pos = iter->second;
-        data[data.size()-1] = data[pos];
+        if (pos != data.size() - 1)
+        {
+            data[data.size() - 1] = data[pos];
+        }
+        else /// insert same data to same pos, merge them.
+        {
+            func->merge(data.back(), place, &createOrGetArena());
+        }
     }
 }
 
