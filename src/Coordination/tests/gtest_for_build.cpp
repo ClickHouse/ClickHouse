@@ -330,6 +330,11 @@ TEST(CoordinationTest, TestStorageSerialization)
     EXPECT_EQ(new_storage.ephemerals[1].size(), 1);
 }
 
+/// Code with obvious races, but I don't want to make it
+/// more complex to avoid races.
+#if defined(__has_feature)
+#  if ! __has_feature(thread_sanitizer)
+
 TEST(CoordinationTest, TestNuKeeperRaft)
 {
     NuKeeperRaftServer s1(1, "localhost", 44447);
@@ -448,3 +453,6 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     s3.launcher.shutdown(5);
     s4.launcher.shutdown(5);
 }
+
+#  endif
+#endif
