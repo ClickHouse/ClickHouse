@@ -436,7 +436,7 @@ void DiskMemory::setReadOnly(const String &)
     throw Exception("Method setReadOnly is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-int DiskMemory::open(const String & /*path*/, mode_t /*mode*/) const
+int DiskMemory::open(const String & /*path*/, int /*flags*/) const
 {
     throw Exception("Method open is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
