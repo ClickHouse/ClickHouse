@@ -62,6 +62,7 @@ using int64_t = long;
 using uint64_t = unsigned long;
 using ssize_t = long;
 using intptr_t = long;
+using uintptr_t = unsigned long;
 using size_t = unsigned long;
 
 
@@ -141,11 +142,6 @@ struct DynamicTableEntry
         ENCODING = 32, /// Start of encoded range
         PREINIT_ARRAY = 32, /// Array with addresses of preinit fct
         PREINIT_ARRAYSZ = 33, /// size in bytes of DT_PREINIT_ARRAY
-        NUM = 34, /// Number used
-        LOOS = 0x6000000d, /// Start of OS-specific
-        HIOS = 0x6ffff000, /// End of OS-specific
-        LOPROC = 0x70000000, /// Start of processor-specific
-        HIPROC = 0x7fffffff, /// End of processor-specific
 
         /* DT_* entries which fall between DT_VALRNGHI & DT_VALRNGLO use the
            Dyn.d_un.d_val field of the Elf*_Dyn structure.  This follows Sun's
@@ -161,7 +157,7 @@ struct DynamicTableEntry
         MOVEENT = 0x6ffffdfa,
         MOVESZ = 0x6ffffdfb,
         FEATURE_1 = 0x6ffffdfc, /// Feature selection (DTF_*).
-        POSFLAG_1 = 0x6ffffdfd,	/* Flags for DT_* entries, effecting the following DT_* entry.  */
+        POSFLAG_1 = 0x6ffffdfd,    /* Flags for DT_* entries, effecting the following DT_* entry.  */
         SYMINSZ = 0x6ffffdfe, /// Size of syminfo table (in bytes)
         SYMINENT = 0x6ffffdff, /// Entry size of syminfo
 
@@ -204,6 +200,36 @@ struct DynamicTableEntry
         char * ptr;
     };
 };
+
+
+/// Relocations relative to the base address. The meaning - simply add the base address.
+struct Relocation
+{
+    char * address;
+    uint64_t type;
+
+    void process(uintptr_t base_address)
+    {
+        size_t * corrected_address = reinterpret_cast<size_t *>(address + base_address);
+        *corrected_address += base_address;
+
+    }
+};
+
+/// Add the base address and another operand ("addend").
+struct RelocationWithAddend
+{
+    char * address;
+    uint64_t type;
+    int64_t addend;
+
+    void process(uintptr_t base_address)
+    {
+        size_t * corrected_address = reinterpret_cast<size_t *>(address + base_address);
+        *corrected_address += base_address + addend;
+    }
+};
+
 
 
 /// These symbols have hidden linkage to avoid them being called through PLT.
@@ -284,12 +310,12 @@ void ALWAYS_INLINE assert(bool x)
 }
 
 template <typename T>
-T * getauxval(uint64_t type, uint64_t * auxv)
+T getauxval(uint64_t type, uint64_t * auxv)
 {
     for (; *auxv; auxv += 2)
         if (auxv[0] == type)
-            return reinterpret_cast<T*>(&auxv[1]);
-    return nullptr;
+            return *reinterpret_cast<T*>(&auxv[1]);
+    return {};
 }
 
 }
@@ -347,27 +373,28 @@ int main(int argc, char ** argv, char ** envp)
     print_number(auxc);
 
     /// Check some auxv
-    size_t * page_size = getauxval<size_t>(AT_PAGESZ, auxv);
-    assert(page_size);
+    size_t page_size = getauxval<size_t>(AT_PAGESZ, auxv);
 
     print_string("\n");
-    print_number(*page_size);
-
-    print_string("\n");
-
-    size_t * program_header_entry_size = getauxval<size_t>(AT_PHENT, auxv);
-    assert(*program_header_entry_size == sizeof(ProgramHeader));
-
-    size_t * num_program_headers = getauxval<size_t>(AT_PHNUM, auxv);
-    if (!num_program_headers)
-        print_string("No program headers\n");
-    else
-        print_number(*num_program_headers);
+    print_number(page_size);
 
     print_string("\n");
 
-    ProgramHeader * program_headers = *getauxval<ProgramHeader *>(AT_PHDR, auxv);
-    for (size_t i = 0; i < *num_program_headers; ++i)
+    size_t program_header_entry_size = getauxval<size_t>(AT_PHENT, auxv);
+    assert(program_header_entry_size == sizeof(ProgramHeader));
+
+    size_t num_program_headers = getauxval<size_t>(AT_PHNUM, auxv);
+    print_number(num_program_headers);
+
+    print_string("\n");
+
+    ProgramHeader * program_headers = getauxval<ProgramHeader *>(AT_PHDR, auxv);
+
+    uintptr_t base_address = getauxval<uintptr_t>(AT_BASE, auxv);
+    if (!base_address)
+        base_address = reinterpret_cast<uintptr_t>(program_headers) & (-page_size);
+
+    for (size_t i = 0; i < num_program_headers; ++i)
     {
         print_number(program_headers[i].type);
         print_string(": ");
@@ -376,11 +403,43 @@ int main(int argc, char ** argv, char ** envp)
 
         if (program_headers[i].type == ProgramHeader::DYNAMIC)
         {
-            DynamicTableEntry * dynamic_table_entries = reinterpret_cast<DynamicTableEntry *>(program_headers[i].virtual_address);
+            DynamicTableEntry * dynamic_table_entries = reinterpret_cast<DynamicTableEntry *>(
+                base_address + program_headers[i].virtual_address);
+
+            const DynamicTableEntry * rel = nullptr;
+            const DynamicTableEntry * relsz = nullptr;
+            const DynamicTableEntry * rela = nullptr;
+            const DynamicTableEntry * relasz = nullptr;
+
             for (const auto * it = dynamic_table_entries; it->tag != DynamicTableEntry::NULL; ++it)
             {
                 print_number(it->tag);
                 print_string("\n");
+
+                if (it->tag == DynamicTableEntry::REL)
+                    rel = it;
+                else if (it->tag == DynamicTableEntry::RELSZ)
+                    relsz = it;
+                else if (it->tag == DynamicTableEntry::RELA)
+                    rela = it;
+                else if (it->tag == DynamicTableEntry::RELASZ)
+                    relasz = it;
+            }
+
+            /// Perform simple relocations
+
+            if (rel && relsz)
+            {
+                Relocation * entries = reinterpret_cast<Relocation *>(base_address + rel->ptr);
+                for (size_t j = 0; j < relsz->value; ++j)
+                    entries[j].process(base_address);
+            }
+
+            if (rela && relasz)
+            {
+                RelocationWithAddend * entries = reinterpret_cast<RelocationWithAddend *>(base_address + rela->ptr);
+                for (size_t j = 0; j < relasz->value; ++j)
+                    entries[j].process(base_address);
             }
         }
     }
