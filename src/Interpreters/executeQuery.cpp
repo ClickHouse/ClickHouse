@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 
-#include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
