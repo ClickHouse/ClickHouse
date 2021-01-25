@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimal time for the query to run to get to the following tables:
+If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -844,23 +844,27 @@ Higher values will lead to higher memory usage.
 
 ## max_compress_block_size {#max-compress-block-size}
 
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn’t any reason to change this setting.
+The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
+
+!!! note "Warning"
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
 ## min_compress_block_size {#min-compress-block-size}
 
-For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min_compress_block_size’. By default, 65,536.
+For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
 
-The actual size of the block, if the uncompressed data is less than ‘max_compress_block_size’, is no less than this value and no less than the volume of data for one mark.
+The actual size of the block, if the uncompressed data is less than `max_compress_block_size`, is no less than this value and no less than the volume of data for one mark.
 
-Let’s look at an example. Assume that ‘index_granularity’ was set to 8192 during table creation.
+Let’s look at an example. Assume that `index_granularity` was set to 8192 during table creation.
 
 We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min_compress_block_size = 65,536, a compressed block will be formed for every two marks.
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-There usually isn’t any reason to change this setting.
+!!! note "Warning"
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1312,7 +1316,7 @@ See also:
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
@@ -2130,6 +2134,21 @@ Default value: `1`.
 
 -   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
 
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `GROUP BY` optimization is disabled.
+-   1 — `GROUP BY` optimization is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [GROUP BY optimization](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
+
 ## mutations_sync {#mutations_sync}
 
 Allows to execute `ALTER TABLE ... UPDATE|DELETE` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
@@ -2469,5 +2488,86 @@ Possible values:
 - 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
+
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+
+Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following query with aggregate functions:
+```sql
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
+```
+
+With `aggregate_functions_null_for_empty = 0` it would produce:
+```text
+┌─SUM(-1)─┬─MAX(0)─┐
+│       0 │      0 │
+└─────────┴────────┘
+```
+
+With `aggregate_functions_null_for_empty = 1` the result would be:
+```text
+┌─SUMOrNull(-1)─┬─MAXOrNull(0)─┐
+│          NULL │         NULL │
+└───────────────┴──────────────┘
+```
+
+
+## union_default_mode {#union-default-mode}
+
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `''`.
+
+See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+
+## data_type_default_nullable {#data_type_default_nullable}
+
+Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+Possible values:
+
+- 1 — The data types in column definitions are set to `Nullable` by default.
+- 0 — The data types in column definitions are set to not `Nullable` by default.
+
+Default value: `0`.
+
+
+## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
+
+Enables special logic to perform merges on replicas.
+
+Possible values:
+
+-   Positive integer (in seconds).
+-   0 — Special merges logic is not used. Merges happen in the usual way on all the replicas.
+
+Default value: `0`.
+
+**Usage**
+
+Selects one replica to perform the merge on. Sets the time threshold from the start of the merge. Other replicas wait for the merge to finish, then download the result. If the time threshold passes and the selected replica does not perform the merge, then the merge is performed on other replicas as usual.
+
+High values for that threshold may lead to replication delays.
+
+It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

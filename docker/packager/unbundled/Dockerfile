@@ -22,6 +22,7 @@ RUN apt-get update \
         libboost-iostreams-dev \
         libboost-regex-dev \
         libboost-context-dev \
+        libboost-coroutine-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \

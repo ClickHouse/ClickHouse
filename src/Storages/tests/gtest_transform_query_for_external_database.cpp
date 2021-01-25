@@ -80,6 +80,24 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
           state.context, state.columns);
 }
 
+TEST(TransformQueryForExternalDatabase, InWithTable)
+{
+    const State & state = State::instance();
+
+    check("SELECT column FROM test.table WHERE 1 IN external_table",
+          R"(SELECT "column" FROM "test"."table")",
+          state.context, state.columns);
+    check("SELECT column FROM test.table WHERE 1 IN (x)",
+          R"(SELECT "column" FROM "test"."table")",
+          state.context, state.columns);
+    check("SELECT column, field, value FROM test.table WHERE column IN (field, value)",
+          R"(SELECT "column", "field", "value" FROM "test"."table" WHERE "column" IN ("field", "value"))",
+          state.context, state.columns);
+    check("SELECT column FROM test.table WHERE column NOT IN hello AND column = 123",
+          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 123))",
+          state.context, state.columns);
+}
+
 TEST(TransformQueryForExternalDatabase, Like)
 {
     const State & state = State::instance();

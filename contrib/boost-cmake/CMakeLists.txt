@@ -12,10 +12,12 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         program_options
         regex
         context
+        coroutine
     )
 
     if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND Boost_FILESYSTEM_LIBRARY AND
-       Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY AND Boost_CONTEXT_LIBRARY)
+        Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY AND Boost_CONTEXT_LIBRARY AND
+        Boost_COROUTINE_LIBRARY)
 
         set(EXTERNAL_BOOST_FOUND 1)
 
@@ -29,6 +31,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (_boost_regex INTERFACE)
         add_library (_boost_system INTERFACE)
         add_library (_boost_context INTERFACE)
+        add_library (_boost_coroutine INTERFACE)
 
         target_link_libraries (_boost_filesystem INTERFACE ${Boost_FILESYSTEM_LIBRARY})
         target_link_libraries (_boost_iostreams INTERFACE ${Boost_IOSTREAMS_LIBRARY})
@@ -36,6 +39,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         target_link_libraries (_boost_regex INTERFACE ${Boost_REGEX_LIBRARY})
         target_link_libraries (_boost_system INTERFACE ${Boost_SYSTEM_LIBRARY})
         target_link_libraries (_boost_context INTERFACE ${Boost_CONTEXT_LIBRARY})
+        target_link_libraries (_boost_coroutine INTERFACE ${Boost_COROUTINE_LIBRARY})
 
         add_library (boost::filesystem ALIAS _boost_filesystem)
         add_library (boost::iostreams ALIAS _boost_iostreams)
@@ -43,6 +47,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (boost::regex ALIAS _boost_regex)
         add_library (boost::system ALIAS _boost_system)
         add_library (boost::context ALIAS _boost_context)
+        add_library (boost::coroutine ALIAS _boost_coroutine)
     else()
         set(EXTERNAL_BOOST_FOUND 0)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system boost")
@@ -75,6 +80,10 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (_boost_headers_only INTERFACE)
     add_library (boost::headers_only ALIAS _boost_headers_only)
     target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
+
+    # asio
+
+    target_compile_definitions (_boost_headers_only INTERFACE BOOST_ASIO_STANDALONE=1)
 
     # iostreams
 
@@ -199,4 +208,16 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (_boost_context ${SRCS_CONTEXT})
     add_library (boost::context ALIAS _boost_context)
     target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
+
+    # coroutine
+
+    set (SRCS_COROUTINE
+      ${LIBRARY_DIR}/libs/coroutine/detail/coroutine_context.cpp
+      ${LIBRARY_DIR}/libs/coroutine/exceptions.cpp
+      ${LIBRARY_DIR}/libs/coroutine/posix/stack_traits.cpp
+    )
+    add_library (_boost_coroutine ${SRCS_COROUTINE})
+    add_library (boost::coroutine ALIAS _boost_coroutine)
+    target_include_directories (_boost_coroutine PRIVATE ${LIBRARY_DIR})
+    target_link_libraries(_boost_coroutine PRIVATE _boost_context)
 endif ()

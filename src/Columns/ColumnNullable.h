@@ -101,6 +101,7 @@ public:
         const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
+    size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
@@ -142,9 +143,11 @@ public:
     const IColumn & getNestedColumn() const { return *nested_column; }
 
     const ColumnPtr & getNestedColumnPtr() const { return nested_column; }
+    ColumnPtr & getNestedColumnPtr() { return nested_column; }
 
     /// Return the column that represents the byte map.
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
+    ColumnPtr & getNullMapColumnPtr() { return null_map; }
 
     ColumnUInt8 & getNullMapColumn() { return assert_cast<ColumnUInt8 &>(*null_map); }
     const ColumnUInt8 & getNullMapColumn() const { return assert_cast<const ColumnUInt8 &>(*null_map); }

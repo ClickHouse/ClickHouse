@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 
-#include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -158,15 +157,21 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
+        String comment = context.getSettingsRef().log_comment;
+        size_t max_query_size = context.getSettingsRef().max_query_size;
+
+        if (comment.size() > max_query_size)
+            comment.resize(max_query_size);
+
+        if (!comment.empty())
+            comment = fmt::format(" (comment: {})", comment);
+
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser){} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            (context.getSettingsRef().use_antlr_parser ? "new" : "old"),
-            (!context.getSettingsRef().log_comment.toString().empty()
-                     && context.getSettingsRef().log_comment.toString().length() <= context.getSettingsRef().max_query_size
-                 ? ", comment: " + context.getSettingsRef().log_comment.toString()
-                 : std::string()),
+            (context.getSettingsRef().use_antlr_parser ? "experimental" : "production"),
+            comment,
             joinLines(query));
 
         if (client_info.client_trace_context.trace_id)
@@ -184,7 +189,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
@@ -201,13 +206,17 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 /// Log exception (with query info) into text log (not into system table).
 static void logException(Context & context, QueryLogElement & elem)
 {
+    String comment;
+    if (!elem.log_comment.empty())
+        comment = fmt::format(" (comment: {})", elem.log_comment);
+
     if (elem.stack_trace.empty())
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})",
-            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query));
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}){} (in query: {})",
+            elem.exception, context.getClientInfo().current_address.toString(), comment, joinLines(elem.query));
     else
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})"
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}){} (in query: {})"
             ", Stack trace (when copying this message, always include the lines below):\n\n{}",
-            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
+            elem.exception, context.getClientInfo().current_address.toString(), comment, joinLines(elem.query), elem.stack_trace);
 }
 
 inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
@@ -253,8 +262,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     elem.client_info = context.getClientInfo();
 
-    if (!settings.log_comment.toString().empty() && settings.log_comment.toString().length() <= settings.max_query_size)
-        elem.log_comment = settings.log_comment.toString();
+    elem.log_comment = settings.log_comment;
+    if (elem.log_comment.size() > settings.max_query_size)
+        elem.log_comment.resize(settings.max_query_size);
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
@@ -358,7 +368,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 #if !defined(ARCADIA_BUILD)
         if (settings.use_antlr_parser)
         {
-            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth);
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context.getCurrentDatabase());
         }
         else
         {
@@ -634,8 +644,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
 
-                if (!settings.log_comment.toString().empty() && settings.log_comment.toString().length() <= max_query_size)
-                    elem.log_comment = settings.log_comment.toString();
+                elem.log_comment = settings.log_comment;
+                if (elem.log_comment.size() > settings.max_query_size)
+                    elem.log_comment.resize(settings.max_query_size);
 
                 if (elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
@@ -743,6 +754,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
+
+                const auto & factories_info = context.getQueryFactoriesInfo();
+                elem.used_aggregate_functions = factories_info.aggregate_functions;
+                elem.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+                elem.used_database_engines = factories_info.database_engines;
+                elem.used_data_type_families = factories_info.data_type_families;
+                elem.used_dictionaries = factories_info.dictionaries;
+                elem.used_formats = factories_info.formats;
+                elem.used_functions = factories_info.functions;
+                elem.used_storages = factories_info.storages;
+                elem.used_table_functions = factories_info.table_functions;
 
                 if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
@@ -984,7 +1006,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
+            auto out = context.getOutputStream(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();
@@ -1029,7 +1051,7 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+                auto out = context.getOutputFormat(format_name, *out_buf, pipeline.getHeader());
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.
