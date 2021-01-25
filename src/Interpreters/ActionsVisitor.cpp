@@ -385,7 +385,8 @@ ActionsMatcher::Data::Data(
     const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
     const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
     PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_)
+    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_,
+    bool pushdown_limit_to_shards_)
     : context(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -396,6 +397,7 @@ ActionsMatcher::Data::Data(
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
     , create_source_for_in(create_source_for_in_)
+    , pushdown_limit_to_shards(pushdown_limit_to_shards_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
@@ -885,6 +887,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 {
                     argument_types.push_back(name_type->type);
                     argument_names.push_back(name_type->name);
+
                 }
                 else
                     arguments_present = false;

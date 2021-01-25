@@ -28,6 +28,13 @@ namespace ErrorCodes
 }
 
 
+void ActionsDAG::replaceResultName(const std::string & from, const std::string & to)
+{
+    for (auto & node : nodes)
+        if (node.result_name == from)
+            node.result_name = to;
+}
+
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
     for (const auto & input : inputs_)

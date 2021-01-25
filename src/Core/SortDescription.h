@@ -33,19 +33,23 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
+    std::vector<std::string> function_type_arguments; /// Collection of argument's names for function types.
+
     SortColumnDescription(
             size_t column_number_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr,
-            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {},
+            std::vector<std::string> function_type_arguments_ = {})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
-            , with_fill(with_fill_), fill_description(fill_description_) {}
+            , with_fill(with_fill_), fill_description(fill_description_), function_type_arguments(function_type_arguments_) {}
 
     SortColumnDescription(
             const std::string & column_name_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr,
-            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
+            bool with_fill_ = false, const FillColumnDescription & fill_description_ = {},
+            std::vector<std::string> function_type_arguments_ = {})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
-            , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
+            , collator(collator_), with_fill(with_fill_), fill_description(fill_description_), function_type_arguments(function_type_arguments_) {}
 
     bool operator == (const SortColumnDescription & other) const
     {

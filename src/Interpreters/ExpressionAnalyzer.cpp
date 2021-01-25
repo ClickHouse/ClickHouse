@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
+#include <Columns/Collator.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +27,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -39,6 +42,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/parseQuery.h>
@@ -72,6 +76,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -119,6 +124,125 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     }
     return true;
 }
+
+
+static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isColumnedAsNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    return field;
+}
+
+
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context & context)
+{
+    FillColumnDescription descr;
+    if (order_by_elem.fill_from)
+        descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
+    if (order_by_elem.fill_to)
+        descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.fill_step)
+        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
+    else
+        descr.fill_step = order_by_elem.direction;
+
+    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    if (order_by_elem.direction == 1)
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+        {
+            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+    else
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+        {
+            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+
+    return descr;
+}
+
+void extractFunctionNames(const ASTPtr & ast, std::vector<std::string> & function_names, int indent=0)
+{
+    for (const auto & child : ast->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (func)
+            function_names.push_back(func->getColumnName());
+
+        extractFunctionNames(child, function_names, indent+1);
+    }
+}
+
+SortDescription getSortDescription(const ASTSelectQuery & query, const Context & context)
+{
+    SortDescription order_descr;
+    auto order_by = query.orderBy();
+    if (!order_by)
+        return SortDescription{};
+
+    order_descr.reserve(order_by->children.size());
+    for (const auto & elem : query.orderBy()->children)
+    {
+        std::vector<std::string> function_names;
+        extractFunctionNames(elem, function_names, 0);
+
+        String name = elem->children.front()->getColumnName();
+        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
+
+        std::shared_ptr<Collator> collator;
+        if (order_by_elem.collation)
+            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
+
+        if (order_by_elem.with_fill)
+        {
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+            order_descr.emplace_back(name, order_by_elem.direction,
+                order_by_elem.nulls_direction, collator, true, fill_desc, function_names);
+        }
+        else
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
+                false, FillColumnDescription{}, function_names);
+    }
+
+    return order_descr;
+}
+
+
+SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
+{
+    SortDescription order_descr;
+    order_descr.reserve(query.groupBy()->children.size());
+
+    for (const auto & elem : query.groupBy()->children)
+    {
+        String name = elem->getColumnName();
+        order_descr.emplace_back(name, 1, 1);
+    }
+
+    return order_descr;
+}
+
 
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
@@ -432,8 +556,28 @@ void ExpressionAnalyzer::getRootActionsForHaving(const ASTPtr & ast, bool no_sub
 }
 
 
+void ExpressionAnalyzer::getRootActionsForPushdownLimitToShards(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
+{
+    LogAST log;
+    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+                                   sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
+                                   no_subqueries, false, only_consts, !isRemoteStorage(), true);
+    for (const auto & agg : aggregate_descriptions)
+        visitor_data.aggregate_descriptions.push_back(agg);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions = visitor_data.getActions();
+}
+
+
 bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
 {
+    auto * select_query = query->as<ASTSelectQuery>();
+    SortDescription sort_descr;
+    int sorting_key_index = 0;
+
+    if (select_query)
+        sort_descr = getSortDescription(*select_query, context);
+
     for (const ASTFunction * node : aggregates())
     {
         AggregateDescription aggregate;
@@ -465,6 +609,18 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions)
         AggregateFunctionProperties properties;
         aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
         aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
+
+        aggregate.is_sorting_key = std::count_if(
+            sort_descr.begin(),
+            sort_descr.end(),
+            [& aggregate](auto & sort)
+            {
+                auto is_aggregate_column = [&aggregate](auto & function_name) { return function_name == aggregate.column_name; };
+                return sort.column_name == aggregate.column_name ||
+                        std::count_if(sort.function_type_arguments.begin(), sort.function_type_arguments.end(), is_aggregate_column);
+            }
+        );
+        aggregate.sorting_column_name = aggregate.column_name + "_sorting_key" + std::to_string(++sorting_key_index);
 
         aggregate_descriptions.push_back(aggregate);
     }
@@ -1058,6 +1214,41 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
     }
 }
 
+ActionsDAGPtr SelectQueryExpressionAnalyzer::appendBeforeLimitPushdown(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getSelectQuery();
+
+    if (!select_query->orderBy())
+    {
+        auto actions = chain.getLastActions();
+        chain.addStep();
+        return actions;
+    }
+
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
+
+    getRootActionsForPushdownLimitToShards(select_query->orderBy(), only_types, step.actions(), false);
+
+    NameSet order_by_keys;
+    for (auto & child : select_query->orderBy()->children)
+    {
+        const auto * ast = child->as<ASTOrderByElement>();
+        if (!ast || ast->children.empty())
+            throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+        ASTPtr order_expression = ast->children.at(0);
+        step.required_output.push_back(order_expression->getColumnName());
+    }
+
+    NameSet non_constant_inputs;
+    for (const auto & column : step.getResultColumns())
+        if (!order_by_keys.count(column.name))
+            non_constant_inputs.insert(column.name);
+
+    auto actions = chain.getLastActions();
+    chain.addStep(non_constant_inputs);
+    return actions;
+}
+
 bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -1176,6 +1367,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
 
     return true;
 }
+
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
@@ -1509,6 +1701,17 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             {
                 step.required_output.push_back(child->getColumnName());
             }
+        }
+
+        if (need_aggregate && settings.experimental_enable_pushdown_limit_to_shards && first_stage)
+        {
+            before_limit_pushdown = query_analyzer.appendBeforeLimitPushdown(
+                    chain,
+                    only_types || (need_aggregate ? !second_stage : !first_stage));
+
+            for (const auto & descr : query_analyzer.aggregates())
+                if (descr.is_sorting_key)
+                    before_limit_pushdown->replaceResultName(descr.column_name, descr.sorting_column_name);
         }
 
         selected_columns = chain.getLastStep().required_output;

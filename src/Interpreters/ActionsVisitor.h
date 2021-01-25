@@ -4,6 +4,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/AggregateDescription.h>
 
 
 namespace DB
@@ -116,8 +117,10 @@ public:
         bool no_makeset;
         bool only_consts;
         bool create_source_for_in;
+        bool pushdown_limit_to_shards;
         size_t visit_depth;
         ScopeStack actions_stack;
+        AggregateDescriptions aggregate_descriptions; /// It is used to optimization of pushdown_limit_to_shards.
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
@@ -129,7 +132,8 @@ public:
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_);
+                bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_,
+                bool pushdown_limit_to_shards_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;

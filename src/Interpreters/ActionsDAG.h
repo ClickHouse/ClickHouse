@@ -253,6 +253,8 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    void replaceResultName(const std::string & from, const std::string & to);
+
 private:
     Node & addNode(Node node, bool can_replace = false);
     Node & getNode(const std::string & name);

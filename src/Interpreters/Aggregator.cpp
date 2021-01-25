@@ -16,6 +16,7 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
@@ -106,7 +107,8 @@ Block Aggregator::Params::getHeader(
     const Block & intermediate_header,
     const ColumnNumbers & keys,
     const AggregateDescriptions & aggregates,
-    bool final)
+    bool final,
+    bool pushdown_limit_to_shards)
 {
     Block res;
 
@@ -144,6 +146,12 @@ Block Aggregator::Params::getHeader(
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
             res.insert({ type, aggregate.column_name });
+
+            if (!final && pushdown_limit_to_shards && aggregate.is_sorting_key)
+            {
+                type = aggregate.function->getReturnType();
+                res.insert({ type, aggregate.sorting_column_name });
+            }
         }
     }
 
@@ -1043,7 +1051,12 @@ void Aggregator::convertToBlockImpl(
     if (final)
         convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, arena);
     else
+    {
+        if (params.pushdown_limit_to_shards)
+            convertToBlockImplPreliminaryFinal<Method, Table>(data, key_columns, final_aggregate_columns, arena);
         convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns);
+    }
+
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -1082,10 +1095,12 @@ inline void Aggregator::insertAggregatesIntoColumns(
     {
         /// Insert final values of aggregate functions into columns.
         for (; insert_i < params.aggregates_size; ++insert_i)
+        {
             aggregate_functions[insert_i]->insertResultInto(
                 mapped + offsets_of_aggregate_states[insert_i],
                 *final_aggregate_columns[insert_i],
                 arena);
+        }
     }
     catch (...)
     {
@@ -1117,6 +1132,38 @@ inline void Aggregator::insertAggregatesIntoColumns(
 }
 
 
+template <typename Mapped>
+inline void Aggregator::insertAggregatesIntoColumnsPreliminary(
+    Mapped & mapped,
+    MutableColumns & final_aggregate_columns,
+    Arena * arena) const
+{
+    size_t insert_i = 0;
+    std::exception_ptr exception;
+
+    try
+    {
+        for (; insert_i < params.aggregates_size; ++insert_i)
+        {
+            if (params.pushdown_limit_to_shards && params.aggregates[insert_i].is_sorting_key)
+            {
+                aggregate_functions[insert_i]->insertResultInto(
+                    mapped + offsets_of_aggregate_states[insert_i],
+                    *final_aggregate_columns[insert_i],
+                    arena);
+            }
+        }
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
+}
+
+
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplFinal(
     Method & method,
@@ -1138,6 +1185,31 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes);
         insertAggregatesIntoColumns(mapped, final_aggregate_columns, arena);
+    });
+}
+
+/**
+  * For limit_pushdown, it preliminary fianzlies aggregation columns used by sorting.
+  */
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::convertToBlockImplPreliminaryFinal(
+    Table & data,
+    MutableColumns & key_columns,
+    MutableColumns & final_aggregate_columns,
+    Arena * arena) const
+{
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        if (data.hasNullKeyData())
+        {
+            key_columns[0]->insertDefault();
+            insertAggregatesIntoColumnsPreliminary(data.getNullKeyData(), final_aggregate_columns, arena);
+        }
+    }
+
+    data.forEachValue([&](const auto &, auto & mapped)
+    {
+        insertAggregatesIntoColumnsPreliminary(mapped, final_aggregate_columns, arena);
     });
 }
 
@@ -1209,6 +1281,12 @@ Block Aggregator::prepareBlockAndFill(
 
             aggregate_columns_data[i] = &column_aggregate_func.getData();
             aggregate_columns_data[i]->reserve(rows);
+
+            if (params.pushdown_limit_to_shards && params.aggregates[i].is_sorting_key)
+            {
+                final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
+                final_aggregate_columns[i]->reserve(rows);
+            }
         }
         else
         {
@@ -1254,6 +1332,12 @@ Block Aggregator::prepareBlockAndFill(
     for (size_t i = 0; i < columns; ++i)
         if (isColumnConst(*res.getByPosition(i).column))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
+
+    /// Outputs preliminary finalized columns for limit pushdown.
+    if (!final && params.pushdown_limit_to_shards)
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (params.aggregates[i].is_sorting_key)
+                res.getByName(params.aggregates[i].sorting_column_name).column = std::move(final_aggregate_columns[i]);
 
     return res;
 }

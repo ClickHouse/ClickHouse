@@ -424,6 +424,8 @@ class IColumn;
     M(Bool, enable_debug_queries, false, "Enabled debug queries, but now is obsolete", 0) \
     M(Bool, allow_experimental_database_atomic, true, "Obsolete setting, does nothing. Will be removed after 2021-02-12", 0) \
     M(UnionMode, union_default_mode, UnionMode::Unspecified, "Set default Union Mode in SelectWithUnion query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without Union Mode will throw exception.", 0) \
+    M(Bool, experimental_enable_pushdown_limit_to_shards, false, "Pushes down the limit clauses to the remote shards to minimize the amount of data transferred across network.", 0) \
+    M(Float, limit_pushdown_fetch_multiplier, 2.0, "When pushdown_limit_to_shard is enabled, each remote shard will rank their top (N * limit_pushdown_fetch_multiplie) results and only return those results to the initiator node.", 0) \
     M(Bool, optimize_aggregators_of_group_by_keys, true, "Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section", 0) \
     M(Bool, optimize_group_by_function_keys, true, "Eliminates functions of other keys in GROUP BY section", 0) \
 

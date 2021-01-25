@@ -185,6 +185,8 @@ private:
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
+
+    bool pushdown_limit_to_shards;
 };
 
 }
