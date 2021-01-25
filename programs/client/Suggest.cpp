@@ -115,6 +115,8 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         " UNION ALL "
         "SELECT macro FROM system.macros"
         " UNION ALL "
+        "SELECT policy_name FROM system.storage_policies"
+        " UNION ALL "
         "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
