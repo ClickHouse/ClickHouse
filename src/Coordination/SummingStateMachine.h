@@ -9,6 +9,7 @@
 namespace DB
 {
 
+/// Example trivial state machine.
 class SummingStateMachine : public nuraft::state_machine
 {
 public:
