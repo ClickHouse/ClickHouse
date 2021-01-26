@@ -50,6 +50,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();
