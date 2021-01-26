@@ -39,7 +39,7 @@ public:
     bool flush() override { return true; }
 
 private:
-    std::map<ulong, nuraft::ptr<nuraft::log_entry>> logs;
+    std::map<size_t, nuraft::ptr<nuraft::log_entry>> logs;
     mutable std::mutex logs_lock;
     std::atomic<size_t> start_idx;
 };
