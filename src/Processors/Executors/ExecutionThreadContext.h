@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/Executors/ExecutingGraph.h>
 #include <queue>
+#include <condition_variable>
 
 namespace DB
 {

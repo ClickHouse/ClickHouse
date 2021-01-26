@@ -38,8 +38,8 @@ class ExecutorTasks
 
     size_t num_threads = 0;
 
-    /// This is the total number of async tasks which are not executed yet.
-    /// Is `async_task_queue.size() + sum(executor_contexts[i].async_tasks.size())`.
+    /// This is the total number of waited async tasks which are not executed yet.
+    /// sum(executor_contexts[i].async_tasks.size())
     size_t num_waiting_async_tasks = 0;
 
     /// A set of currently waiting threads.
