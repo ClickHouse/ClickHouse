@@ -69,6 +69,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
 
+# FIXME: for now only clickhouse-test
+pylint --score=n $ROOT_PATH/tests/clickhouse-test
+
 # Machine translation to Russian is strictly prohibited
 find $ROOT_PATH/docs/ru -name '*.md' |
     grep -vP $EXCLUDE_DIRS |
