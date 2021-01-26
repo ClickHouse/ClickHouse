@@ -301,9 +301,7 @@ public:
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
 
-            char subnet_prefix[] = "::ffff:";
-            char src_ipv4_buf[sizeof(subnet_prefix) + IPV4_MAX_TEXT_LENGTH + 1];
-            strcpy(src_ipv4_buf, subnet_prefix);
+            char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
             {
