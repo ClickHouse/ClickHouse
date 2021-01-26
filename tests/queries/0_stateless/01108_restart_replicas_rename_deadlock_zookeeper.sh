@@ -19,7 +19,7 @@ function rename_thread_1()
                                             replica_01108_3 TO replica_01108_3_tmp,
                                             replica_01108_4 TO replica_01108_4_tmp";
         sleep 0.$RANDOM;
-        done
+    done
 }
 
 function rename_thread_2()
@@ -30,23 +30,27 @@ function rename_thread_2()
                                             replica_01108_3_tmp TO replica_01108_4,
                                             replica_01108_4_tmp TO replica_01108_1";
         sleep 0.$RANDOM;
-        done
+    done
 }
 
-function restart_thread_1()
+function restart_replicas_loop()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICAS";
-        sleep 0.$RANDOM;
+        for i in $(seq 4); do
+            $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}";
+            $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}_tmp";
         done
+        sleep 0.$RANDOM;
+    done
+}
+function restart_thread_1()
+{
+    restart_replicas_loop
 }
 
 function restart_thread_2()
 {
-    while true; do
-        $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICAS";
-        sleep 0.$RANDOM;
-        done
+    restart_replicas_loop
 }
 
 export -f rename_thread_1;
