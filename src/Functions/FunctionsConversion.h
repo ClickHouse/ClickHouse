@@ -188,7 +188,10 @@ struct ConvertImpl
                     (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>))
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                    {
+                        vec_to[i] = 0;
                         (*vec_null_map_to)[i] = true;
+                    }
                     else
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                 }
@@ -215,7 +218,10 @@ struct ConvertImpl
                             if (convert_result)
                                 vec_to[i] = result;
                             else
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(0);
                                 (*vec_null_map_to)[i] = true;
+                            }
                         }
                         else
                         {
@@ -238,6 +244,7 @@ struct ConvertImpl
                             {
                                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
+                                    vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
                                     continue;
                                 }
@@ -255,6 +262,7 @@ struct ConvertImpl
                             {
                                 if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
+                                    vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
                                 }
                                 else

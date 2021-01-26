@@ -16,4 +16,4 @@ ClickHouse® is an open-source column-oriented database management system that a
 * You can also [fill this form](https://clickhouse.tech/#meet) to meet Yandex ClickHouse team in person.
 
 ## Upcoming Events
-* [SF Bay Area ClickHouse Virtual Office Hours (online)](https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/274273549/) on 20 January 2020.
+* [Chinese ClickHouse Meetup (online)](http://hdxu.cn/8KxZE) on 6 February 2021.
