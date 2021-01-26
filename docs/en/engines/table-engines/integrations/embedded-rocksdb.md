@@ -38,3 +38,5 @@ CREATE TABLE test
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
+
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/embedded-rocksdb/) <!--hide-->
