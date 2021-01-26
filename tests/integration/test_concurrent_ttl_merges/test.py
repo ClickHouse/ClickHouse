@@ -160,8 +160,8 @@ def test_limited_ttl_merges_two_replicas(started_cluster):
     merges_with_ttl_count_node1 = set({})
     merges_with_ttl_count_node2 = set({})
     while True:
-        merges_with_ttl_count_node1.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl_2"), 3)
-        merges_with_ttl_count_node2.add(count_ttl_merges_in_background_pool(node2, "replicated_ttl_2"), 3)
+        merges_with_ttl_count_node1.add(count_ttl_merges_in_background_pool(node1, "replicated_ttl_2", 3))
+        merges_with_ttl_count_node2.add(count_ttl_merges_in_background_pool(node2, "replicated_ttl_2", 3))
         if node1.query("SELECT COUNT() FROM replicated_ttl_2") == "0\n" and node2.query(
                 "SELECT COUNT() FROM replicated_ttl_2") == "0\n":
             break
