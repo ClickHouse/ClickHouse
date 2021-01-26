@@ -78,7 +78,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
     {
         for (size_t i = 0; i < data.size(); ++i)
         {
-            auto val = data[i];
+            auto * val = data[i];
             if (val == nullptr)
             {
                 continue;
@@ -489,6 +489,10 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
     iter = copiedDataInfo.find(place);
     if (iter == copiedDataInfo.end())
     {
+        if (copiedDataInfo.size() > 10000)
+        {
+           copiedDataInfo.clear();
+        }
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
     }
