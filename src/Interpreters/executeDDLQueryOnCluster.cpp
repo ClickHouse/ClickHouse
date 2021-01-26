@@ -31,12 +31,13 @@ namespace ErrorCodes
 
 bool isSupportedAlterType(int type)
 {
+    assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
+        /// It's dangerous, because it may duplicate data if executed on multiple replicas
         ASTAlterCommand::ATTACH_PARTITION,
-        ASTAlterCommand::REPLACE_PARTITION,
+        /// Usually followed by ATTACH PARTITION
         ASTAlterCommand::FETCH_PARTITION,
-        ASTAlterCommand::FREEZE_PARTITION,
-        ASTAlterCommand::FREEZE_ALL,
+        /// Logical error
         ASTAlterCommand::NO_TYPE,
     };
 

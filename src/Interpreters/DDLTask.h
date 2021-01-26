@@ -85,9 +85,10 @@ struct DDLTaskBase
     ExecutionStatus execution_status;
     bool was_executed = false;
 
+    std::atomic_bool completely_processed = false;
+
     DDLTaskBase(const String & name, const String & path) : entry_name(name), entry_path(path) {}
     DDLTaskBase(const DDLTaskBase &) = delete;
-    DDLTaskBase(DDLTaskBase &&) = default;
     virtual ~DDLTaskBase() = default;
 
     void parseQueryFromEntry(const Context & context);

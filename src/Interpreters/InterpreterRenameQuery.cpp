@@ -13,6 +13,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
@@ -78,6 +82,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
         {
+            if (1 < descriptions.size())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
+                                "it does not support renaming of multiple tables in single query.", elem.from_database_name);
             return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
         }
         else
