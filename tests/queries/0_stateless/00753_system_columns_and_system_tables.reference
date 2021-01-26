@@ -45,3 +45,7 @@ Check total_bytes/total_rows for Set
 Check total_bytes/total_rows for Join
 10240	50
 10240	100
+Check total_bytes/total_rows for Distributed
+0	\N
+629	\N
+0	\N
