@@ -27,7 +27,7 @@ We recommend using SQL-driven workflow. Both of the configuration methods work s
 !!! note "Warning"
     You can’t manage the same access entity by both configuration methods simultaneously.
 
-To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement).
+To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement) statement.
 
 ## Usage {#access-control-usage}
 
