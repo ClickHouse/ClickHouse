@@ -146,6 +146,8 @@ public:
 
     void insertFrom(ConstAggregateDataPtr place);
 
+    void insertCopyFrom(ConstAggregateDataPtr place);
+
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);
 
