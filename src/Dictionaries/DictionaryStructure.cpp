@@ -281,6 +281,21 @@ size_t DictionaryStructure::getKeySize() const
     });
 }
 
+Strings DictionaryStructure::getKeysNames() const
+{
+    if (id)
+        return { id->name };
+
+    auto & key_attributes = *key;
+
+    Strings keys_names;
+    keys_names.reserve(key_attributes.size());
+
+    for (const auto & key_attribute : key_attributes)
+        keys_names.emplace_back(key_attribute.name);
+
+    return keys_names;
+}
 
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
