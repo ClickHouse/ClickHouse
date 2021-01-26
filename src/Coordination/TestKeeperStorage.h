@@ -24,7 +24,7 @@ public:
     struct Node
     {
         String data;
-        Coordination::ACLs acls;
+        Coordination::ACLs acls{};
         bool is_ephemeral = false;
         bool is_sequental = false;
         Coordination::Stat stat{};
