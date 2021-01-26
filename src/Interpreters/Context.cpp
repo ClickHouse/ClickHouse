@@ -447,7 +447,8 @@ struct ContextShared
         /// Stop zookeeper connection
         zookeeper.reset();
         /// Stop test_keeper storage
-        test_keeper_storage_dispatcher->shutdown();
+        if (test_keeper_storage_dispatcher)
+            test_keeper_storage_dispatcher->shutdown();
     }
 
     bool hasTraceCollector() const
