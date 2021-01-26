@@ -14,29 +14,27 @@ namespace ErrorCodes
 void TestKeeperStorageDispatcher::processingThread()
 {
     setThreadName("TestKeeperSProc");
-    try
+    while (!shutdown)
     {
-        while (!shutdown)
+        TestKeeperStorage::RequestForSession request;
+
+        UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+
+        if (requests_queue.tryPop(request, max_wait))
         {
-            TestKeeperStorage::RequestForSession request;
-
-            UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
-
-            if (requests_queue.tryPop(request, max_wait))
+            if (shutdown)
+                break;
+            try
             {
-                if (shutdown)
-                    break;
-
                 auto responses = server->putRequests({request});
                 for (const auto & response_for_session : responses)
                     setResponse(response_for_session.session_id, response_for_session.response);
             }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize();
     }
 }
 
