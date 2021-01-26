@@ -8,7 +8,7 @@ PEERDIR(
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F 'PostgreSQL' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

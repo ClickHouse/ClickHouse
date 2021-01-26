@@ -41,7 +41,7 @@ public:
         unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
+        Aws::Client::ClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
@@ -50,7 +50,7 @@ public:
         unsigned int s3_max_redirects);
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const Aws::Client::ClientConfiguration & cfg,
+        const String & endpoint,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,

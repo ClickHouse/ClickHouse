@@ -85,7 +85,6 @@ SRCS(
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/TestKeeperStorage.cpp
-    ZooKeeper/TestKeeperStorageDispatcher.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp

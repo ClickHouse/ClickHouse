@@ -179,7 +179,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
@@ -732,17 +732,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
-
-                const auto & factories_info = context.getQueryFactoriesInfo();
-                elem.used_aggregate_functions = factories_info.aggregate_functions;
-                elem.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
-                elem.used_database_engines = factories_info.database_engines;
-                elem.used_data_type_families = factories_info.data_type_families;
-                elem.used_dictionaries = factories_info.dictionaries;
-                elem.used_formats = factories_info.formats;
-                elem.used_functions = factories_info.functions;
-                elem.used_storages = factories_info.storages;
-                elem.used_table_functions = factories_info.table_functions;
 
                 if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {

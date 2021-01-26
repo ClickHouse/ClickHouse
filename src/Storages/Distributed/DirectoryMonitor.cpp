@@ -17,7 +17,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
@@ -46,7 +45,6 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -80,104 +78,6 @@ namespace
         }
     }
 
-    struct DistributedHeader
-    {
-        Settings insert_settings;
-        std::string insert_query;
-        ClientInfo client_info;
-
-        /// .bin file cannot have zero rows/bytes.
-        size_t rows = 0;
-        size_t bytes = 0;
-
-        std::string header;
-    };
-
-    DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
-    {
-        DistributedHeader header;
-
-        UInt64 query_size;
-        readVarUInt(query_size, in);
-
-        if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
-        {
-            /// Read the header as a string.
-            String header_data;
-            readStringBinary(header_data, in);
-
-            /// Check the checksum of the header.
-            CityHash_v1_0_2::uint128 checksum;
-            readPODBinary(checksum, in);
-            assertChecksum(checksum, CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size()));
-
-            /// Read the parts of the header.
-            ReadBufferFromString header_buf(header_data);
-
-            UInt64 initiator_revision;
-            readVarUInt(initiator_revision, header_buf);
-            if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
-            {
-                LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
-            }
-
-            readStringBinary(header.insert_query, header_buf);
-            header.insert_settings.read(header_buf);
-
-            if (header_buf.hasPendingData())
-                header.client_info.read(header_buf, initiator_revision);
-
-            if (header_buf.hasPendingData())
-            {
-                readVarUInt(header.rows, header_buf);
-                readVarUInt(header.bytes, header_buf);
-                readStringBinary(header.header, header_buf);
-            }
-
-            /// Add handling new data here, for example:
-            ///
-            /// if (header_buf.hasPendingData())
-            ///     readVarUInt(my_new_data, header_buf);
-            ///
-            /// And note that it is safe, because we have checksum and size for header.
-
-            return header;
-        }
-
-        if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
-        {
-            header.insert_settings.read(in, SettingsWriteFormat::BINARY);
-            readStringBinary(header.insert_query, in);
-            return header;
-        }
-
-        header.insert_query.resize(query_size);
-        in.readStrict(header.insert_query.data(), query_size);
-
-        return header;
-    }
-
-    /// remote_error argument is used to decide whether some errors should be
-    /// ignored or not, in particular:
-    ///
-    /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
-    ///   if we receive it from remote (receiver), since:
-    ///   - the sender will got ATTEMPT_TO_READ_AFTER_EOF when the client just go away,
-    ///     i.e. server had been restarted
-    ///   - since #18853 the file will be checked on the sender locally, and
-    ///     if there is something wrong with the file itself, we will receive
-    ///     ATTEMPT_TO_READ_AFTER_EOF not from the remote at first
-    ///     and mark batch as broken.
-    bool isFileBrokenErrorCode(int code, bool remote_error)
-    {
-        return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-            || code == ErrorCodes::EMPTY_DATA_PASSED
-            || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
-            || code == ErrorCodes::CANNOT_READ_ALL_DATA
-            || code == ErrorCodes::UNKNOWN_CODEC
-            || code == ErrorCodes::CANNOT_DECOMPRESS
-            || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
-    }
 }
 
 
@@ -429,17 +329,20 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-        ReadBufferFromFile in(file_path);
-        const auto & header = readDistributedHeader(in, log);
+        ReadBufferFromFile in{file_path};
 
-        auto connection = pool->get(timeouts, &header.insert_settings);
-        RemoteBlockOutputStream remote{*connection, timeouts,
-            header.insert_query, header.insert_settings, header.client_info};
+        Settings insert_settings;
+        std::string insert_query;
+        ClientInfo client_info;
 
-        CheckingCompressedReadBuffer checking_in(in);
+        readHeader(in, insert_settings, insert_query, client_info, log);
+
+        auto connection = pool->get(timeouts, &insert_settings);
+
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
         remote.writePrefix();
-        remote.writePrepared(checking_in);
+        remote.writePrepared(in);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -458,25 +361,76 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `{}`", file_path);
 }
 
+void StorageDistributedDirectoryMonitor::readHeader(
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log)
+{
+    UInt64 query_size;
+    readVarUInt(query_size, in);
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
+    {
+        /// Read the header as a string.
+        String header;
+        readStringBinary(header, in);
+
+        /// Check the checksum of the header.
+        CityHash_v1_0_2::uint128 checksum;
+        readPODBinary(checksum, in);
+        assertChecksum(checksum, CityHash_v1_0_2::CityHash128(header.data(), header.size()));
+
+        /// Read the parts of the header.
+        ReadBufferFromString header_buf(header);
+
+        UInt64 initiator_revision;
+        readVarUInt(initiator_revision, header_buf);
+        if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
+        {
+            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
+        }
+
+        readStringBinary(insert_query, header_buf);
+        insert_settings.read(header_buf);
+
+        if (header_buf.hasPendingData())
+            client_info.read(header_buf, initiator_revision);
+
+        /// Add handling new data here, for example:
+        /// if (header_buf.hasPendingData())
+        ///    readVarUInt(my_new_data, header_buf);
+
+        return;
+    }
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
+    {
+        insert_settings.read(in, SettingsWriteFormat::BINARY);
+        readStringBinary(insert_query, in);
+        return;
+    }
+
+    insert_query.resize(query_size);
+    in.readStrict(insert_query.data(), query_size);
+}
+
 struct StorageDistributedDirectoryMonitor::BatchHeader
 {
     Settings settings;
     String query;
     ClientInfo client_info;
-    String sample_block_structure;
+    Block sample_block;
 
-    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, String sample_block_structure_)
+    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block sample_block_)
         : settings(std::move(settings_))
         , query(std::move(query_))
         , client_info(std::move(client_info_))
-        , sample_block_structure(std::move(sample_block_structure_))
+        , sample_block(std::move(sample_block_))
     {
     }
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind, sample_block_structure) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.sample_block_structure);
+        return settings == other.settings && query == other.query && client_info.query_kind == other.client_info.query_kind
+            && blocksHaveEqualStructure(sample_block, other.sample_block);
     }
 
     struct Hash
@@ -485,7 +439,14 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
-            hash_state.update(batch_header.sample_block_structure.data(), batch_header.sample_block_structure.size());
+
+            size_t num_columns = batch_header.sample_block.columns();
+            for (size_t i = 0; i < num_columns; ++i)
+            {
+                const String & type_name = batch_header.sample_block.getByPosition(i).type->getName();
+                hash_state.update(type_name.data(), type_name.size());
+            }
+
             return hash_state.get64();
         }
     };
@@ -561,6 +522,9 @@ struct StorageDistributedDirectoryMonitor::Batch
         bool batch_broken = false;
         try
         {
+            Settings insert_settings;
+            String insert_query;
+            ClientInfo client_info;
             std::unique_ptr<RemoteBlockOutputStream> remote;
             bool first = true;
 
@@ -575,18 +539,16 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                const auto & header = readDistributedHeader(in, parent.log);
+                parent.readHeader(in, insert_settings, insert_query, client_info, parent.log);
 
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts,
-                        header.insert_query, header.insert_settings, header.client_info);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, insert_settings, client_info);
                     remote->writePrefix();
                 }
 
-                CheckingCompressedReadBuffer checking_in(in);
-                remote->writePrepared(checking_in);
+                remote->writePrepared(in);
             }
 
             if (remote)
@@ -594,7 +556,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         catch (const Exception & e)
         {
-            if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
+            if (isFileBrokenErrorCode(e.code()))
             {
                 tryLogCurrentException(parent.log, "Failed to send batch due to");
                 batch_broken = true;
@@ -661,7 +623,10 @@ public:
         , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
         , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
-        readDistributedHeader(in, log);
+        Settings insert_settings;
+        String insert_query;
+        ClientInfo client_info;
+        StorageDistributedDirectoryMonitor::readHeader(in, insert_settings, insert_query, client_info, log);
 
         block_in.readPrefix();
         first_block = block_in.read();
@@ -749,36 +714,29 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
         size_t total_rows = 0;
         size_t total_bytes = 0;
-        std::string sample_block_structure;
-        DistributedHeader header;
+        Block sample_block;
+        Settings insert_settings;
+        String insert_query;
+        ClientInfo client_info;
         try
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            header = readDistributedHeader(in, log);
+            readHeader(in, insert_settings, insert_query, client_info, log);
 
-            if (header.rows)
+            CompressedReadBuffer decompressing_in(in);
+            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+            block_in.readPrefix();
+
+            while (Block block = block_in.read())
             {
-                total_rows += header.rows;
-                total_bytes += header.bytes;
-                sample_block_structure = header.header;
-            }
-            else
-            {
-                CompressedReadBuffer decompressing_in(in);
-                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-                block_in.readPrefix();
+                total_rows += block.rows();
+                total_bytes += block.bytes();
 
-                while (Block block = block_in.read())
-                {
-                    total_rows += block.rows();
-                    total_bytes += block.bytes();
-
-                    if (sample_block_structure.empty())
-                        sample_block_structure = block.cloneEmpty().dumpStructure();
-                }
-                block_in.readSuffix();
+                if (!sample_block)
+                    sample_block = block.cloneEmpty();
             }
+            block_in.readSuffix();
         }
         catch (const Exception & e)
         {
@@ -791,7 +749,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 throw;
         }
 
-        BatchHeader batch_header(std::move(header.insert_settings), std::move(header.insert_query), std::move(header.client_info), std::move(sample_block_structure));
+        BatchHeader batch_header(std::move(insert_settings), std::move(insert_query), std::move(client_info), std::move(sample_block));
         Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);
@@ -824,6 +782,16 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 }
 
+bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
+{
+    return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+        || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
+        || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
+}
+
 void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
 {
     const auto last_path_separator_pos = file_path.rfind('/');
@@ -850,7 +818,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
 {
     /// mark file as broken if necessary
-    if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
+    if (isFileBrokenErrorCode(e.code()))
     {
         markAsBroken(file_path);
         return true;

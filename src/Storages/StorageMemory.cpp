@@ -38,7 +38,7 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        , column_names(std::move(column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -65,17 +65,11 @@ protected:
 
         const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(columns.size());
+        columns.reserve(column_names.size());
 
         /// Add only required columns to `res`.
-        for (const auto & elem : column_names_and_types)
-        {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
+        for (const auto & name : column_names)
+            columns.push_back(src.getByName(name).column);
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -93,7 +87,7 @@ private:
         }
     }
 
-    const NamesAndTypesList column_names_and_types;
+    const Names column_names;
     size_t execution_index = 0;
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;

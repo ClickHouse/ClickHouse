@@ -661,7 +661,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
         const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
         const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        const auto zero =              _mm_set1_epi8(0);
+        const auto zero  =             _mm_set1_epi8(0);
 
         // every bit represents if `haystack` character `c` satisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
@@ -717,7 +717,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     }
 
 #if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
+    // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
     if (*token_start > len)
         return false;
     *token_len = std::min(len - *token_start, *token_len);

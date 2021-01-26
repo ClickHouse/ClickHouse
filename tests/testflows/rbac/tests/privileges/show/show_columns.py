@@ -41,7 +41,7 @@ def describe_with_privilege_granted_via_role(self, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_DescribeTable_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_DescribeTable("1.0"),
 )
 def describe(self, grant_target_name, user_name, table_name, node=None):
     """Check that user is able to execute DESCRIBE only when they have SHOW COLUMNS privilege.
@@ -112,7 +112,7 @@ def show_create_with_privilege_granted_via_role(self, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowCreateTable_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowCreateTable("1.0"),
 )
 def show_create(self, grant_target_name, user_name, table_name, node=None):
     """Check that user is able to execute SHOW CREATE on a table only when they have SHOW COLUMNS privilege.
@@ -150,7 +150,7 @@ def show_create(self, grant_target_name, user_name, table_name, node=None):
 @TestFeature
 @Name("show columns")
 @Requirements(
-    RQ_SRS_006_RBAC_ShowColumns_Privilege("1.0")
+    RQ_SRS_006_RBAC_Privileges_ShowColumns("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW COLUMNS.

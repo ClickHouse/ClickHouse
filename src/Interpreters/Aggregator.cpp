@@ -1,4 +1,7 @@
+#include <iomanip>
+#include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -6,19 +9,24 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionResample.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/Operators.h>
 
@@ -2308,7 +2316,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 }
 
 
-void Aggregator::setCancellationHook(const CancellationHook & cancellation_hook)
+void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {
     isCancelled = cancellation_hook;
 }

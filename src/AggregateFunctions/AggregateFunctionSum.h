@@ -1,6 +1,5 @@
 #pragma once
 
-#include <experimental/type_traits>
 #include <type_traits>
 
 #include <IO/WriteHelpers.h>
@@ -16,120 +15,80 @@
 namespace DB
 {
 
-/// Uses addOverflow method (if available) to avoid UB for sumWithOverflow()
-///
-/// Since NO_SANITIZE_UNDEFINED works only for the function itself, without
-/// callers, and in case of non-POD type (i.e. Decimal) you have overwritten
-/// operator+=(), which will have UB.
-template <typename T>
-struct AggregateFunctionSumAddOverflowImpl
-{
-    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T & lhs, const T & rhs)
-    {
-        lhs += rhs;
-    }
-};
-template <typename DecimalNativeType>
-struct AggregateFunctionSumAddOverflowImpl<Decimal<DecimalNativeType>>
-{
-    static void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(Decimal<DecimalNativeType> & lhs, const Decimal<DecimalNativeType> & rhs)
-    {
-        lhs.addOverflow(rhs);
-    }
-};
-
 template <typename T>
 struct AggregateFunctionSumData
 {
-    using Impl = AggregateFunctionSumAddOverflowImpl<T>;
     T sum{};
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(T value)
+    void ALWAYS_INLINE add(T value)
     {
-        Impl::add(sum, value);
+        sum += value;
     }
 
     /// Vectorized version
     template <typename Value>
-    void NO_SANITIZE_UNDEFINED NO_INLINE addMany(const Value * __restrict ptr, size_t count)
+    void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
+        /// Compiler cannot unroll this loop, do it manually.
+        /// (at least for floats, most likely due to the lack of -fassociative-math)
+
+        /// Something around the number of SSE registers * the number of elements fit in register.
+        constexpr size_t unroll_count = 128 / sizeof(T);
+        T partial_sums[unroll_count]{};
+
         const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        if constexpr (std::is_floating_point_v<T>)
+        while (ptr < unrolled_end)
         {
-            /// Compiler cannot unroll this loop, do it manually.
-            /// (at least for floats, most likely due to the lack of -fassociative-math)
-
-            /// Something around the number of SSE registers * the number of elements fit in register.
-            constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
-
-            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
-
-            while (ptr < unrolled_end)
-            {
-                for (size_t i = 0; i < unroll_count; ++i)
-                    Impl::add(partial_sums[i], ptr[i]);
-                ptr += unroll_count;
-            }
-
             for (size_t i = 0; i < unroll_count; ++i)
-                Impl::add(sum, partial_sums[i]);
+                partial_sums[i] += ptr[i];
+            ptr += unroll_count;
         }
 
-        /// clang cannot vectorize the loop if accumulator is class member instead of local variable.
-        T local_sum{};
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
         while (ptr < end)
         {
-            Impl::add(local_sum, *ptr);
+            sum += *ptr;
             ++ptr;
         }
-        Impl::add(sum, local_sum);
     }
 
     template <typename Value>
-    void NO_SANITIZE_UNDEFINED NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
+        constexpr size_t unroll_count = 128 / sizeof(T);
+        T partial_sums[unroll_count]{};
+
         const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        if constexpr (std::is_floating_point_v<T>)
+        while (ptr < unrolled_end)
         {
-            constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
-
-            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
-
-            while (ptr < unrolled_end)
-            {
-                for (size_t i = 0; i < unroll_count; ++i)
-                {
-                    if (!null_map[i])
-                    {
-                        Impl::add(partial_sums[i], ptr[i]);
-                    }
-                }
-                ptr += unroll_count;
-                null_map += unroll_count;
-            }
-
             for (size_t i = 0; i < unroll_count; ++i)
-                Impl::add(sum, partial_sums[i]);
+                if (!null_map[i])
+                    partial_sums[i] += ptr[i];
+            ptr += unroll_count;
+            null_map += unroll_count;
         }
 
-        T local_sum{};
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
         while (ptr < end)
         {
             if (!*null_map)
-                Impl::add(local_sum, *ptr);
+                sum += *ptr;
             ++ptr;
             ++null_map;
         }
-        Impl::add(sum, local_sum);
     }
 
-    void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
+    void merge(const AggregateFunctionSumData & rhs)
     {
-        Impl::add(sum, rhs.sum);
+        sum += rhs.sum;
     }
 
     void write(WriteBuffer & buf) const
@@ -146,7 +105,6 @@ struct AggregateFunctionSumData
     {
         return sum;
     }
-
 };
 
 template <typename T>

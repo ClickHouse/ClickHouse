@@ -45,25 +45,17 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
-def run_and_check(args, env=None, shell=False):
-    res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
-    if res.returncode != 0:
-        # check_call(...) from subprocess does not print stderr, so we do it manually
-        print('Stderr:\n{}\n'.format(res.stderr))
-        print('Stdout:\n{}\n'.format(res.stdout))
-        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr))
-
-
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
-    run_and_check(args)
+    subprocess.check_call(args)
 
 
 def subprocess_call(args):
     # Uncomment for debugging..;
     # print('run:', ' ' . join(args))
     subprocess.call(args)
+
 
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
@@ -398,9 +390,9 @@ class ClickHouseCluster:
                 raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
-        run_and_check(self.base_cmd + ["stop", node.name])
-        run_and_check(self.base_cmd + ["rm", "--force", "--stop", node.name])
-        run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
+        subprocess.check_call(self.base_cmd + ["stop", node.name])
+        subprocess.check_call(self.base_cmd + ["rm", "--force", "--stop", node.name])
+        subprocess.check_call(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
         start_deadline = time.time() + 20.0  # seconds
@@ -645,7 +637,7 @@ class ClickHouseCluster:
                             os.mkdir(zk_log_data_path)
                         env['ZK_DATA' + str(i)] = zk_data_path
                         env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=env)
+                subprocess.check_call(self.base_zookeeper_cmd + common_opts, env=env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start(120)
@@ -670,7 +662,7 @@ class ClickHouseCluster:
                 print('Setup kerberized kafka')
                 env = os.environ.copy()
                 env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
+                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
                 self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -686,13 +678,13 @@ class ClickHouseCluster:
                 print('Setup kerberized HDFS')
                 env = os.environ.copy()
                 env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_hdfs_cmd + common_opts, env=env)
+                subprocess.check_call(self.base_kerberized_hdfs_cmd + common_opts, env=env)
                 self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 print('Setup Mongo')
-                run_and_check(self.base_mongo_cmd + common_opts)
+                subprocess_check_call(self.base_mongo_cmd + common_opts)
                 self.wait_mongo_to_start(30)
 
             if self.with_redis and self.base_redis_cmd:
@@ -717,7 +709,7 @@ class ClickHouseCluster:
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                run_and_check(minio_start_cmd, env=env)
+                subprocess.check_call(minio_start_cmd, env=env)
 
                 try:
                     logging.info("Trying to connect to Minio...")
@@ -762,7 +754,7 @@ class ClickHouseCluster:
         sanitizer_assert_instance = None
         with open(self.docker_logs_path, "w+") as f:
             try:
-                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
             except Exception as e:
                 print("Unable to get logs from docker.")
             f.seek(0)

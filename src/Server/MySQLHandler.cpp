@@ -185,7 +185,6 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
                 packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }

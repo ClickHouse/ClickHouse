@@ -11,10 +11,6 @@
                     <max>10</max>
                 </max_execution_time>
 
-                <max_memory_usage>
-                    <max>10G</max>
-                </max_memory_usage>
-
                 <!-- Not ready for production -->
                 <compile_expressions>
                     <readonly />

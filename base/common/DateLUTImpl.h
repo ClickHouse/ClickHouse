@@ -771,7 +771,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
+    inline time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -784,7 +784,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
+    inline time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
@@ -816,7 +816,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addMonths(DayNum d, Int64 delta) const
+    inline DayNum addMonths(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -840,12 +840,12 @@ public:
         }
     }
 
-    inline NO_SANITIZE_UNDEFINED time_t addQuarters(time_t t, Int64 delta) const
+    inline time_t addQuarters(time_t t, Int64 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addQuarters(DayNum d, Int64 delta) const
+    inline DayNum addQuarters(DayNum d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
@@ -863,7 +863,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
+    inline DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 

@@ -6,7 +6,7 @@
 
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <IO/S3/SessionAwareAwsStream.h>
+#include <IO/S3/PocoHTTPResponseStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Stopwatch.h>
@@ -86,7 +86,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
     , s3_max_redirects(clientConfiguration.s3_max_redirects)
-    , max_connections(clientConfiguration.maxConnections)
 {
 }
 
@@ -165,24 +164,28 @@ void PocoHTTPClient::makeRequestInternal(
     {
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
-            Poco::URI target_uri(uri);
-            Poco::URI proxy_uri;
+            Poco::URI poco_uri(uri);
+
+            /// Reverse proxy can replace host header with resolved ip address instead of host name.
+            /// This can lead to request signature difference on S3 side.
+            auto session = makeHTTPSession(poco_uri, timeouts, false);
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
             {
-                proxy_uri.setScheme(Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme));
-                proxy_uri.setHost(request_configuration.proxyHost);
-                proxy_uri.setPort(request_configuration.proxyPort);
+                /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
+                bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && poco_uri.getScheme() == "https";
+                session->setProxy(
+                    request_configuration.proxyHost,
+                    request_configuration.proxyPort,
+                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
+                    use_tunnel
+                );
             }
-
-            /// Reverse proxy can replace host header with resolved ip address instead of host name.
-            /// This can lead to request signature difference on S3 side.
-            auto session = makePooledHTTPSession(target_uri, proxy_uri, timeouts, max_connections, false);
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setURI(target_uri.getPathAndQuery());
+            poco_request.setURI(poco_uri.getPathAndQuery());
 
             switch (request.GetMethod())
             {
@@ -278,7 +281,7 @@ void PocoHTTPClient::makeRequestInternal(
                 }
             }
             else
-                response->GetResponseStream().SetUnderlyingStream(std::make_shared<SessionAwareAwsStream<decltype(session)>>(session, response_body_stream));
+                response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
 
             return;
         }
@@ -294,7 +297,6 @@ void PocoHTTPClient::makeRequestInternal(
         ProfileEvents::increment(select_metric(S3MetricType::Errors));
     }
 }
-
 }
 
 #endif

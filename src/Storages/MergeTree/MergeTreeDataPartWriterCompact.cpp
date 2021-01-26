@@ -34,14 +34,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     for (const auto & column : columns_list)
-        addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
+        addStreams(column.name, *column.type, storage_columns.getCodecDescOrDefault(column.name, default_codec));
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
@@ -64,7 +64,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
     };
 
     IDataType::SubstreamPath stream_path;
-    column.type->enumerateStreams(callback, stream_path);
+    type.enumerateStreams(callback, stream_path);
 }
 
 namespace
@@ -183,7 +183,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = IDataType::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = IDataType::getFileNameForStream(name_and_type->name, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.

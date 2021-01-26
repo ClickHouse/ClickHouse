@@ -4,10 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-namespace Poco
-{
-class Logger;
-};
 
 namespace DB
 {
@@ -40,7 +36,6 @@ private:
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
-    Poco::Logger * log;
 
     const Context & context;
     ASTPtr query_ptr;

@@ -32,7 +32,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     bool parse_only_database_name = false;
     bool parse_show_create_view = false;
-    bool exists_view = false;
 
     bool temporary = false;
     if (s_exists.ignore(pos, expected))
@@ -41,11 +40,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             query = std::make_shared<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
-        }
-        else if (s_view.ignore(pos, expected))
-        {
-            query = std::make_shared<ASTExistsViewQuery>();
-            exists_view = true;
         }
         else
         {
@@ -92,7 +86,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
     else
     {
-        if (!(exists_view || parse_show_create_view))
+        if (!parse_show_create_view)
         {
             if (temporary || s_temporary.ignore(pos, expected))
                 query->temporary = true;

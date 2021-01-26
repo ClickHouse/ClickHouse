@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DISK_INDEX;
     extern const int NOT_IMPLEMENTED;
     extern const int PATH_ACCESS_DENIED;
-    extern const int CANNOT_DELETE_DIRECTORY;
 }
 
 
@@ -607,7 +606,7 @@ void DiskS3::clearDirectory(const String & path)
 {
     for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
         if (isFile(it->path()))
-            removeFile(it->path());
+            remove(it->path());
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -626,7 +625,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         Poco::File tmp_file(metadata_path + to_path + ".old");
         to_file.renameTo(tmp_file.path());
         from_file.renameTo(metadata_path + to_path);
-        removeFile(to_path + ".old");
+        remove(to_path + ".old");
     }
     else
         from_file.renameTo(to_file.path());
@@ -635,7 +634,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
 void DiskS3::copyFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
-        removeFile(to_path);
+        remove(to_path);
 
     auto from = readMeta(from_path);
     auto to = createMeta(to_path);
@@ -679,7 +678,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     {
         /// If metadata file exists - remove and create new.
         if (exist)
-            removeFile(path);
+            remove(path);
 
         auto metadata = createMeta(path);
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
@@ -709,7 +708,10 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
     Poco::File file(metadata_path + path);
 
     if (!file.isFile())
-        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
+    {
+        file.remove();
+        return;
+    }
 
     try
     {
@@ -783,26 +785,11 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
     }
 }
 
-void DiskS3::removeFile(const String & path)
+void DiskS3::remove(const String & path)
 {
     AwsS3KeyKeeper keys;
     removeMeta(path, keys);
     removeAws(keys);
-}
-
-void DiskS3::removeFileIfExists(const String & path)
-{
-    AwsS3KeyKeeper keys;
-    if (Poco::File(metadata_path + path).exists())
-    {
-        removeMeta(path, keys);
-        removeAws(keys);
-    }
-}
-
-void DiskS3::removeDirectory(const String & path)
-{
-    Poco::File(metadata_path + path).remove();
 }
 
 void DiskS3::removeRecursive(const String & path)
@@ -878,7 +865,7 @@ void DiskS3::setReadOnly(const String & path)
     metadata.save();
 }
 
-int DiskS3::open(const String & /*path*/, int /*flags*/) const
+int DiskS3::open(const String & /*path*/, mode_t /*mode*/) const
 {
     throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
 }
