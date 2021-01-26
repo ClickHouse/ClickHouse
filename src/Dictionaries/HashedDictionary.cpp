@@ -506,7 +506,7 @@ HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAt
     auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
     Attribute attr{attribute.underlying_type, std::move(nullable_set), {}, {}, {}, {}};
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&, this](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -576,7 +576,7 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
 {
     bool result = false;
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&, this](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;

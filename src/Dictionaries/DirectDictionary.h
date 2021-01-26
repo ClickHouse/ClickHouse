@@ -109,9 +109,9 @@ private:
     void addAttributeSize(const Attribute & attribute);
 
     template <typename T>
-    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value, const std::string & name);
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value, const std::string & name);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(

@@ -144,9 +144,9 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
