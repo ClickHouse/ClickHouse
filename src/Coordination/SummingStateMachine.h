@@ -41,7 +41,7 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s,
         void* & user_snp_ctx,
-        ulong obj_id,
+        size_t obj_id,
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
