@@ -92,6 +92,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
                 throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
 
             context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+            return;
         }
     #endif
 
