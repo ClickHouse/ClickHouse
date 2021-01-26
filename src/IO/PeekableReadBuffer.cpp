@@ -4,11 +4,13 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
-        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/,
+                                                              size_t unread_limit_ /* = default_limit*/)
+        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_), unread_limit(unread_limit_)
 {
     padded &= sub_buf.isPadded();
     /// Read from sub-buffer
@@ -23,7 +25,7 @@ void PeekableReadBuffer::reset()
     checkStateCorrect();
 
     peeked_size = 0;
-    checkpoint = std::nullopt;
+    checkpoint = nullptr;
     checkpoint_in_own_memory = false;
 
     if (!currentlyReadFromOwnMemory())
@@ -45,7 +47,7 @@ bool PeekableReadBuffer::peekNext()
     {
         /// Don't have to copy all data from sub-buffer if there is no data in own memory (checkpoint and pos are in sub-buffer)
         if (checkpoint)
-            copy_from = *checkpoint;
+            copy_from = checkpoint;
         bytes_to_copy = sub_buf.buffer().end() - copy_from;
         if (!bytes_to_copy)
         {
@@ -55,7 +57,7 @@ bool PeekableReadBuffer::peekNext()
             bool res = sub_buf.next();
             BufferBase::set(sub_buf.buffer().begin(), sub_buf.buffer().size(), sub_buf.offset());
             if (checkpoint)
-                checkpoint.emplace(pos);
+                checkpoint = pos;
 
             checkStateCorrect();
             return res;
@@ -77,7 +79,7 @@ bool PeekableReadBuffer::peekNext()
     /// Otherwise, checkpoint now at the beginning of own memory
     if (checkpoint && useSubbufferOnly())
     {
-        checkpoint.emplace(memory.data());
+        checkpoint = memory.data();
         checkpoint_in_own_memory = true;
     }
     if (currentlyReadFromOwnMemory())
@@ -113,9 +115,9 @@ void PeekableReadBuffer::rollbackToCheckpoint()
     if (!checkpoint)
         throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
     else if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
-        pos = *checkpoint;
+        pos = checkpoint;
     else /// Checkpoint is in own memory and pos is not. Switch to reading from own memory
-        BufferBase::set(memory.data(), peeked_size, *checkpoint - memory.data());
+        BufferBase::set(memory.data(), peeked_size, checkpoint - memory.data());
     checkStateCorrect();
 }
 
@@ -167,7 +169,7 @@ void PeekableReadBuffer::checkStateCorrect() const
         {
             if (!peeked_size)
                 throw DB::Exception("Checkpoint in empty own buffer", ErrorCodes::LOGICAL_ERROR);
-            if (currentlyReadFromOwnMemory() && pos < *checkpoint)
+            if (currentlyReadFromOwnMemory() && pos < checkpoint)
                 throw DB::Exception("Current position in own buffer before checkpoint in own buffer", ErrorCodes::LOGICAL_ERROR);
             if (!currentlyReadFromOwnMemory() && pos < sub_buf.position())
                 throw DB::Exception("Current position in subbuffer less than sub_buf.position()", ErrorCodes::LOGICAL_ERROR);
@@ -178,7 +180,7 @@ void PeekableReadBuffer::checkStateCorrect() const
                 throw DB::Exception("Own buffer is not empty", ErrorCodes::LOGICAL_ERROR);
             if (currentlyReadFromOwnMemory())
                 throw DB::Exception("Current position in own buffer before checkpoint in subbuffer", ErrorCodes::LOGICAL_ERROR);
-            if (pos < *checkpoint)
+            if (pos < checkpoint)
                 throw DB::Exception("Current position in subbuffer before checkpoint in subbuffer", ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -189,6 +191,8 @@ void PeekableReadBuffer::checkStateCorrect() const
     }
     if (currentlyReadFromOwnMemory() && !peeked_size)
         throw DB::Exception("Pos in empty own buffer", ErrorCodes::LOGICAL_ERROR);
+    if (unread_limit < memory.size())
+        throw DB::Exception("Size limit exceed", ErrorCodes::LOGICAL_ERROR);
 }
 
 void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
@@ -198,7 +202,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
     bool need_update_pos = currentlyReadFromOwnMemory();
     size_t offset = 0;
     if (need_update_checkpoint)
-        offset = *checkpoint - memory.data();
+        offset = checkpoint - memory.data();
     else if (need_update_pos)
         offset = this->offset();
 
@@ -212,21 +216,26 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
             memmove(memory.data(), memory.data() + offset, peeked_size);
 
             if (need_update_checkpoint)
-                *checkpoint -= offset;
+                checkpoint -= offset;
             if (need_update_pos)
                 pos -= offset;
         }
         else
         {
+            if (unread_limit < new_size)
+                throw DB::Exception("PeekableReadBuffer: Memory limit exceed", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+
             size_t pos_offset = pos - memory.data();
 
             size_t new_size_amortized = memory.size() * 2;
             if (new_size_amortized < new_size)
                 new_size_amortized = new_size;
+            else if (unread_limit < new_size_amortized)
+                new_size_amortized = unread_limit;
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)
-                checkpoint.emplace(memory.data() + offset);
+                checkpoint = memory.data() + offset;
             if (need_update_pos)
             {
                 BufferBase::set(memory.data(), peeked_size, pos_offset);
@@ -243,7 +252,7 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
     checkStateCorrect();
 
     if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())
-        return;     /// it's already continuous
+        return;     /// is't already continuous
 
     size_t bytes_to_append = pos - sub_buf.position();
     resizeOwnMemoryIfNecessary(bytes_to_append);

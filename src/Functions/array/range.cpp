@@ -337,7 +337,7 @@ private:
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnPtr res;
         if (arguments.size() == 1)

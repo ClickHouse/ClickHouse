@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
 
@@ -71,47 +70,12 @@ protected:
     bool allow_query_parameter;
 };
 
-/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
-  */
-class ParserColumnsTransformers : public IParserBase
-{
-public:
-    enum class ColumnTransformer : UInt8
-    {
-        APPLY,
-        EXCEPT,
-        REPLACE,
-    };
-    using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
-
-    ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
-        : allowed_transformers(allowed_transformers_)
-        , is_strict(is_strict_)
-    {}
-
-protected:
-    const char * getName() const override { return "COLUMNS transformers"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    ColumnTransformers allowed_transformers;
-    bool is_strict;
-};
-
-
 /// Just *
 class ParserAsterisk : public IParserBase
 {
-public:
-    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
-        : allowed_transformers(allowed_transformers_)
-    {}
-
 protected:
     const char * getName() const override { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    ColumnTransformers allowed_transformers;
 };
 
 /** Something like t.* or db.table.*
@@ -127,17 +91,21 @@ protected:
   */
 class ParserColumnsMatcher : public IParserBase
 {
-public:
-    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
-        : allowed_transformers(allowed_transformers_)
-    {}
-
 protected:
     const char * getName() const override { return "COLUMNS matcher"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
-    ColumnTransformers allowed_transformers;
+/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
+  */
+class ParserColumnsTransformers : public IParserBase
+{
+public:
+    ParserColumnsTransformers(bool is_strict_ = false): is_strict(is_strict_) {}
+protected:
+    const char * getName() const override { return "COLUMNS transformers"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool is_strict;
 };
 
 /** A function, for example, f(x, y + 1, g(z)).
@@ -154,28 +122,6 @@ protected:
     const char * getName() const override { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool allow_function_parameters;
-};
-
-// Window reference (the thing that goes after OVER) for window function.
-// Can be either window name or window definition.
-class ParserWindowReference : public IParserBase
-{
-    const char * getName() const override { return "window reference"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserWindowDefinition : public IParserBase
-{
-    const char * getName() const override { return "window definition"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-// The WINDOW clause of a SELECT query that defines a list of named windows.
-// Returns an ASTExpressionList of ASTWindowListElement's.
-class ParserWindowList : public IParserBase
-{
-    const char * getName() const override { return "WINDOW clause"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 class ParserCodecDeclarationList : public IParserBase
@@ -321,18 +267,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         return tuple_parser.parse(pos, node, expected);
-    }
-};
-
-class ParserMapOfLiterals : public IParserBase
-{
-public:
-    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
-protected:
-    const char * getName() const override { return "map"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return map_parser.parse(pos, node, expected);
     }
 };
 

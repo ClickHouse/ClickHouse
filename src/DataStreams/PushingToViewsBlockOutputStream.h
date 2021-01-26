@@ -1,19 +1,14 @@
 #pragma once
 
+#include <DataStreams/copyData.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage.h>
-
-namespace Poco
-{
-class Logger;
-};
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <Storages/StorageMaterializedView.h>
 
 namespace DB
 {
 
 class ReplicatedMergeTreeBlockOutputStream;
-class Context;
 
 
 /** Writes data to the specified table and to all dependent materialized views.
@@ -40,7 +35,6 @@ private:
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
-    Poco::Logger * log;
 
     const Context & context;
     ASTPtr query_ptr;
