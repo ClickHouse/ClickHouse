@@ -79,6 +79,17 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
     grep -vP $EXCLUDE_DIRS |
     grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
 
+# Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
+# NOTE: it is not that accuate, but at least something.
+tests_with_query_log=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
+        grep -vP $EXCLUDE_DIRS |
+        xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_query_log[@]}"; do
+    grep -qE current_database.*currentDatabase "$test_case" || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
+done
+
 # All the submodules should be from https://github.com/
 find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
 
