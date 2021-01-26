@@ -76,11 +76,11 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
     {
-        if (copiedDataInfo.size() == 0)
+        if (copiedDataInfo.empty())
         {
-            for (size_t i = 0; i < data.size(); ++i)
+            for (auto * val : data)
             {
-                func->destroy(data[i]);
+                func->destroy(val);
             }
         }
         else
