@@ -19,7 +19,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 ```
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
-## Examples {#create-quota-example}
+
+**Examples** 
 
 Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
 
