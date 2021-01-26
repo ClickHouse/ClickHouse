@@ -168,7 +168,7 @@ public:
         {
             for (const auto & x : small)
             {
-                if (rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.rb->contains(static_cast<Value>(x.getValue())))
                     buffer.push_back(x.getValue());
             }
 
@@ -264,7 +264,7 @@ public:
         {
             for (const auto & x : small)
             {
-                if (rb->contains(static_cast<Value>(x.getValue())))
+                if (r1.rb->contains(static_cast<Value>(x.getValue())))
                     ++ret;
             }
         }
@@ -419,7 +419,7 @@ public:
         if (isSmall())
             return small.find(x) != small.end();
         else
-            return rb->contains(x);
+            return rb->contains(static_cast<Value>(x));
     }
 
     /**
@@ -613,7 +613,7 @@ public:
     /**
      * Replace value
      */
-    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
+    void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num)
     {
         if (isSmall())
             toLarge();
@@ -622,9 +622,9 @@ public:
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-            bool changed = rb->removeChecked(from_vals[i]);
+            bool changed = rb->removeChecked(static_cast<Value>(from_vals[i]));
             if (changed)
-                rb->add(to_vals[i]);
+                rb->add(static_cast<Value>(to_vals[i]));
         }
     }
 };

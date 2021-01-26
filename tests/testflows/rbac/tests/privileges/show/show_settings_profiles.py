@@ -76,7 +76,7 @@ def check_privilege(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowSettingsProfiles_Query("1.0"),
+    RQ_SRS_006_RBAC_ShowSettingsProfiles_RequiredPrivilege("1.0"),
 )
 def show_settings_profiles(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW SETTINGS PROFILES` when they have the necessary privilege.
@@ -114,7 +114,7 @@ def show_settings_profiles(self, privilege, grant_target_name, user_name, node=N
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowCreateSettingsProfile("1.0"),
+    RQ_SRS_006_RBAC_ShowCreateSettingsProfile_RequiredPrivilege("1.0"),
 )
 def show_create(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW CREATE SETTINGS PROFILE` when they have the necessary privilege.
@@ -162,7 +162,7 @@ def show_create(self, privilege, grant_target_name, user_name, node=None):
 @TestFeature
 @Name("show settings profiles")
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowSettingsProfiles("1.0"),
+    RQ_SRS_006_RBAC_ShowSettingsProfiles_Privilege("1.0"),
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW SETTINGS PROFILES.

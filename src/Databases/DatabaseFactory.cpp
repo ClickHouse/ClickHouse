@@ -12,6 +12,7 @@
 #include <Parsers/formatAST.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <Interpreters/Context.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -23,9 +24,17 @@
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Common/parseAddress.h>
 #    include <mysqlxx/Pool.h>
+#endif
+
+#if USE_MYSQL || USE_LIBPQXX
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Common/parseAddress.h>
+#endif
+
+#if USE_LIBPQXX
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #endif
 
 namespace DB
@@ -51,7 +60,14 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
         created = Poco::File(metadata_path).createDirectory();
-        return getImpl(create, metadata_path, context);
+
+        DatabasePtr impl = getImpl(create, metadata_path, context);
+
+        if (impl && context.hasQueryContext() && context.getSettingsRef().log_queries)
+            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+
+        return impl;
+
     }
     catch (...)
     {
@@ -80,7 +96,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_define->engine->arguments)
+    if (engine_name != "MySQL" && engine_name != "MaterializeMySQL" && engine_name != "Lazy" && engine_name != "PostgreSQL" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
@@ -167,6 +183,44 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
+
+#if USE_LIBPQXX
+
+    else if (engine_name == "PostgreSQL")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 5)
+            throw Exception(fmt::format(
+                        "{} Database require host:port, database_name, username, password arguments "
+                        "[, use_table_cache = 0].", engine_name),
+                ErrorCodes::BAD_ARGUMENTS);
+
+        ASTs & engine_args = engine->arguments->children;
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
+        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+        auto use_table_cache = 0;
+        if (engine->arguments->children.size() == 5)
+            use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
+
+        auto parsed_host_port = parseAddress(host_port, 5432);
+
+        /// no connection is made here
+        auto connection = std::make_shared<PostgreSQLConnection>(
+            postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+
+        return std::make_shared<DatabasePostgreSQL>(
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
+    }
+
+#endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }

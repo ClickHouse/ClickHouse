@@ -20,8 +20,7 @@ class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
 public:
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                                                       size_t unread_limit_ = 16 * DBMS_DEFAULT_BUFFER_SIZE);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~PeekableReadBuffer() override;
 
@@ -38,7 +37,7 @@ public:
             /// Don't need to store unread data anymore
             peeked_size = 0;
         }
-        checkpoint = pos;
+        checkpoint.emplace(pos);
 
         // FIXME: we are checking checkpoint existence in few places (rollbackToCheckpoint/dropCheckpoint)
         // by simple if(checkpoint) but checkpoint can be nullptr after
@@ -58,7 +57,7 @@ public:
             /// Don't need to store unread data anymore
             peeked_size = 0;
         }
-        checkpoint = nullptr;
+        checkpoint = std::nullopt;
         checkpoint_in_own_memory = false;
     }
 
@@ -95,9 +94,8 @@ private:
 
 
     ReadBuffer & sub_buf;
-    const size_t unread_limit;
     size_t peeked_size = 0;
-    Position checkpoint = nullptr;
+    std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
 };
 

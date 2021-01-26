@@ -40,7 +40,7 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
-    class TestKeeperStorage;
+    class TestKeeperStorageDispatcher;
 }
 
 
@@ -194,12 +194,56 @@ private:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
-        std::set<std::string> databases;
-        std::set<std::string> tables;
-        std::set<std::string> columns;
+        QueryAccessInfo() = default;
+
+        QueryAccessInfo(const QueryAccessInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            databases = rhs.databases;
+            tables = rhs.tables;
+            columns = rhs.columns;
+        }
+
+        QueryAccessInfo(QueryAccessInfo && rhs) = delete;
+
+        QueryAccessInfo & operator=(QueryAccessInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryAccessInfo & rhs)
+        {
+            std::swap(databases, rhs.databases);
+            std::swap(tables, rhs.tables);
+            std::swap(columns, rhs.columns);
+        }
+
+        /// To prevent a race between copy-constructor and other uses of this structure.
+        mutable std::mutex mutex{};
+        std::set<std::string> databases{};
+        std::set<std::string> tables{};
+        std::set<std::string> columns{};
     };
 
     QueryAccessInfo query_access_info;
+
+    /// Record names of created objects of factories (for testing, etc)
+    struct QueryFactoriesInfo
+    {
+        std::unordered_set<std::string> aggregate_functions;
+        std::unordered_set<std::string> aggregate_function_combinators;
+        std::unordered_set<std::string> database_engines;
+        std::unordered_set<std::string> data_type_families;
+        std::unordered_set<std::string> dictionaries;
+        std::unordered_set<std::string> formats;
+        std::unordered_set<std::string> functions;
+        std::unordered_set<std::string> storages;
+        std::unordered_set<std::string> table_functions;
+    };
+
+    /// Needs to be chandged while having const context in factories methods
+    mutable QueryFactoriesInfo query_factories_info;
 
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -369,6 +413,23 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
+    /// Supported factories for records in query_log
+    enum class QueryLogFactories
+    {
+        AggregateFunction,
+        AggregateFunctionCombinator,
+        Database,
+        DataType,
+        Dictionary,
+        Format,
+        Function,
+        Storage,
+        TableFunction
+    };
+
+    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
@@ -513,7 +574,7 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 
-    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
+    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
