@@ -501,7 +501,6 @@ void MergeJoin::joinTotals(Block & block) const
 
 void MergeJoin::mergeRightBlocks()
 {
-    std::cerr << "=========== Merging right blocks in_mem " << is_in_memory << std::endl;
     if (is_in_memory)
         mergeInMemoryRightBlocks();
     else
