@@ -302,6 +302,13 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+
+    /// Do not add special virtual parts to parts_to_do
+    auto max_level = MergeTreePartInfo::MAX_LEVEL;      /// DROP/DETACH PARTITION
+    auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
+    if (part_info.level == max_level || part_info.level == another_max_level)
+        return;
+
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
@@ -723,7 +730,10 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
                 Strings current_parts_to_mutate = getPartNamesToMutate(*entry, current_parts);
                 for (const String & current_part_to_mutate : current_parts_to_mutate)
+                {
+                    assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
                     mutation.parts_to_do.add(current_part_to_mutate);
+                }
 
                 /// And next we would need to mutate all parts with getDataVersion() greater than
                 /// mutation block number that would appear as a result of executing the queue.
