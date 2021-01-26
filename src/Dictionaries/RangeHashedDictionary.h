@@ -150,7 +150,6 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    
     static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
