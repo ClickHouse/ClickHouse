@@ -128,16 +128,11 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tab
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Distributed';
--- metrics updated only after distributed_directory_monitor_sleep_time_ms
-SET distributed_directory_monitor_sleep_time_ms=10;
 CREATE TABLE check_system_tables_null (key Int) Engine=Null();
 CREATE TABLE check_system_tables AS check_system_tables_null Engine=Distributed(test_shard_localhost, currentDatabase(), check_system_tables_null);
 SYSTEM STOP DISTRIBUTED SENDS check_system_tables;
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables SELECT * FROM numbers(1) SETTINGS prefer_localhost_replica=0;
--- 1 second should guarantee metrics update
--- XXX: but this is kind of quirk, way more better will be account this metrics without any delays.
-SELECT sleep(1) FORMAT Null;
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 SYSTEM FLUSH DISTRIBUTED check_system_tables;
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';

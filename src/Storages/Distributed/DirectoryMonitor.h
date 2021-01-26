@@ -65,7 +65,7 @@ public:
 private:
     void run();
 
-    std::map<UInt64, std::string> getFiles();
+    std::map<UInt64, std::string> getFiles(bool lock_metrics = true) const;
     bool processFiles(const std::map<UInt64, std::string> & files);
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
@@ -93,8 +93,8 @@ private:
 
     mutable std::mutex metrics_mutex;
     size_t error_count = 0;
-    size_t files_count = 0;
-    size_t bytes_count = 0;
+    mutable size_t files_count = 0;
+    mutable size_t bytes_count = 0;
     std::exception_ptr last_exception;
 
     const std::chrono::milliseconds default_sleep_time;
@@ -108,7 +108,7 @@ private:
 
     BackgroundSchedulePoolTaskHolder task_handle;
 
-    CurrentMetrics::Increment metric_pending_files;
+    mutable CurrentMetrics::Increment metric_pending_files;
 
     friend class DirectoryMonitorBlockInputStream;
 };

@@ -435,7 +435,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
+std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles(bool lock_metrics) const
 {
     std::map<UInt64, std::string> files;
     size_t new_bytes_count = 0;
@@ -456,7 +456,9 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
     metric_pending_files.changeTo(files.size());
 
     {
-        std::unique_lock metrics_lock(metrics_mutex);
+        std::unique_lock metrics_lock(metrics_mutex, std::defer_lock);
+        if (lock_metrics)
+            metrics_lock.lock();
         files_count = files.size();
         bytes_count = new_bytes_count;
     }
@@ -757,6 +759,9 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
 StorageDistributedDirectoryMonitor::Status StorageDistributedDirectoryMonitor::getStatus() const
 {
     std::unique_lock metrics_lock(metrics_mutex);
+
+    /// Recalculate counters
+    getFiles(false /* metrics_lock already acquired */);
 
     return Status{
         path,
