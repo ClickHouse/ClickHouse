@@ -982,7 +982,6 @@ void StorageDistributed::throwInsertIfNeeded() const
     if (!distributed_settings.bytes_to_throw_insert)
         return;
 
-    /// TODO: update the counters
     UInt64 total_bytes = *totalBytes(global_context.getSettingsRef());
     if (total_bytes > distributed_settings.bytes_to_throw_insert)
     {
