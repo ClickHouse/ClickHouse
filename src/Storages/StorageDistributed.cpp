@@ -768,6 +768,14 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
     return statuses;
 }
 
+std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
+{
+    UInt64 total_bytes = 0;
+    for (const auto & status : getDirectoryMonitorsStatuses())
+        total_bytes += status.bytes_count;
+    return total_bytes;
+}
+
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();

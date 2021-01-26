@@ -77,6 +77,7 @@ public:
         unsigned /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
