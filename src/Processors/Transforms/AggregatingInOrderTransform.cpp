@@ -2,8 +2,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
 
-#include <ext/range.h>
-
 namespace DB
 {
 

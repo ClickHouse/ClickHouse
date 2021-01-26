@@ -16,19 +16,17 @@ public:
         const Block & header,
         size_t num_inputs,
         AggregatingTransformParamsPtr params,
-        SortDescription description,
-        size_t max_block_size)
+        SortDescription description)
         : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,
             params,
-            std::move(description),
-            max_block_size)
+            std::move(description))
     {
     }
 
-    String getName() const override { return "AggregatingSortedTransform"; }
+    String getName() const override { return "FinishAggregatingInOrderTransform"; }
 };
 
 }

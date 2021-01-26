@@ -100,8 +100,7 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     transform_params,
-                    group_by_sort_description,
-                    max_block_size);
+                    group_by_sort_description);
 
                 pipeline.addTransform(std::move(transform));
                 aggregating_sorted = collector.detachProcessors(1);
