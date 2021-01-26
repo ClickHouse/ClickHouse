@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/formatReadable.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -85,6 +86,7 @@ namespace ErrorCodes
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
 }
 
 namespace ActionLocks
@@ -975,6 +977,21 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     relative_data_path = new_path_to_table_data;
 }
 
+void StorageDistributed::throwInsertIfNeeded() const
+{
+    if (!distributed_settings.bytes_to_throw_insert)
+        return;
+
+    /// TODO: update the counters
+    UInt64 total_bytes = *totalBytes(global_context.getSettingsRef());
+    if (total_bytes > distributed_settings.bytes_to_throw_insert)
+    {
+        throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
+            "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
+            formatReadableSizeWithBinarySuffix(total_bytes),
+            formatReadableSizeWithBinarySuffix(distributed_settings.bytes_to_throw_insert));
+    }
+}
 
 void registerStorageDistributed(StorageFactory & factory)
 {

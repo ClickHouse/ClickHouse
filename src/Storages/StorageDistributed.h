@@ -174,6 +174,8 @@ private:
 
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
+    void throwInsertIfNeeded() const;
+
 private:
     String remote_database;
     String remote_table;
