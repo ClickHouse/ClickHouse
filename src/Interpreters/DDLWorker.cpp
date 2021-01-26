@@ -788,9 +788,15 @@ void DDLWorker::processTask(DDLTask & task)
                 }
 
                 if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage)  && !task.is_circular_replicated)
+                {
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
+                }
                 else
+                {
+                    /// StoragePtr may cause DROP TABLE to hang
+                    storage.reset();
                     tryExecuteQuery(rewritten_query, task, task.execution_status);
+                }
             }
             else
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
