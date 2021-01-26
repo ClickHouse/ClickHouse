@@ -878,21 +878,6 @@ void DiskS3::setReadOnly(const String & path)
     metadata.save();
 }
 
-int DiskS3::open(const String & /*path*/, int /*flags*/) const
-{
-    throw Exception("Method open is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskS3::close(int /*fd*/) const
-{
-    throw Exception("Method close is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DiskS3::sync(int /*fd*/) const
-{
-    throw Exception("Method sync is not implemented for S3 disks", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 void DiskS3::shutdown()
 {
     /// This call stops any next retry attempts for ongoing S3 requests.
