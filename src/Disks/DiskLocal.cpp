@@ -400,7 +400,10 @@ void DiskLocal::updateFromConfig(const Poco::Util::AbstractConfiguration & confi
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
     if (disk_path != new_disk_path)
         throw Exception("Disk path can't update from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-    keep_free_space_bytes = new_keep_free_space_bytes;
+
+    // Config of DiskLocal has been updated
+    if (keep_free_space_bytes != new_keep_free_space_bytes)
+        keep_free_space_bytes = new_keep_free_space_bytes;
 }
 
 
