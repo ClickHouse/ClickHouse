@@ -115,10 +115,6 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 Например, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
-### port(URL[, default_port = 0]) {#port}
-
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
-
 ### path {#path}
 
 Возвращает путь. Пример: `/top/news.html` Путь не включает в себя query string.

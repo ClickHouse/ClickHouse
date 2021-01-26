@@ -16,9 +16,15 @@ public:
         return std::make_shared<FunctionIdentity>();
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForConstantFolding() const override { return false; }
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

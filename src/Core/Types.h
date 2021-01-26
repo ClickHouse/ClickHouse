@@ -56,7 +56,6 @@ enum class TypeIndex
     Function,
     AggregateFunction,
     LowCardinality,
-    Map,
 };
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -185,44 +184,29 @@ using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
-// Distinguishable type to allow function resolution/deduction based on value type,
-// but also relatively easy to convert to/from Decimal64.
-class DateTime64 : public Decimal64
-{
-public:
-    using Base = Decimal64;
-    using Base::Base;
-
-    DateTime64(const Base & v)
-        : Base(v)
-    {}
-};
+using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static constexpr const char * get() { return "Decimal32";   } };
 template <> struct TypeName<Decimal64>   { static constexpr const char * get() { return "Decimal64";   } };
 template <> struct TypeName<Decimal128>  { static constexpr const char * get() { return "Decimal128";  } };
 template <> struct TypeName<Decimal256>  { static constexpr const char * get() { return "Decimal256";  } };
-template <> struct TypeName<DateTime64>  { static constexpr const char * get() { return "DateTime64";  } };
 
 template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value = TypeIndex::Decimal32; };
 template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
 template <> struct TypeId<Decimal128>   { static constexpr const TypeIndex value = TypeIndex::Decimal128; };
 template <> struct TypeId<Decimal256>   { static constexpr const TypeIndex value = TypeIndex::Decimal256; };
-template <> struct TypeId<DateTime64>   { static constexpr const TypeIndex value = TypeIndex::DateTime64; };
 
 template <typename T> constexpr bool IsDecimalNumber = false;
 template <> inline constexpr bool IsDecimalNumber<Decimal32> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal64> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal128> = true;
 template <> inline constexpr bool IsDecimalNumber<Decimal256> = true;
-template <> inline constexpr bool IsDecimalNumber<DateTime64> = true;
 
 template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
 template <> struct NativeType<Decimal256> { using Type = Int256; };
-template <> struct NativeType<DateTime64> { using Type = Int64; };
 
 template <typename T> constexpr bool OverBigInt = false;
 template <> inline constexpr bool OverBigInt<Int256> = true;
@@ -268,7 +252,6 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::Function:   return "Function";
         case TypeIndex::AggregateFunction: return "AggregateFunction";
         case TypeIndex::LowCardinality: return "LowCardinality";
-        case TypeIndex::Map:        return "Map";
     }
 
     __builtin_unreachable();
@@ -289,15 +272,6 @@ namespace std
         {
             return std::hash<DB::Int64>()(x.value >> 64)
                 ^ std::hash<DB::Int64>()(x.value & std::numeric_limits<DB::UInt64>::max());
-        }
-    };
-
-    template <>
-    struct hash<DB::DateTime64>
-    {
-        size_t operator()(const DB::DateTime64 & x) const
-        {
-            return std::hash<std::decay_t<decltype(x)>::NativeType>()(x);
         }
     };
 

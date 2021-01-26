@@ -23,4 +23,3 @@ add_library(roaring ${SRCS})
 
 target_include_directories(roaring PRIVATE ${LIBRARY_DIR}/include/roaring)
 target_include_directories(roaring SYSTEM BEFORE PUBLIC ${LIBRARY_DIR}/include)
-target_include_directories(roaring SYSTEM BEFORE PUBLIC ${LIBRARY_DIR}/cpp)

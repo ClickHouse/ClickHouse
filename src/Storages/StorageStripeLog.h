@@ -68,7 +68,7 @@ private:
     size_t max_compress_block_size;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     Poco::Logger * log;
 };
