@@ -3,7 +3,6 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="none"
 # We should have correct env vars from shell_config.sh to run this test
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 # In order to check queries individually (don't stop on the first one that fails):

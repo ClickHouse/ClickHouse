@@ -65,7 +65,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         using SourceColumnType = typename SourceDataType::ColumnType;
         using ResultColumnType = typename ResultDataType::ColumnType;

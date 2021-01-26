@@ -88,10 +88,6 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
-    size_t byteSizeAt(size_t n) const override
-    {
-        return getNestedColumn()->byteSizeAt(n);
-    }
     void protect() override { column_holder->protect(); }
     size_t allocatedBytes() const override
     {

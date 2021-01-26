@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterInMemory.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
@@ -75,7 +74,6 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
     auto new_data_part = storage.createPart(name, new_type, info, volume, new_relative_path);
 
-    new_data_part->uuid = uuid;
     new_data_part->setColumns(columns);
     new_data_part->partition.value.assign(partition.value);
     new_data_part->minmax_idx = minmax_idx;

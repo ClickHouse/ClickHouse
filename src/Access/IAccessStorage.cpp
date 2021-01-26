@@ -463,7 +463,7 @@ UUID IAccessStorage::loginImpl(
 
 bool IAccessStorage::isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const
 {
-    return user.authentication.isCorrectPassword(user.getName(), password, external_authenticators);
+    return user.authentication.isCorrectPassword(password, user.getName(), external_authenticators);
 }
 
 
