@@ -117,6 +117,7 @@ SRCS(
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
