@@ -94,7 +94,7 @@ public:
 
             return col_res;
         }
-        else if (const ColumnMap* col_map = checkAndGetColumn<ColumnMap>(column.get()))
+        else if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(column.get()))
         {
             auto col_res = ColumnVector<ResultType>::create();
             typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
