@@ -521,7 +521,7 @@ void ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... 
     }
 
     show_error(
-        "Not enough privileges. To execute this query it's necessary to have the grant "
+        "Not enough privileges. To execute this query it's necessary to have grant "
             + AccessRightsElement{flags, args...}.toString() + (grant_option ? " WITH GRANT OPTION" : ""),
         ErrorCodes::ACCESS_DENIED);
 }
