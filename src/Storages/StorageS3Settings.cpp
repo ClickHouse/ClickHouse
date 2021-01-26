@@ -62,7 +62,7 @@ S3AuthSettings StorageS3Settings::getSettings(const String & endpoint) const
     auto next_prefix_setting = settings.upper_bound(endpoint);
 
     /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
-    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != settings.begin(); )
+    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != settings.begin();)
     {
         std::advance(possible_prefix_setting, -1);
         if (boost::algorithm::starts_with(endpoint, possible_prefix_setting->first))
