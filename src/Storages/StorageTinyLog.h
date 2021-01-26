@@ -27,7 +27,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -41,9 +41,10 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
-    bool supportsSubcolumns() const override { return true; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+
+    void drop() override;
 
 protected:
     StorageTinyLog(
@@ -70,11 +71,11 @@ private:
     Files files;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     Poco::Logger * log;
 
-    void addFiles(const NameAndTypePair & column);
+    void addFiles(const String & column_name, const IDataType & type);
 };
 
 }

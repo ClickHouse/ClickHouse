@@ -3,7 +3,7 @@
 #include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -185,17 +185,6 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline()
     return last_pipeline;
 }
 
-Pipe QueryPlan::convertToPipe()
-{
-    if (!isInitialized())
-        return {};
-
-    if (isCompleted())
-        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
-
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline()));
-}
-
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
@@ -245,15 +234,6 @@ static void explainStep(
 
     if (options.actions)
         step.describeActions(settings);
-}
-
-std::string debugExplainStep(const IQueryPlanStep & step)
-{
-    WriteBufferFromOwnString out;
-    IQueryPlanStep::FormatSettings settings{.out = out};
-    QueryPlan::ExplainPlanOptions options{.actions = true};
-    explainStep(step, settings, options);
-    return out.str();
 }
 
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
@@ -454,13 +434,11 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
     /// No actions can be moved before ARRAY JOIN.
-    if (split_actions.first->empty())
+    if (!split_actions)
         return;
 
-    auto description = parent->getStepDescription();
-
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (split_actions.second->empty())
+    if (expression->getActions().empty())
     {
         auto expected_header = parent->getOutputStream().header;
 
@@ -470,14 +448,12 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
 
         if (expression_step)
             child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                     std::move(split_actions.first));
+                                                     std::move(split_actions));
         else
             child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions.first),
+                                                 std::move(split_actions),
                                                  filter_step->getFilterColumnName(),
                                                  filter_step->removesFilterColumn());
-
-        child->setStepDescription(std::move(description));
 
         array_join_step->updateInputStream(child->getOutputStream(), expected_header);
         return;
@@ -491,121 +467,14 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions.first));
-    node.step->setStepDescription(description);
+                                                 std::move(split_actions));
     array_join_step->updateInputStream(node.step->getOutputStream(), {});
-
-    if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
-    else
-        parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
-                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-
-    parent->setStepDescription(description + " [split]");
-}
-
-/// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
-/// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
-static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
-{
-    auto & parent = parent_node->step;
-    auto & child = child_node->step;
-
-    auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
-    auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
-    auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
-
-    if (parent_expr && child_expr)
-    {
-        const auto & child_actions = child_expr->getExpression();
-        const auto & parent_actions = parent_expr->getExpression();
-
-        /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
-        /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
-        /// Such a query will return two zeroes if we combine actions together.
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
-
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
-
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
-        expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
-
-        parent_node->step = std::move(expr);
-        parent_node->children.swap(child_node->children);
-        return true;
-    }
-    else if (parent_filter && child_expr)
-    {
-        const auto & child_actions = child_expr->getExpression();
-        const auto & parent_actions = parent_filter->getExpression();
-
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
-
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
-
-        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(), merged,
-                                                   parent_filter->getFilterColumnName(), parent_filter->removesFilterColumn());
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
-
-        parent_node->step = std::move(filter);
-        parent_node->children.swap(child_node->children);
-        return true;
-    }
-
-    return false;
-}
-
-/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
-{
-    auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
-    if (!filter_step)
-        return false;
-
-    const auto & expr = filter_step->getExpression();
-
-    /// Do not split if there are function like runningDifference.
-    if (expr->hasStatefulFunctions())
-        return false;
-
-    auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
-
-    if (split.second->empty())
-        return false;
-
-    if (filter_step->removesFilterColumn())
-        split.second->removeUnusedInput(filter_step->getFilterColumnName());
-
-    auto description = filter_step->getStepDescription();
-
-    auto & filter_node = nodes.emplace_back();
-    node->children.swap(filter_node.children);
-    node->children.push_back(&filter_node);
-
-    filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputStream(),
-            std::move(split.first),
-            filter_step->getFilterColumnName(),
-            filter_step->removesFilterColumn());
-
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
-
-    filter_node.step->setStepDescription("(" + description + ")[split]");
-    node->step->setStepDescription(description);
-
-    return true;
+    expression_step ? expression_step->updateInputStream(array_join_step->getOutputStream(), true)
+                    : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
 }
 
 void QueryPlan::optimize()
 {
-    /* Stack contains info for every nodes in the path from tree root to the current node.
-     * Every optimization changes only current node and it's children.
-     * Optimization may change QueryPlanStep, but not QueryPlan::Node (only add a new one).
-     * So, QueryPlan::Node::children will be always valid.
-     */
-
     struct Frame
     {
         Node * node;
@@ -621,17 +490,9 @@ void QueryPlan::optimize()
 
         if (frame.next_child == 0)
         {
+            /// First entrance, try push down.
             if (frame.node->children.size() == 1)
-            {
                 tryPushDownLimit(frame.node->step, frame.node->children.front());
-
-                while (tryMergeExpressions(frame.node, frame.node->children.front()));
-
-                if (frame.node->children.size() == 1)
-                    tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
-
-                trySplitFilter(frame.node, nodes);
-            }
         }
 
         if (frame.next_child < frame.node->children.size())
@@ -641,14 +502,9 @@ void QueryPlan::optimize()
         }
         else
         {
+            /// Last entrance, try lift up.
             if (frame.node->children.size() == 1)
-            {
-                while (tryMergeExpressions(frame.node, frame.node->children.front()));
-
-                trySplitFilter(frame.node, nodes);
-
                 tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
-            }
 
             stack.pop();
         }

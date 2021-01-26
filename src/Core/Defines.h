@@ -70,14 +70,11 @@
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
-/// Minimum revision supporting interserver secret.
+/// Mininum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 
-#define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
-#define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
-
 /// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
-#define DBMS_TCP_PROTOCOL_VERSION 54447
+#define DBMS_TCP_PROTOCOL_VERSION 54442
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096

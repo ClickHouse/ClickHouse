@@ -41,7 +41,7 @@ public:
         const Block & header,
         const RowOutputFormatParams & params_,
         const FormatSchemaInfo & format_schema,
-        const FormatSettings & settings);
+        const bool use_length_delimiters_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
@@ -53,7 +53,7 @@ private:
     DataTypes data_types;
     ProtobufWriter writer;
     std::vector<size_t> value_indices;
-    const bool allow_only_one_row;
+    const bool throw_on_multiple_rows_undelimited;
 };
 
 }

@@ -5,7 +5,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
-#include <Core/Settings.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -45,14 +44,6 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     ///  (only reason is to avoid query rewrite).
 
     return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
-}
-
-void concatInsertPath(std::string & insert_path, const std::string & dir_name)
-{
-    if (insert_path.empty())
-        insert_path = dir_name;
-    else
-        insert_path += "," + dir_name;
 }
 
 }
@@ -367,7 +358,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
-            ShardInfoInsertPathForInternalReplication insert_paths;
+            /// In case of internal_replication we will be appending names to dir_name_for_internal_replication
+            std::string dir_name_for_internal_replication;
+            std::string dir_name_for_internal_replication_with_local;
 
             for (const auto & replica_key : replica_keys)
             {
@@ -386,20 +379,18 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
                     if (internal_replication)
                     {
-                        /// use_compact_format=0
+                        auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
+                        if (!replica_addresses.back().is_local)
                         {
-                            auto dir_name = replica_addresses.back().toFullString(false /* use_compact_format */);
-                            if (!replica_addresses.back().is_local)
-                                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-                            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+                            if (dir_name_for_internal_replication.empty())
+                                dir_name_for_internal_replication = dir_name;
+                            else
+                                dir_name_for_internal_replication += "," + dir_name;
                         }
-                        /// use_compact_format=1
-                        {
-                            auto dir_name = replica_addresses.back().toFullString(true /* use_compact_format */);
-                            if (!replica_addresses.back().is_local)
-                                concatInsertPath(insert_paths.prefer_localhost_replica_compact, dir_name);
-                            concatInsertPath(insert_paths.no_prefer_localhost_replica_compact, dir_name);
-                        }
+                        if (dir_name_for_internal_replication_with_local.empty())
+                            dir_name_for_internal_replication_with_local = dir_name;
+                        else
+                            dir_name_for_internal_replication_with_local += "," + dir_name;
                     }
                 }
                 else
@@ -434,7 +425,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
             shards_info.push_back({
-                std::move(insert_paths),
+                std::move(dir_name_for_internal_replication),
+                std::move(dir_name_for_internal_replication_with_local),
                 current_shard_num,
                 weight,
                 std::move(shard_local_addresses),
@@ -493,7 +485,8 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({
-            {}, // insert_path_for_internal_replication
+            {}, // dir_name_for_internal_replication
+            {}, // dir_name_for_internal_replication_with_local
             current_shard_num,
             default_weight,
             std::move(shard_local_addresses),
@@ -616,25 +609,22 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     initMisc();
 }
 
-const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
+const std::string & Cluster::ShardInfo::pathForInsert(bool prefer_localhost_replica) const
 {
     if (!has_internal_replication)
         throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & paths = insert_path_for_internal_replication;
-    if (!use_compact_format)
+    if (prefer_localhost_replica)
     {
-        if (prefer_localhost_replica)
-            return paths.prefer_localhost_replica;
-        else
-            return paths.no_prefer_localhost_replica;
+        if (dir_name_for_internal_replication.empty())
+            throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+        return dir_name_for_internal_replication;
     }
     else
     {
-        if (prefer_localhost_replica)
-            return paths.prefer_localhost_replica_compact;
-        else
-            return paths.no_prefer_localhost_replica_compact;
+        if (dir_name_for_internal_replication_with_local.empty())
+            throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+        return dir_name_for_internal_replication_with_local;
     }
 }
 

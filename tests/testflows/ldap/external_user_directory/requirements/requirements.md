@@ -51,7 +51,6 @@
       * 4.2.2.4 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.New](#rqsrs-009ldapexternaluserdirectoryrolenew)
       * 4.2.2.5 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NewPrivilege](#rqsrs-009ldapexternaluserdirectoryrolenewprivilege)
       * 4.2.2.6 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.RemovedPrivilege](#rqsrs-009ldapexternaluserdirectoryroleremovedprivilege)
-      * 4.2.2.7 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added](#rqsrs-009ldapexternaluserdirectoryrolenotpresentadded)
     * 4.2.3 [Configuration](#configuration)
       * 4.2.3.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationserverinvalid)
       * 4.2.3.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Definition](#rqsrs-009ldapexternaluserdirectoryconfigurationserverdefinition)
@@ -81,23 +80,20 @@
       * 4.2.3.26 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.TLSCACertDir](#rqsrs-009ldapexternaluserdirectoryconfigurationservertlscacertdir)
       * 4.2.3.27 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.TLSCACertFile](#rqsrs-009ldapexternaluserdirectoryconfigurationservertlscacertfile)
       * 4.2.3.28 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.TLSCipherSuite](#rqsrs-009ldapexternaluserdirectoryconfigurationservertlsciphersuite)
-      * 4.2.3.29 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldown)
-      * 4.2.3.30 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Default](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldowndefault)
-      * 4.2.3.31 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationserververificationcooldowninvalid)
-      * 4.2.3.32 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationserversyntax)
-      * 4.2.3.33 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectory)
-      * 4.2.3.34 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectorymorethanone)
-      * 4.2.3.35 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationuserssyntax)
-      * 4.2.3.36 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserver)
-      * 4.2.3.37 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverempty)
-      * 4.2.3.38 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermissing)
-      * 4.2.3.39 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermorethanone)
-      * 4.2.3.40 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverinvalid)
-      * 4.2.3.41 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersroles)
-      * 4.2.3.42 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmorethanone)
-      * 4.2.3.43 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesinvalid)
-      * 4.2.3.44 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesempty)
-      * 4.2.3.45 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmissing)
+      * 4.2.3.29 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationserversyntax)
+      * 4.2.3.30 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectory)
+      * 4.2.3.31 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.LDAPUserDirectory.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersldapuserdirectorymorethanone)
+      * 4.2.3.32 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Syntax](#rqsrs-009ldapexternaluserdirectoryconfigurationuserssyntax)
+      * 4.2.3.33 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserver)
+      * 4.2.3.34 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverempty)
+      * 4.2.3.35 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermissing)
+      * 4.2.3.36 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersservermorethanone)
+      * 4.2.3.37 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersserverinvalid)
+      * 4.2.3.38 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersroles)
+      * 4.2.3.39 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.MoreThanOne](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmorethanone)
+      * 4.2.3.40 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesinvalid)
+      * 4.2.3.41 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesempty)
+      * 4.2.3.42 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Missing](#rqsrs-009ldapexternaluserdirectoryconfigurationusersparametersrolesmissing)
     * 4.2.4 [Authentication](#authentication)
       * 4.2.4.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Username.Empty](#rqsrs-009ldapexternaluserdirectoryauthenticationusernameempty)
       * 4.2.4.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Username.Long](#rqsrs-009ldapexternaluserdirectoryauthenticationusernamelong)
@@ -105,9 +101,6 @@
       * 4.2.4.4 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Password.Empty](#rqsrs-009ldapexternaluserdirectoryauthenticationpasswordempty)
       * 4.2.4.5 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Password.Long](#rqsrs-009ldapexternaluserdirectoryauthenticationpasswordlong)
       * 4.2.4.6 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.Password.UTF8](#rqsrs-009ldapexternaluserdirectoryauthenticationpasswordutf8)
-      * 4.2.4.7 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Performance](#rqsrs-009ldapexternaluserdirectoryauthenticationverificationcooldownperformance)
-      * 4.2.4.8 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters](#rqsrs-009ldapexternaluserdirectoryauthenticationverificationcooldownresetchangeincoreserverparameters)
-      * 4.2.4.9 [RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Reset.InvalidPassword](#rqsrs-009ldapexternaluserdirectoryauthenticationverificationcooldownresetinvalidpassword)
 * 5 [References](#references)
 
 ## Revision History
@@ -341,10 +334,12 @@ are configured during parallel [LDAP] user logins.
 #### Roles
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed
-version: 2.0
+version: 1.0
 
-[ClickHouse] SHALL allow authentication even if the roles that are specified in the configuration
-of the external user directory are not defined at the time of the authentication attempt.
+[ClickHouse] SHALL reject authentication attempt if any of the roles that are specified in the configuration
+of the external user directory are not defined at the time of the authentication attempt
+with an exception that if a user was able to authenticate in past and its internal user object was created and cached
+then the user SHALL be able to authenticate again, even if one of the roles is missing.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed.Privileges
 version: 1.0
@@ -381,14 +376,6 @@ version: 1.0
 [ClickHouse] SHALL remove privilege from all the LDAP users authenticated using external user directory
 including cached users when privilege is removed from all the roles specified
 in the configuration of the external user directory.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added
-version: 1.0
-
-[ClickHouse] SHALL add a role to the users authenticated using LDAP external user directory
-that did not exist during the time of authentication but are defined in the 
-configuration file as soon as the role with that name becomes
-available.
 
 #### Configuration
 
@@ -569,43 +556,8 @@ For example,
 The available suites SHALL depend on the [OpenSSL] library version and variant used to build
 [ClickHouse] and therefore might change.
 
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown
-version: 1.0
-
-[ClickHouse] SHALL support `verification_cooldown` parameter in the [LDAP] server configuration section
-that SHALL define a period of time, in seconds, after a successful bind attempt, during which a user SHALL be assumed
-to be successfully authenticated for all consecutive requests without contacting the [LDAP] server.
-After period of time since the last successful attempt expires then on the authentication attempt
-SHALL result in contacting the [LDAP] server to verify the username and password.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Default
-version: 1.0
-
-[ClickHouse] `verification_cooldown` parameter in the [LDAP] server configuration section
-SHALL have a default value of `0` that disables caching and forces contacting
-the [LDAP] server for each authentication request.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.VerificationCooldown.Invalid
-version: 1.0
-
-[Clickhouse] SHALL return an error if the value provided for the `verification_cooldown` parameter is not a valid positive integer.
-
-For example:
-
-* negative integer
-* string
-* empty value
-* extremely large positive value (overflow)
-* extremely large negative value (overflow)
-
-The error SHALL appear in the log and SHALL be similar to the following:
-
-```bash
-<Error> Access(user directories): Could not parse LDAP server `openldap1`: Poco::Exception. Code: 1000, e.code() = 0, e.displayText() = Syntax error: Not a valid unsigned integer: *input value*
-```
-
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Syntax
-version: 2.0
+version: 1.0
 
 [ClickHouse] SHALL support the following example syntax to create an entry for an [LDAP] server inside the `config.xml`
 configuration file or of any configuration file inside the `config.d` directory.
@@ -617,7 +569,6 @@ configuration file or of any configuration file inside the `config.d` directory.
         <port>636</port>
         <auth_dn_prefix>cn=</auth_dn_prefix>
         <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
-        <verification_cooldown>0</verification_cooldown>
         <enable_tls>yes</enable_tls>
         <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
         <tls_require_cert>demand</tls_require_cert>
@@ -708,10 +659,10 @@ in the `<ldap>` sub-section in the `<user_directories>`
 if more than one `roles` parameter is defined in the configuration.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid
-version: 2.0
+version: 1.0
 
-[ClickHouse] SHALL not return an error if the role specified in the `<roles>`
-parameter does not exist locally. 
+[ClickHouse] SHALL return an error if the role specified in the `<roles>`
+parameter does not exist locally.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty
 version: 1.0
@@ -765,33 +716,6 @@ version: 1.0
 
 [ClickHouse] SHALL support [UTF-8] characters in passwords
 used to authenticate users when using [LDAP] external user directory.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Performance
-version: 1.0
-
-[ClickHouse] SHALL provide better login performance of users authenticated using [LDAP] external user directory
-when `verification_cooldown` parameter is set to a positive value when comparing
-to the the case when `verification_cooldown` is turned off either for a single user or multiple users
-making a large number of repeated requests.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Reset.ChangeInCoreServerParameters
-version: 1.0
-
-[ClickHouse] SHALL reset any currently cached [LDAP] authentication bind requests enabled by the
-`verification_cooldown` parameter in the [LDAP] server configuration section
-if either `host`, `port`, `auth_dn_prefix`, or `auth_dn_suffix` parameter values
-change in the configuration file. The reset SHALL cause any subsequent authentication attempts for any user
-to result in contacting the [LDAP] server to verify user's username and password.
-
-##### RQ.SRS-009.LDAP.ExternalUserDirectory.Authentication.VerificationCooldown.Reset.InvalidPassword
-version: 1.0
-
-[ClickHouse] SHALL reset current cached [LDAP] authentication bind request enabled by the
-`verification_cooldown` parameter in the [LDAP] server configuration section
-for the user if the password provided in the current authentication attempt does not match
-the valid password provided during the first successful authentication request that was cached
-for this exact user. The reset SHALL cause the next authentication attempt for this user
-to result in contacting the [LDAP] server to verify user's username and password.
 
 ## References
 

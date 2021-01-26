@@ -173,16 +173,11 @@ class _NetworkManager:
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
 
-            for i in range(5):
-                if self._container is not None:
-                    try:
-                        self._container.remove(force=True)
-                        break
-                    except docker.errors.NotFound:
-                        break
-                    except Exception as ex:
-                        print("Error removing network blocade container, will try again", str(ex))
-                        time.sleep(i)
+            if self._container is not None:
+                try:
+                    self._container.remove(force=True)
+                except docker.errors.NotFound:
+                    pass
 
             image = subprocess.check_output("docker images -q yandex/clickhouse-integration-helper 2>/dev/null", shell=True)
             if not image.strip():
@@ -191,7 +186,7 @@ class _NetworkManager:
                 # before running
                 for i in range(5):
                     try:
-                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)
                         break
                     except:
                         time.sleep(i)
