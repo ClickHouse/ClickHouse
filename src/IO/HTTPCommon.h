@@ -13,7 +13,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-
 namespace Poco
 {
 namespace Net
@@ -25,7 +24,6 @@ namespace Net
 
 namespace DB
 {
-
 constexpr int HTTP_TOO_MANY_REQUESTS = 429;
 
 class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
@@ -41,7 +39,6 @@ private:
 public:
     SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
 };
-
 using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
@@ -50,9 +47,8 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, bool resolve_host = true);
 
-/// As previous method creates session, but tooks it from pool, without and with proxy uri.
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host = true);
-PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Poco::URI & proxy_uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size, bool resolve_host = true);
+/// As previous method creates session, but tooks it from pool
+PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size);
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
 
@@ -63,7 +59,5 @@ bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
   */
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
-
-void assertResponseIsOk(
-    const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects = false);
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects = false);
 }

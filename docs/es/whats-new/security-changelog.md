@@ -53,7 +53,7 @@ Créditos: Andrey Krasichkov y Evgeny Sidorov del equipo de seguridad de la info
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-“remote” función de tabla permitió símbolos arbitrarios en “user”, “password” y “default_database” campos que llevaron a ataques de falsificación de solicitudes de protocolo cruzado.
+“remote” función de tabla permitió símbolos arbitrarios en “user”, “password” y “default\_database” campos que llevaron a ataques de falsificación de solicitudes de protocolo cruzado.
 
 Créditos: Andrey Krasichkov del equipo de seguridad de la información de Yandex
 

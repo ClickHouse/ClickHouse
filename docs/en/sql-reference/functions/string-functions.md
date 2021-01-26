@@ -32,12 +32,12 @@ The function also works for arrays.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
@@ -78,7 +78,7 @@ toValidUTF8( input_string )
 
 Parameters:
 
--   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+-   input\_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
@@ -556,48 +556,6 @@ Result:
 ┌─res─┐
 │   1 │
 └─────┘
-```
-
-## encodeXMLComponent {#encode-xml-component}
-
-Escapes characters to place string into XML text node or attribute.
-
-The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
-
-**Syntax** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Parameters** 
-
--   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The sequence of characters with escape characters.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Result:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

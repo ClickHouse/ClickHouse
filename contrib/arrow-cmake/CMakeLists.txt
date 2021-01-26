@@ -144,16 +144,15 @@ set(ORC_SRCS
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow)
 
-configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/util/config.h")
+configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/arrow/util/config.h")
 
 # arrow/cpp/src/arrow/CMakeLists.txt
 set(ARROW_SRCS
+        ${LIBRARY_DIR}/array.cc
         ${LIBRARY_DIR}/buffer.cc
-        ${LIBRARY_DIR}/builder.cc
-        ${LIBRARY_DIR}/chunked_array.cc
-        ${LIBRARY_DIR}/compare.cc
-        ${LIBRARY_DIR}/datum.cc
         ${LIBRARY_DIR}/device.cc
+        ${LIBRARY_DIR}/builder.cc
+        ${LIBRARY_DIR}/compare.cc
         ${LIBRARY_DIR}/extension_type.cc
         ${LIBRARY_DIR}/memory_pool.cc
         ${LIBRARY_DIR}/pretty_print.cc
@@ -168,12 +167,11 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/type.cc
         ${LIBRARY_DIR}/visitor.cc
 
-        ${LIBRARY_DIR}/array/array_base.cc
-        ${LIBRARY_DIR}/array/array_binary.cc
-        ${LIBRARY_DIR}/array/array_decimal.cc
-        ${LIBRARY_DIR}/array/array_dict.cc
-        ${LIBRARY_DIR}/array/array_nested.cc
-        ${LIBRARY_DIR}/array/array_primitive.cc
+        ${LIBRARY_DIR}/tensor/coo_converter.cc
+        ${LIBRARY_DIR}/tensor/csc_converter.cc
+        ${LIBRARY_DIR}/tensor/csf_converter.cc
+        ${LIBRARY_DIR}/tensor/csr_converter.cc
+
         ${LIBRARY_DIR}/array/builder_adaptive.cc
         ${LIBRARY_DIR}/array/builder_base.cc
         ${LIBRARY_DIR}/array/builder_binary.cc
@@ -183,50 +181,17 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/array/builder_primitive.cc
         ${LIBRARY_DIR}/array/builder_union.cc
         ${LIBRARY_DIR}/array/concatenate.cc
-        ${LIBRARY_DIR}/array/data.cc
+        ${LIBRARY_DIR}/array/dict_internal.cc
         ${LIBRARY_DIR}/array/diff.cc
-        ${LIBRARY_DIR}/array/util.cc
         ${LIBRARY_DIR}/array/validate.cc
 
-        ${LIBRARY_DIR}/compute/api_scalar.cc
-        ${LIBRARY_DIR}/compute/api_vector.cc
-        ${LIBRARY_DIR}/compute/cast.cc
-        ${LIBRARY_DIR}/compute/exec.cc
-        ${LIBRARY_DIR}/compute/function.cc
-        ${LIBRARY_DIR}/compute/kernel.cc
-        ${LIBRARY_DIR}/compute/registry.cc
-
-        ${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc
-        ${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc
-        ${LIBRARY_DIR}/compute/kernels/aggregate_var_std.cc
-        ${LIBRARY_DIR}/compute/kernels/codegen_internal.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_nested.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_numeric.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_string.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_compare.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_fill_null.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_nested.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_string.cc
-        ${LIBRARY_DIR}/compute/kernels/scalar_validity.cc
-        ${LIBRARY_DIR}/compute/kernels/vector_hash.cc
-        ${LIBRARY_DIR}/compute/kernels/vector_nested.cc
-        ${LIBRARY_DIR}/compute/kernels/vector_selection.cc
-        ${LIBRARY_DIR}/compute/kernels/vector_sort.cc
-        ${LIBRARY_DIR}/compute/kernels/util_internal.cc
-
+        ${LIBRARY_DIR}/csv/converter.cc
         ${LIBRARY_DIR}/csv/chunker.cc
         ${LIBRARY_DIR}/csv/column_builder.cc
-        ${LIBRARY_DIR}/csv/column_decoder.cc
-        ${LIBRARY_DIR}/csv/converter.cc
         ${LIBRARY_DIR}/csv/options.cc
         ${LIBRARY_DIR}/csv/parser.cc
         ${LIBRARY_DIR}/csv/reader.cc
+        ${LIBRARY_DIR}/csv/column_decoder.cc
 
         ${LIBRARY_DIR}/ipc/dictionary.cc
         ${LIBRARY_DIR}/ipc/feather.cc
@@ -237,25 +202,14 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/ipc/writer.cc
 
         ${LIBRARY_DIR}/io/buffered.cc
-        ${LIBRARY_DIR}/io/caching.cc
         ${LIBRARY_DIR}/io/compressed.cc
         ${LIBRARY_DIR}/io/file.cc
         ${LIBRARY_DIR}/io/interfaces.cc
         ${LIBRARY_DIR}/io/memory.cc
         ${LIBRARY_DIR}/io/slow.cc
 
-        ${LIBRARY_DIR}/tensor/coo_converter.cc
-        ${LIBRARY_DIR}/tensor/csf_converter.cc
-        ${LIBRARY_DIR}/tensor/csx_converter.cc
-
         ${LIBRARY_DIR}/util/basic_decimal.cc
-        ${LIBRARY_DIR}/util/bit_block_counter.cc
-        ${LIBRARY_DIR}/util/bit_run_reader.cc
         ${LIBRARY_DIR}/util/bit_util.cc
-        ${LIBRARY_DIR}/util/bitmap.cc
-        ${LIBRARY_DIR}/util/bitmap_builders.cc
-        ${LIBRARY_DIR}/util/bitmap_ops.cc
-        ${LIBRARY_DIR}/util/bpacking.cc
         ${LIBRARY_DIR}/util/compression.cc
         ${LIBRARY_DIR}/util/compression_lz4.cc
         ${LIBRARY_DIR}/util/compression_snappy.cc
@@ -263,12 +217,8 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/compression_zstd.cc
         ${LIBRARY_DIR}/util/cpu_info.cc
         ${LIBRARY_DIR}/util/decimal.cc
-        ${LIBRARY_DIR}/util/delimiting.cc
-        ${LIBRARY_DIR}/util/formatting.cc
-        ${LIBRARY_DIR}/util/future.cc
         ${LIBRARY_DIR}/util/int_util.cc
         ${LIBRARY_DIR}/util/io_util.cc
-        ${LIBRARY_DIR}/util/iterator.cc
         ${LIBRARY_DIR}/util/key_value_metadata.cc
         ${LIBRARY_DIR}/util/logging.cc
         ${LIBRARY_DIR}/util/memory.cc
@@ -276,13 +226,25 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/string.cc
         ${LIBRARY_DIR}/util/task_group.cc
         ${LIBRARY_DIR}/util/thread_pool.cc
-        ${LIBRARY_DIR}/util/time.cc
         ${LIBRARY_DIR}/util/trie.cc
         ${LIBRARY_DIR}/util/utf8.cc
-        ${LIBRARY_DIR}/util/value_parsing.cc
+        ${LIBRARY_DIR}/util/future.cc
+        ${LIBRARY_DIR}/util/formatting.cc
+        ${LIBRARY_DIR}/util/parsing.cc
+        ${LIBRARY_DIR}/util/time.cc
+        ${LIBRARY_DIR}/util/delimiting.cc
+        ${LIBRARY_DIR}/util/iterator.cc
 
         ${LIBRARY_DIR}/vendored/base64.cpp
         ${ORC_SRCS}
+        )
+
+set(ARROW_SRCS ${ARROW_SRCS}
+        ${LIBRARY_DIR}/compute/context.cc
+        ${LIBRARY_DIR}/compute/kernels/boolean.cc
+        ${LIBRARY_DIR}/compute/kernels/cast.cc
+        ${LIBRARY_DIR}/compute/kernels/hash.cc
+        ${LIBRARY_DIR}/compute/kernels/util_internal.cc
         )
 
 if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
@@ -327,8 +289,7 @@ if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
 endif ()
 
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
 if (ARROW_WITH_SNAPPY)
@@ -358,26 +319,19 @@ set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 set(GEN_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
-        ${LIBRARY_DIR}/arrow/path_internal.cc
         ${LIBRARY_DIR}/arrow/reader.cc
         ${LIBRARY_DIR}/arrow/reader_internal.cc
         ${LIBRARY_DIR}/arrow/schema.cc
-        ${LIBRARY_DIR}/arrow/schema_internal.cc
         ${LIBRARY_DIR}/arrow/writer.cc
+        ${LIBRARY_DIR}/arrow/path_internal.cc
         ${LIBRARY_DIR}/bloom_filter.cc
         ${LIBRARY_DIR}/column_reader.cc
         ${LIBRARY_DIR}/column_scanner.cc
         ${LIBRARY_DIR}/column_writer.cc
         ${LIBRARY_DIR}/deprecated_io.cc
         ${LIBRARY_DIR}/encoding.cc
-        ${LIBRARY_DIR}/encryption.cc
-        ${LIBRARY_DIR}/encryption_internal.cc
         ${LIBRARY_DIR}/file_reader.cc
         ${LIBRARY_DIR}/file_writer.cc
-        ${LIBRARY_DIR}/internal_file_decryptor.cc
-        ${LIBRARY_DIR}/internal_file_encryptor.cc
-        ${LIBRARY_DIR}/level_conversion.cc
-        ${LIBRARY_DIR}/level_comparison.cc
         ${LIBRARY_DIR}/metadata.cc
         ${LIBRARY_DIR}/murmur3.cc
         ${LIBRARY_DIR}/platform.cc
@@ -386,6 +340,10 @@ set(PARQUET_SRCS
         ${LIBRARY_DIR}/schema.cc
         ${LIBRARY_DIR}/statistics.cc
         ${LIBRARY_DIR}/types.cc
+        ${LIBRARY_DIR}/encryption.cc
+        ${LIBRARY_DIR}/encryption_internal.cc
+        ${LIBRARY_DIR}/internal_file_decryptor.cc
+        ${LIBRARY_DIR}/internal_file_encryptor.cc
 
         ${GEN_LIBRARY_DIR}/parquet_constants.cpp
         ${GEN_LIBRARY_DIR}/parquet_types.cpp

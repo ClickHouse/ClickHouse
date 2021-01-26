@@ -35,15 +35,12 @@ CREATE DICTIONARY database_for_dict.ssd_dict
     c String DEFAULT 'none'
 )
 PRIMARY KEY k1, k2
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
 LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
 
 SELECT 'TEST_SMALL';
 SELECT 'VALUE FROM RAM BUFFER';
-
--- NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-SELECT dictHas('database_for_dict.ssd_dict', 'a', tuple('1')); -- { serverError 42 }
 
 SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', tuple('1', toInt32(3)));
 SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', tuple('1', toInt32(3)));
@@ -64,8 +61,6 @@ SELECT dictGetString('database_for_dict.ssd_dict', 'c', tuple('5', toInt32(-3)))
 SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', tuple('10', toInt32(-20)));
 SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', tuple('10', toInt32(-20)));
 SELECT dictGetString('database_for_dict.ssd_dict', 'c', tuple('10', toInt32(-20)));
-
-SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', tuple(toInt32(3))); --{serverError 53}
 
 DROP DICTIONARY database_for_dict.ssd_dict;
 
@@ -97,7 +92,7 @@ CREATE DICTIONARY database_for_dict.ssd_dict
     c String DEFAULT 'none'
 )
 PRIMARY KEY k1, k2
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
 LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096 MAX_STORED_KEYS 1000000));
 
