@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadBufferFanIn.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -75,14 +76,46 @@ namespace
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
-            const String & key)
+            const String & key,
+            size_t max_read_threads)
             : SourceWithProgress(getHeader(sample_block, need_path, need_file))
             , name(std::move(name_))
             , with_file_column(need_file)
             , with_path_column(need_path)
             , file_path(bucket + "/" + key)
         {
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
+            size_t object_size = DB::S3::getObjectSize(client, bucket, key);
+
+
+            std::unique_ptr<ReadBuffer> s3_read_buf;
+            if (max_read_threads <= 1 || object_size <= 4 * DBMS_DEFAULT_BUFFER_SIZE)
+            {
+                LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading from S3 in single thread");
+                s3_read_buf = std::make_unique<ReadBufferFromS3>(client, bucket, key);
+            }
+            else
+            {
+                /// Download two segments per each worker.
+                /// Not so much, but better than one, because some worker can steal segment if other one is slow
+                size_t number_of_ranges = max_read_threads * 2;
+                size_t split_size = (object_size + number_of_ranges) / number_of_ranges;
+                LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
+                          "Downloading from S3 in {} threads. Object size: {}, Range size: {}",
+                          max_read_threads, object_size, split_size);
+                auto mul_s3_read_buf = std::make_unique<ReadBufferFanIn>(max_read_threads);
+                for (size_t from_range = 0; from_range < object_size; from_range += split_size + 1)
+                {
+                    auto subreader = std::make_shared<ReadBufferFromS3>(client, bucket, key);
+                    size_t to_range = std::min(object_size - 1, from_range + split_size);
+                    subreader->setRange(from_range, to_range);
+                    mul_s3_read_buf->addReader(subreader);
+                }
+                mul_s3_read_buf->start();
+                s3_read_buf = std::move(mul_s3_read_buf);
+            }
+
+            read_buf = wrapReadBufferWithCompressionMethod(std::move(s3_read_buf), compression_method);
+
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
             reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
@@ -209,6 +242,7 @@ StorageS3::StorageS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
+    , max_read_threads(context_.getSettings().max_threads)
 {
     global_context.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -329,7 +363,8 @@ Pipe StorageS3::read(
             chooseCompressionMethod(uri.endpoint, compression_method),
             client,
             uri.bucket,
-            key));
+            key,
+            max_read_threads));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.

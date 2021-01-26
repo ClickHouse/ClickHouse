@@ -37,11 +37,7 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    if (!initialized)
-    {
-        impl = initialize();
-        initialized = true;
-    }
+    initialize();
 
     Stopwatch watch;
     auto res = impl->next();
@@ -60,8 +56,7 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (initialized)
-        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+    checkNotInitialized();
 
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
@@ -80,15 +75,34 @@ off_t ReadBufferFromS3::getPosition()
     return offset + count();
 }
 
-std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
+void ReadBufferFromS3::checkNotInitialized() const
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, std::to_string(offset));
+    if (initialized)
+        throw Exception("Operation is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+}
+
+void ReadBufferFromS3::initialize()
+{
+    if (initialized)
+        return;
+
+    impl = createImpl();
+    initialized = true;
+}
+
+std::unique_ptr<ReadBuffer> ReadBufferFromS3::createImpl()
+{
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, Range End: {})",
+              bucket, key, offset, read_end);
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (offset != 0)
-        req.SetRange("bytes=" + std::to_string(offset) + "-");
+
+    if (offset != 0 || read_end != 0)
+    {
+        req.SetRange("bytes=" + std::to_string(offset)  + "-" + (read_end != 0 ? std::to_string(read_end) : ""));
+    }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
@@ -99,6 +113,13 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
+void ReadBufferFromS3::setRange(size_t begin, size_t end)
+{
+    checkNotInitialized();
+    offset = static_cast<off_t>(begin);
+    read_end = static_cast<off_t>(end);
 }
 
 }

@@ -4,10 +4,16 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <common/types.h>
+
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+
 #include <Poco/URI.h>
+
 
 namespace Aws::S3
 {
@@ -19,6 +25,12 @@ namespace DB
     class RemoteHostFilter;
     struct HttpHeader;
     using HeaderCollection = std::vector<HttpHeader>;
+
+    namespace ErrorCodes
+    {
+        extern const int S3_ERROR;
+    }
+
 }
 
 namespace DB::S3
@@ -86,6 +98,8 @@ struct URI
 
     explicit URI(const Poco::URI & uri_);
 };
+
+size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key);
 
 }
 

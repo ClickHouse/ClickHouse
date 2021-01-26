@@ -231,6 +231,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -270,7 +271,8 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg,
+        return create(
+            cfg,
             is_virtual_hosted_style,
             access_key_id,
             secret_access_key,
@@ -363,7 +365,8 @@ namespace S3
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")",
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (!uri.getPath().empty())
             {
@@ -372,11 +375,14 @@ namespace S3
             }
 
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             boost::to_upper(name);
             if (name != S3 && name != COS)
             {
-                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")",
+                    ErrorCodes::BAD_ARGUMENTS);
             }
             if (name == S3)
             {
@@ -396,13 +402,31 @@ namespace S3
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")",
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (key.empty() || key == "/")
                 throw Exception("Key name is empty in path style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key)
+    {
+        Aws::S3::Model::HeadObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
+
+        if (outcome.IsSuccess())
+        {
+            auto read_result = outcome.GetResultWithOwnership();
+            return static_cast<size_t>(read_result.GetContentLength());
+        }
+        else
+            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
 }
 

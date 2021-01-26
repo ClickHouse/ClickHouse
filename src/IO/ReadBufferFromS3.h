@@ -29,7 +29,10 @@ private:
     String key;
     size_t buffer_size;
     bool initialized = false;
+
     off_t offset = 0;
+    off_t read_end = 0;
+
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
 
@@ -47,8 +50,12 @@ public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
+    void setRange(size_t begin, size_t end);
+
 private:
-    std::unique_ptr<ReadBuffer> initialize();
+    void initialize();
+    std::unique_ptr<ReadBuffer> createImpl();
+    void checkNotInitialized() const;
 };
 
 }
