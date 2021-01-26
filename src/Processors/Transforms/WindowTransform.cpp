@@ -350,7 +350,7 @@ void WindowTransform::writeOutGroup()
             past_the_end_block = first_block_number + blocks.size();
             past_the_end_row = blocks.back().numRows();
         }
-        for ( auto r = group_start;
+        for (auto r = group_start;
             r.block < past_the_end_block;
             ++r.block, r.row = 0)
         {
