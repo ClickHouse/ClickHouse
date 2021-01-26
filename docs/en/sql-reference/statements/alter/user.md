@@ -10,7 +10,7 @@ Changes ClickHouse user accounts.
 Syntax:
 
 ``` sql
-ALTER {USER | USERS} [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1] 
+ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1] 
         [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]

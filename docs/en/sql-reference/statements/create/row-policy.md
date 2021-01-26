@@ -5,12 +5,12 @@ toc_title: ROW POLICY
 
 # CREATE ROW POLICY {#create-row-policy-statement}
 
-Creates a [filter for rows](../../../operations/access-rights.md#row-policy-management), which a user can read from a table.
+Creates [filters for rows](../../../operations/access-rights.md#row-policy-management), which a user can read from a table.
 
 Syntax:
 
 ``` sql
-CREATE [ROW] {POLICY | POLICIES} [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1 
         [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2 ...] 
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]

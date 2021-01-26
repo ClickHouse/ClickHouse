@@ -236,7 +236,7 @@ SHOW GRANTS [FOR user1 [, user2 ...]]
 
 If user is not specified, the query returns privileges for the current user.
 
-## SHOW CREATE USER, SHOW CREATE USERS {#show-create-user-statement}
+## SHOW CREATE USER {#show-create-user-statement}
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
 
@@ -245,47 +245,47 @@ Shows parameters that were used at a [user creation](../../sql-reference/stateme
 ### Syntax {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE {USER | USERS} [name1 [, name2 ...] | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
-## SHOW CREATE ROLE, SHOW CREATE ROLES {#show-create-role-statement}
+## SHOW CREATE ROLE {#show-create-role-statement}
 
 Shows parameters that were used at a [role creation](../../sql-reference/statements/create/role.md).
 
 ### Syntax {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE {ROLE | ROLES} name1 [, name2 ...]
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
-## SHOW CREATE ROW POLICY, SHOW CREATE ROW POLICIES {#show-create-row-policy-statement}
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
 Shows parameters that were used at a [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
 ### Syntax {#show-create-row-policy-syntax}
 
 ``` sql
-SHOW CREATE [ROW] {POLICY | POLICIES} name ON [database1.]table1 [, [database2.]table2 ...]
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
-## SHOW CREATE QUOTA, SHOW CREATE QUOTAS {#show-create-quota-statement}
+## SHOW CREATE QUOTA {#show-create-quota-statement}
 
 Shows parameters that were used at a [quota creation](../../sql-reference/statements/create/quota.md).
 
 ### Syntax {#show-create-quota-syntax}
 
 ``` sql
-SHOW CREATE {QUOTA | QUOTAS} [name1 [, name2 ...] | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
-## SHOW CREATE SETTINGS PROFILE, SHOW CREATE SETTINGS PROFILES {#show-create-settings-profile-statement}
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
 Shows parameters that were used at a [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
 ### Syntax {#show-create-settings-profile-syntax}
 
 ``` sql
-SHOW CREATE [SETTINGS] {PROFILE | PROFILES} name1 [, name2 ...]
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
 ## SHOW USERS {#show-users-statement}
