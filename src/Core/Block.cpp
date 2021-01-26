@@ -409,6 +409,15 @@ Block Block::cloneWithoutColumns() const
     return res;
 }
 
+Block Block::cloneWithCutColumns(size_t start, size_t length) const
+{
+    Block copy = *this;
+
+    for (size_t i = 0; i < copy.data.size(); ++i)
+        copy.data[i].column = copy.data[i].column->cut(start, length);
+
+    return copy;
+}
 
 Block Block::sortColumns() const
 {
