@@ -257,8 +257,7 @@ enum class ReadIntTextCheckOverflow
 template <typename T, typename ReturnType = void, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
-    /// TODO: disabled for big ints cause of 127 vs 128 bit conversion
-    using UnsignedT = std::conditional_t<is_big_int_v<T>, T, make_unsigned_t<T>>;
+    using UnsignedT = make_unsigned_t<T>;
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -318,12 +317,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                             || common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res))
                             return ReturnType(false);
 
-                        /// Cannot assign signed to unsigned for big ints. Ignore fast path.
-                        if constexpr (!is_big_int_v<T>)
-                        {
-                            res = signed_res;
-                            break;
-                        }
+                        res = signed_res;
+                        break;
                     }
                 }
                 res *= 10;

@@ -186,7 +186,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
     }
     if constexpr (std::is_same_v<T, DB::UInt128>)
     {
-        return intHash64(key.low ^ key.high);
+        return intHash64(key.low ^ key.high);   /// TODO This is classical antipattern.
     }
     else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
     {
