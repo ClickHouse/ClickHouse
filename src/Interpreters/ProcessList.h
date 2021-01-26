@@ -297,8 +297,6 @@ protected:
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
 public:
-    ProcessList(size_t max_size_ = 0);
-
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
     /** Register running query. Returns refcounted object, that will remove element from list in destructor.

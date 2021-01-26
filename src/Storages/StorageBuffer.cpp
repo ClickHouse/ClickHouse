@@ -95,7 +95,7 @@ public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(
             metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names(column_names_.begin(), column_names_.end())
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names_))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -115,10 +115,16 @@ protected:
             return res;
 
         Columns columns;
-        columns.reserve(column_names.size());
+        columns.reserve(column_names_and_types.size());
 
-        for (const auto & name : column_names)
-            columns.push_back(buffer.data.getByName(name).column);
+        for (const auto & elem : column_names_and_types)
+        {
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);
@@ -127,7 +133,7 @@ protected:
     }
 
 private:
-    Names column_names;
+    NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
     bool has_been_read = false;
 };
@@ -188,14 +194,14 @@ void StorageBuffer::read(
         {
             const auto & dest_columns = destination_metadata_snapshot->getColumns();
             const auto & our_columns = metadata_snapshot->getColumns();
-            return dest_columns.hasPhysical(column_name) &&
-                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
+            return dest_columns.hasPhysicalOrSubcolumn(column_name) &&
+                   dest_columns.getPhysicalOrSubcolumn(column_name).type->equals(*our_columns.getPhysicalOrSubcolumn(column_name).type);
         });
 
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, context);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
@@ -387,7 +393,7 @@ static void appendBlock(const Block & from, Block & to)
     MutableColumnPtr last_col;
     try
     {
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
@@ -730,10 +736,11 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
-
     if (!destination_id)
+    {
+        LOG_TRACE(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
         return;
+    }
 
     /** For simplicity, buffer is locked during write.
         * We could unlock buffer temporary, but it would lead to too many difficulties:
@@ -741,6 +748,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
         * - this could lead to infinite memory growth.
         */
+
+    Stopwatch watch;
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
@@ -764,6 +773,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// After a while, the next write attempt will happen.
         throw;
     }
+
+    UInt64 milliseconds = watch.elapsedMilliseconds();
+    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
 }
 
 
@@ -779,7 +791,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::User);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -855,9 +867,21 @@ void StorageBuffer::reschedule()
 
     for (auto & buffer : buffers)
     {
-        std::lock_guard lock(buffer.mutex);
-        min_first_write_time = buffer.first_write_time;
-        rows += buffer.data.rows();
+        /// try_to_lock here to avoid waiting for other layers flushing to be finished,
+        /// since the buffer table may:
+        /// - push to Distributed table, that may take too much time,
+        /// - push to table with materialized views attached,
+        ///   this is also may take some time.
+        ///
+        /// try_to_lock is also ok for background flush, since if there is
+        /// INSERT contended, then the reschedule will be done after
+        /// INSERT will be done.
+        std::unique_lock lock(buffer.mutex, std::try_to_lock);
+        if (lock.owns_lock())
+        {
+            min_first_write_time = buffer.first_write_time;
+            rows += buffer.data.rows();
+        }
     }
 
     /// will be rescheduled via INSERT
