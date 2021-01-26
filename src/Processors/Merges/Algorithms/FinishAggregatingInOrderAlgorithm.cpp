@@ -21,13 +21,11 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     const Block & header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
-    SortDescription description_,
-    size_t max_block_size_)
-    : merged_data(header_.cloneEmptyColumns(), false, max_block_size_)
-    , header(header_)
+    SortDescription description_)
+    : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
-    , description(description_)
+    , description(std::move(description_))
 {
     /// Replace column names in description to positions.
     for (auto & column_description : description)
@@ -55,6 +53,7 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
+    /// Find the input with smallest last row.
     std::optional<size_t> best_input;
     for (size_t i = 0; i < num_inputs; ++i)
     {
@@ -70,11 +69,13 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     }
 
     if (!best_input)
-        return Status{merged_data.pull(), true};
+        return Status{aggregate(), true};
 
+    /// Chunk at best_input will be aggregated entirely.
     auto & best_state = states[*best_input];
     best_state.to_row = states[*best_input].num_rows;
 
+    /// Find the positions upto which need to aggregate in other chunks.
     for (size_t i = 0; i < num_inputs; ++i)
     {
         if (!states[i].isValid() || i == *best_input)
@@ -90,28 +91,23 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
         states[i].to_row = (it == indices.end() ? states[i].num_rows : *it);
     }
 
-    auto aggregated = aggregate();
-    for (size_t i = 0; i < aggregated.rows(); ++i)
-        merged_data.insertRow(aggregated.getColumns(), i, aggregated.rows());
-
     Status status(*best_input);
-    if (merged_data.hasEnoughRows())
-        status.chunk = merged_data.pull();
+    status.chunk = aggregate();
 
     return status;
 }
 
-Block FinishAggregatingInOrderAlgorithm::aggregate()
+Chunk FinishAggregatingInOrderAlgorithm::aggregate()
 {
     BlocksList blocks;
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & state = states[i];
-        if (!state.isValid())
+        if (!state.isValid() || state.current_row == state.to_row)
             continue;
 
-        if (state.current_row == 0 && state.to_row == state.num_rows)
+        if (state.to_row - state.current_row == state.num_rows)
         {
             blocks.emplace_back(header.cloneWithColumns(states[i].all_columns));
         }
@@ -128,7 +124,8 @@ Block FinishAggregatingInOrderAlgorithm::aggregate()
         states[i].current_row = states[i].to_row;
     }
 
-    return params->aggregator.mergeBlocks(blocks, false);
+    auto aggregated = params->aggregator.mergeBlocks(blocks, false);
+    return {aggregated.getColumns(), aggregated.rows()};
 }
 
 }

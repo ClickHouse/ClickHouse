@@ -79,6 +79,7 @@ SRCS(
     LimitTransform.cpp
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/FinishAggregatingInOrderAlgorithm.cpp
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
