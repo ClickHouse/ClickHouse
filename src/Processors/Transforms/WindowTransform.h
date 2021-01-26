@@ -110,6 +110,7 @@ private:
     void advanceFrameStart();
     void advanceFrameEnd();
     void writeOutGroup();
+    void initPerBlockCaches();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -120,6 +121,11 @@ private:
 
     const Columns & inputAt(const RowNumber & x) const
     { return const_cast<WindowTransform *>(this)->inputAt(x); }
+
+    size_t blockRowsNumber(const RowNumber & x) const
+    {
+        return inputAt(x)[0]->size();
+    }
 
     MutableColumns & outputAt(const RowNumber & x)
     {
