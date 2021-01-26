@@ -72,7 +72,17 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const TestKeepe
 {
     TestKeeperStorage::ResponsesForSessions responses;
     if (can_become_leader)
-        responses = putRequests(expired_requests);
+    {
+        try
+        {
+            responses = putRequests(expired_requests);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     if (!launcher.shutdown(5))
         LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", 5);
     return responses;

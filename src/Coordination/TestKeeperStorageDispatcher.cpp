@@ -14,7 +14,7 @@ namespace ErrorCodes
 void TestKeeperStorageDispatcher::processingThread()
 {
     setThreadName("TestKeeperSProc");
-    while (!shutdown)
+    while (!shutdown_called)
     {
         TestKeeperStorage::RequestForSession request;
 
@@ -22,8 +22,9 @@ void TestKeeperStorageDispatcher::processingThread()
 
         if (requests_queue.tryPop(request, max_wait))
         {
-            if (shutdown)
+            if (shutdown_called)
                 break;
+
             try
             {
                 auto responses = server->putRequests({request});
@@ -49,34 +50,6 @@ void TestKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordina
     /// Session closed, no more writes
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
         session_to_response_callback.erase(session_writer);
-}
-
-void TestKeeperStorageDispatcher::finalize()
-{
-    {
-        std::lock_guard lock(push_request_mutex);
-
-        if (shutdown)
-            return;
-
-        shutdown = true;
-
-        if (processing_thread.joinable())
-            processing_thread.join();
-    }
-
-    if (server)
-    {
-        TestKeeperStorage::RequestsForSessions expired_requests;
-        TestKeeperStorage::RequestForSession request;
-        while (requests_queue.tryPop(request))
-            expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
-
-        auto expired_responses = server->shutdown(expired_requests);
-
-        for (const auto & response_for_session : expired_responses)
-            setResponse(response_for_session.session_id, response_for_session.response);
-    }
 }
 
 bool TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
@@ -143,16 +116,44 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
 
 }
 
-TestKeeperStorageDispatcher::~TestKeeperStorageDispatcher()
+void TestKeeperStorageDispatcher::shutdown()
 {
     try
     {
-        finalize();
+        {
+            std::lock_guard lock(push_request_mutex);
+
+            if (shutdown_called)
+                return;
+
+            shutdown_called = true;
+
+            if (processing_thread.joinable())
+                processing_thread.join();
+        }
+
+        if (server)
+        {
+            TestKeeperStorage::RequestsForSessions expired_requests;
+            TestKeeperStorage::RequestForSession request;
+            while (requests_queue.tryPop(request))
+                expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
+
+            auto expired_responses = server->shutdown(expired_requests);
+
+            for (const auto & response_for_session : expired_responses)
+                setResponse(response_for_session.session_id, response_for_session.response);
+        }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+TestKeeperStorageDispatcher::~TestKeeperStorageDispatcher()
+{
+    shutdown();
 }
 
 void TestKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)

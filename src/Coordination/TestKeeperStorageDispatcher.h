@@ -16,13 +16,12 @@ class TestKeeperStorageDispatcher
 private:
     Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
 
-    using clock = std::chrono::steady_clock;
 
     std::mutex push_request_mutex;
 
     using RequestsQueue = ConcurrentBoundedQueue<TestKeeperStorage::RequestForSession>;
     RequestsQueue requests_queue{1};
-    std::atomic<bool> shutdown{false};
+    std::atomic<bool> shutdown_called{false};
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
 
     std::mutex session_to_response_callback_mutex;
@@ -35,13 +34,14 @@ private:
 
 private:
     void processingThread();
-    void finalize();
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
     TestKeeperStorageDispatcher() = default;
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
+
+    void shutdown();
 
     ~TestKeeperStorageDispatcher();
 
