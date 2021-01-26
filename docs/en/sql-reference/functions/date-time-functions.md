@@ -682,7 +682,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two arguments: first is an integer or DateTime, second is a constant format string - it acts in the same way as `formatDateTime` and return `String` type.
+When there are two arguments: first is an integer or DateTime, second is a constant format string — it acts in the same way as `formatDateTime` and return `String` type.
 
 For example:
 
