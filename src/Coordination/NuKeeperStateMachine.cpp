@@ -8,6 +8,8 @@
 namespace DB
 {
 
+static constexpr int MAX_SNAPSHOTS = 3;
+
 TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
     ReadBufferFromNuraftBuffer buffer(data);
@@ -112,7 +114,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::createSnapshotInt
     return std::make_shared<NuKeeperStateMachine::StorageSnapshot>(ss, storage);
 }
 
-NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nuraft::snapshot & s, nuraft::buffer & in) const
+NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nuraft::snapshot & s, nuraft::buffer & in)
 {
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
     nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
@@ -125,7 +127,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
 }
 
 
-void NuKeeperStateMachine::writeSnapshot(const NuKeeperStateMachine::StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out) const
+void NuKeeperStateMachine::writeSnapshot(const NuKeeperStateMachine::StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out)
 {
     TestKeeperStorageSerializer serializer;
 
@@ -143,7 +145,6 @@ void NuKeeperStateMachine::create_snapshot(
     {
         std::lock_guard<std::mutex> lock(snapshots_lock);
         snapshots[s.get_last_log_idx()] = snapshot;
-        const int MAX_SNAPSHOTS = 3;
         int num = snapshots.size();
         auto entry = snapshots.begin();
 

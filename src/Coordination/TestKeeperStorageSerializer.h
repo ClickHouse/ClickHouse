@@ -9,9 +9,9 @@ namespace DB
 class TestKeeperStorageSerializer
 {
 public:
-    void serialize(const TestKeeperStorage & storage, WriteBuffer & out) const;
+    static void serialize(const TestKeeperStorage & storage, WriteBuffer & out);
 
-    void deserialize(TestKeeperStorage & storage, ReadBuffer & in) const;
+    static void deserialize(TestKeeperStorage & storage, ReadBuffer & in);
 };
 
 }

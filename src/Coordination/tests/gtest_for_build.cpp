@@ -379,7 +379,7 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     EXPECT_TRUE(ret_leader->get_accepted()) << "failed to replicate create entry:" << ret_leader->get_result_code();
     EXPECT_EQ(ret_leader->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate create entry:" << ret_leader->get_result_code();
 
-    auto result = ret_leader.get();
+    auto * result = ret_leader.get();
 
     auto responses = getZooKeeperResponses(result->get(), create_request);
 
@@ -418,7 +418,7 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     EXPECT_TRUE(ret_leader_get->get_accepted()) << "failed to replicate create entry: " << ret_leader_get->get_result_code();
     EXPECT_EQ(ret_leader_get->get_result_code(), nuraft::cmd_result_code::OK) << "failed to replicate create entry: " << ret_leader_get->get_result_code();
 
-    auto result_get = ret_leader_get.get();
+    auto * result_get = ret_leader_get.get();
 
     auto get_responses = getZooKeeperResponses(result_get->get(), get_request);
 
