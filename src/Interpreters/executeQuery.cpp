@@ -157,11 +157,21 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = client_info.initial_query_id;
         const auto & current_user = client_info.current_user;
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser) {}",
+        String comment = context.getSettingsRef().log_comment;
+        size_t max_query_size = context.getSettingsRef().max_query_size;
+
+        if (comment.size() > max_query_size)
+            comment.resize(max_query_size);
+
+        if (!comment.empty())
+            comment = fmt::format(" (comment: {})", comment);
+
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser){} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             (context.getSettingsRef().use_antlr_parser ? "experimental" : "production"),
+            comment,
             joinLines(query));
 
         if (client_info.client_trace_context.trace_id)
@@ -196,13 +206,17 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 /// Log exception (with query info) into text log (not into system table).
 static void logException(Context & context, QueryLogElement & elem)
 {
+    String comment;
+    if (!elem.log_comment.empty())
+        comment = fmt::format(" (comment: {})", elem.log_comment);
+
     if (elem.stack_trace.empty())
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})",
-            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query));
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}){} (in query: {})",
+            elem.exception, context.getClientInfo().current_address.toString(), comment, joinLines(elem.query));
     else
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})"
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}){} (in query: {})"
             ", Stack trace (when copying this message, always include the lines below):\n\n{}",
-            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
+            elem.exception, context.getClientInfo().current_address.toString(), comment, joinLines(elem.query), elem.stack_trace);
 }
 
 inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
@@ -247,6 +261,10 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
+
+    elem.log_comment = settings.log_comment;
+    if (elem.log_comment.size() > settings.max_query_size)
+        elem.log_comment.resize(settings.max_query_size);
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
@@ -625,6 +643,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
+
+                elem.log_comment = settings.log_comment;
+                if (elem.log_comment.size() > settings.max_query_size)
+                    elem.log_comment.resize(settings.max_query_size);
 
                 if (elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
