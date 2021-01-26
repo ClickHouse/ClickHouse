@@ -226,7 +226,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attr
     if (find_iter == attributes.end())
         throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    auto & attribute = *find_iter;
+    const auto & attribute = *find_iter;
 
     if (!areTypesEqual(attribute.type, type))
         throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),

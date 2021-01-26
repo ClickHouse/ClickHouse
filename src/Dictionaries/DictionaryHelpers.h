@@ -70,18 +70,21 @@ public:
     using DefaultValueType = DictionaryValueType<DictionaryAttributeType>;
 
     DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
+        : default_value(std::move(attribute_default_value))
     {
         if (default_values_column_ == nullptr)
-            default_value = { std::move(attribute_default_value) };
+            use_default_value_from_column = false;
         else
         {
             if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column_))
             {
                 default_values_column = default_col;
+                use_default_value_from_column = true;
             }
             else if (const auto * const default_col_const = checkAndGetColumnConst<DefaultColumnType>(default_values_column_.get()))
             {
-                default_value = { default_col_const->template getValue<DictionaryAttributeType>() };
+                default_value = default_col_const->template getValue<DictionaryAttributeType>();
+                use_default_value_from_column = false;
             }
             else
                 throw Exception{"Type of default column is not the same as dictionary attribute type.", ErrorCodes::TYPE_MISMATCH};
@@ -90,8 +93,10 @@ public:
 
     DefaultValueType operator[](size_t row)
     {
-        if (default_value)
-            return static_cast<DefaultValueType>(*default_value);
+        if (!use_default_value_from_column)
+            return static_cast<DefaultValueType>(default_value);
+
+        assert(default_values_column != nullptr);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -99,8 +104,9 @@ public:
             return default_values_column->getData()[row];
     }
 private:
+    DictionaryAttributeType default_value;
     const DefaultColumnType * default_values_column = nullptr;
-    std::optional<DictionaryAttributeType> default_value = {};
+    bool use_default_value_from_column = false;
 };
 
 /**
