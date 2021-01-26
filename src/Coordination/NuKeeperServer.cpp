@@ -46,7 +46,7 @@ void NuKeeperServer::startup()
     params.election_timeout_upper_bound_ = 400;
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
-    params.client_req_timeout_ = 3000;
+    params.client_req_timeout_ = 10000;
     params.return_method_ = nuraft::raft_params::blocking;
 
     raft_instance = launcher.init(
@@ -145,10 +145,23 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
 
     auto result = raft_instance->append_entries(entries);
     if (!result->get_accepted())
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader");
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader, code {}, message: '{}'", result->get_result_code(), result->get_result_str());
 
-    if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Requests failed");
+    if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+    {
+        TestKeeperStorage::ResponsesForSessions responses;
+        for (const auto & [session_id, request] : requests)
+        {
+            auto response = request->makeResponse();
+            response->xid = request->xid;
+            response->zxid = 0; /// FIXME what we can do with it?
+            response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+            responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+        }
+        return responses;
+    }
+    else if (result->get_result_code() != nuraft::cmd_result_code::OK)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
 
     return readZooKeeperResponses(result->get());
 }
