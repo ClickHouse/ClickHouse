@@ -89,6 +89,7 @@ StorageMaterializedView::StorageMaterializedView(
     else
     {
         /// We will create a query to create an internal table.
+        auto create_context = Context(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
         manual_create_query->table = generateInnerTableName(getStorageID());
@@ -99,7 +100,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
-        InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
+        InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
@@ -205,7 +206,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->no_delay = no_delay;
         drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
+        auto drop_context = Context(global_context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
     }
 }

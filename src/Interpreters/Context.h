@@ -536,6 +536,7 @@ public:
     const Context & getQueryContext() const;
     Context & getQueryContext();
     bool hasQueryContext() const { return query_context != nullptr; }
+    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();

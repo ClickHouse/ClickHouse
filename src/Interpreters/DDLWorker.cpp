@@ -341,8 +341,9 @@ void DDLWorker::scheduleTasks()
         auto & min_task = *std::min_element(current_tasks.begin(), current_tasks.end());
         begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_task->entry_name);
         current_tasks.clear();
-        //FIXME better way of maintaning current tasks list and min_task name;
     }
+
+    assert(current_tasks.empty());
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
     {
@@ -378,12 +379,8 @@ void DDLWorker::scheduleTasks()
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
-    //assert(current_tasks.size() <= pool_size + 1);
-    //if (current_tasks.size() == pool_size)
-    //{
-    //    assert(current_tasks.front()->ops.empty()); //FIXME
-    //    current_tasks.pop_front();
-    //}
+    std::remove_if(current_tasks.begin(), current_tasks.end(), [](const DDLTaskPtr & t) { return t->completely_processed.load(); });
+    assert(current_tasks.size() <= pool_size);
     current_tasks.emplace_back(std::move(task));
     return *current_tasks.back();
 }
@@ -555,6 +552,8 @@ void DDLWorker::processTask(DDLTaskBase & task)
         active_node->reset();
         task.ops.clear();
     }
+
+    task.completely_processed = true;
 }
 
 
@@ -571,6 +570,9 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const Storage
     {
         // Setting alters should be executed on all replicas
         if (alter->isSettingsAlter())
+            return false;
+
+        if (alter->isFreezeAlter())
             return false;
     }
 
@@ -856,28 +858,20 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 
 void DDLWorker::initializeMainThread()
 {
-    auto reset_state = [&](bool reset_pool = true)
-    {
-        initialized = false;
-        /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
-        /// We create new thread pool to forget previous exceptions.
-        if (reset_pool)
-            worker_pool = std::make_unique<ThreadPool>(pool_size);
-        /// Clear other in-memory state, like server just started.
-        current_tasks.clear();
-        max_id = 0;
-    };
-
+    assert(!initialized);
+    assert(max_id == 0);
+    assert(current_tasks.empty());
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
-    do
+    while (!stop_flag)
     {
         try
         {
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
             initialized = true;
+            return;
         }
         catch (const Coordination::Exception & e)
         {
@@ -885,33 +879,29 @@ void DDLWorker::initializeMainThread()
             {
                 /// A logical error.
                 LOG_ERROR(log, "ZooKeeper error: {}. Failed to start DDLWorker.",getCurrentExceptionMessage(true));
-                reset_state(false);
                 assert(false);  /// Catch such failures in tests with debug build
             }
 
             tryLogCurrentException(__PRETTY_FUNCTION__);
-
-            /// Avoid busy loop when ZooKeeper is not available.
-            sleepForSeconds(5);
         }
         catch (...)
         {
             tryLogCurrentException(log, "Cannot initialize DDL queue.");
-            reset_state(false);
-            sleepForSeconds(5);
         }
+
+        /// Avoid busy loop when ZooKeeper is not available.
+        sleepForSeconds(5);
     }
-    while (!initialized && !stop_flag);
 }
 
 void DDLWorker::runMainThread()
 {
-    auto reset_state = [&](bool reset_pool = true)
+    auto reset_state = [&]()
     {
         initialized = false;
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
-        if (reset_pool)
+        if (1 < pool_size)
             worker_pool = std::make_unique<ThreadPool>(pool_size);
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
@@ -944,6 +934,7 @@ void DDLWorker::runMainThread()
             if (Coordination::isHardwareError(e.code))
             {
                 initialized = false;
+                LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else if (e.code == Coordination::Error::ZNONODE)
             {
@@ -953,10 +944,10 @@ void DDLWorker::runMainThread()
             }
             else
             {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: {}", getCurrentExceptionMessage(true));
+                LOG_ERROR(log, "Unexpected ZooKeeper error, will try to restart main thread: {}", getCurrentExceptionMessage(true));
                 reset_state();
             }
-            sleepForSeconds(5);
+            sleepForSeconds(1);
         }
         catch (...)
         {

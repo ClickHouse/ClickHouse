@@ -64,7 +64,7 @@ public:
 
     void shutdown() override;
 
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach = false) override;
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
 
     String getFullReplicaName() const { return shard_name + '|' + replica_name; }
 

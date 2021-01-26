@@ -162,7 +162,12 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
-    if not args.database:
+    need_drop_database = not args.database
+    if need_drop_database and args.no_drop_if_fail:
+        maybe_passed = (proc.returncode == 0) and (proc.stderr is None) and (proc.stdout is None or 'Exception' not in proc.stdout)
+        need_drop_database = not maybe_passed
+
+    if need_drop_database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
         try:
@@ -181,9 +186,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     total_time = (datetime.now() - start_time).total_seconds()
 
-    # Normalize randomized database names in stdout, stderr files.
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+    if not args.show_db_name:
+        # Normalize randomized database names in stdout, stderr files.
+        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
+        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
@@ -884,6 +890,8 @@ if __name__ == '__main__':
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
+    parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
+    parser.add_argument('--show-db-name', action='store_true', help='Do not replace random database name with "default"')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')

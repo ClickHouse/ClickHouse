@@ -2522,8 +2522,7 @@ void Context::initMetadataTransaction(MetadataTransactionPtr txn)
 
 MetadataTransactionPtr Context::getMetadataTransaction() const
 {
-    //FIXME
-    //assert(query_context == this);
+    assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
 }
 

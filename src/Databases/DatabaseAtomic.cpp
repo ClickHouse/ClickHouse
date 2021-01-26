@@ -115,8 +115,8 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         std::unique_lock lock(mutex);
         table = getTableUnlocked(table_name, lock);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
-
-        if (auto txn = context.getMetadataTransaction())
+        auto txn = context.getMetadataTransaction();
+        if (txn && !context.isInternalSubquery())
             txn->commit();      /// Commit point (a sort of) for Replicated database
 
         /// NOTE: replica will be lost if server crashes before the following rename
@@ -241,7 +241,8 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     }
 
     /// Table renaming actually begins here
-    if (auto txn = context.getMetadataTransaction())
+    auto txn = context.getMetadataTransaction();
+    if (txn && !context.isInternalSubquery())
         txn->commit();     /// Commit point (a sort of) for Replicated database
 
     /// NOTE: replica will be lost if server crashes before the following rename
@@ -301,7 +302,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         DatabaseCatalog::instance().addUUIDMapping(query.uuid);
         locked_uuid = true;
 
-        if (auto txn = query_context.getMetadataTransaction())
+        auto txn = query_context.getMetadataTransaction();
+        if (txn && !query_context.isInternalSubquery())
             txn->commit();     /// Commit point (a sort of) for Replicated database
 
         /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
@@ -335,7 +337,8 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
-    if (auto txn = query_context.getMetadataTransaction())
+    auto txn = query_context.getMetadataTransaction();
+    if (txn && !query_context.isInternalSubquery())
         txn->commit();      /// Commit point (a sort of) for Replicated database
 
     /// NOTE: replica will be lost if server crashes before the following rename
