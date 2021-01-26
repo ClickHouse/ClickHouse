@@ -514,16 +514,14 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Restart_Server_ParallelLogins = Requiremen
 
 RQ_SRS_009_LDAP_ExternalUserDirectory_Role_Removed = Requirement(
     name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed',
-    version='1.0',
+    version='2.0',
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL reject authentication attempt if any of the roles that are specified in the configuration\n'
-        'of the external user directory are not defined at the time of the authentication attempt\n'
-        'with an exception that if a user was able to authenticate in past and its internal user object was created and cached\n'
-        'then the user SHALL be able to authenticate again, even if one of the roles is missing.\n'
+        '[ClickHouse] SHALL allow authentication even if the roles that are specified in the configuration\n'
+        'of the external user directory are not defined at the time of the authentication attempt.\n'
         '\n'
         ),
     link=None,
@@ -615,6 +613,24 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Role_RemovedPrivilege = Requirement(
     link=None,
     level=4,
     num='4.2.2.6')
+
+RQ_SRS_009_LDAP_ExternalUserDirectory_Role_NotPresent_Added = Requirement(
+    name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added',
+    version='1.0',
+    priority=None,
+    group=None,
+    type=None,
+    uid=None,
+    description=(
+        '[ClickHouse] SHALL add a role to the users authenticated using LDAP external user directory\n'
+        'that did not exist during the time of authentication but are defined in the \n'
+        'configuration file as soon as the role with that name becomes\n'
+        'available.\n'
+        '\n'
+        ),
+    link=None,
+    level=4,
+    num='4.2.2.7')
 
 RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid = Requirement(
     name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Invalid',
@@ -1353,14 +1369,14 @@ RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_MoreT
 
 RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Users_Parameters_Roles_Invalid = Requirement(
     name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid',
-    version='1.0',
+    version='2.0',
     priority=None,
     group=None,
     type=None,
     uid=None,
     description=(
-        '[ClickHouse] SHALL return an error if the role specified in the `<roles>`\n'
-        'parameter does not exist locally.\n'
+        '[ClickHouse] SHALL not return an error if the role specified in the `<roles>`\n'
+        'parameter does not exist locally. \n'
         '\n'
         ),
     link=None,
@@ -1620,6 +1636,7 @@ SRS_009_ClickHouse_LDAP_External_User_Directory = Specification(
         Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.New', level=4, num='4.2.2.4'),
         Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NewPrivilege', level=4, num='4.2.2.5'),
         Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.RemovedPrivilege', level=4, num='4.2.2.6'),
+        Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added', level=4, num='4.2.2.7'),
         Heading(name='Configuration', level=3, num='4.2.3'),
         Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Invalid', level=4, num='4.2.3.1'),
         Heading(name='RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Definition', level=4, num='4.2.3.2'),
@@ -1716,6 +1733,7 @@ SRS_009_ClickHouse_LDAP_External_User_Directory = Specification(
         RQ_SRS_009_LDAP_ExternalUserDirectory_Role_New,
         RQ_SRS_009_LDAP_ExternalUserDirectory_Role_NewPrivilege,
         RQ_SRS_009_LDAP_ExternalUserDirectory_Role_RemovedPrivilege,
+        RQ_SRS_009_LDAP_ExternalUserDirectory_Role_NotPresent_Added,
         RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Invalid,
         RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Definition,
         RQ_SRS_009_LDAP_ExternalUserDirectory_Configuration_Server_Name,
@@ -1825,6 +1843,7 @@ SRS_009_ClickHouse_LDAP_External_User_Directory = Specification(
       * 4.2.2.4 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.New](#rqsrs-009ldapexternaluserdirectoryrolenew)
       * 4.2.2.5 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NewPrivilege](#rqsrs-009ldapexternaluserdirectoryrolenewprivilege)
       * 4.2.2.6 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.RemovedPrivilege](#rqsrs-009ldapexternaluserdirectoryroleremovedprivilege)
+      * 4.2.2.7 [RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added](#rqsrs-009ldapexternaluserdirectoryrolenotpresentadded)
     * 4.2.3 [Configuration](#configuration)
       * 4.2.3.1 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Invalid](#rqsrs-009ldapexternaluserdirectoryconfigurationserverinvalid)
       * 4.2.3.2 [RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Server.Definition](#rqsrs-009ldapexternaluserdirectoryconfigurationserverdefinition)
@@ -2114,12 +2133,10 @@ are configured during parallel [LDAP] user logins.
 #### Roles
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed
-version: 1.0
+version: 2.0
 
-[ClickHouse] SHALL reject authentication attempt if any of the roles that are specified in the configuration
-of the external user directory are not defined at the time of the authentication attempt
-with an exception that if a user was able to authenticate in past and its internal user object was created and cached
-then the user SHALL be able to authenticate again, even if one of the roles is missing.
+[ClickHouse] SHALL allow authentication even if the roles that are specified in the configuration
+of the external user directory are not defined at the time of the authentication attempt.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.Removed.Privileges
 version: 1.0
@@ -2156,6 +2173,14 @@ version: 1.0
 [ClickHouse] SHALL remove privilege from all the LDAP users authenticated using external user directory
 including cached users when privilege is removed from all the roles specified
 in the configuration of the external user directory.
+
+##### RQ.SRS-009.LDAP.ExternalUserDirectory.Role.NotPresent.Added
+version: 1.0
+
+[ClickHouse] SHALL add a role to the users authenticated using LDAP external user directory
+that did not exist during the time of authentication but are defined in the 
+configuration file as soon as the role with that name becomes
+available.
 
 #### Configuration
 
@@ -2475,10 +2500,10 @@ in the `<ldap>` sub-section in the `<user_directories>`
 if more than one `roles` parameter is defined in the configuration.
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Invalid
-version: 1.0
+version: 2.0
 
-[ClickHouse] SHALL return an error if the role specified in the `<roles>`
-parameter does not exist locally.
+[ClickHouse] SHALL not return an error if the role specified in the `<roles>`
+parameter does not exist locally. 
 
 ##### RQ.SRS-009.LDAP.ExternalUserDirectory.Configuration.Users.Parameters.Roles.Empty
 version: 1.0
