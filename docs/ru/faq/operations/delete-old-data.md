@@ -15,9 +15,9 @@ ClickHouse позволяет автоматически сбрасывать з
 Ключевое преимущество такого подхода в том, что не нужно никакой внешней системы для тригера, The key advantage of this approach is that it doesn’t need any external system to trigger, once TTL is configured, data removal happens automatically in background.
 
 !!! note "Note"
-    TTL can also be used to move data not only to [/dev/null](https://en.wikipedia.org/wiki/Null_device), but also between different storage systems, like from SSD to HDD.
+    TTL можно использовать не только для перемещения на [/dev/null](https://en.wikipedia.org/wiki/Null_device), но еще и между системами хранения, например, с SSD на HDD.
 
-More details on [configuring TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
+[Подробнее о конфигурировании TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ## ALTER DELETE {#alter-delete}
 
@@ -25,7 +25,7 @@ ClickHouse doesn’t have real-time point deletes like in [OLTP](https://en.wiki
 
 `ALTER DELETE` can be issued to flexibly remove old data. If you need to do it regularly, the main downside will be the need to have an external system to submit the query. There are also some performance considerations since mutation rewrite complete parts even there’s only a single row to be deleted.
 
-This is the most common approach to make your system based on ClickHouse [GDPR](https://gdpr-info.eu)-compliant.
+Это самый распространенный подход к тому, чтобы сделать вашу систему на CH отвечающей принципам [GDPR](https://gdpr-info.eu).
 
 More details on [mutations](../../sql-reference/statements/alter/index.md#alter-mutations).
 
@@ -37,6 +37,6 @@ More details on [manipulating partitions](../../sql-reference/statements/alter/p
 
 ## TRUNCATE {#truncate}
 
-It’s rather radical to drop all data from a table, but in some cases it might be exactly what you need.
+Достаточно радикальный способ — очищать всю таблицу от данных, но очень подходящий в отдельных случаях.
 
 More details on [table truncation](../../sql-reference/statements/alter/partition.md#alter_drop-partition).

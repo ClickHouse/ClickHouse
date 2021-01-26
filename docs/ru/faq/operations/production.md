@@ -1,10 +1,10 @@
 ---
-title: Какой версией ClickHouse пользоваться в продакшне?
+title: Какой версией ClickHouse пользоваться?
 toc_hidden: true
 toc_priority: 10
 ---
 
-# Какую версию ClickHouse использовать в Production? {#which-clickhouse-version-to-use-in-production}
+# Какую версию ClickHouse использовать? {#which-clickhouse-version-to-use-in-production}
 
 Во-первых, давайте обсудим, почему люди задают этот вопрос сразу. Две основные причины:
 
@@ -21,13 +21,13 @@ toc_priority: 10
 
 Вот некоторые ключевые моменты для получения разумной точности в предпроизводственной среде с невысокой стоимостью:
 
--   Pre-production environment needs to run an as close set of queries as you intend to run in production:
-    -   Don’t make it read-only with some frozen data.
-    -   Don’t make it write-only with just copying data without building some typical reports.
-    -   Don’t wipe it clean instead of applying schema migrations.
--   Use a sample of real production data and queries. Try to choose a sample that’s still representative and makes `SELECT` queries return reasonable results. Use obfuscation if your data is sensitive and internal policies don’t allow it to leave the production environment.
--   Make sure that pre-production is covered by your monitoring and alerting software the same way as your production environment does.
--   If your production spans across multiple datacenters or regions, make your pre-production does the same.
+-   Предпроизводственная среда должна обрабатывать максимально близкий набор запросов к тому, который вы планируете обрабатывать в реальной работе:
+    -   Не делайте ее в режиме "только чтения" с некоторыми замороженными данными.
+    -   Не делайте ее в режиме "только запись" только с копированием данных без создания некоторых типичных отчетов.
+    -   Не стирайте все подчистую вместо того, чтобы применить схему миграции.
+-   Пользуйтесь сэмплом реальных рабочих данных и запросов. Попробуйте выбрать репрезентативный сэмпл, который возвращает адекватные результаты по запросу `SELECT`. Также пользуйтесь обфускацией, когда ваши данные чувствительные, а по внутренним правилам не позволяется сменить среду разработки.
+-   Убедитесь, что вы мониторите предпродакшн, а также у вас есть ПО, котороое оповестит вас о том, что происходит в таком же виде, как и ваше рабочее окружение.
+-   Если ваш продакшн распределен по разным датацентрам или регионам, предпродакшн должен быть таким же.
 -   If your production uses complex features like replication, distributed table, cascading materialize views, make sure they are configured similarly in pre-production.
 -   There’s a trade-off on using the roughly same number of servers or VMs in pre-production as in production, but of smaller size, or much less of them, but of the same size. The first option might catch extra network-related issues, while the latter is easier to manage.
 
