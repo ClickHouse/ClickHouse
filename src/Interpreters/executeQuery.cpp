@@ -524,6 +524,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             quota = context.getQuota();
             if (quota)
             {
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    quota->used(Quota::QUERY_SELECTS, 1);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    quota->used(Quota::QUERY_INSERTS, 1);
+                }
                 quota->used(Quota::QUERIES, 1);
                 quota->checkExceeded(Quota::ERRORS);
             }
