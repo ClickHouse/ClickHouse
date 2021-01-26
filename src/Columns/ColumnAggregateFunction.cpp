@@ -473,17 +473,17 @@ void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
     ///  (only as a whole, see comment above).
     ensureOwnership();
     insertDefault();
-    insertMergeFrom(from, n);
+    insertCopyFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     ensureOwnership();
     insertDefault();
-    insertMergeFrom(place);
+    insertCopyFrom(place);
 }
 
-void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
+void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
 {
     std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
     iter = copiedDataInfo.find(place);
@@ -504,6 +504,11 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
             func->merge(data.back(), place, &createOrGetArena());
         }
     }
+}
+
+void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
+{
+    func->merge(data.back(), place, &createOrGetArena());
 }
 
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
