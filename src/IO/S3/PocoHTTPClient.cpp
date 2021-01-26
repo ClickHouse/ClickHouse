@@ -6,13 +6,11 @@
 
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <IO/S3/SessionAwareAwsStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
-#include <aws/core/http/standard/StandardHttpResponse.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
 #include "Poco/StreamCopier.h"
@@ -91,28 +89,18 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
 }
 
 std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
-    Aws::Http::HttpRequest & request,
-    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
-    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
-{
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    makeRequestInternal(request, response, readLimiter, writeLimiter);
-    return response;
-}
-
-std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     const std::shared_ptr<Aws::Http::HttpRequest> & request,
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
+    auto response = Aws::MakeShared<PocoHTTPResponse>("PocoHTTPClient", request);
     makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
 
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
-    std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
+    std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
@@ -278,7 +266,7 @@ void PocoHTTPClient::makeRequestInternal(
                 }
             }
             else
-                response->GetResponseStream().SetUnderlyingStream(std::make_shared<SessionAwareAwsStream<decltype(session)>>(session, response_body_stream));
+                response->SetResponseBody(response_body_stream, session);
 
             return;
         }
