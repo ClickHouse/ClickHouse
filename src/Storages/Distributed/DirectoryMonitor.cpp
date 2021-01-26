@@ -758,8 +758,7 @@ bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t
 
     {
         std::lock_guard metrics_lock(metrics_mutex);
-        /// TODO: extend CurrentMetrics::Increment
-        metric_pending_files.sub(-1);
+        metric_pending_files.add();
         bytes_count += file_size;
         ++files_count;
     }
