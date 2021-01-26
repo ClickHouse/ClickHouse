@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Poco/Net/SocketAddress.h>
-#include <Common/UInt128.h>
 #include <common/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
+
 
 namespace DB
 {
@@ -25,9 +24,6 @@ public:
     {
         TCP = 1,
         HTTP = 2,
-        GRPC = 3,
-        MYSQL = 4,
-        POSTGRESQL = 5,
     };
 
     enum class HTTPMethod : uint8_t
@@ -62,10 +58,6 @@ public:
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
 
-    // OpenTelemetry trace context we received from client, or which we are going
-    // to send to server.
-    OpenTelemetryTraceContext client_trace_context;
-
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
@@ -82,13 +74,6 @@ public:
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
-    String http_referer;
-
-    /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
-    /// It's expected that proxy appends the forwarded address to the end of the list.
-    /// The element can be trusted only if you trust the corresponding proxy.
-    /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
-    String forwarded_for;
 
     /// Common
     String quota_key;

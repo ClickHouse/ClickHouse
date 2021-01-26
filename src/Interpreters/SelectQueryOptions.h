@@ -19,9 +19,6 @@ namespace DB
  *
  * is_subquery
  * - there could be some specific for subqueries. Ex. there's no need to pass duplicated columns in results, cause of indirect results.
- *
- * is_internal
- * - the object was created only for internal queries.
  */
 struct SelectQueryOptions
 {
@@ -32,7 +29,6 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
-    bool is_internal = false;
 
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
         : to_stage(stage), subquery_depth(depth)
@@ -78,12 +74,6 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreLimits(bool value = true)
     {
         ignore_limits = value;
-        return *this;
-    }
-
-    SelectQueryOptions & setInternal(bool value = false)
-    {
-        is_internal = value;
         return *this;
     }
 };

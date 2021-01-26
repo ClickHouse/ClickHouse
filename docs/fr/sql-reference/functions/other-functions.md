@@ -419,7 +419,7 @@ ORDER BY h ASC
 Transforme une valeur en fonction explicitement définis cartographie de certains éléments à l'autre.
 Il existe deux variantes de cette fonction:
 
-### de transformation(x, array_from, array_to, par défaut) {#transformx-array-from-array-to-default}
+### de transformation(x, array\_from, array\_to, par défaut) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -439,7 +439,7 @@ Type:
 Lorsque la même lettre est indiquée (T ou U), pour les types numériques, il se peut qu'il ne s'agisse pas de types correspondants, mais de types ayant un type commun.
 Par exemple, le premier argument peut avoir le type Int64, tandis que le second a le type Array(UInt16).
 
-Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array_from’ tableau, elle renvoie l'élément existant (qui est numéroté de même) de la ‘array_to’ tableau. Sinon, elle renvoie ‘default’. S'il y a plusieurs éléments correspondants dans ‘array_from’ il renvoie l'un des matches.
+Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array\_from’ tableau, elle renvoie l'élément existant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘default’. S'il y a plusieurs éléments correspondants dans ‘array\_from’ il renvoie l'un des matches.
 
 Exemple:
 
@@ -461,10 +461,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### de transformation(x, array_from, array_to) {#transformx-array-from-array-to}
+### de transformation(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Diffère de la première variation en ce que le ‘default’ l'argument est omis.
-Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array_from’ tableau, elle renvoie l'élément correspondant (qui est numéroté de même) de la ‘array_to’ tableau. Sinon, elle renvoie ‘x’.
+Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array\_from’ tableau, elle renvoie l'élément correspondant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘x’.
 
 Type:
 
@@ -1082,7 +1082,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Retourne la liste des valeurs correspond à la liste des clés.
 
-Si certain n'existe pas dans la table source alors `0` ou `null` seront renvoyés basé sur [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) paramètre.
+Si certain n'existe pas dans la table source alors `0` ou `null` seront renvoyés basé sur [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) paramètre.
 
 Plus d'infos sur `join_use_nulls` dans [Opération de jointure](../../engines/table-engines/special/join.md).
 
@@ -1121,15 +1121,15 @@ Résultat:
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Évaluer le modèle externe.
 Accepte un nom de modèle et le modèle de l'argumentation. Renvoie Float64.
 
-## throwIf (x \[, custom_message\]) {#throwifx-custom-message}
+## throwIf (x \[, custom\_message\]) {#throwifx-custom-message}
 
 Lever une exception si l'argument est non nul.
-custom_message - est un paramètre optionnel: une chaîne constante, fournit un message d'erreur
+custom\_message - est un paramètre optionnel: une chaîne constante, fournit un message d'erreur
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);

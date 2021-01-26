@@ -178,11 +178,6 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return sizeof(data[0]);
-    }
-
     size_t allocatedBytes() const override
     {
         if constexpr (is_POD)

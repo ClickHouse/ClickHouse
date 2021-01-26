@@ -36,7 +36,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    /// Adds additional port for totals.
+    /// Adds additional port fo totals.
     /// If added, totals will have been ready by the first generate() call (in totals chunk).
     InputPort * addTotalsPort();
 

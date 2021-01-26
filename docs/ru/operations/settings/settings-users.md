@@ -1,8 +1,3 @@
----
-toc_priority: 63
-toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439"
----
-
 # Настройки пользователей {#nastroiki-polzovatelei}
 
 Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
@@ -41,7 +36,7 @@ toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u
 </users>
 ```
 
-### user_name/password {#user-namepassword}
+### user\_name/password {#user-namepassword}
 
 Пароль можно указать в текстовом виде или в виде SHA256 (шестнадцатеричный формат).
 
@@ -88,7 +83,7 @@ toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u
 
 Значение по умолчанию: 0.
 
-### user_name/networks {#user-namenetworks}
+### user\_name/networks {#user-namenetworks}
 
 Список сетей, из которых пользователь может подключиться к серверу ClickHouse.
 
@@ -130,17 +125,17 @@ toc_title: "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438\u0020\u043f\u
 <ip>127.0.0.1</ip>
 ```
 
-### user_name/profile {#user-nameprofile}
+### user\_name/profile {#user-nameprofile}
 
 Пользователю можно назначить профиль настроек. Профили настроек конфигурируются в отдельной секции файла `users.xml`. Подробнее читайте в разделе [Профили настроек](settings-profiles.md).
 
-### user_name/quota {#user-namequota}
+### user\_name/quota {#user-namequota}
 
 Квотирование позволяет отслеживать или ограничивать использование ресурсов в течение определённого периода времени. Квоты настраиваются в разделе `quotas` конфигурационного файла `users.xml`.
 
 Пользователю можно назначить квоты. Подробное описание настройки квот смотрите в разделе [Квоты](../quotas.md#quotas).
 
-### user_name/databases {#user-namedatabases}
+### user\_name/databases {#user-namedatabases}
 
 В этом разделе вы можете ограничить выдачу ClickHouse запросами `SELECT` для конкретного пользователя, таким образом реализуя базовую защиту на уровне строк.
 

@@ -677,10 +677,6 @@ public:
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return DayNum(0); // TODO (nemkov, DateTime64 phase 2): implement creating real date for year outside of LUT range.
 
-        // The day after 2106-02-07 will not stored fully as struct Values, so just overflow it as 0
-        if (unlikely(year == DATE_LUT_MAX_YEAR && (month > 2 || (month == 2 && day_of_month > 7))))
-            return DayNum(0);
-
         return DayNum(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }
 
@@ -771,7 +767,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
+    inline time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -784,7 +780,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
+    inline time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
@@ -816,7 +812,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addMonths(DayNum d, Int64 delta) const
+    inline DayNum addMonths(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -840,12 +836,12 @@ public:
         }
     }
 
-    inline NO_SANITIZE_UNDEFINED time_t addQuarters(time_t t, Int64 delta) const
+    inline time_t addQuarters(time_t t, Int64 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addQuarters(DayNum d, Int64 delta) const
+    inline DayNum addQuarters(DayNum d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
@@ -863,7 +859,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
+    inline DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 

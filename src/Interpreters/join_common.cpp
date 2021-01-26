@@ -276,13 +276,6 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
     }
 }
 
-void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
-{
-    column.reserve(column.size() + count);
-    for (size_t i = 0; i < count; ++i)
-        type->insertDefaultInto(column);
-}
-
 }
 
 
@@ -394,14 +387,9 @@ void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 
 void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 {
+    /// @note it's possible to make ColumnConst here and materialize it later
     for (size_t pos : column_indices_left)
-    {
-        auto & col = block.getByPosition(pos);
-
-        auto mut_col = col.column->cloneEmpty();
-        JoinCommon::addDefaultValues(*mut_col, col.type, rows_added);
-        col.column = std::move(mut_col);
-    }
+        block.getByPosition(pos).column = block.getByPosition(pos).column->cloneResized(rows_added);
 }
 
 void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const

@@ -1,5 +1,5 @@
 ---
-toc_priority: 37
+toc_priority: 38
 toc_title: SHOW
 ---
 
@@ -15,83 +15,12 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 
 ## SHOW DATABASES {#show-databases}
 
+``` sql
+SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
+```
+
 Prints a list of all databases.
-
-```sql
-SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-This statement is identical to the query:
-
-```sql
-SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
-```
-
-### Examples {#examples}
-
-Getting database names, containing the symbols sequence 'de' in their names:
-
-``` sql
-SHOW DATABASES LIKE '%de%'
-```
-
-Result:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Getting database names, containing symbols sequence 'de' in their names, in the case insensitive manner:
-
-``` sql
-SHOW DATABASES ILIKE '%DE%'
-```
-
-Result:
-
-``` text
-┌─name────┐
-│ default │
-└─────────┘
-```
-
-Getting database names, not containing the symbols sequence 'de' in their names:
-
-``` sql
-SHOW DATABASES NOT LIKE '%de%'
-```
-
-Result:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ system                         │
-│ test                           │
-│ tutorial                       │
-└────────────────────────────────┘
-```
-
-Getting the first two rows from database names:
-
-``` sql
-SHOW DATABASES LIMIT 2
-```
-
-Result:
-
-``` text
-┌─name───────────────────────────┐
-│ _temporary_and_external_tables │
-│ default                        │
-└────────────────────────────────┘
-```
-
-### See Also {#see-also}
-
--   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -113,85 +42,32 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 Displays a list of tables.
 
-```sql
-SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+``` sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-This statement is identical to the query:
-
-```sql
-SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
-```
-
-### Examples {#examples}
-
-Getting table names, containing the symbols sequence 'user' in their names:
+You can get the same results as the `SHOW TABLES` query in the following way:
 
 ``` sql
-SHOW TABLES FROM system LIKE '%user%'
+SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Result:
+**Example**
 
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Getting table names, containing sequence 'user' in their names, in the case insensitive manner:
+The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
 
 ``` sql
-SHOW TABLES FROM system ILIKE '%USER%'
+SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 ```
-
-Result:
-
-``` text
-┌─name─────────────┐
-│ user_directories │
-│ users            │
-└──────────────────┘
-```
-
-Getting table names, not containing the symbol sequence 's' in their names:
-
-``` sql
-SHOW TABLES FROM system NOT LIKE '%s%'
-```
-
-Result:
-
-``` text
-┌─name─────────┐
-│ metric_log   │
-│ metric_log_0 │
-│ metric_log_1 │
-└──────────────┘
-```
-
-Getting the first two rows from table names:
-
-``` sql
-SHOW TABLES FROM system LIMIT 2
-```
-
-Result:
 
 ``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
-│ asynchronous_metric_log        │
+│ collations                     │
 └────────────────────────────────┘
 ```
-
-### See Also {#see-also}
-
--   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -346,79 +222,6 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 
 ``` sql
 SHOW [CURRENT] QUOTA
-```
-
-## SHOW CLUSTER(s) {#show-cluster-statement}
-
-Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
-
-!!! info "Note"
-    `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
-
-### Syntax {#show-cluster-syntax}
-
-``` sql
-SHOW CLUSTER '<name>'
-SWOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
-```
-### Examples 
-
-Query:
-
-``` sql
-SHOW CLUSTERS;
-```
-
-Result:
-
-```text
-┌─cluster──────────────────────────────────────┐
-│ test_cluster_two_shards                      │
-│ test_cluster_two_shards_internal_replication │
-│ test_cluster_two_shards_localhost            │
-│ test_shard_localhost                         │
-│ test_shard_localhost_secure                  │
-│ test_unavailable_shard                       │
-└──────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SHOW CLUSTERS LIKE 'test%' LIMIT 1;
-```
-
-Result:
-
-```text
-┌─cluster─────────────────┐
-│ test_cluster_two_shards │
-└─────────────────────────┘
-```
-
-Query:
-
-``` sql
-SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
-```
-
-Result:
-
-```text
-Row 1:
-──────
-cluster:                 test_shard_localhost
-shard_num:               1
-shard_weight:            1
-replica_num:             1
-host_name:               localhost
-host_address:            127.0.0.1
-port:                    9000
-is_local:                1
-user:                    default
-default_database:
-errors_count:            0
-estimated_recovery_time: 0
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

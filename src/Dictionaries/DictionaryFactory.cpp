@@ -4,9 +4,8 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "getDictionaryConfigurationFromAST.h"
-#include <Interpreters/Context.h>
-#include <common/logger_useful.h>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -47,9 +46,6 @@ DictionaryPtr DictionaryFactory::create(
         name, config, config_prefix + ".source", dict_struct, context, config.getString(config_prefix + ".database", ""), check_source_config);
     LOG_TRACE(&Poco::Logger::get("DictionaryFactory"), "Created dictionary source '{}' for dictionary '{}'", source_ptr->toString(), name);
 
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, name);
-
     const auto & layout_type = keys.front();
 
     {
@@ -66,7 +62,7 @@ DictionaryPtr DictionaryFactory::create(
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
 {
-    auto configuration = getDictionaryConfigurationFromAST(ast, context);
+    auto configuration = getDictionaryConfigurationFromAST(ast);
     return DictionaryFactory::create(name, *configuration, "dictionary", context, true);
 }
 

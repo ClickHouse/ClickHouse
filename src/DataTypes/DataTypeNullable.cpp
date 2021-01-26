@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeOneElementTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <IO/ReadBuffer.h>
@@ -42,7 +41,7 @@ bool DataTypeNullable::onlyNull() const
 }
 
 
-void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
     callback(path, *this);
@@ -52,7 +51,7 @@ void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, Sub
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStatePrefixImpl(
+void DataTypeNullable::serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
@@ -62,7 +61,7 @@ void DataTypeNullable::serializeBinaryBulkStatePrefixImpl(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStateSuffixImpl(
+void DataTypeNullable::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -72,7 +71,7 @@ void DataTypeNullable::serializeBinaryBulkStateSuffixImpl(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkStatePrefixImpl(
+void DataTypeNullable::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -82,7 +81,7 @@ void DataTypeNullable::deserializeBinaryBulkStatePrefixImpl(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkWithMultipleStreamsImpl(
+void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -104,28 +103,20 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreamsImpl(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkWithMultipleStreamsImpl(
+void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
-    {
-        col.getNullMapColumnPtr() = cached_column;
-    }
-    else if (auto * stream = settings.getter(settings.path))
-    {
+    if (auto * stream = settings.getter(settings.path))
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
-        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
-    }
 
     settings.path.back() = Substream::NullableElements;
-    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), limit, settings, state, cache);
+    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state);
     settings.path.pop_back();
 }
 
@@ -244,7 +235,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
     /// Little tricky, because we cannot discriminate null from first character.
 
     if (istr.eof())
-        throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
 
     /// This is not null, surely.
     if (*istr.position() != '\\')
@@ -259,7 +250,7 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
         ++istr.position();
 
         if (istr.eof())
-            throw ParsingException("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception("Unexpected end of stream, while parsing value of Nullable type, after backslash", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return safeDeserialize<ReturnType>(column, *nested_data_type,
             [&istr]
@@ -414,11 +405,11 @@ ReturnType DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & i
                 /// or if someone uses 'U' or 'L' as delimiter in CSV.
                 /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
                 if (settings.csv.delimiter == 'U' || settings.csv.delimiter == 'L')
-                    throw DB::ParsingException("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
+                    throw DB::Exception("Enabled setting input_format_csv_unquoted_null_literal_as_null may not work correctly "
                                         "with format_csv_delimiter = 'U' or 'L' for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
                 WriteBufferFromOwnString parsed_value;
                 nested_data_type->serializeAsTextCSV(nested, nested.size() - 1, parsed_value, settings);
-                throw DB::ParsingException("Error while parsing \"" + std::string(null_literal, null_prefix_len)
+                throw DB::Exception("Error while parsing \"" + std::string(null_literal, null_prefix_len)
                                     + std::string(istr.position(), std::min(size_t{10}, istr.available())) + "\" as Nullable(" + nested_data_type->getName()
                                     + ") at position " + std::to_string(istr.count()) + ": expected \"NULL\" or " + nested_data_type->getName()
                                     + ", got \"" + std::string(null_literal, buf.count()) + "\", which was deserialized as \""
@@ -532,23 +523,6 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
-}
-
-DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
-{
-    if (subcolumn_name == "null")
-        return createOneElementTuple(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
-
-    return nested_data_type->tryGetSubcolumnType(subcolumn_name);
-}
-
-ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
-{
-    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
-    if (subcolumn_name == "null")
-        return column_nullable.getNullMapColumnPtr();
-
-    return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
 }
 
 

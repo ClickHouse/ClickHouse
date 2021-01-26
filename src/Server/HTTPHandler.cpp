@@ -17,6 +17,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <common/getFQDNOrHostName.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
 #include <Disks/StoragePolicy.h>
@@ -36,7 +37,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryParameterVisitor.h>
-#include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -96,7 +96,6 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
 
-    extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
 }
@@ -237,8 +236,7 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
-    Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope)
+    Output & used_output)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
@@ -281,31 +279,11 @@ void HTTPHandler::processQuery(
         }
     }
 
-    /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo & client_info = context.getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.interface = ClientInfo::Interface::HTTP;
-
-    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
-        http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
-        http_method = ClientInfo::HTTPMethod::POST;
-
-    client_info.http_method = http_method;
-    client_info.http_user_agent = request.get("User-Agent", "");
-    client_info.http_referer = request.get("Referer", "");
-    client_info.forwarded_for = request.get("X-Forwarded-For", "");
-
-    /// This will also set client_info.current_user and current_address
+    std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress());
+    context.setCurrentQueryId(query_id);
     if (!quota_key.empty())
         context.setQuotaKey(quota_key);
-
-    /// Query sent through HTTP interface is initial.
-    client_info.initial_user = client_info.current_user;
-    client_info.initial_address = client_info.current_address;
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -333,33 +311,6 @@ void HTTPHandler::processQuery(
             session->release();
     });
 
-    // Parse the OpenTelemetry traceparent header.
-    // Disable in Arcadia -- it interferes with the
-    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
-#if !defined(ARCADIA_BUILD)
-    if (request.has("traceparent"))
-    {
-        std::string opentelemetry_traceparent = request.get("traceparent");
-        std::string error;
-        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
-            opentelemetry_traceparent, error))
-        {
-            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                opentelemetry_traceparent, error);
-        }
-
-        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
-    }
-#endif
-
-    // Set the query id supplied by the user, if any, and also update the
-    // OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id",
-        request.get("X-ClickHouse-Query-Id", "")));
-
-    client_info.initial_query_id = client_info.current_query_id;
-
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     CompressionMethod http_response_compression_method = CompressionMethod::None;
@@ -376,10 +327,6 @@ void HTTPHandler::processQuery(
             http_response_compression_method = CompressionMethod::Gzip;
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             http_response_compression_method = CompressionMethod::Zlib;
-        else if (std::string::npos != http_response_compression_methods.find("xz"))
-            http_response_compression_method = CompressionMethod::Xz;
-        else if (std::string::npos != http_response_compression_methods.find("zstd"))
-            http_response_compression_method = CompressionMethod::Zstd;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
@@ -586,6 +533,24 @@ void HTTPHandler::processQuery(
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
+    ClientInfo & client_info = context.getClientInfo();
+    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    client_info.interface = ClientInfo::Interface::HTTP;
+
+    /// Query sent through HTTP interface is initial.
+    client_info.initial_user = client_info.current_user;
+    client_info.initial_query_id = client_info.current_query_id;
+    client_info.initial_address = client_info.current_address;
+
+    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
+    if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+        http_method = ClientInfo::HTTPMethod::GET;
+    else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
+        http_method = ClientInfo::HTTPMethod::POST;
+
+    client_info.http_method = http_method;
+    client_info.http_user_agent = request.get("User-Agent", "");
+
     auto append_callback = [&context] (ProgressCallback callback)
     {
         auto prev = context.getProgressCallback();
@@ -629,8 +594,6 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context);
-
-    query_scope.emplace(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
@@ -731,8 +694,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     /// Should be initialized before anything,
     /// For correct memory accounting.
     Context context = server.context();
-    /// Cannot be set here, since query_id is unknown.
-    std::optional<CurrentThread::QueryScope> query_scope;
+    CurrentThread::QueryScope query_scope(context);
 
     Output used_output;
 
@@ -757,8 +719,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(context, request, params, response, used_output, query_scope);
-        LOG_DEBUG(log, "Done processing query");
+        processQuery(context, request, params, response, used_output);
+        LOG_INFO(log, "Done processing query");
     }
     catch (...)
     {

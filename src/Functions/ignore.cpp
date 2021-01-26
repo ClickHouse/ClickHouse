@@ -44,12 +44,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &, const ColumnNumbers &) const override
     {
         return DataTypeUInt8().createColumnConst(1, 0u);
     }

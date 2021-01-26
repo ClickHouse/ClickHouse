@@ -5,8 +5,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
-#include <re2/re2.h>
 
 
 namespace DB
@@ -14,8 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
@@ -34,50 +30,22 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
-
-    if (!column_name_prefix.empty())
-        settings.ostr << "(";
-    settings.ostr << func_name;
-
-    if (parameters)
-        parameters->formatImpl(settings, state, frame);
-
-    if (!column_name_prefix.empty())
-        settings.ostr << ", '" << column_name_prefix << "')";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << "(" << func_name << ")";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
 {
     for (auto & column : nodes)
     {
-        String name;
-        auto alias = column->tryGetAlias();
-        if (!alias.empty())
-            name = alias;
-        else
-        {
-            if (const auto * id = column->as<ASTIdentifier>())
-                name = id->shortName();
-            else
-                name = column->getColumnName();
-        }
-        auto function = makeASTFunction(func_name, column);
-        function->parameters = parameters;
-        column = function;
-        if (!column_name_prefix.empty())
-            column->setAlias(column_name_prefix + name);
+        column = makeASTFunction(func_name, column);
     }
 }
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
-
-    if (children.size() > 1)
-        settings.ostr << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -88,77 +56,28 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
-    if (!original_pattern.empty())
-        settings.ostr << quoteString(original_pattern);
-
-    if (children.size() > 1)
-        settings.ostr << ")";
+    settings.ostr << ")";
 }
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
-    std::set<String> expected_columns;
-    if (original_pattern.empty())
-    {
-        for (const auto & child : children)
-            expected_columns.insert(child->as<const ASTIdentifier &>().name());
-
-        for (auto it = nodes.begin(); it != nodes.end();)
-        {
-            if (const auto * id = it->get()->as<ASTIdentifier>())
+    nodes.erase(
+        std::remove_if(
+            nodes.begin(),
+            nodes.end(),
+            [this](const ASTPtr & node_child)
             {
-                auto expected_column = expected_columns.find(id->shortName());
-                if (expected_column != expected_columns.end())
+                if (const auto * id = node_child->as<ASTIdentifier>())
                 {
-                    expected_columns.erase(expected_column);
-                    it = nodes.erase(it);
-                    continue;
+                    for (const auto & except_child : children)
+                    {
+                        if (except_child->as<const ASTIdentifier &>().name == id->shortName())
+                            return true;
+                    }
                 }
-            }
-            ++it;
-        }
-    }
-    else
-    {
-        for (auto it = nodes.begin(); it != nodes.end();)
-        {
-            if (const auto * id = it->get()->as<ASTIdentifier>())
-            {
-                if (isColumnMatching(id->shortName()))
-                {
-                    it = nodes.erase(it);
-                    continue;
-                }
-            }
-            ++it;
-        }
-    }
-
-    if (is_strict && !expected_columns.empty())
-    {
-        String expected_columns_str;
-        std::for_each(expected_columns.begin(), expected_columns.end(),
-            [&](String x) { expected_columns_str += (" " + x) ; });
-
-        throw Exception(
-            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-    }
-}
-
-void ASTColumnsExceptTransformer::setPattern(String pattern)
-{
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
-}
-
-bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
-{
-    return RE2::PartialMatch(column_name, *column_matcher);
+                return false;
+            }),
+        nodes.end());
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
@@ -170,10 +89,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
-
-    if (children.size() > 1)
-        settings.ostr << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -184,8 +100,7 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
         (*it)->formatImpl(settings, state, frame);
     }
 
-    if (children.size() > 1)
-        settings.ostr << ")";
+    settings.ostr << ")";
 }
 
 void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
@@ -224,7 +139,6 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
             {
                 column = replace_it->second;
                 column->setAlias(replace_it->first);
-                replace_map.erase(replace_it);
             }
         }
         else if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(column.get()))
@@ -237,25 +151,9 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 replaceChildren(new_ast, column, replace_it->first);
                 column = new_ast;
                 column->setAlias(replace_it->first);
-                replace_map.erase(replace_it);
             }
         }
     }
-
-    if (is_strict && !replace_map.empty())
-    {
-        String expected_columns;
-        for (auto & elem: replace_map)
-        {
-            if (!expected_columns.empty())
-                expected_columns += ", ";
-            expected_columns += elem.first;
-        }
-        throw Exception(
-            "Columns transformer REPLACE expects following column(s) : " + expected_columns,
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-    }
-
 }
 
 }

@@ -1,6 +1,5 @@
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -23,9 +22,9 @@
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/ConcatProcessor.h>
 #include <pcg_random.hpp>
 
 #if !defined(ARCADIA_BUILD)
@@ -54,7 +53,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
-    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -208,12 +206,6 @@ void Connection::receiveHello()
 {
     /// Receive hello packet.
     UInt64 packet_type = 0;
-
-    /// Prevent read after eof in readVarUInt in case of reset connection
-    /// (Poco should throw such exception while reading from socket but
-    /// sometimes it doesn't for unknown reason)
-    if (in->eof())
-        throw Poco::Net::NetException("Connection reset by peer");
 
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
@@ -546,9 +538,6 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
-    if (input.eof())
-        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
-
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -662,17 +651,16 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(*elem->pipe));
-        pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
-        {
-            if (type != QueryPipeline::StreamType::Main)
-                return nullptr;
-            return sink;
-        });
-        executor = pipeline.execute();
+        if (elem->pipe->numOutputPorts() > 1)
+            elem->pipe->addTransform(std::make_shared<ConcatProcessor>(elem->pipe->getHeader(), elem->pipe->numOutputPorts()));
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(*elem->pipe->getOutputPort(0), sink->getPort());
+
+        auto processors = Pipe::detachProcessors(std::move(*elem->pipe));
+        processors.push_back(sink);
+
+        executor = std::make_shared<PipelineExecutor>(processors);
         executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();
@@ -746,11 +734,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -807,9 +792,6 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
     }
     catch (Exception & e)
     {
-        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
-        e.setRemoteException();
-
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -899,7 +881,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

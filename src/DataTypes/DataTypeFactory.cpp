@@ -10,8 +10,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -45,7 +43,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return get(ident->name, {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
@@ -78,26 +76,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    DataTypePtr res = findCreatorByName(family_name)(parameters);
-
-    if (CurrentThread::isInitialized())
-    {
-        const auto * query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
-    }
-
-    return res;
-}
-
-DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
-{
-    if (!customization->name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create custom type without name");
-
-    auto type = get(customization->name->getName());
-    type->setCustomization(std::move(customization));
-    return type;
+    return findCreatorByName(family_name)(parameters);
 }
 
 
@@ -201,7 +180,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
-    registerDataTypeMap(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()
