@@ -48,7 +48,7 @@ public:
     static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
-    bool scheduleAfter(size_t ms);
+    bool addAndSchedule(size_t file_size, size_t ms);
 
     /// system.distribution_queue interface
     struct Status
@@ -65,12 +65,13 @@ public:
 private:
     void run();
 
-    std::map<UInt64, std::string> getFiles(bool lock_metrics = true) const;
+    std::map<UInt64, std::string> getFiles() const;
     bool processFiles(const std::map<UInt64, std::string> & files);
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
     void markAsBroken(const std::string & file_path) const;
+    void markAsSend(const std::string & file_path) const;
     bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
 
     std::string getLoggerName() const;
