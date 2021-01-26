@@ -290,6 +290,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp
