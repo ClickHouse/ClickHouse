@@ -30,7 +30,12 @@ set(SRCS
 
 add_library(nuraft ${SRCS})
 
-target_compile_definitions(nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1)
+
+if (NOT OPENSSL_SSL_LIBRARY OR NOT OPENSSL_CRYPTO_LIBRARY)
+    target_compile_definitions(nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1 SSL_LIBRARY_NOT_FOUND=1)
+else()
+    target_compile_definitions(nuraft PRIVATE USE_BOOST_ASIO=1 BOOST_ASIO_STANDALONE=1)
+endif()
 
 target_include_directories (nuraft SYSTEM PRIVATE ${LIBRARY_DIR}/include/libnuraft)
 # for some reason include "asio.h" directly without "boost/" prefix.
