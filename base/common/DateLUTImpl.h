@@ -863,7 +863,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addYears(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
