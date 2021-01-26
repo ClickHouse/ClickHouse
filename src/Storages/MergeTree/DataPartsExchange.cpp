@@ -5,7 +5,6 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/DirectorySyncGuard.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
@@ -398,9 +397,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     disk->createDirectories(part_download_path);
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard.emplace(disk, part_download_path);
+        sync_guard = disk->getDirectorySyncGuard(part_download_path);
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
