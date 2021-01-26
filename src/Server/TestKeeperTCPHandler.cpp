@@ -425,7 +425,7 @@ std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveR
     request->readImpl(*in);
 
     if (!test_keeper_storage_dispatcher->putRequest(request, session_id))
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Sesssion {} already disconnected", session_id);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }
 
