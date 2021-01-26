@@ -1302,9 +1302,13 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     ParserCollectionOfLiterals<Collection> collection_p(opening_bracket, closing_bracket);
 
     ++pos;
+
+    // only used when Collection is map
+    ASTPtr last_literal_node; 
+    size_t count = 0;
     while (pos.isValid())
     {
-        if (!arr.empty())
+        if (count)
         {
             if (pos->type == closing_bracket)
             {
@@ -1324,8 +1328,10 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
-            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            else if (pos->type == TokenType::Colon)
             {
+                if (!std::is_same_v<Collection, Map> || !(count % 2))
+                    return false;
                 ++pos;
             }
             else
@@ -1334,12 +1340,27 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 return false;
             }
         }
-
         ASTPtr literal_node;
         if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
             return false;
 
-        arr.push_back(literal_node->as<ASTLiteral &>().value);
+        if (std::is_same_v<Collection, Map>) 
+        {
+            if (count % 2) 
+            {
+                Tuple t;
+                const auto & last_value = last_literal_node->as<ASTLiteral &>().value;
+                const auto & value = literal_node->as<ASTLiteral &>().value;
+                t.push_back(last_value);
+                t.push_back(value);
+                arr.push_back(std::move(t));
+            }
+        }
+        else 
+            arr.push_back(literal_node->as<ASTLiteral &>().value);
+
+        last_literal_node = literal_node;
+        count++;
     }
 
     expected.add(pos, getTokenName(closing_bracket));

@@ -288,6 +288,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return src;
     }
+    else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (src.getType() == Field::Types::Map)
+        {
+            const Map & src_map = src.get<Map>();
+            size_t src_map_size = src_map.size();
+
+            auto type_arr = typeid_cast<std::shared_ptr<const DataTypeArray>>(type_map->getNestedType());
+            const auto & element_type = *(type_arr->getNestedType());
+            Map res(src_map_size);
+            for (size_t i = 0; i < src_map_size; ++i) 
+                res[i] = convertFieldToType(src_map[i], element_type);
+
+            return Field(res);
+        }
+    }
 
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
