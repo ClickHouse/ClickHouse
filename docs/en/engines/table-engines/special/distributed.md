@@ -31,6 +31,13 @@ Also it accept the following settings:
 
 - `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
 
+- `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw.
+
+   See also:
+
+   - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+   - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+
 !!! note "Note"
 
     **Durability settings** (`fsync_...`):
