@@ -15,6 +15,8 @@ SRCS(
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
     Executors/ExecutingGraph.cpp
+    Executors/ExecutionThreadContext.cpp
+    Executors/ExecutorTasks.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
     Executors/PollingQueue.cpp
