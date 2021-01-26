@@ -2418,7 +2418,7 @@ WHERE 0
 
 ## max_final_threads {#max-final-threads}
 
-Устанавливает максимальное количество параллельных потоков для выполнения `SELECT` запросов с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+Устанавливает максимальное количество параллельных потоков для фазы чтения данных запроса `SELECT` с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
 
 Возможные значения:
 
