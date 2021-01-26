@@ -79,6 +79,8 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
+    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
+
     // If we're at the total end of data, we must end the partition. This is the
     // only place in calculations where we need special handling for end of data,
     // other places will work as usual based on `partition_ended` = true, because
@@ -93,49 +95,48 @@ void WindowTransform::advancePartitionEnd()
         return;
     }
 
+    // If we got to the end of the block already, just stop.
+    if (partition_end == end)
+    {
+        return;
+    }
+
+    // We process one block at a time, but we can process each block many times,
+    // if it contains multiple partitions. The `partition_end` is a
+    // past-the-end pointer, so it must be already in the "next" block we haven't
+    // processed yet. This is also the last block we have.
+    // The exception to this rule is end of data, for which we checked above.
+    assert(end.block == partition_end.block + 1);
+
     // Try to advance the partition end pointer.
     const size_t n = partition_by_indices.size();
     if (n == 0)
     {
-//        fmt::print(stderr, "no partition by\n");
         // No PARTITION BY. All input is one partition, which will end when the
         // input ends.
         partition_end = end;
         return;
     }
 
-    // The partition ends when the PARTITION BY columns change. We need an array
-    // of reference columns for comparison. We might have already dropped the
-    // blocks where the partition starts, but any row in the partition will do.
-    // Use group_start -- it's always in the valid region, because it points to
-    // the start of the current group, which we haven't fully processed yet, and
-    // hence cannot drop.
-    auto reference_row = group_start;
-    if (reference_row == partition_end)
+    // Check for partition end.
+    // The partition ends when the PARTITION BY columns change. We need
+    // some reference columns for comparison. We might have already
+    // dropped the blocks where the partition starts, but any row in the
+    // partition will do. Use group_start -- it's always in the valid
+    // region, because it points to the start of the current group,
+    // which we haven't fully processed yet, and therefore cannot drop.
+    // It might be the same as the partition_end if it's the first group of the
+    // first partition, so we compare it to itself, but it still works correctly.
+    const auto block_rows = blockRowsNumber(partition_end);
+    for (; partition_end.row < block_rows; ++partition_end.row)
     {
-        // This is for the very first partition and its first row. Try to get
-        // rid of this logic.
-        advanceRowNumber(partition_end);
-    }
-    assert(reference_row < blocksEnd());
-    assert(reference_row.block >= first_block_number);
-    Columns reference_partition_by;
-    for (const auto i : partition_by_indices)
-    {
-        reference_partition_by.push_back(inputAt(reference_row)[i]);
-    }
-
-//    fmt::print(stderr, "{} cols to compare, reference at {}\n", n, group_start);
-
-    for (; partition_end < end; advanceRowNumber(partition_end))
-    {
-        // Check for partition end.
         size_t i = 0;
         for (; i < n; i++)
         {
+            const auto * ref = inputAt(group_start)[partition_by_indices[i]].get();
             const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
             if (c->compareAt(partition_end.row,
-                    group_start.row, *reference_partition_by[i],
+                    group_start.row, *ref,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -144,11 +145,15 @@ void WindowTransform::advancePartitionEnd()
 
         if (i < n)
         {
-//            fmt::print(stderr, "col {} doesn't match at {}: ref {}, val {}\n",
-//                i, partition_end, inputAt(partition_end)[i]);
             partition_ended = true;
             return;
         }
+    }
+
+    if (partition_end.row == block_rows)
+    {
+        ++partition_end.block;
+        partition_end.row = 0;
     }
 
     // Went until the end of data and didn't find the new partition.
@@ -198,12 +203,6 @@ void WindowTransform::advanceGroupEndGroups()
         group_ended = partition_ended;
     }
 
-    Columns reference_order_by;
-    for (const auto i : order_by_indices)
-    {
-        reference_order_by.push_back(inputAt(group_start)[i]);
-    }
-
     // `partition_end` is either end of partition or end of data.
     for (; group_end < partition_end; advanceRowNumber(group_end))
     {
@@ -211,9 +210,9 @@ void WindowTransform::advanceGroupEndGroups()
         size_t i = 0;
         for (; i < n; i++)
         {
-            const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
-            if (c->compareAt(group_end.row,
-                    group_start.row, *reference_order_by[i],
+            const auto * ref = inputAt(group_start)[order_by_indices[i]].get();
+            const auto * c = inputAt(group_end)[order_by_indices[i]].get();
+            if (c->compareAt(group_end.row, group_start.row, *ref,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -381,6 +380,10 @@ void WindowTransform::writeOutGroup()
     first_not_ready_row = group_end;
 }
 
+void WindowTransform::initPerBlockCaches()
+{
+}
+
 void WindowTransform::appendChunk(Chunk & chunk)
 {
 //    fmt::print(stderr, "new chunk, {} rows, finished={}\n", chunk.getNumRows(),
@@ -409,6 +412,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 ->getReturnType()->createColumn());
         }
     }
+
+    initPerBlockCaches();
 
     // Start the calculations. First, advance the partition end.
     for (;;)
