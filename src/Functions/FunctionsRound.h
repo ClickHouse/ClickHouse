@@ -440,13 +440,7 @@ public:
         }
         else
         {
-            if constexpr (!is_big_int_v<NativeType>)
-                memcpy(out.data(), in.data(), in.size() * sizeof(T));
-            else
-            {
-                for (size_t i = 0; i < in.size(); i++)
-                    out[i] = in[i];
-            }
+            memcpy(out.data(), in.data(), in.size() * sizeof(T));
         }
     }
 };
