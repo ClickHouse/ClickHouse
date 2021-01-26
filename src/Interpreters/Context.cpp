@@ -1575,7 +1575,7 @@ void Context::initializeTestKeeperStorageDispatcher() const
     if (shared->test_keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize TestKeeper multiple times");
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     if (config.has("test_keeper_server"))
     {
         shared->test_keeper_storage_dispatcher = std::make_shared<TestKeeperStorageDispatcher>();

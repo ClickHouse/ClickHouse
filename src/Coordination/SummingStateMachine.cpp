@@ -4,6 +4,8 @@
 namespace DB
 {
 
+static constexpr int MAX_SNAPSHOTS = 3;
+
 static int64_t deserializeValue(nuraft::buffer & buffer)
 {
     nuraft::buffer_serializer bs(buffer);
@@ -68,7 +70,6 @@ void SummingStateMachine::createSnapshotInternal(nuraft::snapshot & s)
     snapshots[s.get_last_log_idx()] = ctx;
 
     // Maintain last 3 snapshots only.
-    const int MAX_SNAPSHOTS = 3;
     int num = snapshots.size();
     auto entry = snapshots.begin();
 

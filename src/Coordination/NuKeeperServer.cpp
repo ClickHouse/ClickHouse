@@ -137,7 +137,7 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (auto & [session_id, request] : requests)
+    for (const auto & [session_id, request] : requests)
     {
         ops_mapping[session_id][request->xid] = request->makeResponse();
         entries.push_back(getZooKeeperLogEntry(session_id, request));

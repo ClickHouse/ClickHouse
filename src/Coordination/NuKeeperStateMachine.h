@@ -63,9 +63,9 @@ private:
 
     StorageSnapshotPtr createSnapshotInternal(nuraft::snapshot & s);
 
-    StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in) const;
+    static StorageSnapshotPtr readSnapshot(nuraft::snapshot & s, nuraft::buffer & in);
 
-    void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out) const;
+    static void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out);
 
     TestKeeperStorage storage;
     /// Mutex for snapshots

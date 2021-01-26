@@ -29,7 +29,7 @@ namespace
     }
 }
 
-void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, WriteBuffer & out) const
+void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, WriteBuffer & out)
 {
     Coordination::write(storage.zxid, out);
     Coordination::write(storage.session_id_counter, out);
@@ -49,7 +49,7 @@ void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, W
     }
 }
 
-void TestKeeperStorageSerializer::deserialize(TestKeeperStorage & storage, ReadBuffer & in) const
+void TestKeeperStorageSerializer::deserialize(TestKeeperStorage & storage, ReadBuffer & in)
 {
     int64_t session_id_counter, zxid;
     Coordination::read(zxid, in);
