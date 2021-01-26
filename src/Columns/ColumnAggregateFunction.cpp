@@ -76,23 +76,26 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
     {
-        for (size_t i = 0; i < data.size(); ++i)
+        if (copiedDataInfo.size() == 0)
         {
-            auto * val = data[i];
-            if (val == nullptr)
+            for (size_t i = 0; i < data.size(); ++i)
             {
-                continue;
+                func->destroy(data[i]);
             }
-
-            for (size_t j = i; j < data.size(); ++j)
+        }
+        else
+        {
+            std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
+            size_t pos;
+            for (iter = copiedDataInfo.begin(); iter != copiedDataInfo.end(); iter++)
             {
-                if (data[j] == val)
+                pos = iter->second;
+                if (data[pos] != nullptr)
                 {
-                    data[j] = nullptr;
+                    func->destroy(data[pos]);
+                    data[pos] = nullptr;
                 }
             }
-
-            func->destroy(val);
         }
     }
 }
@@ -489,10 +492,6 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
     iter = copiedDataInfo.find(place);
     if (iter == copiedDataInfo.end())
     {
-        if (copiedDataInfo.size() > 10000)
-        {
-           copiedDataInfo.clear();
-        }
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
     }
