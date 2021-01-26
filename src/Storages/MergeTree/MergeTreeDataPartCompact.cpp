@@ -1,5 +1,4 @@
 #include "MergeTreeDataPartCompact.h"
-#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Poco/File.h>
@@ -122,9 +121,9 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
-bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
+bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
 {
-    if (!getColumnPosition(column.name))
+    if (!getColumnPosition(column_name))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);

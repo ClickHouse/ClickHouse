@@ -116,14 +116,12 @@ FROM dt
 
 ## See Also {#see-also}
 
--   [Функции преобразования типов](../../sql-reference/functions/type-conversion-functions.md)
--   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
--   [Функции для работы с массивами](../../sql-reference/functions/array-functions.md)
--   [Настройка `date_time_input_format`](../../operations/settings/settings/#settings-date_time_input_format)
--   [Настройка `date_time_output_format`](../../operations/settings/settings/)
--   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
+-   [Функции преобразования типов](../../sql-reference/data-types/datetime.md)
+-   [Функции для работы с датой и временем](../../sql-reference/data-types/datetime.md)
+-   [Функции для работы с массивами](../../sql-reference/data-types/datetime.md)
+-   [Настройка `date_time_input_format`](../../operations/settings/settings.md#settings-date_time_input_format)
+-   [Конфигурационный параметр сервера `timezone`](../../sql-reference/data-types/datetime.md#server_configuration_parameters-timezone)
+-   [Операторы для работы с датой и временем](../../sql-reference/data-types/datetime.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
--   [Тип данных `DateTime64`](datetime64.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

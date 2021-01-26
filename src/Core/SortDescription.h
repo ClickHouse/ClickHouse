@@ -72,6 +72,4 @@ class Block;
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, const Block & header, WriteBuffer & out);
 
-std::string dumpSortDescription(const SortDescription & description);
-
 }

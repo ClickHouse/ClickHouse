@@ -24,7 +24,7 @@ aliases = {
     "RENAME COLUMN" : ["ALTER RENAME COLUMN", "RENAME COLUMN"],
     "COMMENT COLUMN": ["ALTER COMMENT COLUMN", "COMMENT COLUMN"],
     "DROP COLUMN": ["ALTER DROP COLUMN", "DROP COLUMN"],
-    "ALTER COLUMN" : ["ALTER COLUMN", "ALL"],  #super-privilege
+    "ALTER COLUMN" : ["ALTER COLUMN"],  #super-privilege
 }
 
 # extra permutation is for 'ALTER COLUMN' super-privilege
@@ -675,8 +675,7 @@ def scenario_parallelization(self, table_type, permutation):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterColumn("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterColumn_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterColumn_TableEngines("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()

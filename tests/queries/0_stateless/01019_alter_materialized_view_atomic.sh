@@ -3,7 +3,6 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --multiquery <<EOF
@@ -52,6 +51,3 @@ done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
 wait
-
-$CLICKHOUSE_CLIENT -q "DROP VIEW mv"
-$CLICKHOUSE_CLIENT -q "DROP TABLE src"

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 request() {
@@ -35,7 +34,7 @@ check() {
 address=${CLICKHOUSE_HOST}
 port=${CLICKHOUSE_PORT_HTTP}
 url="${CLICKHOUSE_PORT_HTTP_PROTO}://$address:$port/"
-session="?session_id=test_$$"  # use PID for session ID
+session="?session_id=test_$$"
 select="SELECT * FROM system.settings WHERE name = 'max_rows_to_read'"
 select_from_temporary_table="SELECT * FROM temp ORDER BY x"
 select_from_non_existent_table="SELECT * FROM no_such_table ORDER BY x"

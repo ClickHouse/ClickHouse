@@ -55,6 +55,9 @@ add_executable (write_int write_int.cpp)
 target_link_libraries (write_int PRIVATE clickhouse_common_io)
 
 if (OS_LINUX OR OS_FREEBSD)
+    add_executable(write_buffer_aio write_buffer_aio.cpp)
+    target_link_libraries (write_buffer_aio PRIVATE clickhouse_common_io)
+
     add_executable(read_buffer_aio read_buffer_aio.cpp)
     target_link_libraries (read_buffer_aio PRIVATE clickhouse_common_io)
 endif ()
@@ -77,8 +80,5 @@ target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io)
 add_executable (zlib_ng_bug zlib_ng_bug.cpp)
 target_link_libraries (zlib_ng_bug PRIVATE ${ZLIB_LIBRARIES})
 
-add_executable (dragonbox_test dragonbox_test.cpp)
-target_link_libraries (dragonbox_test PRIVATE dragonbox_to_chars)
-
-add_executable (zstd_buffers zstd_buffers.cpp)
-target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)
+add_executable (ryu_test ryu_test.cpp)
+target_link_libraries (ryu_test PRIVATE ryu)

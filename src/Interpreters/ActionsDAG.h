@@ -80,7 +80,7 @@ public:
     };
 
     /// Index is used to:
-    ///     * find Node by it's result_name
+    ///     * find Node buy it's result_name
     ///     * specify order of columns in result
     /// It represents a set of available columns.
     /// Removing of column from index is equivalent to removing of column from final result.
@@ -106,8 +106,6 @@ public:
         std::list<Node *>::iterator end() { return list.end(); }
         std::list<Node *>::const_iterator begin() const { return list.begin(); }
         std::list<Node *>::const_iterator end() const { return list.end(); }
-        std::list<Node *>::const_reverse_iterator rbegin() const { return list.rbegin(); }
-        std::list<Node *>::const_reverse_iterator rend() const { return list.rend(); }
         std::list<Node *>::const_iterator find(std::string_view key) const
         {
             auto it = map.find(key);
@@ -121,7 +119,6 @@ public:
         /// If node with the same name exists, it is removed from map, but not list.
         /// It is expected and used for project(), when result may have several columns with the same name.
         void insert(Node * node) { map[node->result_name] = list.emplace(list.end(), node); }
-        void prepend(Node * node) { map[node->result_name] = list.emplace(list.begin(), node); }
 
         /// If node with same name exists in index, replace it. Otherwise insert new node to index.
         void replace(Node * node)
@@ -136,13 +133,14 @@ public:
                 insert(node);
         }
 
-        void remove(std::list<Node *>::iterator it)
+        void remove(Node * node)
         {
-            auto map_it = map.find((*it)->result_name);
-            if (map_it != map.end() && map_it->second == it)
-                map.erase(map_it);
+            auto it = map.find(node->result_name);
+            if (it != map.end())
+                return;
 
-            list.erase(it);
+            list.erase(it->second);
+            map.erase(it);
         }
 
         void swap(Index & other)
@@ -178,7 +176,6 @@ private:
 
 public:
     ActionsDAG() = default;
-    ActionsDAG(ActionsDAG &&) = default;
     ActionsDAG(const ActionsDAG &) = delete;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
@@ -212,17 +209,19 @@ public:
     /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
+    /// Removes column from index.
+    void removeColumn(const std::string & column_name);
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-    /// Find column in input. Remove it from input and index.
-    /// Checks that column in inputs and has not dependent nodes.
-    void removeUnusedInput(const std::string & column_name);
 
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
+    /// Splits actions into two parts. Returned half may be swapped with ARRAY JOIN.
+    /// Returns nullptr if no actions may be moved before ARRAY JOIN.
+    ActionsDAGPtr splitActionsBeforeArrayJoin(const NameSet & array_joined_columns);
+
     bool hasArrayJoin() const;
-    bool hasStatefulFunctions() const;
     bool empty() const; /// If actions only contain inputs.
 
     const ActionsSettings & getSettings() const { return settings; }
@@ -248,25 +247,6 @@ public:
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
-
-    /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
-    /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
-    /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.
-    /// Otherwise, any two actions may be combined.
-    static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
-
-    /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
-    /// Execution of first then second parts on block is equivalent to execution of initial DAG.
-    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
-    /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> split(std::unordered_set<const Node *> split_nodes) const;
-
-    /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
-
-    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Index of initial actions must contain column_name.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsForFilter(const std::string & column_name) const;
 
 private:
     Node & addNode(Node node, bool can_replace = false);

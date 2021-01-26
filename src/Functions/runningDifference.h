@@ -46,7 +46,7 @@ private:
     /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
 
     template <typename Src, typename Dst>
-    static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
+    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
     {
         size_t size = src.size();
         dst.resize(size);
@@ -76,7 +76,6 @@ private:
             else
             {
                 auto cur = src[i];
-                /// Overflow is Ok.
                 dst[i] = static_cast<Dst>(cur) - prev;
                 prev = cur;
             }

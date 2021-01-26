@@ -12,11 +12,9 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -26,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -305,8 +304,6 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-    mutable std::mutex test_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -428,6 +425,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
+        TemporaryLiveViewCleaner::shutdown();
         DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
@@ -444,10 +442,6 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
-        /// Stop zookeeper connection
-        zookeeper.reset();
-        /// Stop test_keeper storage
-        test_keeper_storage_dispatcher.reset();
     }
 
     bool hasTraceCollector() const
@@ -491,6 +485,7 @@ Context Context::createGlobal(ContextShared * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(*this);
+    TemporaryLiveViewCleaner::init(*this);
 }
 
 SharedContextHolder Context::createShared()
@@ -847,17 +842,7 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 
 void Context::setProfile(const String & profile_name)
 {
-    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
-    try
-    {
-        checkSettingsConstraints(profile_settings_changes);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(", while trying to set settings profile {}", profile_name);
-        throw;
-    }
-    applySettingsChanges(profile_settings_changes);
+    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
 }
 
 
@@ -940,54 +925,6 @@ bool Context::hasScalar(const String & name) const
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
-}
-
-
-void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
-{
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
-    query_access_info.databases.emplace(quoted_database_name);
-    query_access_info.tables.emplace(full_quoted_table_name);
-    for (const auto & column_name : column_names)
-        query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
-}
-
-
-void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
-{
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
-    auto lock = getLock();
-
-    switch (factory_type)
-    {
-        case QueryLogFactories::AggregateFunction:
-            query_factories_info.aggregate_functions.emplace(created_object);
-            break;
-        case QueryLogFactories::AggregateFunctionCombinator:
-            query_factories_info.aggregate_function_combinators.emplace(created_object);
-            break;
-        case QueryLogFactories::Database:
-            query_factories_info.database_engines.emplace(created_object);
-            break;
-        case QueryLogFactories::DataType:
-            query_factories_info.data_type_families.emplace(created_object);
-            break;
-        case QueryLogFactories::Dictionary:
-            query_factories_info.dictionaries.emplace(created_object);
-            break;
-        case QueryLogFactories::Format:
-            query_factories_info.formats.emplace(created_object);
-            break;
-        case QueryLogFactories::Function:
-            query_factories_info.functions.emplace(created_object);
-            break;
-        case QueryLogFactories::Storage:
-            query_factories_info.storages.emplace(created_object);
-            break;
-        case QueryLogFactories::TableFunction:
-            query_factories_info.table_functions.emplace(created_object);
-    }
 }
 
 
@@ -1190,14 +1127,8 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    if (client_info.client_trace_context.trace_id != 0)
-    {
-        // Use the OpenTelemetry trace context we received from the client, and
-        // create a new span for the query.
-        query_trace_context = client_info.client_trace_context;
-        query_trace_context.span_id = thread_local_rng();
-    }
-    else if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && client_info.opentelemetry_trace_id == 0)
     {
         // If this is an initial query without any parent OpenTelemetry trace, we
         // might start the trace ourselves, with some configurable probability.
@@ -1207,11 +1138,19 @@ void Context::setCurrentQueryId(const String & query_id)
         if (should_start_trace(thread_local_rng))
         {
             // Use the randomly generated default query id as the new trace id.
-            query_trace_context.trace_id = random.uuid;
-            query_trace_context.span_id = thread_local_rng();
+            client_info.opentelemetry_trace_id = random.uuid;
+            client_info.opentelemetry_parent_span_id = 0;
+            client_info.opentelemetry_span_id = thread_local_rng();
             // Mark this trace as sampled in the flags.
-            query_trace_context.trace_flags = 1;
+            client_info.opentelemetry_trace_flags = 1;
         }
+    }
+    else
+    {
+        // The incoming request has an OpenTelemtry trace context. Its span id
+        // becomes our parent span id.
+        client_info.opentelemetry_parent_span_id = client_info.opentelemetry_span_id;
+        client_info.opentelemetry_span_id = thread_local_rng();
     }
 
     String query_id_to_set = query_id;
@@ -1568,15 +1507,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
-{
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (!shared->test_keeper_storage_dispatcher)
-        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
-
-    return shared->test_keeper_storage_dispatcher;
-}
-
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
@@ -1644,10 +1574,6 @@ bool Context::hasZooKeeper() const
     return getConfigRef().has("zookeeper");
 }
 
-bool Context::hasAuxiliaryZooKeeper(const String & name) const
-{
-    return getConfigRef().has("auxiliary_zookeepers." + name);
-}
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
@@ -2130,25 +2056,15 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
-    return std::make_shared<InputStreamFromInputFormat>(FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size));
+    return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
 
-BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, *this);
+    return FormatFactory::instance().getOutput(name, buf, sample, *this);
 }
 
-BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputStream(name, buf, sample, *this);
-}
-
-OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, *this);
-}
-
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
 }

@@ -182,11 +182,8 @@ void QueryPipeline::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();
 
-    /// It is possible that pipeline already have extremes.
-    /// For example, it may be added from VIEW subquery.
-    /// In this case, recalculate extremes again - they should be calculated for different rows.
     if (pipe.getExtremesPort())
-        pipe.dropExtremes();
+        throw Exception("Extremes transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
 
     resize(1);
     auto transform = std::make_shared<ExtremesTransform>(getHeader());
