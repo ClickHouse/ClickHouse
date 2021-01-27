@@ -104,3 +104,49 @@ from numbers(3);
 --    sum(number)
 --        over (order by number groups between unbounded preceding and current row)
 --from numbers(3);
+
+-- RANGE frame
+-- Try some mutually prime sizes of partition, group and block, for the number
+-- of rows that is their least common multiple so that we see all the interesting
+-- corner cases.
+select number, intDiv(number, 3) p, mod(number, 2) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 5
+;
+
+select number, intDiv(number, 5) p, mod(number, 3) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 2
+;
+
+select number, intDiv(number, 5) p, mod(number, 2) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 3
+;
+
+select number, intDiv(number, 3) p, mod(number, 5) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 2
+;
+
+select number, intDiv(number, 2) p, mod(number, 5) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 3
+;
+
+select number, intDiv(number, 2) p, mod(number, 3) o, count(number) over w as c
+from numbers(30)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 5
+;

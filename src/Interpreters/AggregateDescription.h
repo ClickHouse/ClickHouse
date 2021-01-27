@@ -57,6 +57,14 @@ struct WindowFrame
 
      * OffsetType end_offset = Current;
      */
+
+
+    bool operator == (const WindowFrame & other) const
+    {
+        // We don't compare is_default because it's not a real property of the
+        // frame, and only influences how we display it.
+        return other.type == type;
+    }
 };
 
 struct WindowDescription

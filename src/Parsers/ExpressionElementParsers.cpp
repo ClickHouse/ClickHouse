@@ -535,29 +535,51 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_and("AND");
     ParserKeyword keyword_current_row("CURRENT ROW");
 
-    if (!keyword_between.ignore(pos, expected))
+    // There are two variants of grammar for the frame:
+    // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    // 2) ROWS UNBOUNDED PRECEDING
+    // When the frame end is not specified (2), it defaults to CURRENT ROW.
+    if (keyword_between.ignore(pos, expected))
     {
-        return false;
+        // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        if (!keyword_unbounded.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        if (!keyword_preceding.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        if (!keyword_and.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        if (!keyword_current_row.ignore(pos, expected))
+        {
+            return false;
+        }
+
+    }
+    else
+    {
+        // 2) ROWS UNBOUNDED PRECEDING
+        if (!keyword_unbounded.ignore(pos, expected))
+        {
+            return false;
+        }
+
+        if (!keyword_preceding.ignore(pos, expected))
+        {
+            return false;
+        }
     }
 
-    if (!keyword_unbounded.ignore(pos, expected))
+    if (node->frame != WindowFrame{})
     {
-        return false;
-    }
-
-    if (!keyword_preceding.ignore(pos, expected))
-    {
-        return false;
-    }
-
-    if (!keyword_and.ignore(pos, expected))
-    {
-        return false;
-    }
-
-    if (!keyword_current_row.ignore(pos, expected))
-    {
-        return false;
+        node->frame.is_default = false;
     }
 
     return true;
