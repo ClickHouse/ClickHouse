@@ -628,7 +628,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path;
 
-    storage.throwInsertIfNeeded();
+    storage.delayInsertOrThrowIfNeeded();
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     const auto disk = reservation->getDisk();
