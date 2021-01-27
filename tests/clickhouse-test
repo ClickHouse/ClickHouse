@@ -342,7 +342,7 @@ def run_tests_array(all_tests_with_params):
                             SERVER_DIED = True
                             break
 
-                    file_suffix = ('.' + str(os.getpid())) if is_concurrent else ''
+                    file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
