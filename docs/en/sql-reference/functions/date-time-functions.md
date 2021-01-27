@@ -602,7 +602,7 @@ This is necessary for searching for pageviews in the corresponding session.
 
 ## formatDateTime {#formatdatetime}
 
-Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
+Function formats a Time according to the given Format string. N.B.: Format is a constant expression, e.g. you cannot have multiple formats for a single result column.
 
 **Syntax**
 
@@ -663,7 +663,7 @@ Result:
 
 ## FROM\_UNIXTIME {#fromunixfime}
 
-When there is only single argument of integer type, it act in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
+When there is only a single argument of integer type, it acts in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
 type.
 
 For example:
@@ -682,7 +682,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two arguments, first is integer or DateTime, second is constant format string, it act in the same way as `formatDateTime` and return `String` type.
+When there are two arguments: first is an integer or DateTime, second is a constant format string — it acts in the same way as `formatDateTime` and return `String` type.
 
 For example:
 
