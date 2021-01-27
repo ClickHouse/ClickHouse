@@ -868,7 +868,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         replicated_storage->getStatus(status);
 
         // Should return as soon as possible if the table is shutdown by drop or other command.
-        if (status.is_partial_shutdown) {
+        if (status.is_partial_shutdown)
+        {
             LOG_WARNING(log, "Table is shutdown, task {} will not be executed.", task.entry_name);
             task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is shutdown");
             return false;
