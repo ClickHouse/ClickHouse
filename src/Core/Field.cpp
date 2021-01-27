@@ -238,6 +238,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return value;
     }
 
+    prefix = std::string_view{"UInt128_"};
+    if (dump.starts_with(prefix))
+    {
+        UInt128 value = parseFromString<UInt128>(dump.substr(prefix.length()));
+        return value;
+    }
+
     prefix = std::string_view{"Int256_"};
     if (dump.starts_with(prefix))
     {
@@ -293,15 +300,6 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
         return decimal;
-    }
-
-    prefix = std::string_view{"UUID_"};
-    if (dump.starts_with(prefix))
-    {
-        UUID uuid;
-        ReadBufferFromString buf{dump.substr(prefix.length())};
-        readQuoted(uuid, buf);
-        return uuid;
     }
 
     if (dump.starts_with("\'"))

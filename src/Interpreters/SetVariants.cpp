@@ -122,7 +122,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
                 throw Exception{"Aggregator: keys sizes overflow", ErrorCodes::LOGICAL_ERROR};
             if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
                 return Type::nullable_keys128;
-            if ((std::tuple_size<KeysNullMap<DummyUInt256>>::value + keys_bytes) <= 32)
+            if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
                 return Type::nullable_keys256;
         }
 

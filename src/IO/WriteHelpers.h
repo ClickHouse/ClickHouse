@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include <pcg-random/pcg_random.hpp>
+
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
@@ -19,7 +21,6 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/UInt128.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -908,18 +909,12 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
@@ -944,9 +939,6 @@ inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(Local
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
-inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-inline void writeText(const UInt256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
-inline void writeText(const Int256 & x, WriteBuffer & buf) { writeText(bigintToString(x), buf); }
 
 template <typename T>
 String decimalFractional(const T & x, UInt32 scale)
@@ -1033,19 +1025,6 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const UInt256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
-
-inline void writeQuoted(const Int256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -1089,13 +1068,6 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-[[noreturn]] inline void writeCSV(const UInt128, WriteBuffer &)
-{
-    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
-     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
-     */
-    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-}
 
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)

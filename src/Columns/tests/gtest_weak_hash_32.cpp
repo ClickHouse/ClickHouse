@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Common/WeakHash.h>
+#include <Common/hex.h>
 
 #include <unordered_map>
 #include <iostream>
@@ -260,7 +261,7 @@ TEST(WeakHash32, ColumnVectorU128)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data, [&](size_t row) { return col->getElement(row).toHexString(); });
+    checkColumn(hash.getData(), eq_data, [&](size_t row) { return getHexUIntLowercase(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorI128)

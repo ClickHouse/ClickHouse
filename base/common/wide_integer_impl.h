@@ -199,9 +199,7 @@ struct integer<Bits, Signed>::_impl
     template <typename T>
     __attribute__((no_sanitize("undefined"))) constexpr static auto to_Integral(T f) noexcept
     {
-        if constexpr (std::is_same_v<T, __int128>)
-            return f;
-        else if constexpr (std::is_signed_v<T>)
+        if constexpr (std::is_signed_v<T>)
             return static_cast<int64_t>(f);
         else
             return static_cast<uint64_t>(f);
@@ -211,22 +209,18 @@ struct integer<Bits, Signed>::_impl
     constexpr static void wide_integer_from_bultin(integer<Bits, Signed> & self, Integral rhs) noexcept
     {
         self.items[0] = _impl::to_Integral(rhs);
-        if constexpr (std::is_same_v<Integral, __int128>)
-            self.items[1] = rhs >> base_bits;
-
-        constexpr const unsigned start = (sizeof(Integral) == 16) ? 2 : 1;
 
         if constexpr (std::is_signed_v<Integral>)
         {
             if (rhs < 0)
             {
-                for (unsigned i = start; i < item_count; ++i)
+                for (size_t i = 1; i < item_count; ++i)
                     self.items[i] = -1;
                 return;
             }
         }
 
-        for (unsigned i = start; i < item_count; ++i)
+        for (size_t i = 1; i < item_count; ++i)
             self.items[i] = 0;
     }
 
@@ -927,11 +921,6 @@ public:
 // Members
 
 template <size_t Bits, typename Signed>
-constexpr integer<Bits, Signed>::integer() noexcept
-    : items{}
-{}
-
-template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed>::integer(T rhs) noexcept
     : items{}
@@ -954,8 +943,17 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
         else
             _impl::wide_integer_from_bultin(*this, *il.begin());
     }
-    else
+    else if (il.size() == 0)
+    {
         _impl::wide_integer_from_bultin(*this, 0);
+    }
+    else
+    {
+        auto it = il.begin();
+        for (size_t i = 0; i < _impl::item_count; ++i)
+            if (it < il.end())
+                items[i] = *it;
+    }
 }
 
 template <size_t Bits, typename Signed>
@@ -1103,16 +1101,8 @@ template <size_t Bits, typename Signed>
 template <class T, class>
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
-    if constexpr (std::is_same_v<T, __int128>)
-    {
-        static_assert(Bits >= 128);
-        return (__int128(items[1]) << 64) | items[0];
-    }
-    else
-    {
-        static_assert(std::numeric_limits<T>::is_integer);
-        return items[0];
-    }
+    static_assert(std::numeric_limits<T>::is_integer);
+    return items[0];
 }
 
 template <size_t Bits, typename Signed>

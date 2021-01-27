@@ -58,9 +58,11 @@ public:
     using signed_base_type = int64_t;
 
     // ctors
-    constexpr integer() noexcept;
+    constexpr integer() noexcept = default;
+
     template <typename T>
     constexpr integer(T rhs) noexcept;
+
     template <typename T>
     constexpr integer(std::initializer_list<T> il) noexcept;
 
@@ -119,14 +121,14 @@ public:
 
     struct _impl;
 
+    base_type items[_impl::item_count];
+
 private:
     template <size_t Bits2, typename Signed2>
     friend class integer;
 
     friend class std::numeric_limits<integer<Bits, signed>>;
     friend class std::numeric_limits<integer<Bits, unsigned>>;
-
-    base_type items[_impl::item_count];
 };
 
 template <typename T>

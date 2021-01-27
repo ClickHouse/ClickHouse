@@ -6,11 +6,13 @@
 #include <Common/formatReadable.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 
 #include <atomic>
 #include <cmath>
 #include <random>
 #include <cstdlib>
+
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;

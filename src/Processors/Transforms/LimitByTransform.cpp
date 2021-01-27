@@ -39,7 +39,7 @@ void LimitByTransform::transform(Chunk & chunk)
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
 
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         auto count = keys_counts[key]++;
         if (count >= group_offset

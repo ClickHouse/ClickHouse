@@ -1093,7 +1093,7 @@ INSTANTIATE_TEST_SUITE_P(RandomishFloat,
 );
 
 // Double delta overflow case, deltas are out of bounds for target type
-INSTANTIATE_TEST_SUITE_P(OverflowInt,
+INSTANTIATE_TEST_SUITE_P(OverfloInt,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(

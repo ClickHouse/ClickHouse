@@ -302,7 +302,8 @@ String MergeTreeDataPartChecksums::getTotalChecksumHex() const
         hash_of_all_files.update(checksum.file_hash);
     }
 
-    UInt64 lo, hi;
+    UInt64 lo;
+    UInt64 hi;
     hash_of_all_files.get128(lo, hi);
 
     return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
@@ -400,7 +401,7 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
 
     auto get_hash = [] (SipHash & hash, uint128 & data)
     {
-        hash.get128(data.first, data.second);
+        hash.get128(data);
     };
 
     get_hash(hash_of_all_files_state, hash_of_all_files);
