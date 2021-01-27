@@ -127,7 +127,6 @@ class ClickHouseCluster:
         if custom_dockerd_host:
             self.base_cmd += ['--host', custom_dockerd_host]
 
-        self.base_cmd += ['--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
@@ -260,25 +259,23 @@ class ClickHouseCluster:
             self.with_zookeeper = True
             self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
             self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
-            self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', zookeeper_docker_compose_path]
+            self.base_zookeeper_cmd = ['docker-compose', '--project-name', self.project_name,
+                                       '--file', zookeeper_docker_compose_path]
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-            self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file',
-                                   p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+            self.base_mysql_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-            self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file',
-                                      p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+            self.base_postgres_cmd = ['docker-compose', '--project-name', self.project_name,
+                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
@@ -286,64 +283,57 @@ class ClickHouseCluster:
             if not self.with_mysql:
                 self.with_mysql = True
                 self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-                self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file',
-                                       p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+                self.base_mysql_cmd = ['docker-compose', '--project-name', self.project_name,
+                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
                 self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-                self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                          self.project_name, '--file',
-                                          p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+                self.base_postgres_cmd = ['docker-compose', '--project-name', self.project_name,
+                                          '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
-            self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file',
-                                   p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
+            self.base_kafka_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
             self.with_kerberized_kafka = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')])
-            self.base_kerberized_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
+            self.base_kerberized_kafka_cmd = ['docker-compose','--project-name', self.project_name,
+                                              '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
             cmds.append(self.base_kerberized_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
-            self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file',
-                                      p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
+            self.base_rabbitmq_cmd = ['docker-compose', '--project-name', self.project_name,
+                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
             cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
-            self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file',
-                                  p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
+            self.base_hdfs_cmd = ['docker-compose', '--project-name', self.project_name,
+                                  '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_kerberized_hdfs and not self.with_kerberized_hdfs:
             self.with_kerberized_hdfs = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
-            self.base_kerberized_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                             self.project_name, '--file',
-                                             p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
+            self.base_kerberized_hdfs_cmd = ['docker-compose', '--project-name', self.project_name,
+                                             '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
             cmds.append(self.base_kerberized_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
-            self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file',
-                                   p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
+            self.base_mongo_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
@@ -353,25 +343,22 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             self.with_redis = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
-            self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file',
-                                   p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
+            self.base_redis_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
             self.minio_certs_dir = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
-            self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file',
-                                   p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
+            self.base_minio_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
-            self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file',
-                                       p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
+            self.base_cassandra_cmd = ['docker-compose', '--project-name', self.project_name,
+                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
         return instance
 
@@ -936,7 +923,7 @@ class ClickHouseInstance:
         self.with_cassandra = with_cassandra
 
         self.path = p.join(self.cluster.instances_dir, name)
-        self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
+        self.docker_compose_path = p.join(self.path, 'docker-compose.yml')
         self.env_variables = env_variables or {}
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
@@ -1162,15 +1149,15 @@ class ClickHouseInstance:
             status = handle.status
             if status == 'exited':
                 raise Exception(
-                    "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
-                                                                                           handle.logs()))
+                    "Instance `{}' failed to start. Container status: {}, logs: {!s}".format(self.name, status,
+                                                                                           handle.logs().decode('utf-8')))
 
             current_time = time.time()
             time_left = deadline - current_time
             if deadline is not None and current_time >= deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
                                 "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
-                                                                        handle.logs()))
+                                                                        handle.logs().decode('utf-8')))
 
             # Repeatedly poll the instance address until there is something that listens there.
             # Usually it means that ClickHouse is ready to accept queries.
