@@ -113,9 +113,9 @@ class ClickHouseCluster:
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
             HELPERS_DIR, 'zookeeper_config.xml')
 
-        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
+        project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
-        self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
+        self.project_name = re.sub(r'[^a-z0-9]', '', project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
 
@@ -126,6 +126,7 @@ class ClickHouseCluster:
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
             self.base_cmd += ['--host', custom_dockerd_host]
+        self.base_cmd += ['--project-name', self.project_name]
 
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
@@ -360,6 +361,8 @@ class ClickHouseCluster:
             self.base_cassandra_cmd = ['docker-compose', '--project-name', self.project_name,
                                        '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
+        print("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
+            self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
         return instance
 
     def get_instance_docker_id(self, instance_name):
@@ -394,7 +397,10 @@ class ClickHouseCluster:
         return node
 
     def get_instance_ip(self, instance_name):
+        print("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
+        # for cont in self.docker_client.containers.list():
+        #     print("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
@@ -1149,7 +1155,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == 'exited':
                 raise Exception(
-                    "Instance `{}' failed to start. Container status: {}, logs: {!s}".format(self.name, status,
+                    "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
                                                                                            handle.logs().decode('utf-8')))
 
             current_time = time.time()
