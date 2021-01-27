@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -50,9 +44,9 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -70,7 +64,7 @@ public:
             dst_data[row] = res;
         }
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 };
 
@@ -82,5 +76,3 @@ void registerFunctionH3HexAreaM2(FunctionFactory & factory)
 }
 
 }
-
-#endif

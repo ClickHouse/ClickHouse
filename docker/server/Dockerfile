@@ -1,20 +1,10 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.2.1.*
+ARG version=20.10.8.*
 ARG gosu_ver=1.10
 
-# user/group precreated explicitly with fixed uid/gid on purpose.
-# It is especially important for rootless containers: in that case entrypoint
-# can't do chown and owners of mounted volumes should be configured externally.
-# We do that in advance at the begining of Dockerfile before any packages will be
-# installed to prevent picking those uid / gid by some unrelated software.
-# The same uid / gid (101) is used both for alpine and ubuntu.
-# Number 101 is used by default in openshift
-
-RUN groupadd -r clickhouse --gid=101 \
-    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \

@@ -19,8 +19,6 @@ public:
 
     Status prepare() override;
 
-    static Block transformHeader(Block header, const SortDescription & sort_description);
-
 protected:
     void transform(Chunk & Chunk) override;
 

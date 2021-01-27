@@ -73,7 +73,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
+inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)) && !is_big_int_v<T>, DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     auto * begin = reinterpret_cast<const char *>(&x);
@@ -86,6 +86,16 @@ intHashCRC32(const T & x, DB::UInt64 updated_value)
     return updated_value;
 }
 
+template <typename T>
+inline typename std::enable_if<is_big_int_v<T>, DB::UInt64>::type
+intHashCRC32(const T & x, DB::UInt64 updated_value)
+{
+    std::vector<UInt64> parts = DB::BigInt<T>::toIntArray(x);
+    for (const auto & part : parts)
+        updated_value = intHashCRC32(part, updated_value);
+
+    return updated_value;
+}
 
 inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 updated_value)
 {
@@ -238,7 +248,22 @@ inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 template <typename T>
 inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
 {
-    return intHashCRC32(key, -1);
+    if constexpr (std::is_same_v<T, DB::Int128>)
+    {
+        return intHashCRC32(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+    }
+    else if constexpr (std::is_same_v<T, DB::UInt128>)
+    {
+        return intHashCRC32(key.low ^ key.high);
+    }
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    {
+        return intHashCRC32(static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
+    }
+    __builtin_unreachable();
 }
 
 #define DEFINE_HASH(T) \

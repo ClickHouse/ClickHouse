@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 export CURR_DATABASE="test_lazy_01294_concurrent_${CLICKHOUSE_DATABASE}"
@@ -108,5 +107,3 @@ ${CLICKHOUSE_CLIENT} -n -q "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM START TTL MERGES";
 echo "Test OK"
-
-# TODO: doesn't work! $CLICKHOUSE_CLIENT -q "DROP DATABASE $CURR_DATABASE"

@@ -1,37 +1,12 @@
 #include <Parsers/ParserDataType.h>
-
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-
 
 namespace DB
 {
-
-namespace
-{
-
-/// Wrapper to allow mixed lists of nested and normal types.
-class ParserNestedTableOrExpression : public IParserBase
-{
-    private:
-        const char * getName() const override { return "data type or expression"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserNestedTable parser1;
-
-            if (parser1.parse(pos, node, expected))
-                return true;
-
-            ParserExpression parser2;
-
-            return parser2.parse(pos, node, expected);
-        }
-};
-
-}
 
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -94,7 +69,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = type_name;
-    function_node->no_empty_args = true;
 
     if (pos->type != TokenType::OpeningRoundBracket)
     {
@@ -104,7 +78,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserNestedTableOrExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))

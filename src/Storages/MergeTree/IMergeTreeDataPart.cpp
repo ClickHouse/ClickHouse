@@ -11,24 +11,11 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/DirectorySyncGuard.h>
-#include <Common/CurrentMetrics.h>
+#include <Common/FileSyncGuard.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
-#include <DataTypes/NestedUtils.h>
-
-
-namespace CurrentMetrics
-{
-    extern const Metric PartsTemporary;
-    extern const Metric PartsPreCommitted;
-    extern const Metric PartsCommitted;
-    extern const Metric PartsOutdated;
-    extern const Metric PartsDeleting;
-    extern const Metric PartsDeleteOnDestroy;
-}
 
 namespace DB
 {
@@ -150,61 +137,6 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-static void incrementMetric(IMergeTreeDataPart::State state)
-{
-    switch (state)
-    {
-        case IMergeTreeDataPart::State::Temporary:
-            CurrentMetrics::add(CurrentMetrics::PartsTemporary);
-            return;
-        case IMergeTreeDataPart::State::PreCommitted:
-            CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
-            return;
-        case IMergeTreeDataPart::State::Committed:
-            CurrentMetrics::add(CurrentMetrics::PartsCommitted);
-            return;
-        case IMergeTreeDataPart::State::Outdated:
-            CurrentMetrics::add(CurrentMetrics::PartsOutdated);
-            return;
-        case IMergeTreeDataPart::State::Deleting:
-            CurrentMetrics::add(CurrentMetrics::PartsDeleting);
-            return;
-        case IMergeTreeDataPart::State::DeleteOnDestroy:
-            CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
-            return;
-    }
-
-    __builtin_unreachable();
-}
-
-static void decrementMetric(IMergeTreeDataPart::State state)
-{
-    switch (state)
-    {
-        case IMergeTreeDataPart::State::Temporary:
-            CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
-            return;
-        case IMergeTreeDataPart::State::PreCommitted:
-            CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
-            return;
-        case IMergeTreeDataPart::State::Committed:
-            CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
-            return;
-        case IMergeTreeDataPart::State::Outdated:
-            CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
-            return;
-        case IMergeTreeDataPart::State::Deleting:
-            CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
-            return;
-        case IMergeTreeDataPart::State::DeleteOnDestroy:
-            CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
-            return;
-    }
-
-    __builtin_unreachable();
-}
-
-
 IMergeTreeDataPart::IMergeTreeDataPart(
     MergeTreeData & storage_, const String & name_, const VolumePtr & volume_, const std::optional<String> & relative_path_, Type part_type_)
     : storage(storage_)
@@ -215,7 +147,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -233,12 +164,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
-    incrementMetric(state);
-}
-
-IMergeTreeDataPart::~IMergeTreeDataPart()
-{
-    decrementMetric(state);
 }
 
 
@@ -266,20 +191,6 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
         return {};
     return it->second;
 }
-
-
-void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
-{
-    decrementMetric(state);
-    state = new_state;
-    incrementMetric(state);
-}
-
-IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
-{
-    return state;
-}
-
 
 DayNum IMergeTreeDataPart::getMinDate() const
 {
@@ -322,13 +233,10 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-    {
-        column_name_to_position.emplace(column.name, pos);
-        for (const auto & subcolumn : column.type->getSubcolumnNames())
-            column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
-        ++pos;
-    }
+        column_name_to_position.emplace(column.name, pos++);
 }
+
+IMergeTreeDataPart::~IMergeTreeDataPart() = default;
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
@@ -445,7 +353,7 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const
+String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const
 {
     const auto & storage_columns = metadata_snapshot->getColumns().getAllPhysical();
     auto alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
@@ -460,7 +368,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageM
         if (alter_conversions.isColumnRenamed(column.name))
             column_name = alter_conversions.getColumnOldName(column.name);
 
-        if (!hasColumnFiles(column))
+        if (!hasColumnFiles(column_name, *column_type))
             continue;
 
         const auto size = getColumnSize(column_name, *column_type).data_compressed;
@@ -500,9 +408,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-    loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -575,7 +482,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
     String default_codec_path = getFullRelativePath() + DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-
     if (volume->getDisk()->exists(default_codec_path))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
@@ -641,26 +547,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
-            String path_to_data_file;
-            part_column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
-            {
-                if (path_to_data_file.empty())
-                {
-                    String candidate_path = getFullRelativePath() + IDataType::getFileNameForStream(part_column, substream_path) + ".bin";
-
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (volume->getDisk()->exists(candidate_path) && volume->getDisk()->getFileSize(candidate_path) != 0)
-                        path_to_data_file = candidate_path;
-                }
-            });
-
-            if (path_to_data_file.empty())
-            {
-                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
-                continue;
-            }
-
-            result = getCompressionCodecForFile(volume->getDisk(), path_to_data_file);
+            result = getCompressionCodecForFile(volume->getDisk(), getFullRelativePath() + getFileNameForColumn(part_column) + ".bin");
             break;
         }
     }
@@ -770,29 +657,6 @@ void IMergeTreeDataPart::loadRowsCount()
                         "Column {} has rows count {} according to size in memory "
                         "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
                 }
-
-                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
-                /// All this rows have to be written in column
-                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
-                /// We have more rows in column than in index granularity without last possibly incomplete mark
-                if (rows_in_column < index_granularity_without_last_mark)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} according to size in memory "
-                        "and size of single value, but index granularity in part {} without last mark has {} rows, which is more than in column",
-                        backQuote(column.name), rows_in_column, name, index_granularity.getTotalRows());
-                }
-
-                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
-                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
-                {
-                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Column {} has rows count {} in last mark according to size in memory "
-                        "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
-                        backQuote(column.name), rows_in_column - index_granularity_without_last_mark, name, last_possibly_incomplete_mark_rows);
-                }
             }
         }
 #endif
@@ -862,19 +726,6 @@ void IMergeTreeDataPart::loadTTLInfos()
     }
 }
 
-void IMergeTreeDataPart::loadUUID()
-{
-    String path = getFullRelativePath() + UUID_FILE_NAME;
-
-    if (volume->getDisk()->exists(path))
-    {
-        auto in = openForReading(volume->getDisk(), path);
-        readText(uuid, *in);
-        if (uuid == UUIDHelpers::Nil)
-            throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = getFullRelativePath() + "columns.txt";
@@ -909,16 +760,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
         column_name_to_position.emplace(column.name, pos++);
 }
 
-bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
-{
-    /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
-    /// `SingleDiskVolume` object which does not contain up-to-date settings of corresponding volume.
-    /// Therefore we shall obtain volume from storage policy.
-    auto volume_ptr = storage_policy->getVolume(storage_policy->getVolumeIndexByDisk(volume->getDisk()));
-
-    return !volume_ptr->areMergesAvoided();
-}
-
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from)
 {
     if (disk_->isFile(from))
@@ -939,8 +780,12 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String from = getFullRelativePath();
     String to = storage.relative_data_path + new_relative_path + "/";
 
+    std::optional<FileSyncGuard> sync_guard;
+    if (storage.getSettings()->fsync_part_directory)
+        sync_guard.emplace(volume->getDisk(), to);
+
     if (!volume->getDisk()->exists(from))
-        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
 
     if (volume->getDisk()->exists(to))
     {
@@ -962,10 +807,6 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
-
-    std::optional<DirectorySyncGuard> sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
 }
 
 
@@ -1035,18 +876,18 @@ void IMergeTreeDataPart::remove() const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->removeFile(to + "/" + file);
+                volume->getDisk()->remove(to + "/" + file);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->removeFile(to + "/" + file);
+                volume->getDisk()->remove(to + "/" + file);
 
-            volume->getDisk()->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-            volume->getDisk()->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+            volume->getDisk()->removeIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            volume->getDisk()->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
-            volume->getDisk()->removeDirectory(to);
+            volume->getDisk()->remove(to);
         }
         catch (...)
         {
@@ -1099,7 +940,7 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const Storag
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(volume->getDisk(), getFullRelativePath(), destination_path, 0);
-    volume->getDisk()->removeFileIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
@@ -1121,7 +962,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
     disk->createDirectories(path_to_clone);
 
     volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
-    volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    volume->getDisk()->removeIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

@@ -35,7 +35,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip3 install urllib3 testflows==1.6.72 docker-compose docker dicttoxml kazoo tzlocal
+RUN pip3 install urllib3 testflows==1.6.48 docker-compose docker dicttoxml kazoo tzlocal
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
@@ -72,5 +72,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "python3 regression.py --no-color -o classic --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
+CMD ["sh", "-c", "python3 regression.py --no-color --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
 

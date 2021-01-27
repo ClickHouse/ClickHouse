@@ -17,13 +17,8 @@ public:
     static constexpr auto name = "null";
     std::string getName() const override { return name; }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const String & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const override;
     const char * getStorageTypeName() const override { return "Null"; }
-
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
-
-    String structure;
 };
 
 }
