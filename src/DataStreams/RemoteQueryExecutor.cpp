@@ -63,13 +63,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         const Settings & current_settings = context.getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-        if (current_settings.use_hedged_requests && current_settings.max_parallel_replicas <= 1)
+        if (current_settings.use_hedged_requests)
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, table_to_check);
+            return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
         }
         else
         {

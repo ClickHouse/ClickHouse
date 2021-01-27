@@ -353,7 +353,7 @@ void TryGetConnection::reset()
 {
     resetResult();
     stage = Stage::CONNECT;
-    epoll = nullptr;
+    action_before_disconnect = nullptr;
     socket_fd = -1;
     fail_message.clear();
 }
@@ -369,8 +369,8 @@ void TryGetConnection::resetResult()
 
 void TryGetConnection::processFail(bool add_description)
 {
-    if (epoll)
-        epoll->remove(socket_fd);
+    if (action_before_disconnect)
+        action_before_disconnect(socket_fd);
 
     fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
     if (add_description)
