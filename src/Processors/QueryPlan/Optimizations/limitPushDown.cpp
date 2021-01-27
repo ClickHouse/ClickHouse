@@ -108,6 +108,7 @@ bool tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     limit->updateInputStream(transforming->getInputStreams().front());
 
     parent.swap(child);
+    return true;
 }
 
 }
