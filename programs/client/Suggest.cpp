@@ -87,6 +87,11 @@ Suggest::Suggest()
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
 {
+    ///
+    /// NOTE: Once you will update the completion list,
+    /// do not forget to update 01676_clickhouse_client_autocomplete.sh
+    ///
+
     std::stringstream query;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
