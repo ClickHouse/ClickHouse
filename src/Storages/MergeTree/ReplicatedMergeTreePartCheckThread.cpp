@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -194,7 +195,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
         if (!storage.queue.remove(zookeeper, part_name))
         {
             /// The part was not in our queue. Why did it happen?
-            LOG_ERROR(log, "Missing part {} is not in our queue.", part_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing part {} is not in our queue.", part_name);
         }
 
         /** This situation is possible if on all the replicas where the part was, it deteriorated.
