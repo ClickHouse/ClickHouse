@@ -267,12 +267,17 @@ public:
         if (arguments.size() < 3)
             throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
+        /// TODO: We can load only dictionary structure
+
         String dictionary_name;
+
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
             dictionary_name = name_col->getValue<String>();
         else
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        String attribute_name;
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             attribute_name = name_col->getValue<String>();
@@ -280,17 +285,36 @@ public:
             throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        dictionary = helper.getDictionary(dictionary_name);
+        auto dictionary = helper.getDictionary(dictionary_name);
 
         return helper.getDictionaryAttribute(dictionary, attribute_name).type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        std::cerr << "FunctionDictGetNoType::executeImpl " << this << std::endl;
+
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        /// TODO: Use accurateCast if argument is integer
+        String dictionary_name;
+
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            dictionary_name = name_col->getValue<String>();
+        else
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        String attribute_name;
+
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+            attribute_name = name_col->getValue<String>();
+        else
+            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto dictionary = helper.getDictionary(dictionary_name);
+
         if (!WhichDataType(arguments[2].type).isUInt64() && !isTuple(arguments[2].type))
             throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function "
                     + getName() + ", must be UInt64 or tuple(...).",
@@ -361,9 +385,6 @@ public:
 
 private:
     mutable FunctionDictHelper helper;
-    /// Initialized in getReturnTypeImpl
-    mutable std::shared_ptr<const IDictionaryBase> dictionary;
-    mutable String attribute_name;
 };
 
 template <typename DataType, typename Name, DictionaryGetFunctionType dictionary_get_function_type>
