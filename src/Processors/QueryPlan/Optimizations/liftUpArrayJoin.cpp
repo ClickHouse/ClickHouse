@@ -79,6 +79,7 @@ bool tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
                                               filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 
     parent->setStepDescription(description + " [split]");
+    return true;
 }
 
 }
