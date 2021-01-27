@@ -129,6 +129,7 @@ SRCS(
     RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
+    RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
@@ -158,8 +159,8 @@ SRCS(
     interpretSubquery.cpp
     join_common.cpp
     loadMetadata.cpp
-    replaceAliasColumnsInQuery.cpp
     processColumnTransformers.cpp
+    replaceAliasColumnsInQuery.cpp
     sortBlock.cpp
 
 )
