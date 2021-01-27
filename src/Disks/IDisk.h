@@ -58,7 +58,7 @@ public:
 using SpacePtr = std::shared_ptr<Space>;
 
 /**
- * A guard, that should synchronize file's or directory's state 
+ * A guard, that should synchronize file's or directory's state
  * with storage device (e.g. fsync in POSIX) in its destructor.
  */
 class ISyncGuard
