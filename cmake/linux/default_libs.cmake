@@ -12,10 +12,10 @@ else ()
 endif ()
 
 if (OS_ANDROID)
-    # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+# pthread and rt are included in libc
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
@@ -31,6 +31,10 @@ if (ARCH_AMD64 AND NOT_UNBUNDLED)
     set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
 endif ()
 
+# Global libraries
+
+add_library(global-libs INTERFACE)
+
 # Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
 # Just make sure we have pthreads at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -39,7 +43,6 @@ find_package(Threads REQUIRED)
 if (NOT OS_ANDROID)
     # Our compatibility layer doesn't build under Android, many errors in musl.
     add_subdirectory(base/glibc-compatibility)
-    add_subdirectory(base/harmful)
 endif ()
 
 include (cmake/find/unwind.cmake)

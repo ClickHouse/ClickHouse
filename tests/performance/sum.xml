@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <query>SELECT sum(number) FROM numbers(100000000)</query>
     <query>SELECT sum(toUInt32(number)) FROM numbers(100000000)</query>
     <query>SELECT sum(toUInt16(number)) FROM numbers(100000000)</query>

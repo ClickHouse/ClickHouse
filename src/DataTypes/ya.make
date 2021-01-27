@@ -27,12 +27,9 @@ SRCS(
     DataTypeInterval.cpp
     DataTypeLowCardinality.cpp
     DataTypeLowCardinalityHelpers.cpp
-    DataTypeMap.cpp
-    DataTypeNested.cpp
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
-    DataTypeOneElementTuple.cpp
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
