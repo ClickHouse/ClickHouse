@@ -265,7 +265,7 @@ def syntax(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("2.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_ValuesFormat("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values("1.0")
