@@ -8,6 +8,10 @@
 namespace DB
 {
 
+/**
+ * Represents the actions, which are required to do
+ * with data, when TTL is expired: delete, aggregate, etc.
+ */
 class ITTLAlgorithm
 {
 public:
@@ -18,6 +22,8 @@ public:
     virtual ~ITTLAlgorithm() = default;
 
     virtual void execute(Block & block) = 0;
+
+    /// Updates TTL metadata of the data_part.
     virtual void finalize(const MutableDataPartPtr & data_part) const = 0;
 
     bool isMinTTLExpired() const { return force || isTTLExpired(old_ttl_info.min); }

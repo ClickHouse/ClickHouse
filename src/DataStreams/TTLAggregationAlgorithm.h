@@ -7,6 +7,8 @@
 namespace DB
 {
 
+/// Aggregates rows according to 'TTL expr GROUP BY key' description.
+/// Aggregation key must be the prefix of the sorting key.
 class TTLAggregationAlgorithm final : public ITTLAlgorithm
 {
 public:

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/// Deletes rows according to table TTL description with
+/// possible optional condition in 'WHERE' clause.
 class TTLDeleteAlgorithm final : public ITTLAlgorithm
 {
 public:

@@ -230,14 +230,12 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 if (!data.has_aggregate_function)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                    "Invalid expression for assignment of column {}. Should be an aggregate function", assignment.column_name);
+                    "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
                 expression = addTypeConversionToAST(std::move(expression), columns.getPhysical(assignment.column_name).type->getName());
                 aggregations.emplace_back(assignment.column_name, std::move(expression));
+                aggregation_columns_set.insert(assignment.column_name);
             }
-
-            for (const auto & [name, _] : aggregations)
-                aggregation_columns_set.insert(name);
 
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
                 throw Exception(
@@ -247,6 +245,10 @@ TTLDescription TTLDescription::getTTLFromAST(
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
             const auto & primary_key_expressions = primary_key.expression_list_ast->children;
+
+            /// Wrap with 'any' aggregate function primary key columns,
+            /// which are not in 'GROUP BY' key and was not set explicitly.
+            /// The separate step, because not all primary key columns are ordinary columns.
             for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
             {
                 if (!aggregation_columns_set.count(pk_columns[i]))
@@ -257,6 +259,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 }
             }
 
+            /// Wrap with 'any' aggregate function other columns, which was not set explicitly.
             for (const auto & column : columns.getOrdinary())
             {
                 if (!aggregation_columns_set.count(column.name) && !used_primary_key_columns_set.count(column.name))

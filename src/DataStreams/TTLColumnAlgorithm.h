@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/// Deletes (replaces to default) values in column according to column's TTL description.
+/// If all values in column are replaced with defaults, this column won't be written to part.
 class TTLColumnAlgorithm final : public ITTLAlgorithm
 {
 public:
