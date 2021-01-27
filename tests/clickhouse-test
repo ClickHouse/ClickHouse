@@ -151,7 +151,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     pattern = '{test} > {stdout} 2> {stderr}'
 
     if ext == '.sql':
-        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} --log_comment='{test}' < " + pattern
 
     command = pattern.format(**params)
 
@@ -777,7 +777,7 @@ def main(args):
                 print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
                 print(processlist)
             else:
-                print(colored("Seems like server hung and cannot respond to queries", "red", attrs=["bold"]))
+                print(colored("Seems like server hung and cannot respond to queries", args, "red", attrs=["bold"]))
 
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)

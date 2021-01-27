@@ -1,0 +1,10 @@
+0	0
+WITH it AS 
+    (
+        SELECT *
+        FROM numbers(1)
+    )
+SELECT
+    number,
+    number
+FROM it AS i
