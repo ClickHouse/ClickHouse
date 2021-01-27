@@ -6,12 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
-#include <Processors/QueryPlan/LimitStep.h>
-#include "MergingSortedStep.h"
-#include "FinishSortingStep.h"
-#include "MergeSortingStep.h"
-#include "PartialSortingStep.h"
-#include "TotalsHavingStep.h"
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include "ExpressionStep.h"
 #include "ArrayJoinStep.h"
 #include "FilterStep.h"
@@ -341,263 +336,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-/// If plan looks like Limit -> Sorting, update limit for Sorting
-bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
-{
-    if (limit == 0)
-        return false;
-
-    QueryPlanStepPtr & step = node->step;
-    QueryPlan::Node * child = nullptr;
-    bool updated = false;
-
-    if (auto * merging_sorted = typeid_cast<MergingSortedStep *>(step.get()))
-    {
-        /// TODO: remove LimitStep here.
-        merging_sorted->updateLimit(limit);
-        updated = true;
-        child = node->children.front();
-    }
-    else if (auto * finish_sorting = typeid_cast<FinishSortingStep *>(step.get()))
-    {
-        /// TODO: remove LimitStep here.
-        finish_sorting->updateLimit(limit);
-        updated = true;
-    }
-    else if (auto * merge_sorting = typeid_cast<MergeSortingStep *>(step.get()))
-    {
-        merge_sorting->updateLimit(limit);
-        updated = true;
-        child = node->children.front();
-    }
-    else if (auto * partial_sorting = typeid_cast<PartialSortingStep *>(step.get()))
-    {
-        partial_sorting->updateLimit(limit);
-        updated = true;
-    }
-
-    /// We often have chain PartialSorting -> MergeSorting -> MergingSorted
-    /// Try update limit for them also if possible.
-    if (child)
-        tryUpdateLimitForSortingSteps(child, limit);
-
-    return updated;
-}
-
-/// Move LimitStep down if possible.
-static void tryPushDownLimit(QueryPlanStepPtr & parent, QueryPlan::Node * child_node)
-{
-    auto & child = child_node->step;
-    auto * limit = typeid_cast<LimitStep *>(parent.get());
-
-    if (!limit)
-        return;
-
-    /// Skip LIMIT WITH TIES by now.
-    if (limit->withTies())
-        return;
-
-    const auto * transforming = dynamic_cast<const ITransformingStep *>(child.get());
-
-    /// Skip everything which is not transform.
-    if (!transforming)
-        return;
-
-    /// Special cases for sorting steps.
-    if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
-        return;
-
-    /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
-    if (typeid_cast<const TotalsHavingStep *>(child.get()))
-        return;
-
-    /// Now we should decide if pushing down limit possible for this step.
-
-    const auto & transform_traits = transforming->getTransformTraits();
-    const auto & data_stream_traits = transforming->getDataStreamTraits();
-
-    /// Cannot push down if child changes the number of rows.
-    if (!transform_traits.preserves_number_of_rows)
-        return;
-
-    /// Cannot push down if data was sorted exactly by child stream.
-    if (!child->getOutputStream().sort_description.empty() && !data_stream_traits.preserves_sorting)
-        return;
-
-    /// Now we push down limit only if it doesn't change any stream properties.
-    /// TODO: some of them may be changed and, probably, not important for following streams. We may add such info.
-    if (!limit->getOutputStream().hasEqualPropertiesWith(transforming->getOutputStream()))
-        return;
-
-    /// Input stream for Limit have changed.
-    limit->updateInputStream(transforming->getInputStreams().front());
-
-    parent.swap(child);
-}
-
-/// Move ARRAY JOIN up if possible.
-static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_node, QueryPlan::Nodes & nodes)
-{
-    auto & parent = parent_node->step;
-    auto & child = child_node->step;
-    auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
-    auto * filter_step = typeid_cast<FilterStep *>(parent.get());
-    auto * array_join_step = typeid_cast<ArrayJoinStep *>(child.get());
-
-    if (!(expression_step || filter_step) || !array_join_step)
-        return;
-
-    const auto & array_join = array_join_step->arrayJoin();
-    const auto & expression = expression_step ? expression_step->getExpression()
-                                              : filter_step->getExpression();
-
-    auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
-
-    /// No actions can be moved before ARRAY JOIN.
-    if (split_actions.first->empty())
-        return;
-
-    auto description = parent->getStepDescription();
-
-    /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (split_actions.second->empty())
-    {
-        auto expected_header = parent->getOutputStream().header;
-
-        /// Expression/Filter -> ArrayJoin
-        std::swap(parent, child);
-        /// ArrayJoin -> Expression/Filter
-
-        if (expression_step)
-            child = std::make_unique<ExpressionStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                     std::move(split_actions.first));
-        else
-            child = std::make_unique<FilterStep>(child_node->children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions.first),
-                                                 filter_step->getFilterColumnName(),
-                                                 filter_step->removesFilterColumn());
-
-        child->setStepDescription(std::move(description));
-
-        array_join_step->updateInputStream(child->getOutputStream(), expected_header);
-        return;
-    }
-
-    /// Add new expression step before ARRAY JOIN.
-    /// Expression/Filter -> ArrayJoin -> Something
-    auto & node = nodes.emplace_back();
-    node.children.swap(child_node->children);
-    child_node->children.emplace_back(&node);
-    /// Expression/Filter -> ArrayJoin -> node -> Something
-
-    node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
-                                                 std::move(split_actions.first));
-    node.step->setStepDescription(description);
-    array_join_step->updateInputStream(node.step->getOutputStream(), {});
-
-    if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
-    else
-        parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
-                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-
-    parent->setStepDescription(description + " [split]");
-}
-
-/// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
-/// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
-static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
-{
-    auto & parent = parent_node->step;
-    auto & child = child_node->step;
-
-    auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
-    auto * parent_filter = typeid_cast<FilterStep *>(parent.get());
-    auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
-
-    if (parent_expr && child_expr)
-    {
-        const auto & child_actions = child_expr->getExpression();
-        const auto & parent_actions = parent_expr->getExpression();
-
-        /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
-        /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
-        /// Such a query will return two zeroes if we combine actions together.
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
-
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
-
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
-        expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
-
-        parent_node->step = std::move(expr);
-        parent_node->children.swap(child_node->children);
-        return true;
-    }
-    else if (parent_filter && child_expr)
-    {
-        const auto & child_actions = child_expr->getExpression();
-        const auto & parent_actions = parent_filter->getExpression();
-
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
-
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
-
-        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(), merged,
-                                                   parent_filter->getFilterColumnName(), parent_filter->removesFilterColumn());
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
-
-        parent_node->step = std::move(filter);
-        parent_node->children.swap(child_node->children);
-        return true;
-    }
-
-    return false;
-}
-
-/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-static bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
-{
-    auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
-    if (!filter_step)
-        return false;
-
-    const auto & expr = filter_step->getExpression();
-
-    /// Do not split if there are function like runningDifference.
-    if (expr->hasStatefulFunctions())
-        return false;
-
-    auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
-
-    if (split.second->empty())
-        return false;
-
-    if (filter_step->removesFilterColumn())
-        split.second->removeUnusedInput(filter_step->getFilterColumnName());
-
-    auto description = filter_step->getStepDescription();
-
-    auto & filter_node = nodes.emplace_back();
-    node->children.swap(filter_node.children);
-    node->children.push_back(&filter_node);
-
-    filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputStream(),
-            std::move(split.first),
-            filter_step->getFilterColumnName(),
-            filter_step->removesFilterColumn());
-
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
-
-    filter_node.step->setStepDescription("(" + description + ")[split]");
-    node->step->setStepDescription(description);
-
-    return true;
-}
-
 void QueryPlan::optimize()
 {
     /* Stack contains info for every nodes in the path from tree root to the current node.
@@ -623,14 +361,14 @@ void QueryPlan::optimize()
         {
             if (frame.node->children.size() == 1)
             {
-                tryPushDownLimit(frame.node->step, frame.node->children.front());
+                QueryPlanOptimizations::tryPushDownLimit(frame.node->step, frame.node->children.front());
 
-                while (tryMergeExpressions(frame.node, frame.node->children.front()));
+                while (QueryPlanOptimizations::tryMergeExpressions(frame.node, frame.node->children.front()));
 
                 if (frame.node->children.size() == 1)
-                    tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
+                    QueryPlanOptimizations::tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
 
-                trySplitFilter(frame.node, nodes);
+                QueryPlanOptimizations::trySplitFilter(frame.node, nodes);
             }
         }
 
@@ -643,11 +381,11 @@ void QueryPlan::optimize()
         {
             if (frame.node->children.size() == 1)
             {
-                while (tryMergeExpressions(frame.node, frame.node->children.front()));
+                while (QueryPlanOptimizations::tryMergeExpressions(frame.node, frame.node->children.front()));
 
-                trySplitFilter(frame.node, nodes);
+                QueryPlanOptimizations::trySplitFilter(frame.node, nodes);
 
-                tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
+                QueryPlanOptimizations::tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
             }
 
             stack.pop();
