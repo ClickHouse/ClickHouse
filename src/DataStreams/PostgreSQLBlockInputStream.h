@@ -20,7 +20,7 @@ class PostgreSQLBlockInputStream : public IBlockInputStream
 {
 public:
     PostgreSQLBlockInputStream(
-        ConnectionPtr connection_,
+        std::unique_ptr<pqxx::work> tx_,
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size_);
@@ -48,7 +48,7 @@ private:
     ExternalResultDescription description;
 
     ConnectionPtr connection;
-    std::unique_ptr<pqxx::read_transaction> tx;
+    std::unique_ptr<pqxx::work> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 
     struct ArrayInfo

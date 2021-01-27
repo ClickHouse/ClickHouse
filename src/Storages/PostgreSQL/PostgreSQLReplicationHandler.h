@@ -2,6 +2,7 @@
 
 #include <common/logger_useful.h>
 #include "PostgreSQLConnection.h"
+#include "PostgreSQLReplicaConsumer.h"
 #include <Interpreters/Context.h>
 #include "pqxx/pqxx"
 
@@ -12,36 +13,19 @@
 namespace DB
 {
 
-struct LSNPosition
-{
-    std::string lsn;
-
-    uint64_t getValue()
-    {
-        uint64_t upper_half, lower_half, result;
-        std::sscanf(lsn.data(), "%lX/%lX", &upper_half, &lower_half);
-        result = (upper_half << 32) + lower_half;
-        LOG_DEBUG(&Poco::Logger::get("LSNParsing"),
-                "Created replication slot. upper half: {}, lower_half: {}, start lsn: {}",
-                upper_half, lower_half, result);
-        return result;
-    }
-};
-
-
 class PostgreSQLReplicationHandler
 {
 public:
     friend class PGReplicaLSN;
     PostgreSQLReplicationHandler(
-            Context & context_,
             const std::string & database_name_,
             const std::string & table_name_,
             const std::string & conn_str_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_);
 
-    void startup();
+    void startup(StoragePtr storage_, std::shared_ptr<Context> context_);
+    void shutdown();
     void checkAndDropReplicationSlot();
 
 private:
@@ -57,9 +41,10 @@ private:
 
     void startReplication();
     void loadFromSnapshot(std::string & snapshot_name);
+    Context createQueryContext();
+    void getTableOutput(const Context & query_context);
 
     Poco::Logger * log;
-    Context & context;
     const std::string database_name, table_name;
 
     std::string replication_slot, publication_name;
@@ -69,6 +54,9 @@ private:
     PostgreSQLConnectionPtr replication_connection;
     std::shared_ptr<pqxx::work> tx;
 
+    std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
+    std::shared_ptr<Context> context;
+    StoragePtr helper_table;
     //LSNPosition start_lsn, final_lsn;
 };
 

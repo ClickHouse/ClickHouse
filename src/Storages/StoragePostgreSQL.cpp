@@ -83,8 +83,9 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
+    auto tx = std::make_unique<pqxx::work>(*connection->conn());
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream>(std::move(tx), query, sample_block, max_block_size_)));
 }
 
 

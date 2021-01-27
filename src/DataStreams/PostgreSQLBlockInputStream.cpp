@@ -28,13 +28,13 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    ConnectionPtr connection_,
+    std::unique_ptr<pqxx::work> tx_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
     : query_str(query_str_)
     , max_block_size(max_block_size_)
-    , connection(connection_)
+    , tx(std::move(tx_))
 {
     description.init(sample_block);
     for (const auto idx : ext::range(0, description.sample_block.columns()))
@@ -48,7 +48,6 @@ PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
 
 void PostgreSQLBlockInputStream::readPrefix()
 {
-    tx = std::make_unique<pqxx::read_transaction>(*connection);
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
