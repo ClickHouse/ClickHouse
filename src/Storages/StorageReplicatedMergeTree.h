@@ -159,6 +159,7 @@ public:
         bool can_become_leader;
         bool is_readonly;
         bool is_session_expired;
+        bool is_partial_shutdown;
         ReplicatedMergeTreeQueue::Status queue;
         UInt32 parts_to_check;
         String zookeeper_path;
