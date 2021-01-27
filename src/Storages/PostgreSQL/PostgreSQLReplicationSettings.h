@@ -7,13 +7,13 @@ namespace DB
     class ASTStorage;
 
 
-#define LIST_OF_MATERIALIZE_POSTGRESQL_SETTINGS(M) \
+#define LIST_OF_POSTGRESQL_REPLICATION_SETTINGS(M) \
     M(String, postgresql_replication_slot_name, "", "PostgreSQL replication slot name.", 0) \
     M(String, postgresql_publication_name, "", "PostgreSQL publication name.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MaterializePostgreSQLSettingsTraits, LIST_OF_MATERIALIZE_POSTGRESQL_SETTINGS)
+DECLARE_SETTINGS_TRAITS(PostgreSQLReplicationSettingsTraits, LIST_OF_POSTGRESQL_REPLICATION_SETTINGS)
 
-struct MaterializePostgreSQLSettings : public BaseSettings<MaterializePostgreSQLSettingsTraits>
+struct PostgreSQLReplicationSettings : public BaseSettings<PostgreSQLReplicationSettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);
 };

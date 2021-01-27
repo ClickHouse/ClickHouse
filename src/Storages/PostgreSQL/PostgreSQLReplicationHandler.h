@@ -2,6 +2,7 @@
 
 #include <common/logger_useful.h>
 #include "PostgreSQLConnection.h"
+#include <Interpreters/Context.h>
 #include "pqxx/pqxx"
 
 
@@ -33,6 +34,7 @@ class PostgreSQLReplicationHandler
 public:
     friend class PGReplicaLSN;
     PostgreSQLReplicationHandler(
+            Context & context_,
             const std::string & database_name_,
             const std::string & table_name_,
             const std::string & conn_str_,
@@ -57,6 +59,7 @@ private:
     void loadFromSnapshot(std::string & snapshot_name);
 
     Poco::Logger * log;
+    Context & context;
     const std::string database_name, table_name;
 
     std::string replication_slot, publication_name;

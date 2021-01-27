@@ -17,12 +17,14 @@ namespace ErrorCodes
 }
 
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
+    Context & context_,
     const std::string & table_name_,
     const std::string & conn_str,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
     const LSNPosition & start_lsn)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
+    , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
     , table_name(table_name_)
@@ -30,6 +32,9 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     , current_lsn(start_lsn)
 {
     replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", conn_str));
+
+    wal_reader_task = context.getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ WALReaderFunc(); });
+    wal_reader_task->deactivate();
 }
 
 
@@ -220,6 +225,10 @@ void PostgreSQLReplicaConsumer::run()
     }
 }
 
+
+void PostgreSQLReplicaConsumer::WALReaderFunc()
+{
+}
 
 }
 

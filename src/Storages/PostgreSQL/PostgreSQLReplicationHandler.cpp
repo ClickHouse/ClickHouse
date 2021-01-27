@@ -15,12 +15,14 @@ namespace ErrorCodes
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
+    Context & context_,
     const std::string & database_name_,
     const std::string & table_name_,
     const std::string & conn_str,
     const std::string & replication_slot_,
     const std::string & publication_name_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
+    , context(context_)
     , database_name(database_name_)
     , table_name(table_name_)
     , replication_slot(replication_slot_)
@@ -126,6 +128,7 @@ void PostgreSQLReplicationHandler::startReplication()
         createReplicationSlot(ntx);
 
     PostgreSQLReplicaConsumer consumer(
+            context,
             table_name,
             connection->conn_str(),
             replication_slot,

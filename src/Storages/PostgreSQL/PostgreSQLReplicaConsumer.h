@@ -2,6 +2,7 @@
 
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicationHandler.h"
+#include <Core/BackgroundSchedulePool.h>
 #include "pqxx/pqxx"
 
 namespace DB
@@ -11,6 +12,7 @@ class PostgreSQLReplicaConsumer
 {
 public:
     PostgreSQLReplicaConsumer(
+            Context & context_,
             const std::string & table_name_,
             const std::string & conn_str_,
             const std::string & replication_slot_name_,
@@ -32,7 +34,10 @@ private:
             const std::string & slot_name, const std::string start_lsn, const int64_t timeline, const std::string & plugin_args);
     void decodeReplicationMessage(const char * replication_message, size_t size);
 
+    void WALReaderFunc();
+
     Poco::Logger * log;
+    Context & context;
     const std::string replication_slot_name;
     const std::string publication_name;
 
@@ -40,6 +45,7 @@ private:
     PostgreSQLConnectionPtr connection, replication_connection;
 
     LSNPosition current_lsn;
+    BackgroundSchedulePool::TaskHolder wal_reader_task;
 };
 
 }
