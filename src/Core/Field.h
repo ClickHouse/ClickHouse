@@ -7,7 +7,6 @@
 #include <functional>
 
 #include <Common/Exception.h>
-#include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
@@ -176,7 +175,6 @@ template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldTypeImpl<UUID> { using Type = UInt128; };
 template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
@@ -190,8 +188,9 @@ template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt6
 
 template <> struct NearestFieldTypeImpl<UInt256> { using Type = UInt256; };
 template <> struct NearestFieldTypeImpl<Int256> { using Type = Int256; };
-
+template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
+
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };

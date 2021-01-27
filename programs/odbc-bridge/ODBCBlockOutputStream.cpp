@@ -1,5 +1,6 @@
 #include "ODBCBlockOutputStream.h"
 
+#include <Common/hex.h>
 #include <common/logger_useful.h>
 #include <Core/Field.h>
 #include <common/LocalDate.h>
@@ -83,7 +84,7 @@ namespace
             case ValueType::vtDateTime:
                 return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
             case ValueType::vtUUID:
-                return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
+                return Poco::Dynamic::Var(getHexUIntLowercase(UUID(field.get<UInt128>()).toUnderType())).convert<std::string>();
              default:
                  throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
 

@@ -9,6 +9,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include <Common/hex.h>
 #include <Core/Defines.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <ext/range.h>
@@ -292,7 +293,7 @@ std::string CacheDictionary::AttributeValuesForKey::dump()
             [&os](UInt16 arg)  { os << "type: UInt16, value: "  <<  std::to_string(arg) << "\n"; },
             [&os](UInt32 arg)  { os << "type: UInt32, value: "  <<  std::to_string(arg) << "\n"; },
             [&os](UInt64 arg)  { os << "type: UInt64, value: "  <<  std::to_string(arg) << "\n"; },
-            [&os](UInt128 arg) { os << "type: UInt128, value: " << arg.toHexString() << "\n"; },
+            [&os](UInt128 arg) { os << "type: UInt128, value: " << getHexUIntLowercase(arg) << "\n"; },
             [&os](Int8 arg)   { os << "type: Int8, value: "   <<  std::to_string(arg) << "\n"; },
             [&os](Int16 arg)  { os << "type: Int16, value: "  <<  std::to_string(arg) << "\n"; },
             [&os](Int32 arg)  { os << "type: Int32, value: "  <<  std::to_string(arg) << "\n"; },

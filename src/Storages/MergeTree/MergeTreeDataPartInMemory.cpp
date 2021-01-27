@@ -125,7 +125,7 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
         column.column->updateHashFast(hash);
 
     checksum.uncompressed_size = block.bytes();
-    hash.get128(checksum.uncompressed_hash.first, checksum.uncompressed_hash.second);
+    hash.get128(checksum.uncompressed_hash);
     return checksum;
 }
 

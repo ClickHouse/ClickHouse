@@ -1,8 +1,8 @@
 #pragma once
 
-#include <common/types.h>
-#include <Common/UInt128.h>
+#include <Core/Types.h>
 #include <common/unaligned.h>
+#include <city.h>
 
 #include <type_traits>
 
@@ -177,27 +177,6 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
     return intHash64(u.out);
 }
 
-template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
-{
-    if constexpr (std::is_same_v<T, DB::Int128>)
-    {
-        return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
-    }
-    if constexpr (std::is_same_v<T, DB::UInt128>)
-    {
-        return intHash64(key.low ^ key.high);   /// TODO This is classical antipattern.
-    }
-    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
-    {
-        return intHash64(static_cast<UInt64>(key) ^
-            static_cast<UInt64>(key >> 64) ^
-            static_cast<UInt64>(key >> 128) ^
-            static_cast<UInt64>(key >> 256));
-    }
-    __builtin_unreachable();
-}
-
 template <typename T, typename Enable = void>
 struct DefaultHash;
 
@@ -267,11 +246,99 @@ DEFINE_HASH(DB::Float64)
 #undef DEFINE_HASH
 
 
-template <>
-struct DefaultHash<DB::UInt128> : public DB::UInt128Hash {};
+struct UInt128Hash
+{
+    size_t operator()(UInt128 x) const
+    {
+        return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]});
+    }
+};
+
+#ifdef __SSE4_2__
+
+struct UInt128HashCRC32
+{
+    size_t operator()(UInt128 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = _mm_crc32_u64(crc, x.items[0]);
+        crc = _mm_crc32_u64(crc, x.items[1]);
+        return crc;
+    }
+};
+
+#else
+
+/// On other platforms we do not use CRC32. NOTE This can be confusing.
+struct UInt128HashCRC32 : public UInt128Hash {};
+
+#endif
+
+struct UInt128TrivialHash
+{
+    size_t operator()(UInt128 x) const { return x.items[0]; }
+};
+
+struct UInt256Hash
+{
+    size_t operator()(UInt256 x) const
+    {
+        /// NOTE suboptimal
+        return CityHash_v1_0_2::Hash128to64({
+            CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]}),
+            CityHash_v1_0_2::Hash128to64({x.items[2], x.items[3]})});
+    }
+};
+
+#ifdef __SSE4_2__
+
+struct UInt256HashCRC32
+{
+    size_t operator()(UInt256 x) const
+    {
+        UInt64 crc = -1ULL;
+        crc = _mm_crc32_u64(crc, x.items[0]);
+        crc = _mm_crc32_u64(crc, x.items[1]);
+        crc = _mm_crc32_u64(crc, x.items[2]);
+        crc = _mm_crc32_u64(crc, x.items[3]);
+        return crc;
+    }
+};
+
+#else
+
+/// We do not need to use CRC32 on other platforms. NOTE This can be confusing.
+struct UInt256HashCRC32 : public UInt256Hash {};
+
+#endif
 
 template <>
-struct DefaultHash<DB::DummyUInt256> : public DB::UInt256Hash {};
+struct DefaultHash<DB::UInt128> : public UInt128Hash {};
+
+template <>
+struct DefaultHash<DB::UInt256> : public UInt256Hash {};
+
+
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    if constexpr (std::is_same_v<T, DB::Int128>)
+    {
+        return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
+    }
+    if constexpr (std::is_same_v<T, DB::UInt128>)
+    {
+        return intHash64(key.low ^ key.high);   /// TODO This is classical antipattern.
+    }
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    {
+        return intHash64(static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
+    }
+    __builtin_unreachable();
+}
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.

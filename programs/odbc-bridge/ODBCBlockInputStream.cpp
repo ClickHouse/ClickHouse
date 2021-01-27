@@ -92,7 +92,7 @@ namespace
                 break;
             }
             case ValueType::vtUUID:
-                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()).toUnderType());
                 break;
             default:
                 throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);

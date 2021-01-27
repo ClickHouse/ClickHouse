@@ -3,11 +3,13 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Core/iostream_debug_helpers.h>
+#include <Common/hex.h>
 
 #include <type_traits>
 #include <regex>
 
 #include <gtest/gtest.h>
+
 
 namespace DB
 {
@@ -18,7 +20,7 @@ std::ostream & operator<<(std::ostream & ostr, const MergeTreeDataPartType & typ
 
 std::ostream & operator<<(std::ostream & ostr, const UInt128 & v)
 {
-    return ostr << v.toHexString();
+    return ostr << getHexUIntLowercase(v);
 }
 
 template <typename T, typename Tag>
