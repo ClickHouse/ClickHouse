@@ -339,7 +339,7 @@ namespace S3
         );
     }
 
-    PocoHTTPClientConfiguration ClientFactory::createClientConfiguration(
+    PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects)
     {
