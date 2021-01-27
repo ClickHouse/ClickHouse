@@ -4,6 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# remove this comment before merge
+
 ${CLICKHOUSE_CLIENT} -n -q "DROP DATABASE IF EXISTS testlazy"
 
 ${CLICKHOUSE_CLIENT} -n -q "
