@@ -47,11 +47,9 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        const Aws::Client::ClientConfiguration & cfg,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_)
-    : Aws::Client::ClientConfiguration(cfg)
-    , remote_host_filter(remote_host_filter_)
+    : remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
 {
 }

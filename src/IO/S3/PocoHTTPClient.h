@@ -21,16 +21,20 @@ class Context;
 
 namespace DB::S3
 {
+class ClientFactory;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
 
-    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_);
-
     void updateSchemeAndRegion();
+
+private:
+    PocoHTTPClientConfiguration(const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
+
+    /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
+    friend ClientFactory;
 };
 
 class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
