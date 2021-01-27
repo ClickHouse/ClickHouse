@@ -121,7 +121,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
 
             if (part_info == part_on_replica_info)
             {
-                /// Found missing part at ourself. If we are here than something wrong with this part, so skipping.
+                /// Found missing part at ourself. If we are here then something wrong with this part, so skipping.
                 if (replica_path == storage.replica_path)
                     continue;
 
