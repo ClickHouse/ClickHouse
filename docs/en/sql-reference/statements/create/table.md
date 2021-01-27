@@ -45,7 +45,7 @@ Creates a table with the same structure as another table. You can specify a diff
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Creates a table with the structure and data returned by a [table function](../../../sql-reference/table-functions/index.md#table-functions).
+Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
