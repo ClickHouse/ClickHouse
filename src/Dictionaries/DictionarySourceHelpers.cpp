@@ -13,7 +13,7 @@
 namespace DB
 {
 
-void formatWithBlock(BlockOutputStreamPtr & out, Block block)
+void formatWithBlock(BlockOutputStreamPtr & out, const Block & block)
 {
     out->writePrefix();
     out->write(block);
@@ -23,14 +23,14 @@ void formatWithBlock(BlockOutputStreamPtr & out, Block block)
 
 /// For simple key
 
-Block blockForIds(const std::vector<UInt64> & ids)
+Block blockForIds(
+    const DictionaryStructure & dict_struct,
+    const std::vector<UInt64> & ids)
 {
     auto column = ColumnUInt64::create(ids.size());
     memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
 
-    Block block{{std::move(column), std::make_shared<DataTypeUInt64>(), "id"}};
-
-    std::cerr << "Block for IDs size " << ids.size() << std::endl;
+    Block block{{std::move(column), std::make_shared<DataTypeUInt64>(), (*dict_struct.id).name}};
 
     return block;
 }

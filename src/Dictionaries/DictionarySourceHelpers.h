@@ -20,11 +20,13 @@ class Context;
 
 /// Write keys to block output stream.
 
-void formatWithBlock(BlockOutputStreamPtr & out, Block block);
+void formatWithBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 
-Block blockForIds(const std::vector<UInt64> & ids);
+Block blockForIds(
+    const DictionaryStructure & dict_struct,
+    const std::vector<UInt64> & ids);
 
 /// For composite key
 

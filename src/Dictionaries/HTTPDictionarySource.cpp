@@ -130,8 +130,8 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-     
-    auto block = blockForIds(ids);
+
+    auto block = blockForIds(dict_struct, ids);
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
