@@ -3,6 +3,7 @@
 #include <Client/GetHedgedConnections.h>
 #include <Client/IConnections.h>
 #include <functional>
+#include <queue>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ public:
                       const Settings & settings_,
                       const ConnectionTimeouts & timeouts_,
                       const ThrottlerPtr & throttler,
+                      PoolMode pool_mode,
                       std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
 
     void sendScalarsData(Scalars & data) override;
@@ -45,47 +47,52 @@ public:
 
     size_t size() const override;
 
-    bool hasActiveConnections() const override;
+    bool hasActiveConnections() const override { return !active_connections_count_by_offset.empty(); }
 
 private:
     class Pipeline
     {
     public:
-        void add(std::function<void(ReplicaStatePtr)> send_function);
+        void add(std::function<void(ReplicaStatePtr &)> send_function);
 
-        void run(ReplicaStatePtr replica);
+        void run(ReplicaStatePtr & replica);
 
         bool empty() const { return pipeline.empty(); }
 
     private:
-        std::vector<std::function<void(ReplicaStatePtr)>> pipeline;
+        std::vector<std::function<void(ReplicaStatePtr &)>> pipeline;
     };
 
-    void processChosenSecondReplica();
-
-    Packet receivePacketFromReplica(ReplicaStatePtr replica, AsyncCallback async_callback = {});
+    Packet receivePacketFromReplica(ReplicaStatePtr & replica, AsyncCallback async_callback = {});
 
     Packet receivePacketImpl(AsyncCallback async_callback = {});
 
-    void processReceiveData(ReplicaStatePtr replica);
+    void processReceiveData(ReplicaStatePtr & replica);
 
     void processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor);
 
-    void processGetHedgedConnectionsEvent();
+    void tryGetNewReplica();
 
-    void removeReceiveTimeout(ReplicaStatePtr replica);
+    void finishProcessReplica(ReplicaStatePtr & replica, bool disconnect);
 
-    void finishProcessReplica(ReplicaStatePtr replica, bool disconnect);
+    int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
     GetHedgedConnections get_hedged_connections;
-    Replicas replicas;
+    std::vector<std::vector<ReplicaStatePtr>> replicas;
+    std::unordered_map<int, ReplicaStatePtr> fd_to_replica;
+    std::unordered_map<int, ReplicaStatePtr> timeout_fd_to_replica;
+    std::queue<int> offsets_queue;
     Epoll epoll;
     const Settings & settings;
     ThrottlerPtr throttler;
     Poco::Logger * log;
-    Pipeline second_replica_pipeline;
+    Pipeline pipeline_for_new_replicas;
     bool sent_query = false;
     bool cancelled = false;
+    std::unordered_map<size_t, size_t> active_connections_count_by_offset;
+    bool next_replica_in_process = false;
+    bool has_two_level_aggregation_incompatibility = false;
+    std::unordered_set<size_t> offsets_with_received_data;
 
     mutable std::mutex cancel_mutex;
 };

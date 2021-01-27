@@ -31,6 +31,7 @@ public:
         State state = State::EMPTY;
         int index = -1;
         int fd = -1;
+        size_t parallel_replica_offset = 0;
         std::unordered_map<int, std::unique_ptr<TimerDescriptor>> active_timeouts;
 
         void reset()
@@ -39,6 +40,7 @@ public:
             state = State::EMPTY;
             index = -1;
             fd = -1;
+            parallel_replica_offset = 0;
             active_timeouts.clear();
         }
 
@@ -48,7 +50,8 @@ public:
         bool isCannotChoose() const { return state == State::CANNOT_CHOOSE; };
     };
 
-    using ReplicaStatePtr = ReplicaState *;
+    using ReplicaStatePtr = std::shared_ptr<ReplicaState>;
+
 
     struct Replicas
     {
@@ -61,32 +64,15 @@ public:
                         const ConnectionTimeouts & timeouts_,
                         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
 
-    /// Establish connection with replicas. Return replicas as soon as connection with one of them is finished.
-    /// The first replica is always has state FINISHED and ready for sending query, the second replica
-    /// may have any state. To continue working with second replica call chooseSecondReplica().
-    Replicas getConnections();
+    std::vector<ReplicaStatePtr> getManyConnections(PoolMode pool_mode);
 
-    /// Continue choosing second replica, this function is not blocking. Second replica will be ready
-    /// for sending query when it has state FINISHED.
-    void chooseSecondReplica();
+    ReplicaStatePtr getNextConnection(bool non_blocking);
 
-    void stopChoosingSecondReplica();
+    bool canGetNewConnection() const { return ready_indexes.size() + failed_pools_count < shuffled_pools.size(); }
 
-    void swapReplicas() { std::swap(first_replica, second_replica); }
+    void stopChoosingReplicas();
 
-    /// Move ready replica to the first place.
-    void swapReplicasIfNeeded();
-
-    /// Check if the file descriptor is belong to one of replicas. If yes, return this replica, if no, return nullptr.
-    ReplicaStatePtr isEventReplica(int event_fd);
-
-    /// Check if the file descriptor is belong to timeout to any replica.
-    /// If yes, return corresponding TimerDescriptor and set timeout owner to replica,
-    /// if no, return nullptr.
-    TimerDescriptorPtr isEventTimeout(int event_fd, ReplicaStatePtr & replica);
-
-    /// Get file rescriptor that ready for reading.
-    int getReadyFileDescriptor(Epoll & epoll_, AsyncCallback async_callback = {});
+    bool hasEventsInProcess() const { return epoll.size() > 0; }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
@@ -103,25 +89,29 @@ private:
         TRY_NEXT_REPLICA = 2,
     };
 
-    Action startTryGetConnection(int index, ReplicaStatePtr replica);
+    Action startTryGetConnection(int index, ReplicaStatePtr & replica);
 
-    Action processTryGetConnectionStage(ReplicaStatePtr replica, bool remove_from_epoll = false);
+    Action processTryGetConnectionStage(ReplicaStatePtr & replica, bool remove_from_epoll = false);
 
-    int getNextIndex(int cur_index = -1);
+    int getNextIndex();
 
-    void addTimeouts(ReplicaStatePtr replica);
+    int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
-    void processFailedConnection(ReplicaStatePtr replica);
+    void addTimeouts(ReplicaStatePtr & replica);
 
-    void processReceiveTimeout(ReplicaStatePtr replica);
+    void processFailedConnection(ReplicaStatePtr & replica);
 
-    bool processReplicaEvent(ReplicaStatePtr replica, bool non_blocking);
+    void processReceiveTimeout(ReplicaStatePtr & replica);
 
-    void processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor);
+    bool processReplicaEvent(ReplicaStatePtr & replica, bool non_blocking);
+
+    bool processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor, bool non_blocking);
 
     ReplicaStatePtr processEpollEvents(bool non_blocking = false);
 
-    void setBestUsableReplica(ReplicaState & replica, int skip_index = -1);
+    void setBestUsableReplica(ReplicaStatePtr & replica);
+
+    ReplicaStatePtr createNewReplica() { return std::make_shared<ReplicaState>(); }
 
     const ConnectionPoolWithFailoverPtr pool;
     const Settings * settings;
@@ -129,8 +119,14 @@ private:
     std::shared_ptr<QualifiedTableName> table_to_check;
     std::vector<TryGetConnection> try_get_connections;
     std::vector<ShuffledPool> shuffled_pools;
-    ReplicaState first_replica;
-    ReplicaState second_replica;
+
+    std::unordered_map<int, ReplicaStatePtr> fd_to_replica;
+    std::unordered_map<int, ReplicaStatePtr> timeout_fd_to_replica;
+
+//    std::vector<std::unique_ptr<ReplicaState>> replicas;
+//    std::unordered_map<ReplicaStatePtr, std::unique_ptr<ReplicaState>> replicas_store;
+//    ReplicaState first_replica;
+//    ReplicaState second_replica;
     bool fallback_to_stale_replicas;
     Epoll epoll;
     Poco::Logger * log;
@@ -139,16 +135,30 @@ private:
     size_t usable_count;
     size_t failed_pools_count;
     size_t max_tries;
+    int last_used_index;
+    std::unordered_set<int> indexes_in_process;
+    std::unordered_set<int> ready_indexes;
 
 };
 
 /// Add timeout with particular type to replica and add it to epoll.
-void addTimeoutToReplica(int type, GetHedgedConnections::ReplicaStatePtr replica, Epoll & epoll, const ConnectionTimeouts & timeouts);
-
+void addTimeoutToReplica(
+    int type,
+    GetHedgedConnections::ReplicaStatePtr & replica,
+    Epoll & epoll,
+    std::unordered_map<int, GetHedgedConnections::ReplicaStatePtr> & timeout_fd_to_replica,
+    const ConnectionTimeouts & timeouts);
 /// Remove timeout with particular type from replica and epoll.
-void removeTimeoutFromReplica(int type, GetHedgedConnections::ReplicaStatePtr replica, Epoll & epoll);
+void removeTimeoutFromReplica(
+    int type,
+    GetHedgedConnections::ReplicaStatePtr & replica,
+    Epoll & epoll,
+    std::unordered_map<int, GetHedgedConnections::ReplicaStatePtr> & timeout_fd_to_replica);
 
 /// Remove all timeouts from replica and epoll.
-void removeTimeoutsFromReplica(GetHedgedConnections::ReplicaStatePtr replica, Epoll & epoll);
+void removeTimeoutsFromReplica(
+    GetHedgedConnections::ReplicaStatePtr & replica,
+    Epoll & epoll,
+    std::unordered_map<int, GetHedgedConnections::ReplicaStatePtr> & timeout_fd_to_replica);
 
 }

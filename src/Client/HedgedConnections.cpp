@@ -15,75 +15,68 @@ HedgedConnections::HedgedConnections(
     const Settings & settings_,
     const ConnectionTimeouts & timeouts_,
     const ThrottlerPtr & throttler_,
+    PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_)
     : get_hedged_connections(pool_, &settings_, timeouts_, table_to_check_), settings(settings_), throttler(throttler_), log(&Poco::Logger::get("HedgedConnections"))
 {
-    replicas = get_hedged_connections.getConnections();
+    std::vector<ReplicaStatePtr> replicas_states = get_hedged_connections.getManyConnections(pool_mode);
 
-    /// First replica may have state CANNOT_CHOOSE if setting skip_unavailable_shards is enabled
-    if (replicas.first_replica->isReady())
-        replicas.first_replica->connection->setThrottler(throttler);
-
-    if (!replicas.second_replica->isCannotChoose())
+    for (size_t i = 0; i != replicas_states.size(); ++i)
     {
-        if (replicas.second_replica->isNotReady())
-            epoll.add(get_hedged_connections.getFileDescriptor());
-
-        auto set_throttler = [throttler_](ReplicaStatePtr replica)
-        {
-            replica->connection->setThrottler(throttler_);
-        };
-        second_replica_pipeline.add(std::function<void(ReplicaStatePtr)>(set_throttler));
+        replicas_states[i]->parallel_replica_offset = i;
+        replicas_states[i]->connection->setThrottler(throttler_);
+        epoll.add(replicas_states[i]->fd);
+        fd_to_replica[replicas_states[i]->fd] = replicas_states[i];
+        replicas.push_back({std::move(replicas_states[i])});
+        active_connections_count_by_offset[i] = 1;
     }
+
+    pipeline_for_new_replicas.add([throttler_](ReplicaStatePtr & replica_){ replica_->connection->setThrottler(throttler_); });
 }
 
-void HedgedConnections::Pipeline::add(std::function<void(ReplicaStatePtr replica)> send_function)
+void HedgedConnections::Pipeline::add(std::function<void(ReplicaStatePtr & replica)> send_function)
 {
     pipeline.push_back(send_function);
 }
 
-void HedgedConnections::Pipeline::run(ReplicaStatePtr replica)
+void HedgedConnections::Pipeline::run(ReplicaStatePtr & replica)
 {
     for (auto & send_func : pipeline)
         send_func(replica);
-
-    pipeline.clear();
 }
 
 size_t HedgedConnections::size() const
 {
-    if (replicas.first_replica->isReady() || replicas.second_replica->isReady())
-        return 1;
+    if (replicas.empty())
+        return 0;
 
-    return 0;
-}
-
-bool HedgedConnections::hasActiveConnections() const
-{
-    return replicas.first_replica->isReady() || replicas.second_replica->isReady();
+    return 1;
 }
 
 void HedgedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
 
+//    LOG_DEBUG(log, "sendScalarsData");
+
     if (!sent_query)
         throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
-    auto send_scalars_data = [&data](ReplicaStatePtr replica) { replica->connection->sendScalarsData(data); };
+    auto send_scalars_data = [&data](ReplicaStatePtr & replica) { replica->connection->sendScalarsData(data); };
 
-    if (replicas.first_replica->isReady())
-        send_scalars_data(replicas.first_replica);
+    for (auto & replicas_with_same_offset : replicas)
+        for (auto & replica : replicas_with_same_offset)
+            if (replica->isReady())
+                send_scalars_data(replica);
 
-    if (replicas.second_replica->isReady())
-        send_scalars_data(replicas.second_replica);
-    else if (!replicas.second_replica->isCannotChoose())
-        second_replica_pipeline.add(std::function<void(ReplicaStatePtr)>(send_scalars_data));
+    pipeline_for_new_replicas.add(send_scalars_data);
 }
 
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
+
+//    LOG_DEBUG(log, "sendExternalTablesData");
 
     if (!sent_query)
         throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
@@ -91,15 +84,14 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     if (data.size() != size())
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
-    auto send_external_tables_data = [&data](ReplicaStatePtr replica) { replica->connection->sendExternalTablesData(data[0]); };
+    auto send_external_tables_data = [&data](ReplicaStatePtr & replica) { replica->connection->sendExternalTablesData(data[0]); };
 
-    if (replicas.first_replica->isReady())
-        send_external_tables_data(replicas.first_replica);
+    for (auto & replicas_with_same_offset : replicas)
+        for (auto & replica : replicas_with_same_offset)
+            if (replica->isReady())
+                send_external_tables_data(replica);
 
-    if (replicas.second_replica->isReady())
-        send_external_tables_data(replicas.second_replica);
-    else if (!replicas.second_replica->isCannotChoose())
-        second_replica_pipeline.add(send_external_tables_data);
+    pipeline_for_new_replicas.add(send_external_tables_data);
 }
 
 void HedgedConnections::sendQuery(
@@ -112,35 +104,52 @@ void HedgedConnections::sendQuery(
 {
     std::lock_guard lock(cancel_mutex);
 
+//    LOG_DEBUG(log, "sendQuery");
+
     if (sent_query)
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
-    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaStatePtr replica)
+    for (auto & replicas_with_same_offset : replicas)
     {
-        Settings modified_settings = settings;
-        if (replica->connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+        for (auto & replica : replicas_with_same_offset)
         {
+            if (replica->connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+            {
+                has_two_level_aggregation_incompatibility = true;
+                break;
+            }
+        }
+        if (has_two_level_aggregation_incompatibility)
+            break;
+    }
+
+    auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaStatePtr & replica)
+    {
+        Settings modified_settings = this->settings;
+
+        if (this->has_two_level_aggregation_incompatibility)
+        {
+            /// Disable two-level aggregation due to version incompatibility.
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
+        if (this->replicas.size() > 1)
+        {
+            modified_settings.parallel_replicas_count = this->replicas.size();
+            modified_settings.parallel_replica_offset = replica->parallel_replica_offset;
+        }
+
         replica->connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
-        this->epoll.add(replica->fd);
-        addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, this->epoll, timeouts);
+        addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, this->epoll, this->timeout_fd_to_replica, timeouts);
+        addTimeoutToReplica(TimerTypes::RECEIVE_DATA_TIMEOUT, replica, this->epoll, this->timeout_fd_to_replica,  timeouts);
     };
 
-    if (replicas.first_replica->isReady())
-    {
-        send_query(replicas.first_replica);
-        if (replicas.second_replica->isEmpty())
-            addTimeoutToReplica(TimerTypes::RECEIVE_DATA_TIMEOUT, replicas.first_replica, epoll, timeouts);
-    }
+    for (auto & replicas_with_same_offset : replicas)
+        for (auto & replica : replicas_with_same_offset)
+            send_query(replica);
 
-    if (replicas.second_replica->isReady())
-        send_query(replicas.second_replica);
-    else if (!replicas.second_replica->isCannotChoose())
-        second_replica_pipeline.add(send_query);
-
+    pipeline_for_new_replicas.add(send_query);
     sent_query = true;
 }
 
@@ -148,32 +157,41 @@ void HedgedConnections::disconnect()
 {
     std::lock_guard lock(cancel_mutex);
 
-    if (replicas.first_replica->isReady())
-    {
-        replicas.first_replica->connection->disconnect();
-        replicas.first_replica->reset();
-    }
+//    LOG_DEBUG(log, "disconnect");
 
-    if (replicas.second_replica->isReady())
+    for (auto & replicas_with_same_offset : replicas)
+        for (auto & replica : replicas_with_same_offset)
+            if (replica->isReady())
+                finishProcessReplica(replica, true);
+
+    if (get_hedged_connections.hasEventsInProcess())
     {
-        replicas.second_replica->connection->disconnect();
-        replicas.second_replica->reset();
+        get_hedged_connections.stopChoosingReplicas();
+        if (next_replica_in_process)
+            epoll.remove(get_hedged_connections.getFileDescriptor());
     }
-    else if (replicas.second_replica->isNotReady())
-        get_hedged_connections.stopChoosingSecondReplica();
 }
 
 std::string HedgedConnections::dumpAddresses() const
 {
     std::lock_guard lock(cancel_mutex);
 
+//    LOG_DEBUG(log, "dumpAddresses");
+
     std::string addresses = "";
+    bool is_first = true;
 
-    if (replicas.first_replica->isReady())
-        addresses += replicas.first_replica->connection->getDescription();
-
-    if (replicas.second_replica->isReady())
-        addresses += "; " + replicas.second_replica->connection->getDescription();
+    for (auto & replicas_with_same_offset : replicas)
+    {
+        for (auto & replica : replicas_with_same_offset)
+        {
+            if (replica->isReady())
+            {
+                addresses += (is_first ? "" : "; ") + replica->connection->getDescription();
+                is_first = false;
+            }
+        }
+    }
 
     return addresses;
 }
@@ -182,14 +200,15 @@ void HedgedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
 
+//    LOG_DEBUG(log, "sendCancel");
+
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
-    if (replicas.first_replica->isReady())
-        replicas.first_replica->connection->sendCancel();
-
-    if (replicas.second_replica->isReady())
-        replicas.second_replica->connection->sendCancel();
+    for (auto & replicas_with_same_offset : replicas)
+        for (auto & replica : replicas_with_same_offset)
+            if (replica->isReady())
+                replica->connection->sendCancel();
 
     cancelled = true;
 }
@@ -201,6 +220,8 @@ Packet HedgedConnections::drain()
 
     if (!cancelled)
         throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
+
+//    LOG_DEBUG(log, "drain");
 
     Packet res;
     res.type = Protocol::Server::EndOfStream;
@@ -250,23 +271,31 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 
 Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
 {
+//    LOG_DEBUG(log, "sreceivePacketImpl");
+
     int event_fd;
-    ReplicaStatePtr replica;
+    ReplicaStatePtr replica = nullptr;
     Packet packet;
     bool finish = false;
     while (!finish)
     {
-        event_fd = get_hedged_connections.getReadyFileDescriptor(epoll, async_callback);
+        event_fd = getReadyFileDescriptor(async_callback);
 
-        if (auto timeout_descriptor = get_hedged_connections.isEventTimeout(event_fd, replica))
-            processTimeoutEvent(replica, timeout_descriptor);
-        else if ((replica = get_hedged_connections.isEventReplica(event_fd)))
+        if (fd_to_replica.find(event_fd) != fd_to_replica.end())
         {
+//            LOG_DEBUG(log, "event is replica");
+            replica = fd_to_replica[event_fd];
             packet = receivePacketFromReplica(replica, async_callback);
             finish = true;
         }
+        else if (timeout_fd_to_replica.find(event_fd) != timeout_fd_to_replica.end())
+        {
+//            LOG_DEBUG(log, "event is timeout");
+            replica = timeout_fd_to_replica[event_fd];
+            processTimeoutEvent(replica, replica->active_timeouts[event_fd].get());
+        }
         else if (event_fd == get_hedged_connections.getFileDescriptor())
-            processGetHedgedConnectionsEvent();
+            tryGetNewReplica();
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
@@ -274,23 +303,33 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
     return packet;
 };
 
-Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr replica, AsyncCallback async_callback)
+int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
+    for (auto & [fd, replica] : fd_to_replica)
+        if (replica->connection->hasReadPendingData())
+            return replica->fd;
+
+    return epoll.getReady(std::move(async_callback)).data.fd;
+}
+
+Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr & replica, AsyncCallback async_callback)
+{
+//    LOG_DEBUG(log, "sreceivePacketFromReplica");
     Packet packet = replica->connection->receivePacket(std::move(async_callback));
     switch (packet.type)
     {
         case Protocol::Server::Data:
-            removeTimeoutsFromReplica(replica, epoll);
+            removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
             processReceiveData(replica);
-            addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, get_hedged_connections.getConnectionTimeouts());
+            addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, timeout_fd_to_replica, get_hedged_connections.getConnectionTimeouts());
             break;
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
-            removeTimeoutFromReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll);
-            addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, get_hedged_connections.getConnectionTimeouts());
+            removeTimeoutFromReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, timeout_fd_to_replica);
+            addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, timeout_fd_to_replica, get_hedged_connections.getConnectionTimeouts());
             break;
 
         case Protocol::Server::EndOfStream:
@@ -306,26 +345,29 @@ Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr replica, Asyn
     return packet;
 }
 
-void HedgedConnections::processReceiveData(ReplicaStatePtr replica)
+void HedgedConnections::processReceiveData(ReplicaStatePtr & replica)
 {
     /// When we receive first packet of data from any replica, we continue working with this replica
-    /// and stop working with another replica (if there is another replica). If current replica is
-    /// second, move it to the first place.
-    if (replica == replicas.second_replica)
-        get_hedged_connections.swapReplicas();
+    /// and stop working with other replicas (if there are other replicas).
 
-    if (replicas.second_replica->isCannotChoose() || replicas.second_replica->isEmpty())
-        return;
+//    LOG_DEBUG(log, "processReceiveData");
 
-    if (replicas.second_replica->isNotReady())
+    offsets_with_received_data.insert(replica->parallel_replica_offset);
+
+    for (auto & other_replica : replicas[replica->parallel_replica_offset])
     {
-        get_hedged_connections.stopChoosingSecondReplica();
-        epoll.remove(get_hedged_connections.getFileDescriptor());
+        if (other_replica->isReady() && other_replica != replica)
+        {
+            other_replica->connection->sendCancel();
+            finishProcessReplica(other_replica, true);
+        }
     }
-    else if (replicas.second_replica->isReady())
+
+    if (get_hedged_connections.hasEventsInProcess() && offsets_with_received_data.size() == replicas.size())
     {
-        replicas.second_replica->connection->sendCancel();
-        finishProcessReplica(replicas.second_replica, true);
+        get_hedged_connections.stopChoosingReplicas();
+        if (next_replica_in_process)
+            epoll.remove(get_hedged_connections.getFileDescriptor());
     }
 }
 
@@ -333,57 +375,73 @@ void HedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDesc
 {
     epoll.remove(timeout_descriptor->getDescriptor());
     replica->active_timeouts.erase(timeout_descriptor->getDescriptor());
+    timeout_fd_to_replica.erase(timeout_descriptor->getDescriptor());
 
     if (timeout_descriptor->getType() == TimerTypes::RECEIVE_TIMEOUT)
     {
+        size_t offset = replica->parallel_replica_offset;
         finishProcessReplica(replica, true);
 
-        if (!replicas.first_replica->isReady() && !replicas.second_replica->isNotReady())
+        /// Check if there is no active connection with same offset.
+        if (active_connections_count_by_offset[offset] == 0)
             throw NetException("Receive timeout expired", ErrorCodes::SOCKET_TIMEOUT);
     }
     else if (timeout_descriptor->getType() == TimerTypes::RECEIVE_DATA_TIMEOUT)
     {
-        if (!replicas.second_replica->isEmpty())
-            throw Exception("Cannot start choosing second replica, it's not empty", ErrorCodes::LOGICAL_ERROR);
-
-        get_hedged_connections.chooseSecondReplica();
-
-        if (replicas.second_replica->isReady())
-            processChosenSecondReplica();
-        else if (replicas.second_replica->isNotReady())
-            epoll.add(get_hedged_connections.getFileDescriptor());
+        offsets_queue.push(replica->parallel_replica_offset);
+        tryGetNewReplica();
     }
 }
 
-void HedgedConnections::processGetHedgedConnectionsEvent()
+void HedgedConnections::tryGetNewReplica()
 {
-    get_hedged_connections.chooseSecondReplica();
-    if (replicas.second_replica->isReady())
-        processChosenSecondReplica();
+//    LOG_DEBUG(log, "tryGetNewReplica");
 
-    if (!replicas.second_replica->isNotReady())
+    ReplicaStatePtr new_replica = get_hedged_connections.getNextConnection(/*non_blocking*/ true);
+
+    /// Skip replicas with old server version if we didn't disable two-level aggregation in sendQuery.
+    while (new_replica->isReady() && !has_two_level_aggregation_incompatibility
+           && new_replica->connection->getServerRevision(get_hedged_connections.getConnectionTimeouts()) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+        new_replica = get_hedged_connections.getNextConnection(/*non_blocking*/ true);
+
+    if (new_replica->isReady())
+    {
+//        LOG_DEBUG(log, "processNewReadyReplica");
+        new_replica->parallel_replica_offset = offsets_queue.front();
+        offsets_queue.pop();
+        replicas[new_replica->parallel_replica_offset].push_back(new_replica);
+        epoll.add(new_replica->fd);
+        fd_to_replica[new_replica->fd] = new_replica;
+        ++active_connections_count_by_offset[new_replica->parallel_replica_offset];
+        pipeline_for_new_replicas.run(new_replica);
+    }
+    else if (new_replica->isNotReady() && !next_replica_in_process)
+    {
+        epoll.add(get_hedged_connections.getFileDescriptor());
+        next_replica_in_process = true;
+    }
+
+    if (next_replica_in_process && (new_replica->isCannotChoose() || offsets_queue.empty()))
+    {
         epoll.remove(get_hedged_connections.getFileDescriptor());
+        next_replica_in_process = false;
+    }
 }
 
-void HedgedConnections::processChosenSecondReplica()
+void HedgedConnections::finishProcessReplica(ReplicaStatePtr & replica, bool disconnect)
 {
-    second_replica_pipeline.run(replicas.second_replica);
+//    LOG_DEBUG(log, "finishProcessReplica");
 
-    /// In case when the first replica get receive timeout before the second is chosen,
-    /// we need to move the second replica to the first place
-    get_hedged_connections.swapReplicasIfNeeded();
-}
-
-void HedgedConnections::finishProcessReplica(ReplicaStatePtr replica, bool disconnect)
-{
-    removeTimeoutsFromReplica(replica, epoll);
+    removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
     epoll.remove(replica->fd);
+    fd_to_replica.erase(replica->fd);
+    --active_connections_count_by_offset[replica->parallel_replica_offset];
+    if (active_connections_count_by_offset[replica->parallel_replica_offset] == 0)
+        active_connections_count_by_offset.erase(replica->parallel_replica_offset);
+
     if (disconnect)
         replica->connection->disconnect();
     replica->reset();
-
-    /// Move active connection to the first replica if it exists
-    get_hedged_connections.swapReplicasIfNeeded();
 }
 
 }

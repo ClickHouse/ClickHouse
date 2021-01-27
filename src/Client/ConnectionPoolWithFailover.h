@@ -62,9 +62,7 @@ public:
     /// Reset class to initial stage.
     void reset();
 
-    /// If connection is failed and epoll is set, before disconnecting
-    /// socket will be removed from epoll.
-    void setEpoll(Epoll * epoll_) { epoll = epoll_; }
+    void setActionBeforeDisconnect(std::function<void(int)> action) { action_before_disconnect = action; }
 
     /// Process fail connection.
     void processFail(bool add_description = false);
@@ -78,7 +76,7 @@ public:
     TryResult result;
     Stage stage;
     int socket_fd;
-    Epoll * epoll = nullptr;
+    std::function<void(int)> action_before_disconnect;
 };
 
 class ConnectionPoolWithFailover : public IConnectionPool, private PoolWithFailoverBase<IConnectionPool>
