@@ -136,7 +136,7 @@ void WindowTransform::advancePartitionEnd()
             const auto * ref = inputAt(partition_etalon)[partition_by_indices[i]].get();
             const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
             if (c->compareAt(partition_end.row,
-                    group_start.row, *ref,
+                    partition_etalon.row, *ref,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -457,9 +457,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // Start the calculations. First, advance the partition end.
     for (;;)
     {
+//        const auto old_etalon = partition_etalon;
         advancePartitionEnd();
-//        fmt::print(stderr, "partition [?, {}), {}, old etalon {}\n", partition_end,
-//            partition_ended, partition_etalon);
+//        fmt::print(stderr, "partition [?, {}), {}, etalon old {} new {}\n",
+//            partition_end, partition_ended, old_etalon, partition_etalon);
 
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
