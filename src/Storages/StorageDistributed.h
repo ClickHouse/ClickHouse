@@ -174,7 +174,7 @@ private:
 
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
 
-    void throwInsertIfNeeded() const;
+    void delayInsertOrThrowIfNeeded() const;
 
 private:
     String remote_database;
