@@ -15,6 +15,7 @@
 00732_base64_functions
 00746_hashing_tuples
 00751_hashing_ints
+00753_distributed_system_columns_and_system_tables
 00800_function_java_hash
 00800_low_cardinality_distributed_insert
 00821_distributed_storage_with_join_on
