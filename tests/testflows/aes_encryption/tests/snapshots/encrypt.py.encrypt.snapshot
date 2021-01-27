@@ -2074,3 +2074,333 @@ example_mode_aes_256_ctr_datatype_utf8string_iv_16_aad_None = r"""'2E9B2BD2B8BA8
 
 example_mode_aes_256_ctr_datatype_utf8fixedstring_iv_16_aad_None = r"""'2E9B2BD2B8BA872DB56225F82754048C944F1E670DF94BAA'"""
 
+example_mode_aes_128_ecb_datatype_NullableString_iv_None_aad_None = r"""'7C51909F95C1E9B886A3487CD3EBED69'"""
+
+example_mode_aes_128_ecb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableString_iv_None_aad_None = r"""'1AE38A541D466EDFED572EE839B0907F'"""
+
+example_mode_aes_192_ecb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableString_iv_None_aad_None = r"""'C91184ED1E67F0CDED89B097D5D3B130'"""
+
+example_mode_aes_256_ecb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableString_iv_None_aad_None = r"""'7C51909F95C1E9B886A3487CD3EBED69'"""
+
+example_mode_aes_128_cbc_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableString_iv_None_aad_None = r"""'1AE38A541D466EDFED572EE839B0907F'"""
+
+example_mode_aes_192_cbc_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableString_iv_None_aad_None = r"""'C91184ED1E67F0CDED89B097D5D3B130'"""
+
+example_mode_aes_256_cbc_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableString_iv_16_aad_None = r"""'D017D171B3865D6EA347E14167261F41'"""
+
+example_mode_aes_128_cbc_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableString_iv_16_aad_None = r"""'A3DB45D129A5C9FDB5ED66E782B28BD2'"""
+
+example_mode_aes_192_cbc_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableString_iv_16_aad_None = r"""'5E22454D9AC4F1A47B04E2FD98A76140'"""
+
+example_mode_aes_256_cbc_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableString_iv_None_aad_None = r"""'21'"""
+
+example_mode_aes_128_cfb128_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableString_iv_None_aad_None = r"""'36'"""
+
+example_mode_aes_192_cfb128_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableString_iv_None_aad_None = r"""'81'"""
+
+example_mode_aes_256_cfb128_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableString_iv_16_aad_None = r"""'03'"""
+
+example_mode_aes_128_cfb128_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableString_iv_16_aad_None = r"""'59'"""
+
+example_mode_aes_192_cfb128_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableString_iv_16_aad_None = r"""'58'"""
+
+example_mode_aes_256_cfb128_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableString_iv_None_aad_None = r"""'21'"""
+
+example_mode_aes_128_ofb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableString_iv_None_aad_None = r"""'36'"""
+
+example_mode_aes_192_ofb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableString_iv_None_aad_None = r"""'81'"""
+
+example_mode_aes_256_ofb_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableString_iv_16_aad_None = r"""'03'"""
+
+example_mode_aes_128_ofb_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableString_iv_16_aad_None = r"""'59'"""
+
+example_mode_aes_192_ofb_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableString_iv_16_aad_None = r"""'58'"""
+
+example_mode_aes_256_ofb_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_gcm_datatype_NullableString_iv_12_aad_None = r"""'DC48B85D412AEF42C46DA18E25139D5D9D'"""
+
+example_mode_aes_128_gcm_datatype_NullableStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_gcm_datatype_NullableString_iv_12_aad_None = r"""'7B34E3F4BAFCD2F3D493F843FFEBF9A415'"""
+
+example_mode_aes_192_gcm_datatype_NullableStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_gcm_datatype_NullableString_iv_12_aad_None = r"""'67B83EFC31C169D7613D6881E954F624C2'"""
+
+example_mode_aes_256_gcm_datatype_NullableStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_gcm_datatype_NullableString_iv_12_aad_True = r"""'DCFAF1088D33EF99F1D06E3D14F265FD41'"""
+
+example_mode_aes_128_gcm_datatype_NullableStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_192_gcm_datatype_NullableString_iv_12_aad_True = r"""'7BB72D91D66E3C93B34FBAFF92526E1A0E'"""
+
+example_mode_aes_192_gcm_datatype_NullableStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_256_gcm_datatype_NullableString_iv_12_aad_True = r"""'672AAAA73DCD5DEBC924C34E8F6E2678F8'"""
+
+example_mode_aes_256_gcm_datatype_NullableStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_128_ctr_datatype_NullableString_iv_None_aad_None = r"""'21'"""
+
+example_mode_aes_128_ctr_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ctr_datatype_NullableString_iv_None_aad_None = r"""'36'"""
+
+example_mode_aes_192_ctr_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ctr_datatype_NullableString_iv_None_aad_None = r"""'81'"""
+
+example_mode_aes_256_ctr_datatype_NullableStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ctr_datatype_NullableString_iv_16_aad_None = r"""'03'"""
+
+example_mode_aes_128_ctr_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ctr_datatype_NullableString_iv_16_aad_None = r"""'59'"""
+
+example_mode_aes_192_ctr_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ctr_datatype_NullableString_iv_16_aad_None = r"""'58'"""
+
+example_mode_aes_256_ctr_datatype_NullableStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedString_iv_None_aad_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_128_ecb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedString_iv_None_aad_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_192_ecb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedString_iv_None_aad_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_256_ecb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedString_iv_None_aad_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedString_iv_None_aad_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedString_iv_None_aad_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedString_iv_16_aad_None = r"""'ECE42AF0000893B1D1A43993506376A4'"""
+
+example_mode_aes_128_cbc_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedString_iv_16_aad_None = r"""'0A8E8BA80EB490740B91937D4A5FF84C'"""
+
+example_mode_aes_192_cbc_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedString_iv_16_aad_None = r"""'4A3A13D0807C29D4FA9CAEE6B9A67E7D'"""
+
+example_mode_aes_256_cbc_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_128_cfb128_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_192_cfb128_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedString_iv_16_aad_None = r"""'5858'"""
+
+example_mode_aes_256_cfb128_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_128_ofb_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_192_ofb_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedString_iv_16_aad_None = r"""'5858'"""
+
+example_mode_aes_256_ofb_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_gcm_datatype_NullableFixedString_iv_12_aad_None = r"""'DC9659BBB6F4D4C40DCD095F1FD69A4E5B9C'"""
+
+example_mode_aes_128_gcm_datatype_NullableFixedStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_gcm_datatype_NullableFixedString_iv_12_aad_None = r"""'7BFA19E7769CC955EDD39D806A13BF6AF8E3'"""
+
+example_mode_aes_192_gcm_datatype_NullableFixedStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_gcm_datatype_NullableFixedString_iv_12_aad_None = r"""'67CB36E371A5C5F544B1EFEC353A84FE0B2F'"""
+
+example_mode_aes_256_gcm_datatype_NullableFixedStringNull_iv_12_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_gcm_datatype_NullableFixedString_iv_12_aad_True = r"""'DC96EBF2E338CDC4D6F8B490ACE77BB6FB40'"""
+
+example_mode_aes_128_gcm_datatype_NullableFixedStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_192_gcm_datatype_NullableFixedString_iv_12_aad_True = r"""'7BFA9A2913F05BBB8DB441C2D67E06FD46F8'"""
+
+example_mode_aes_192_gcm_datatype_NullableFixedStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_256_gcm_datatype_NullableFixedString_iv_12_aad_True = r"""'67CBA4772AA9C9C17819F647FA5CBE2E5715'"""
+
+example_mode_aes_256_gcm_datatype_NullableFixedStringNull_iv_12_aad_True = r"""'\\N'"""
+
+example_mode_aes_128_ctr_datatype_NullableFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_128_ctr_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ctr_datatype_NullableFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_192_ctr_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ctr_datatype_NullableFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_256_ctr_datatype_NullableFixedStringNull_iv_None_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ctr_datatype_NullableFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_128_ctr_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_192_ctr_datatype_NullableFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_192_ctr_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_256_ctr_datatype_NullableFixedString_iv_16_aad_None = r"""'5858'"""
+
+example_mode_aes_256_ctr_datatype_NullableFixedStringNull_iv_16_aad_None = r"""'\\N'"""
+
+example_mode_aes_128_ecb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_192_ecb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_256_ecb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_128_cbc_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'2320D8B0C3FF2AF0C808CE333688FEE4'"""
+
+example_mode_aes_192_cbc_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'145EF1DA49622900B742743B4114C3F8'"""
+
+example_mode_aes_256_cbc_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'BB44E0A5A23B06C6F78D05CF12E4A304'"""
+
+example_mode_aes_128_cbc_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'ECE42AF0000893B1D1A43993506376A4'"""
+
+example_mode_aes_192_cbc_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'0A8E8BA80EB490740B91937D4A5FF84C'"""
+
+example_mode_aes_256_cbc_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'4A3A13D0807C29D4FA9CAEE6B9A67E7D'"""
+
+example_mode_aes_128_cfb128_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_192_cfb128_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_256_cfb128_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_128_cfb128_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_192_cfb128_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_256_cfb128_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'5858'"""
+
+example_mode_aes_128_ofb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_192_ofb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_256_ofb_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_128_ofb_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_192_ofb_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_256_ofb_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'5858'"""
+
+example_mode_aes_128_gcm_datatype_LowCardinalityFixedString_iv_12_aad_None = r"""'DC9659BBB6F4D4C40DCD095F1FD69A4E5B9C'"""
+
+example_mode_aes_192_gcm_datatype_LowCardinalityFixedString_iv_12_aad_None = r"""'7BFA19E7769CC955EDD39D806A13BF6AF8E3'"""
+
+example_mode_aes_256_gcm_datatype_LowCardinalityFixedString_iv_12_aad_None = r"""'67CB36E371A5C5F544B1EFEC353A84FE0B2F'"""
+
+example_mode_aes_128_gcm_datatype_LowCardinalityFixedString_iv_12_aad_True = r"""'DC96EBF2E338CDC4D6F8B490ACE77BB6FB40'"""
+
+example_mode_aes_192_gcm_datatype_LowCardinalityFixedString_iv_12_aad_True = r"""'7BFA9A2913F05BBB8DB441C2D67E06FD46F8'"""
+
+example_mode_aes_256_gcm_datatype_LowCardinalityFixedString_iv_12_aad_True = r"""'67CBA4772AA9C9C17819F647FA5CBE2E5715'"""
+
+example_mode_aes_128_ctr_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'21DF'"""
+
+example_mode_aes_192_ctr_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'36B7'"""
+
+example_mode_aes_256_ctr_datatype_LowCardinalityFixedString_iv_None_aad_None = r"""'818E'"""
+
+example_mode_aes_128_ctr_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'0388'"""
+
+example_mode_aes_192_ctr_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'59C7'"""
+
+example_mode_aes_256_ctr_datatype_LowCardinalityFixedString_iv_16_aad_None = r"""'5858'"""
+
