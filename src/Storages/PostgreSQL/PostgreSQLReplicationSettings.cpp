@@ -13,9 +13,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(MaterializePostgreSQLSettingsTraits, LIST_OF_MATERIALIZE_POSTGRESQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(PostgreSQLReplicationSettingsTraits, LIST_OF_POSTGRESQL_REPLICATION_SETTINGS)
 
-void MaterializePostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
+void PostgreSQLReplicationSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
