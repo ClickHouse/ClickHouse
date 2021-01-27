@@ -47,6 +47,11 @@ public:
 
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
+    bool isLeader() const
+    {
+        return server->isLeader();
+    }
+
     int64_t getSessionID()
     {
         std::lock_guard lock(session_id_mutex);

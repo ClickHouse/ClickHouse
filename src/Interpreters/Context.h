@@ -576,6 +576,7 @@ public:
 
     void initializeTestKeeperStorageDispatcher() const;
     std::shared_ptr<TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
+    void shutdownTestKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
