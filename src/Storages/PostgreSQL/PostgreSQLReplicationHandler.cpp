@@ -1,8 +1,14 @@
 #include "PostgreSQLReplicationHandler.h"
 #include "PostgreSQLReplicaConsumer.h"
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <DataStreams/CountingBlockOutputStream.h>
+#include <Common/CurrentThread.h>
+#include <Storages/IStorage.h>
+#include <DataStreams/copyData.h>
 
 namespace DB
 {
@@ -15,14 +21,12 @@ namespace ErrorCodes
 }
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
-    Context & context_,
     const std::string & database_name_,
     const std::string & table_name_,
     const std::string & conn_str,
     const std::string & replication_slot_,
     const std::string & publication_name_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
-    , context(context_)
     , database_name(database_name_)
     , table_name(table_name_)
     , replication_slot(replication_slot_)
@@ -46,8 +50,10 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 }
 
 
-void PostgreSQLReplicationHandler::startup()
+void PostgreSQLReplicationHandler::startup(StoragePtr storage, std::shared_ptr<Context> context_)
 {
+    helper_table = storage;
+    context = context_;
     tx = std::make_shared<pqxx::work>(*connection->conn());
     if (publication_name.empty())
     {
@@ -67,6 +73,13 @@ void PostgreSQLReplicationHandler::startup()
     tx->commit();
 
     startReplication();
+}
+
+
+void PostgreSQLReplicationHandler::shutdown()
+{
+    if (consumer)
+        consumer->stopSynchronization();
 }
 
 
@@ -115,19 +128,20 @@ void PostgreSQLReplicationHandler::startReplication()
     std::string snapshot_name;
     LSNPosition start_lsn;
 
-    createTempReplicationSlot(ntx, start_lsn, snapshot_name);
-
-    loadFromSnapshot(snapshot_name);
-
-    /// Do not need this replication slot anymore (snapshot loaded and start lsn determined, will continue replication protocol
-    /// with another slot, which should be the same at restart (and reused) to minimize memory usage)
-    dropReplicationSlot(ntx, temp_replication_slot, true);
-
-    /// Non temporary replication slot should be deleted with drop table only.
+    /// Non temporary replication slot should be deleted with drop table only and created only once, reused after detach.
     if (!isReplicationSlotExist(ntx, replication_slot))
+    {
+        /// Temporary replication slot
+        createTempReplicationSlot(ntx, start_lsn, snapshot_name);
+        /// Initial table synchronization from created snapshot
+        loadFromSnapshot(snapshot_name);
+        /// Do not need this replication slot anymore (snapshot loaded and start lsn determined
+        dropReplicationSlot(ntx, temp_replication_slot, true);
+        /// Non-temporary replication slot
         createReplicationSlot(ntx);
+    }
 
-    PostgreSQLReplicaConsumer consumer(
+    consumer = std::make_shared<PostgreSQLReplicaConsumer>(
             context,
             table_name,
             connection->conn_str(),
@@ -138,7 +152,50 @@ void PostgreSQLReplicationHandler::startReplication()
     LOG_DEBUG(log, "Commiting replication transaction");
     ntx->commit();
 
-    consumer.run();
+    consumer->startSynchronization();
+}
+
+
+void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
+{
+    LOG_DEBUG(log, "Creating transaction snapshot");
+
+    try
+    {
+        auto stx = std::make_unique<pqxx::work>(*connection->conn());
+
+        /// Specific isolation level is required to read from snapshot.
+        stx->set_variable("transaction_isolation", "'repeatable read'");
+
+        std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
+        stx->exec(query_str);
+
+        /// Load from snapshot, which will show table state before creation of replication slot.
+        query_str = fmt::format("SELECT * FROM {}", table_name);
+
+        Context insert_context(*context);
+        insert_context.makeQueryContext();
+
+        auto insert = std::make_shared<ASTInsertQuery>();
+        insert->table_id = helper_table->getStorageID();
+
+        InterpreterInsertQuery interpreter(insert, insert_context);
+        auto block_io = interpreter.execute();
+
+        const StorageInMemoryMetadata & storage_metadata = helper_table->getInMemoryMetadata();
+        auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
+
+        PostgreSQLBlockInputStream input(std::move(stx), query_str, sample_block, DEFAULT_BLOCK_SIZE);
+
+        copyData(input, *block_io.out);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while initial data sync for table {}.{}", database_name, table_name);
+        throw;
+    }
+
+    LOG_DEBUG(log, "Done loading from snapshot");
 }
 
 
@@ -220,34 +277,6 @@ void PostgreSQLReplicationHandler::checkAndDropReplicationSlot()
     if (isReplicationSlotExist(ntx, replication_slot))
         dropReplicationSlot(ntx, replication_slot, false);
     ntx->commit();
-}
-
-
-void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
-{
-    auto stx = std::make_unique<pqxx::work>(*connection->conn());
-    /// Required to execute the following command.
-    stx->set_variable("transaction_isolation", "'repeatable read'");
-
-    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
-    stx->exec(query_str);
-
-    LOG_DEBUG(log, "Created transaction snapshot");
-    query_str = fmt::format("SELECT * FROM {}", table_name);
-    pqxx::result result{stx->exec(query_str)};
-    if (!result.empty())
-    {
-        pqxx::row row{result[0]};
-        for (auto res : row)
-        {
-            if (std::size(res))
-                LOG_TRACE(log, "GOT {}", res.as<std::string>());
-            else
-                LOG_TRACE(log, "GOT NULL");
-        }
-    }
-    LOG_DEBUG(log, "Done loading from snapshot");
-    stx->commit();
 }
 
 
