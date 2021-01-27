@@ -50,13 +50,13 @@ private:
     {
         span(): set_script(false), set_style(false), set_semi(false), is_finding_cdata(false) {}
 
-        spanElement copy_stack;         // copy area        
-        spanElement tag_stack;          // regexp area      
-        spanInfo script_ptr;            // script pointer       
-        bool set_script;                // whether set script      
-        spanInfo style_ptr;             // style pointer      
-        bool set_style;                 // whether set style     
-        spanInfo semi_ptr;              // tag ptr   
+        spanElement copy_stack;         // copy area
+        spanElement tag_stack;          // regexp area
+        spanInfo script_ptr;            // script pointer
+        bool set_script;                // whether set script
+        spanInfo style_ptr;             // style pointer
+        bool set_style;                 // whether set style
+        spanInfo semi_ptr;              // tag ptr
         bool set_semi;                  // whether set semi
 
         bool is_finding_cdata;
@@ -94,13 +94,13 @@ private:
             {
                 memcpySmallAllowReadWriteOverflow15(
                     &dst_chars[current_dst_string_offset], &src_chars[current_copy_loc], bytes_to_copy);
-                current_dst_string_offset += bytes_to_copy;           
+                current_dst_string_offset += bytes_to_copy;
             }
 
             // seperator is space and last character is not space.
             if(is_space && !(current_dst_string_offset == 0 || dst_chars[current_dst_string_offset - 1] == 0 || dst_chars[current_dst_string_offset - 1] == ' '))
             {
-                dst_chars[current_dst_string_offset++] = ' ';   
+                dst_chars[current_dst_string_offset++] = ' ';
             }
         }
         return;
@@ -116,7 +116,7 @@ private:
             else
             {
                 break;
-            }  
+            }
         }
         return;
     }
@@ -209,7 +209,7 @@ private:
                             case 9:
                             {
                                 spanInfo completeZone;
-                                
+
                                 completeZone.matchSpace.second = to;
                                 if(matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.matchSpace.second == from)))
                                 {
@@ -221,7 +221,7 @@ private:
                                 {
                                     completeZone.id = matches->style_ptr.id;
                                     completeZone.matchSpace.first = matches->style_ptr.matchSpace.first;
-                                    matches->set_style = false;                                
+                                    matches->set_style = false;
                                 }
                                 else
                                 {
@@ -281,7 +281,7 @@ private:
                 popArea(matches->tag_stack, from, to);
                 // if(matches->tag_stack.empty() || from >= matches->tag_stack.back().matchSpace.second)
                 matches->tag_stack.push_back(spanInfo(id, std::make_pair(from, to)));
-            } 
+            }
         }
         else
         {
@@ -366,7 +366,6 @@ private:
                             case 9:
                             {
                                 spanInfo completeZone;
-                                
                                 completeZone.matchSpace.second = to;
                                 if(matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.matchSpace.second == from)))
                                 {
@@ -378,7 +377,7 @@ private:
                                 {
                                     completeZone.id = matches->style_ptr.id;
                                     completeZone.matchSpace.first = matches->style_ptr.matchSpace.first;
-                                    matches->set_style = false;                                
+                                    matches->set_style = false;
                                 }
                                 else
                                 {
@@ -403,7 +402,7 @@ private:
         }
         return 0;
     }
-
+    #if USE_HYPERSCAN
     static hs_database_t* buildDatabase(const std::vector<const char* > &expressions,
                                         const std::vector<const unsigned> flags,
                                         const std::vector<const unsigned> id,
@@ -412,7 +411,6 @@ private:
         hs_database_t *db;
         hs_compile_error_t *compileErr;
         hs_error_t err;
-
         err = hs_compile_multi(expressions.data(), flags.data(), id.data(),
                             expressions.size(), mode, nullptr, &db, &compileErr);
 
@@ -423,6 +421,7 @@ private:
         }
         return db;
     }
+    #endif
     static std::vector<const char*> patterns;
     static std::vector<const std::size_t> patterns_length;
     static std::vector<const unsigned> patterns_flag;
@@ -441,10 +440,10 @@ public:
             if(hs_alloc_scratch(db, &scratch) != HS_SUCCESS)
             {
                 hs_free_database(db);
-                throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+                throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
             }
-        #elif
-            throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::ILLEGAL_COLUMN);
+        #else
+            throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::CANNOT_COMPILE_REGEXP);
         #endif
         dst_chars.resize(src_chars.size());
         dst_offsets.resize(src_offsets.size());
@@ -461,9 +460,9 @@ public:
         {
             #if USE_HYPERSCAN
                 hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);
-            #elif
+            #else
                 throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::ILLEGAL_COLUMN);
-            #endif    
+            #endif
             for(size_t i = 0; i < matchZoneAll.tag_stack.size(); ++i)
             {
                 std::cout << matchZoneAll.tag_stack[i].id << " " << matchZoneAll.tag_stack[i].matchSpace.first << " " << matchZoneAll.tag_stack[i].matchSpace.second << std::endl;
@@ -471,7 +470,7 @@ public:
             if(matchZoneAll.is_finding_cdata)
             {
                 deal_common_tag(&matchZoneAll);
-            }         
+            }
             spanElement& matchZone = matchZoneAll.copy_stack;
             current_copy_loc = current_src_string_offset;
             if(matchZone.empty())
@@ -484,7 +483,7 @@ public:
                 current_copy_end = current_src_string_offset + matchZone.begin()->matchSpace.first;
                 is_space = (matchZone.begin()->id == 12 || matchZone.begin()->id == 13)?1:0;
             }
-            
+
             bytes_to_copy = current_copy_end - current_copy_loc;
             copyZone(current_dst_string_offset, current_copy_loc, dst_chars, src_chars, bytes_to_copy, is_space);
             for(auto begin = matchZone.begin(); begin != matchZone.end(); ++begin)
@@ -501,7 +500,7 @@ public:
                     is_space = ((begin+1)->id == 12 || (begin+1)->id == 13)?1:0;
                 }
                 bytes_to_copy = current_copy_end - current_copy_loc;
-                copyZone(current_dst_string_offset, current_copy_loc, dst_chars, src_chars,  bytes_to_copy, is_space);
+                copyZone(current_dst_string_offset, current_copy_loc, dst_chars, src_chars, bytes_to_copy, is_space);
             }
             if(current_dst_string_offset > 1 && dst_chars[current_dst_string_offset - 2] == ' ')
             {
@@ -513,10 +512,11 @@ public:
             matchZoneAll.copy_stack.clear();
             matchZoneAll.tag_stack.clear();
         }
-
-        dst_chars.resize(dst_chars.size());
-        hs_free_scratch(scratch);
-        hs_free_database(db);
+        #if USE_HYPERSCAN
+            dst_chars.resize(dst_chars.size());
+            hs_free_scratch(scratch);
+            hs_free_database(db);
+        #endif
     }
 };
 
@@ -531,27 +531,27 @@ std::vector<const char*> hxCoarseParseImpl::patterns =
         "<style\\s",       // 6  <style xxxxxx>
         "<style",          // 7  <style>
         "</style\\s",      // 8  </style xxxxx>
-        "</style",         // 9  </style>  
+        "</style",         // 9  </style>
         "<!\\[CDATA\\[",   // 10 <![CDATA[xxxxxx]]>
         "\\]\\]>",         // 11 ]]>
         "\\s{2,}",         // 12 "   ", continous blanks
-        "[^\\S ]"          // 13 "\n", "\t" and other white space, it does not include single ' '. 
+        "[^\\S ]"          // 13 "\n", "\t" and other white space, it does not include single ' '.
     };
-std::vector<const std::size_t> hxCoarseParseImpl::patterns_length = 
+std::vector<const std::size_t> hxCoarseParseImpl::patterns_length =
     {
         2, 1, 8, 7, 9, 8, 7, 6, 8, 7, 9, 3, 0, 1
     };
-
-std::vector<const unsigned> hxCoarseParseImpl::patterns_flag = 
+#if USE_HYPERSCAN
+std::vector<const unsigned> hxCoarseParseImpl::patterns_flag =
     {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, HS_FLAG_SOM_LEFTMOST, 0
     };
+#endif
 
-std::vector<const unsigned> hxCoarseParseImpl::ids = 
+std::vector<const unsigned> hxCoarseParseImpl::ids =
     {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
     };
-
 
 class FunctionHtmlOrXmlCoarseParse : public IFunction
 {
@@ -585,7 +585,7 @@ public:
         }
         else
         {
-            throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENTS);
         }
     }
 };
