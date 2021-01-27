@@ -823,8 +823,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             row_level_security_step->setStepDescription("Row-level security filter (PREWHERE)");
             query_plan.addStep(std::move(row_level_security_step));
-
-            // TODO: handle filter like prewhere, remove unnecessary columns after it, etc.?
         }
 
         if (expressions.prewhere_info)
@@ -953,8 +951,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 row_level_security_step->setStepDescription("Row-level security filter");
                 query_plan.addStep(std::move(row_level_security_step));
-
-                // TODO: handle filter like prewhere, remove unnecessary columns after it, etc.?
             }
 
             if (expressions.before_array_join)

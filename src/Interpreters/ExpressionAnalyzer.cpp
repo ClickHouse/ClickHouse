@@ -1371,8 +1371,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (storage && filter_info_)
         {
-            // TODO: handle filter exactly like prewhere, store the info in PrewhereDAGInfo, collect unnecessary columns, etc.?
-
             filter_info = filter_info_;
             query_analyzer.appendPreliminaryFilter(chain, filter_info->actions_dag, filter_info->column_name);
         }
@@ -1547,8 +1545,6 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
     {
         const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
         filter_info->do_remove_column = step.can_remove_required_output.at(0);
-
-        // TODO: handle filter exactly like prewhere, collect columns to remove after filter?
     }
 
     if (hasPrewhere())
