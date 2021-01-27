@@ -6,7 +6,6 @@
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
-#include <Core/BigInt.h>
 #include <Common/assert_cast.h>
 
 
@@ -107,10 +106,7 @@ private:
 
 public:
     using ValueType = T;
-    static constexpr bool is_POD = !is_big_int_v<T>;
-    using Container = std::conditional_t<is_POD,
-                                         PaddedPODArray<ValueType>,
-                                         std::vector<ValueType>>;
+    using Container = PaddedPODArray<ValueType>;
 
 private:
     ColumnVector() {}
@@ -136,10 +132,7 @@ public:
 
     void insertData(const char * pos, size_t) override
     {
-        if constexpr (is_POD)
-            data.emplace_back(unalignedLoad<T>(pos));
-        else
-            data.emplace_back(BigInt<T>::deserialize(pos));
+        data.emplace_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
@@ -149,18 +142,12 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        if constexpr (is_POD)
-            data.resize_fill(data.size() + length, T());
-        else
-            data.resize(data.size() + length, T());
+        data.resize_fill(data.size() + length, T());
     }
 
     void popBack(size_t n) override
     {
-        if constexpr (is_POD)
-            data.resize_assume_reserved(data.size() - n);
-        else
-            data.resize(data.size() - n);
+        data.resize_assume_reserved(data.size() - n);
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -185,16 +172,12 @@ public:
 
     size_t allocatedBytes() const override
     {
-        if constexpr (is_POD)
-            return data.allocated_bytes();
-        else
-            return data.capacity() * sizeof(data[0]);
+        return data.allocated_bytes();
     }
 
     void protect() override
     {
-        if constexpr (is_POD)
-            data.protect();
+        data.protect();
     }
 
     void insertValue(const T value)
