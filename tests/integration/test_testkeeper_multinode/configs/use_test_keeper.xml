@@ -4,5 +4,13 @@
             <host>node1</host>
             <port>9181</port>
         </node>
+        <node index="2">
+            <host>node2</host>
+            <port>9181</port>
+        </node>
+        <node index="3">
+            <host>node3</host>
+            <port>9181</port>
+        </node>
     </zookeeper>
 </yandex>

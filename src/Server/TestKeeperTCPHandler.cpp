@@ -227,16 +227,19 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
     , test_keeper_storage_dispatcher(global_context.getTestKeeperStorageDispatcher())
     , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
-    , session_id(test_keeper_storage_dispatcher->getSessionID())
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
 }
 
-void TestKeeperTCPHandler::sendHandshake()
+void TestKeeperTCPHandler::sendHandshake(bool is_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
-    Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
+    if (is_leader)
+        Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
+    else /// Specially ignore connections if we are not leader, client will throw exception
+        Coordination::write(42, *out);
+
     Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);
     Coordination::write(session_id, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
@@ -316,7 +319,17 @@ void TestKeeperTCPHandler::runImpl()
         return;
     }
 
-    sendHandshake();
+    if (test_keeper_storage_dispatcher->isLeader())
+    {
+        session_id = test_keeper_storage_dispatcher->getSessionID();
+        sendHandshake(true);
+    }
+    else
+    {
+        sendHandshake(false);
+        LOG_WARNING(log, "Ignoring connection because we are not leader");
+        return;
+    }
 
     auto response_fd = poll_wrapper->getResponseFD();
     auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)

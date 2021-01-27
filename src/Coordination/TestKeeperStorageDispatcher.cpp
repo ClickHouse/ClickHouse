@@ -86,6 +86,7 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
     bool my_can_become_leader = true;
 
     std::vector<std::tuple<int, std::string, int, bool>> server_configs;
+    std::vector<int32_t> ids;
     for (const auto & server_key : keys)
     {
         int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
@@ -102,14 +103,26 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
         {
             server_configs.emplace_back(server_id, hostname, port, can_become_leader);
         }
+        ids.push_back(server_id);
     }
 
-    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport, my_can_become_leader);
+    server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
     server->startup();
     if (my_can_become_leader)
     {
         for (const auto & [id, hostname, port, can_become_leader] : server_configs)
-            server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader);
+        {
+            do
+            {
+                server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader);
+            }
+            while (!server->waitForServer(id));
+        }
+    }
+    else
+    {
+        server->waitForServers(ids);
+        server->waitForCatchUp();
     }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
@@ -135,9 +148,12 @@ void TestKeeperStorageDispatcher::shutdown()
         if (server)
         {
             TestKeeperStorage::RequestsForSessions expired_requests;
-            TestKeeperStorage::RequestForSession request;
-            while (requests_queue.tryPop(request))
-                expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
+            if (server->isLeader())
+            {
+                TestKeeperStorage::RequestForSession request;
+                while (requests_queue.tryPop(request))
+                    expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
+            }
 
             auto expired_responses = server->shutdown(expired_requests);
 

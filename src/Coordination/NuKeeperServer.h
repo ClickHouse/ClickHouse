@@ -21,8 +21,6 @@ private:
 
     std::string endpoint;
 
-    bool can_become_leader;
-
     nuraft::ptr<NuKeeperStateMachine> state_machine;
 
     nuraft::ptr<nuraft::state_mgr> state_manager;
@@ -40,7 +38,7 @@ private:
     TestKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
 
 public:
-    NuKeeperServer(int server_id_, const std::string & hostname_, int port_, bool can_become_leader_);
+    NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
 
     void startup();
 
@@ -48,7 +46,13 @@ public:
 
     int64_t getSessionID();
 
-    bool addServer(int server_id_, const std::string & server_uri, bool can_become_leader_);
+    void addServer(int server_id_, const std::string & server_uri, bool can_become_leader_);
+
+    bool isLeader() const;
+
+    bool waitForServer(int32_t server_id) const;
+    void waitForServers(const std::vector<int32_t> & ids) const;
+    void waitForCatchUp() const;
 
     TestKeeperStorage::ResponsesForSessions shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests);
 };

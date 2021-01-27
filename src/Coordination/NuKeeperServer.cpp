@@ -19,22 +19,22 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_, bool can_become_leader_)
+NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, int port_)
     : server_id(server_id_)
     , hostname(hostname_)
     , port(port_)
     , endpoint(hostname + ":" + std::to_string(port))
-    , can_become_leader(can_become_leader_)
     , state_machine(nuraft::cs_new<NuKeeperStateMachine>())
     , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, endpoint))
 {
 }
 
-bool NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_)
+void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_)
 {
     nuraft::srv_config config(server_id_, 0, server_uri_, "", /*FIXME follower=*/ !can_become_leader_);
     auto ret1 = raft_instance->add_srv(config);
-    return ret1->get_result_code() == nuraft::cmd_result_code::OK;
+    if (ret1->get_result_code() != nuraft::cmd_result_code::OK)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot add server to RAFT quorum with code {}, message '{}'", ret1->get_result_code(), ret1->get_result_str());
 }
 
 
@@ -71,7 +71,7 @@ void NuKeeperServer::startup()
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests)
 {
     TestKeeperStorage::ResponsesForSessions responses;
-    if (can_become_leader)
+    if (isLeader())
     {
         try
         {
@@ -161,7 +161,18 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
 
         auto result = raft_instance->append_entries(entries);
         if (!result->get_accepted())
-            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader, code {}, message: '{}'", result->get_result_code(), result->get_result_str());
+        {
+            TestKeeperStorage::ResponsesForSessions responses;
+            for (const auto & [session_id, request] : requests)
+            {
+                auto response = request->makeResponse();
+                response->xid = request->xid;
+                response->zxid = 0; /// FIXME what we can do with it?
+                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+            }
+            return responses;
+        }
 
         if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         {
@@ -183,7 +194,6 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
     }
 }
 
-
 int64_t NuKeeperServer::getSessionID()
 {
     auto entry = nuraft::buffer::alloc(sizeof(int64_t));
@@ -201,6 +211,38 @@ int64_t NuKeeperServer::getSessionID()
     auto resp = result->get();
     nuraft::buffer_serializer bs_resp(resp);
     return bs_resp.get_i64();
+}
+
+bool NuKeeperServer::isLeader() const
+{
+    return raft_instance->is_leader();
+}
+
+bool NuKeeperServer::waitForServer(int32_t id) const
+{
+    for (size_t i = 0; i < 10; ++i)
+    {
+        if (raft_instance->get_srv_config(id) != nullptr)
+            return true;
+        LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting for server {} to join the cluster", id);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
+}
+
+void NuKeeperServer::waitForServers(const std::vector<int32_t> & ids) const
+{
+    for (int32_t id : ids)
+        waitForServer(id);
+}
+
+void NuKeeperServer::waitForCatchUp() const
+{
+    while (raft_instance->is_catching_up() || raft_instance->is_receiving_snapshot())
+    {
+        LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting current RAFT instance to catch up");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 }
 
 }

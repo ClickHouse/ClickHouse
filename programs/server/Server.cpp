@@ -904,6 +904,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
+
+            global_context->shutdownTestKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.

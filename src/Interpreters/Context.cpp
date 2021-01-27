@@ -446,9 +446,7 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-        /// Stop test_keeper storage
-        if (test_keeper_storage_dispatcher)
-            test_keeper_storage_dispatcher->shutdown();
+
     }
 
     bool hasTraceCollector() const
@@ -1591,6 +1589,16 @@ std::shared_ptr<TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDisp
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TestKeeper must be initialized before requests");
 
     return shared->test_keeper_storage_dispatcher;
+}
+
+void Context::shutdownTestKeeperStorageDispatcher() const
+{
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    if (shared->test_keeper_storage_dispatcher)
+    {
+        shared->test_keeper_storage_dispatcher->shutdown();
+        shared->test_keeper_storage_dispatcher.reset();
+    }
 }
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
