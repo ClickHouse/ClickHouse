@@ -144,6 +144,7 @@ struct LowerUpperUTF8Impl
                 if (dst_code_point > 0)
                 {
                     int dst_sequence_length = UTF8::convert(dst_code_point, dst, src_end - src);
+                    assert(dst_sequence_length >= 0);
 
                     /// We don't support cases when lowercase and uppercase characters occupy different number of bytes in UTF-8.
                     /// As an example, this happens for ß and ẞ.

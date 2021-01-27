@@ -163,31 +163,41 @@ namespace VolnitskyTraits
                         auto seq_pos = pos;
                         UTF8::syncBackward(seq_pos, begin);
 
-                        const auto u32 = UTF8::convert(seq_pos);
-                        const auto l_u32 = Poco::Unicode::toLower(u32);
-                        const auto u_u32 = Poco::Unicode::toUpper(u32);
-
-                        /// symbol is case-independent
-                        if (l_u32 == u_u32)
+                        int u32 = UTF8::convert(seq_pos);
+                        /// Invalid UTF-8
+                        if (u32 < 0)
+                        {
                             putNGramBase(n, offset);
+                        }
                         else
                         {
-                            /// where is the given ngram in respect to the start of UTF-8 sequence?
-                            const auto seq_ngram_offset = pos - seq_pos;
+                            int l_u32 = Poco::Unicode::toLower(u32);
+                            int u_u32 = Poco::Unicode::toUpper(u32);
 
-                            Seq seq;
+                            /// symbol is case-independent
+                            if (l_u32 == u_u32)
+                            {
+                                putNGramBase(n, offset);
+                            }
+                            else
+                            {
+                                /// where is the given ngram in respect to the start of UTF-8 sequence?
+                                const auto seq_ngram_offset = pos - seq_pos;
 
-                            /// put ngram for lowercase
-                            UTF8::convert(l_u32, seq, sizeof(seq));
-                            chars.c0 = seq[seq_ngram_offset];
-                            chars.c1 = seq[seq_ngram_offset + 1];
-                            putNGramBase(n, offset);
+                                Seq seq;
 
-                            /// put ngram for uppercase
-                            UTF8::convert(u_u32, seq, sizeof(seq));
-                            chars.c0 = seq[seq_ngram_offset]; //-V519
-                            chars.c1 = seq[seq_ngram_offset + 1]; //-V519
-                            putNGramBase(n, offset);
+                                /// put ngram for lowercase
+                                UTF8::convert(l_u32, seq, sizeof(seq));
+                                chars.c0 = seq[seq_ngram_offset];
+                                chars.c1 = seq[seq_ngram_offset + 1];
+                                putNGramBase(n, offset);
+
+                                /// put ngram for uppercase
+                                UTF8::convert(u_u32, seq, sizeof(seq));
+                                chars.c0 = seq[seq_ngram_offset]; //-V519
+                                chars.c1 = seq[seq_ngram_offset + 1]; //-V519
+                                putNGramBase(n, offset);
+                            }
                         }
                     }
                     else
@@ -199,16 +209,38 @@ namespace VolnitskyTraits
                         /// where is the given ngram in respect to the start of first UTF-8 sequence?
                         const auto seq_ngram_offset = pos - first_seq_pos;
 
-                        const auto first_u32 = UTF8::convert(first_seq_pos);
-                        const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
-                        const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
+                        int first_u32 = UTF8::convert(first_seq_pos);
+                        int first_l_u32;
+                        int first_u_u32;
+
+                        if (first_u32 < 0)
+                        {
+                            first_l_u32 = first_u32;
+                            first_u_u32 = first_u32;
+                        }
+                        else
+                        {
+                            first_l_u32 = Poco::Unicode::toLower(first_u32);
+                            first_u_u32 = Poco::Unicode::toUpper(first_u32);
+                        }
 
                         /// second sequence always start immediately after u_pos
                         auto second_seq_pos = pos + 1;
 
-                        const auto second_u32 = UTF8::convert(second_seq_pos); /// TODO This assumes valid UTF-8 or zero byte after needle.
-                        const auto second_l_u32 = Poco::Unicode::toLower(second_u32);
-                        const auto second_u_u32 = Poco::Unicode::toUpper(second_u32);
+                        int second_u32 = UTF8::convert(second_seq_pos); /// This assumes valid UTF-8 or zero byte after needle.
+                        int second_l_u32;
+                        int second_u_u32;
+
+                        if (second_u32 < 0)
+                        {
+                            second_l_u32 = second_u32;
+                            second_u_u32 = second_u32;
+                        }
+                        else
+                        {
+                            second_l_u32 = Poco::Unicode::toLower(second_u32);
+                            second_u_u32 = Poco::Unicode::toUpper(second_u32);
+                        }
 
                         /// both symbols are case-independent
                         if (first_l_u32 == first_u_u32 && second_l_u32 == second_u_u32)
