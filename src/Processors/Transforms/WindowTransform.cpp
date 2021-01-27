@@ -79,7 +79,7 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
-    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
+//    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
 
     // If we're at the total end of data, we must end the partition. This is the
     // only place in calculations where we need special handling for end of data,
@@ -95,7 +95,8 @@ void WindowTransform::advancePartitionEnd()
         return;
     }
 
-    // If we got to the end of the block already, just stop.
+    // If we got to the end of the block already, but expect more data, wait for
+    // it.
     if (partition_end == end)
     {
         return;
@@ -122,18 +123,17 @@ void WindowTransform::advancePartitionEnd()
     // The partition ends when the PARTITION BY columns change. We need
     // some reference columns for comparison. We might have already
     // dropped the blocks where the partition starts, but any row in the
-    // partition will do. Use group_start -- it's always in the valid
-    // region, because it points to the start of the current group,
-    // which we haven't fully processed yet, and therefore cannot drop.
-    // It might be the same as the partition_end if it's the first group of the
+    // partition will do. We use a special partition_etalon pointer for this.
+    // It might be the same as the partition_end if we're at the first row of the
     // first partition, so we compare it to itself, but it still works correctly.
+    const auto block_number = partition_end.block;
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
         size_t i = 0;
         for (; i < n; i++)
         {
-            const auto * ref = inputAt(group_start)[partition_by_indices[i]].get();
+            const auto * ref = inputAt(partition_etalon)[partition_by_indices[i]].get();
             const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
             if (c->compareAt(partition_end.row,
                     group_start.row, *ref,
@@ -150,14 +150,19 @@ void WindowTransform::advancePartitionEnd()
         }
     }
 
-    if (partition_end.row == block_rows)
-    {
-        ++partition_end.block;
-        partition_end.row = 0;
-    }
+    // Went until the end of block, go to the next.
+    assert(partition_end.row == block_rows);
+    ++partition_end.block;
+    partition_end.row = 0;
 
     // Went until the end of data and didn't find the new partition.
     assert(!partition_ended && partition_end == blocksEnd());
+
+    // Advance the partition etalon so that we can drop the old blocks.
+    // We can use the last valid row of the block as the partition etalon.
+    // Shouldn't have empty blocks here (what would it mean?).
+    assert(block_rows > 0);
+    partition_etalon = RowNumber{block_number, block_rows - 1};
 }
 
 void WindowTransform::advanceGroupEnd()
@@ -169,19 +174,17 @@ void WindowTransform::advanceGroupEnd()
 
     switch (window_description.frame.type)
     {
+        case WindowFrame::FrameType::Range:
         case WindowFrame::FrameType::Groups:
-            advanceGroupEndGroups();
+            advanceGroupEndOrderBy();
             break;
         case WindowFrame::FrameType::Rows:
-            advanceGroupEndRows();
-            break;
-        case WindowFrame::FrameType::Range:
-            assert(false);
+            advanceGroupEndTrivial();
             break;
     }
 }
 
-void WindowTransform::advanceGroupEndRows()
+void WindowTransform::advanceGroupEndTrivial()
 {
     // ROWS mode, peer groups always contains only the current row.
     // We cannot advance the groups if the group start is already beyond the
@@ -192,7 +195,7 @@ void WindowTransform::advanceGroupEndRows()
     group_ended = true;
 }
 
-void WindowTransform::advanceGroupEndGroups()
+void WindowTransform::advanceGroupEndOrderBy()
 {
     const size_t n = order_by_indices.size();
     if (n == 0)
@@ -252,7 +255,7 @@ void WindowTransform::advanceFrameEnd()
     // Frame end is always the current group end, for now.
     // In ROWS mode the group is going to contain only the current row.
     frame_end = group_end;
-    frame_ended = true;
+    frame_ended = group_ended;
 
     // Add the columns over which we advanced the frame to the aggregate function
     // states.
@@ -275,7 +278,7 @@ void WindowTransform::advanceFrameEnd()
         uint64_t past_the_end_block;
         // Note that the past-the-end row is not in the past-the-end block, but
         // in the block before it.
-        uint32_t past_the_end_row;
+        uint64_t past_the_end_row;
 
         if (frame_end.block < first_block_number + blocks.size())
         {
@@ -326,7 +329,6 @@ void WindowTransform::writeOutGroup()
     // Empty groups don't make sense.
     assert(group_start < group_end);
 
-    std::vector<const IColumn *> argument_columns;
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
@@ -334,54 +336,93 @@ void WindowTransform::writeOutGroup()
         const auto * a = f.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
-        // Need to use a tricky loop to be able to batch per-block (but we don't
-        // do it yet...). See the comments to the similar loop in
-        // advanceFrameEnd() above.
+        // We'll calculate the value once for the first row in the group, and
+        // insert its copy for each other row in the group.
+        IColumn * reference_column = outputAt(group_start)[wi].get();
+        const size_t reference_row = group_start.row;
+        // FIXME does it also allocate the result on the arena?
+        // We'll have to pass it out with blocks then...
+        a->insertResultInto(buf, *reference_column, arena.get());
+        // The row we just added to the end of the column must correspond to the
+        // first row of the group.
+        assert(reference_column->size() == reference_row + 1);
+
+//        fmt::print(stderr, "calculated value of function {} is '{}'\n",
+//            wi, toString((*reference_column)[reference_row]));
+
+        // Now duplicate the calculated value into all other rows.
+        auto first_row_to_copy_to = group_start;
+        advanceRowNumber(first_row_to_copy_to);
+
+
+        // We use two explicit loops here instead of using advanceRowNumber(),
+        // because we want to batch the inserts per-block.
+        // Unfortunately this leads to tricky loop conditions, because the
+        // frame_end might be either a past-the-end block, or a valid block, in
+        // which case we also have to process its head. We have to avoid stepping
+        // into the past-the-end block because it might not be valid.
+        // Moreover, the past-the-end row is not in the past-the-end block, but
+        // in the block before it.
+        // And we also have to remember to reset the row number when moving to
+        // the next block.
         uint64_t past_the_end_block;
-        uint32_t past_the_end_row;
-        if (frame_end.block < first_block_number + blocks.size())
+        uint64_t past_the_end_row;
+        if (group_end.row == 0)
         {
-            past_the_end_block = frame_end.block + 1;
-            past_the_end_row = frame_end.row;
+            // group_end might not be valid.
+            past_the_end_block = group_end.block;
+
+            // Otherwise a group would end at the start of data, this is not
+            // possible.
+            assert(group_end.block > 0);
+
+            const size_t first_valid_block = group_end.block - 1;
+            assert(first_valid_block >= first_block_number);
+
+            past_the_end_row = blocks[first_valid_block - first_block_number]
+                .input_columns[0]->size();
         }
         else
         {
-            past_the_end_block = first_block_number + blocks.size();
-            past_the_end_row = blocks.back().numRows();
+            past_the_end_block = group_end.block + 1;
+            past_the_end_row = group_end.row;
         }
-        for (auto r = group_start;
-            r.block < past_the_end_block;
-            ++r.block, r.row = 0)
+
+        for (auto block_index = first_row_to_copy_to.block;
+            block_index < past_the_end_block;
+            ++block_index)
         {
-            const auto & block = blocks[r.block - first_block_number];
+            const auto & block = blocks[block_index - first_block_number];
 
-            argument_columns.clear();
-            for (const auto ai : ws.argument_column_indices)
+            // We process tail of the first block, all rows of intermediate
+            // blocks, and the head of the last block.
+            const auto block_first_row
+                = (block_index == first_row_to_copy_to.block)
+                    ? first_row_to_copy_to.row : 0;
+            const auto block_last_row = ((block_index + 1) == past_the_end_block)
+                ? past_the_end_row : block.numRows();
+
+//            fmt::print(stderr,
+//                "group rest [{}, {}), pteb {}, pter {}, cur {}, fr {}, lr {}\n",
+//                group_start, group_end, past_the_end_block, group_end.row,
+//                block_index, block_first_row, block_last_row);
+            // The number of the elements left to insert may be zero, but we must
+            // notice it on the first block. Other blocks shouldn't be empty,
+            // because we don't generally have empty block, and advanceRowNumber()
+            // doesn't generate past-the-end row numbers, so we wouldn't get into
+            // a block we don't want to process.
+            if (block_first_row == block_last_row)
             {
-                argument_columns.push_back(block.input_columns[ai].get());
+                assert(block_index == first_row_to_copy_to.block);
+                break;
             }
 
-            // We process all rows of intermediate blocks, and the head of the
-            // last block.
-            const auto end = ((r.block + 1) == past_the_end_block)
-                ? past_the_end_row
-                : block.numRows();
-            for (; r.row < end; ++r.row)
-            {
-                // FIXME does it also allocate the result on the arena?
-                // We'll have to pass it out with blocks then...
-                a->insertResultInto(buf,
-                    *block.output_columns[wi],
-                    arena.get());
-            }
+            block.output_columns[wi]->insertManyFrom(*reference_column,
+                reference_row, block_last_row - block_first_row);
         }
     }
 
     first_not_ready_row = group_end;
-}
-
-void WindowTransform::initPerBlockCaches()
-{
 }
 
 void WindowTransform::appendChunk(Chunk & chunk)
@@ -413,12 +454,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
         }
     }
 
-    initPerBlockCaches();
-
     // Start the calculations. First, advance the partition end.
     for (;;)
     {
         advancePartitionEnd();
+//        fmt::print(stderr, "partition [?, {}), {}, old etalon {}\n", partition_end,
+//            partition_ended, partition_etalon);
 
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
@@ -428,22 +469,21 @@ void WindowTransform::appendChunk(Chunk & chunk)
             assert(input_is_finished);
         }
 
-//        fmt::print(stderr, "partition end '{}', {}\n", partition_end,
-//            partition_ended);
-
         // After that, advance the peer groups. We can advance peer groups until
         // the end of partition or current end of data, which is precisely the
         // description of `partition_end`.
-        while (group_end < partition_end)
+        while (group_start < partition_end)
         {
-            group_start = group_end;
             advanceGroupEnd();
 
-//            fmt::print(stderr, "group end '{}'\n", group_end);
+//            fmt::print(stderr, "group [{}, {}), {}\n", group_start, group_end,
+//                group_ended);
 
-            // If the group didn't end yet, wait.
             if (!group_ended)
             {
+                // Wait for more input data to find the end of group.
+                assert(!input_is_finished);
+                assert(!partition_ended);
                 return;
             }
 
@@ -457,6 +497,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
 
             if (!frame_ended)
             {
+                // Wait for more input data to find the end of frame.
+                assert(!input_is_finished);
+                assert(!partition_ended);
                 return;
             }
 
@@ -467,35 +510,33 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // The frame will have to be recalculated.
             frame_ended = false;
 
-            // Move to the next group. Don't advance group_start yet, it's
-            // convenient to use it as the PARTITION BY etalon.
+            // Move to the next group.
             group_ended = false;
-
-            if (group_end == partition_end)
-            {
-                break;
-            }
-            assert(group_end < partition_end);
-        }
-
-        if (!partition_ended)
-        {
-            // We haven't encountered the end of the partition yet, need more
-            // data.
-            assert(partition_end == blocksEnd());
-            break;
+            group_start = group_end;
         }
 
         if (input_is_finished)
         {
-            // why?
+            // We finalized the last partition in the above loop, and don't have
+            // to do anything else.
             return;
+        }
+
+        if (!partition_ended)
+        {
+            // Wait for more input data to find the end of partition.
+            // Assert that we processed all the data we currently have, and that
+            // we are going to receive more data.
+            assert(partition_end == blocksEnd());
+            assert(!input_is_finished);
+            break;
         }
 
         // Start the next partition.
         const auto new_partition_start = partition_end;
         advanceRowNumber(partition_end);
         partition_ended = false;
+        partition_etalon = new_partition_start;
         // We have to reset the frame when the new partition starts. This is not a
         // generally correct way to do so, but we don't really support moving frame
         // for now.
@@ -663,10 +704,13 @@ void WindowTransform::work()
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory.
     // We can drop the old blocks if we already returned them as output, and the
-    // frame and group are already past them. Note that the frame start can be
-    // further than group start for some frame specs, so we have to check both.
+    // frame, group and the partition etalon are already past them. Note that the
+    // frame start can be further than group start for some frame specs (e.g.
+    // EXCLUDE CURRENT ROW), so we have to check both.
     const auto first_used_block = std::min(next_output_block_number,
-            std::min(frame_start.block, group_start.block));
+        std::min(frame_start.block,
+            std::min(group_start.block,
+                partition_etalon.block)));
     if (first_block_number < first_used_block)
     {
 //        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,

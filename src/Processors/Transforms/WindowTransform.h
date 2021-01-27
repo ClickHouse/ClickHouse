@@ -15,7 +15,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
-// Runtime data for computing one window function
+// Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {
     WindowFunctionDescription window_function;
@@ -58,18 +58,20 @@ struct RowNumber
 
 /*
  * Computes several window functions that share the same window. The input must
- * be sorted correctly for this window (PARTITION BY, then ORDER BY).
+ * be sorted by PARTITION BY (in any order), then by ORDER BY.
  * We need to track the following pointers:
- * 1) start of partition -- rows that compare equal w/PARTITION BY.
- * 2) current frame boundaries.
- * 3) start of peer group -- rows that compare equal w/ORDER BY (empty ORDER BY
- *    means all rows are equal).
- * These row ranges are (almost) nested -- peer group is inside frame inside
- * partition. The only exception is when the exclusion clause is specified that
- * excludes current peer group, but we don't support it anyway.
- * All pointers only move forward.
- * The value of the function is the same for all rows of the peer group.
- * (partition [frame {group} ] )
+ * 1) boundaries of partition -- rows that compare equal w/PARTITION BY.
+ * 2) boundaries of peer group -- rows that compare equal w/ORDER BY (empty
+ *    ORDER BY means all rows are peers).
+ * 3) boundaries of the frame.
+ * Both the peer group and the frame are inside the partition, but can have any
+ * position relative to each other.
+ * All pointers only move forward. For partition and group boundaries, this is
+ * ensured by the order of input data. This property also trivially holds for
+ * the ROWS and GROUPS frames. For the RANGE frame, the proof requires the
+ * additional fact that the ranges are specified in terms of (the single)
+ * ORDER BY column.
+ * The value of the window function is the same for all rows of the peer group.
  */
 class WindowTransform : public IProcessor /* public ISimpleTransform */
 {
@@ -104,13 +106,12 @@ public:
 private:
     void advancePartitionEnd();
     void advanceGroupEnd();
-    void advanceGroupEndGroups();
-    void advanceGroupEndRows();
+    void advanceGroupEndOrderBy();
+    void advanceGroupEndTrivial();
     void advanceGroupEndRange();
     void advanceFrameStart();
     void advanceFrameEnd();
     void writeOutGroup();
-    void initPerBlockCaches();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -224,6 +225,9 @@ public:
     // need it, and we want to be able to drop the starting blocks to save memory.
     // The `partition_end` is past-the-end, as usual. When partition_ended = false,
     // it still haven't ended, and partition_end is the next row to check.
+    // We still need to keep some not-too-far-away row in the partition, to use
+    // it as an etalon for PARTITION BY comparison.
+    RowNumber partition_etalon;
     RowNumber partition_end;
     bool partition_ended = false;
 
@@ -233,6 +237,13 @@ public:
     RowNumber group_end;
     bool group_ended = false;
 
+    // The frame is [frame_start, frame_end) if frame_ended, and unknown
+    // otherwise. Note that when we move to the next peer group, both the
+    // frame_start and the frame_end may jump forward by an unknown amount of
+    // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
+    // know neither frame_end nor frame_start.
+    // We update the states of the window functions as we track the frame
+    // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
     // output the result for the current group, w/o waiting for more data.
     RowNumber frame_start;

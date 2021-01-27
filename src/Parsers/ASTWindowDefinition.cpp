@@ -52,13 +52,18 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         order_by->formatImpl(settings, state, format_frame);
     }
 
+    if ((partition_by || order_by) && !frame.is_default)
+    {
+        settings.ostr << " ";
+    }
+
     if (!frame.is_default)
     {
         const auto * name = frame.type == WindowFrame::FrameType::Rows
             ? "ROWS" : frame.type == WindowFrame::FrameType::Groups
                 ? "GROUPS" : "RANGE";
 
-        settings.ostr << name << " BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW";
+        settings.ostr << name << " UNBOUNDED PRECEDING";
     }
 }
 

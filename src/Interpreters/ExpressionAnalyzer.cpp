@@ -516,7 +516,8 @@ void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    if (definition.frame.type != WindowFrame::FrameType::Rows)
+    if (definition.frame.type != WindowFrame::FrameType::Rows
+        && definition.frame.type != WindowFrame::FrameType::Range)
     {
         std::string name = definition.frame.type == WindowFrame::FrameType::Rows
             ? "ROWS"
