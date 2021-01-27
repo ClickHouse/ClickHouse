@@ -22,6 +22,12 @@ SELECT '---------Q4----------';
 SELECT table1.a, table2.b FROM table1 INNER JOIN table2 ON (table1.a = toUInt32(10 - table2.a)) AND (table1.b = 6) AND (table2.b > 20);
 EXPLAIN SYNTAX SELECT table1.a, table2.b FROM table1 INNER JOIN table2 ON (table1.a = toUInt32(10 - table2.a)) AND (table1.b = 6) AND (table2.b > 20);
 
+SELECT '---------Q5----------';
+SELECT table1.a, table2.b FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table1.b = 6) AND (table2.b > 20) AND (10 < 6);
+EXPLAIN SYNTAX SELECT table1.a, table2.b FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table1.b = 6) AND (table2.b > 20) AND (10 < 6);
+
+SELECT '---------Q6----------';
+SELECT table1.a, table2.b FROM table1 JOIN table2 ON (table1.b = 6) AND (table2.b > 20); -- { serverError 403 } 
 
 DROP TABLE table1;
 DROP TABLE table2;
