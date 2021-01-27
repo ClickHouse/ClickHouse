@@ -3955,7 +3955,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
 
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 {
-    return global_context.getMergeList().getExecutingMergesWithTTLCount();
+    return global_context.getMergeList().getMergesWithTTLCount();
 }
 
 void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)

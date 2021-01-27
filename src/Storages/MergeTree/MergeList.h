@@ -116,12 +116,6 @@ public:
         : Parent(CurrentMetrics::Merge)
     {}
 
-    void onEntryCreate(const Parent::Entry & entry) override
-    {
-        if (isTTLMergeType(entry->merge_type))
-            ++merges_with_ttl_counter;
-    }
-
     void onEntryDestroy(const Parent::Entry & entry) override
     {
         if (isTTLMergeType(entry->merge_type))
@@ -140,7 +134,20 @@ public:
         }
     }
 
-    size_t getExecutingMergesWithTTLCount() const
+    /// Merge consists of two parts: assignment and execution. We add merge to
+    /// merge list on execution, but checking merge list during merge
+    /// assignment. This lead to the logical race condition (we can assign more
+    /// merges with TTL than allowed). So we "book" merge with ttl during
+    /// assignment, and remove from list after merge execution.
+    ///
+    /// NOTE: Not important for replicated merge tree, we check count of merges twice:
+    /// in assignment and in queue before execution.
+    void bookMergeWithTTL()
+    {
+        ++merges_with_ttl_counter;
+    }
+
+    size_t getMergesWithTTLCount() const
     {
         return merges_with_ttl_counter;
     }
