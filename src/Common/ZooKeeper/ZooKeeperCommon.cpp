@@ -326,6 +326,12 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
     }
 }
 
+bool ZooKeeperMultiRequest::isReadRequest() const
+{
+    /// Possibly we can do better
+    return false;
+}
+
 void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 {
     for (auto & response : responses)

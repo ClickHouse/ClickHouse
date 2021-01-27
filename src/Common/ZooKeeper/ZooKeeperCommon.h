@@ -60,6 +60,7 @@ struct ZooKeeperRequest : virtual Request
     static std::shared_ptr<ZooKeeperRequest> read(ReadBuffer & in);
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
+    virtual bool isReadRequest() const = 0;
 };
 
 using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
@@ -71,6 +72,7 @@ struct ZooKeeperHeartbeatRequest final : ZooKeeperRequest
     void writeImpl(WriteBuffer &) const override {}
     void readImpl(ReadBuffer &) override {}
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
 };
 
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
@@ -104,6 +106,7 @@ struct ZooKeeperAuthRequest final : ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
 };
 
 struct ZooKeeperAuthResponse final : ZooKeeperResponse
@@ -122,6 +125,7 @@ struct ZooKeeperCloseRequest final : ZooKeeperRequest
     void readImpl(ReadBuffer &) override {}
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
 };
 
 struct ZooKeeperCloseResponse final : ZooKeeperResponse
@@ -146,6 +150,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
@@ -167,6 +172,7 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
 };
 
 struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
@@ -183,6 +189,7 @@ struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return !has_watch; }
 };
 
 struct ZooKeeperExistsResponse final : ExistsResponse, ZooKeeperResponse
@@ -199,6 +206,7 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return !has_watch; }
 };
 
 struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
@@ -217,6 +225,7 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
 };
 
 struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
@@ -232,6 +241,7 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return !has_watch; }
 };
 
 struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
@@ -261,6 +271,7 @@ struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return !has_watch; }
 };
 
 struct ZooKeeperCheckResponse final : CheckResponse, ZooKeeperResponse
@@ -290,6 +301,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     void readImpl(ReadBuffer & in) override;
 
     ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override;
 };
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse

@@ -146,34 +146,41 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
-    std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    for (const auto & [session_id, request] : requests)
+    if (requests.size() == 1 && requests[0].request->isReadRequest())
     {
-        ops_mapping[session_id][request->xid] = request->makeResponse();
-        entries.push_back(getZooKeeperLogEntry(session_id, request));
+        return state_machine->processReadRequest(requests[0]);
     }
-
-    auto result = raft_instance->append_entries(entries);
-    if (!result->get_accepted())
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader, code {}, message: '{}'", result->get_result_code(), result->get_result_str());
-
-    if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+    else
     {
-        TestKeeperStorage::ResponsesForSessions responses;
+        std::vector<nuraft::ptr<nuraft::buffer>> entries;
         for (const auto & [session_id, request] : requests)
         {
-            auto response = request->makeResponse();
-            response->xid = request->xid;
-            response->zxid = 0; /// FIXME what we can do with it?
-            response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+            ops_mapping[session_id][request->xid] = request->makeResponse();
+            entries.push_back(getZooKeeperLogEntry(session_id, request));
         }
-        return responses;
-    }
-    else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
 
-    return readZooKeeperResponses(result->get());
+        auto result = raft_instance->append_entries(entries);
+        if (!result->get_accepted())
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send requests to RAFT, mostly because we are not leader, code {}, message: '{}'", result->get_result_code(), result->get_result_str());
+
+        if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+        {
+            TestKeeperStorage::ResponsesForSessions responses;
+            for (const auto & [session_id, request] : requests)
+            {
+                auto response = request->makeResponse();
+                response->xid = request->xid;
+                response->zxid = 0; /// FIXME what we can do with it?
+                response->error = Coordination::Error::ZOPERATIONTIMEOUT;
+                responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+            }
+            return responses;
+        }
+        else if (result->get_result_code() != nuraft::cmd_result_code::OK)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
+
+        return readZooKeeperResponses(result->get());
+    }
 }
 
 

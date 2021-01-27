@@ -47,6 +47,8 @@ public:
         return storage;
     }
 
+    TestKeeperStorage::ResponsesForSessions processReadRequest(const TestKeeperStorage::RequestForSession & requests);
+
 private:
     struct StorageSnapshot
     {
