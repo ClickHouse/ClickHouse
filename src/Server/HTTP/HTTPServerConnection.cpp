@@ -6,8 +6,11 @@ namespace DB
 {
 
 HTTPServerConnection::HTTPServerConnection(
-    const Poco::Net::StreamSocket & socket, Poco::Net::HTTPServerParams::Ptr params_, HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), params(params_), factory(factory_), stopped(false)
+    const Context & context_,
+    const Poco::Net::StreamSocket & socket,
+    Poco::Net::HTTPServerParams::Ptr params_,
+    HTTPRequestHandlerFactoryPtr factory_)
+    : TCPServerConnection(socket), context(context_), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -25,7 +28,7 @@ void HTTPServerConnection::run()
             if (!stopped)
             {
                 HTTPServerResponse response(session);
-                HTTPServerRequest request(response, session);
+                HTTPServerRequest request(context, response, session);
 
                 Poco::Timestamp now;
                 response.setDate(now);

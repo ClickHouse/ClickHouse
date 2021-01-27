@@ -1058,10 +1058,14 @@ void readText(std::vector<T> & x, ReadBuffer & buf)
 
 
 /// Skip whitespace characters.
-inline void skipWhitespaceIfAny(ReadBuffer & buf)
+inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 {
-    while (!buf.eof() && isWhitespaceASCII(*buf.position()))
-        ++buf.position();
+    if (!one_line)
+        while (!buf.eof() && isWhitespaceASCII(*buf.position()))
+            ++buf.position();
+    else
+        while (!buf.eof() && isWhitespaceASCIIOneLine(*buf.position()))
+            ++buf.position();
 }
 
 /// Skips json value.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 
 #include <Poco/Net/HTTPServerParams.h>
@@ -13,7 +14,10 @@ class HTTPServerConnection : public Poco::Net::TCPServerConnection
 {
 public:
     HTTPServerConnection(
-        const Poco::Net::StreamSocket & socket, Poco::Net::HTTPServerParams::Ptr params, HTTPRequestHandlerFactoryPtr factory);
+        const Context & context,
+        const Poco::Net::StreamSocket & socket,
+        Poco::Net::HTTPServerParams::Ptr params,
+        HTTPRequestHandlerFactoryPtr factory);
 
     void run() override;
 
@@ -22,6 +26,7 @@ protected:
     void onServerStopped(const bool & abortCurrent);
 
 private:
+    Context context;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
     bool stopped;

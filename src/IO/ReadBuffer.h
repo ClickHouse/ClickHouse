@@ -55,6 +55,8 @@ public:
       */
     bool next()
     {
+        assert(!hasPendingData());
+
         bytes += offset();
         bool res = nextImpl();
         if (!res)
@@ -211,7 +213,10 @@ inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
     class ReadBufferWrapper : public ReadBuffer
     {
         public:
-            explicit ReadBufferWrapper(ReadBuffer & buf_) : ReadBuffer(buf_.position(), 0), buf(buf_) {}
+            explicit ReadBufferWrapper(ReadBuffer & buf_) : ReadBuffer(buf_.position(), 0), buf(buf_)
+            {
+                working_buffer = Buffer(buf.position(), buf.buffer().end());
+            }
 
         private:
             ReadBuffer & buf;

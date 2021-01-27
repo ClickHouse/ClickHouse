@@ -213,6 +213,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     }
 
     auto server = HTTPServer(
+        context,
         std::make_shared<HandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context),
         server_pool,
         socket,

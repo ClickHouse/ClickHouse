@@ -1,4 +1,5 @@
 #include <IO/LimitReadBuffer.h>
+
 #include <Common/Exception.h>
 
 
@@ -36,14 +37,16 @@ bool LimitReadBuffer::nextImpl()
 }
 
 
-LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_, std::string exception_message_)
-    : ReadBuffer(in_.position(), 0)
-    , in(&in_)
-    , owns_in(false)
+LimitReadBuffer::LimitReadBuffer(ReadBuffer * in_, bool owns, UInt64 limit_, bool throw_exception_, std::string exception_message_)
+    : ReadBuffer(in_ ? in_->position() : nullptr, 0)
+    , in(in_)
+    , owns_in(owns)
     , limit(limit_)
     , throw_exception(throw_exception_)
     , exception_message(std::move(exception_message_))
 {
+    assert(in);
+
     size_t remaining_bytes_in_buffer = in->buffer().end() - in->position();
     if (remaining_bytes_in_buffer > limit)
         remaining_bytes_in_buffer = limit;
@@ -52,20 +55,15 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exc
 }
 
 
-// FIXME: check that |in_| is not nullptr beforehand
-LimitReadBuffer::LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_, bool throw_exception_, std::string exception_message_)
-    : ReadBuffer(in_->position(), 0)
-    , in(in_.release())
-    , owns_in(true)
-    , limit(limit_)
-    , throw_exception(throw_exception_)
-    , exception_message(std::move(exception_message_))
+LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_, std::string exception_message_)
+    : LimitReadBuffer(&in_, false, limit_, throw_exception_, exception_message_)
 {
-    size_t remaining_bytes_in_buffer = in->buffer().end() - in->position();
-    if (remaining_bytes_in_buffer > limit)
-        remaining_bytes_in_buffer = limit;
+}
 
-    working_buffer = Buffer(in->position(), in->position() + remaining_bytes_in_buffer);
+
+LimitReadBuffer::LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_, bool throw_exception_, std::string exception_message_)
+    : LimitReadBuffer(in_.release(), true, limit_, throw_exception_, exception_message_)
+{
 }
 
 
