@@ -10,6 +10,7 @@
 
 namespace DB
 {
+template <bool keep_names>
 inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char * end)
 {
     SipHash hash;
@@ -61,31 +62,39 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char *
             /// By the way, there is padding in columns and pointer dereference is Ok.
             || (token.type == TokenType::BareWord && *token.end != '('))
         {
-            /// Identifier is complex if it contains whitespace or more than two digits
-            /// or it's at least 36 bytes long (UUID for example).
-            size_t num_digits = 0;
-
-            const char * pos = token.begin;
-            if (token.size() < 36)
+            /// Explicitly ask to keep identifier names
+            if constexpr (keep_names)
             {
-                for (; pos != token.end; ++pos)
-                {
-                    if (isWhitespaceASCII(*pos))
-                        break;
+                hash.update(token.begin, token.size());
+            }
+            else
+            {
+                /// Identifier is complex if it contains whitespace or more than two digits
+                /// or it's at least 36 bytes long (UUID for example).
+                size_t num_digits = 0;
 
-                    if (isNumericASCII(*pos))
+                const char * pos = token.begin;
+                if (token.size() < 36)
+                {
+                    for (; pos != token.end; ++pos)
                     {
-                        ++num_digits;
-                        if (num_digits > 2)
+                        if (isWhitespaceASCII(*pos))
                             break;
+
+                        if (isNumericASCII(*pos))
+                        {
+                            ++num_digits;
+                            if (num_digits > 2)
+                                break;
+                        }
                     }
                 }
-            }
 
-            if (pos == token.end)
-                hash.update(token.begin, token.size());
-            else
-                hash.update("\x01", 1);
+                if (pos == token.end)
+                    hash.update(token.begin, token.size());
+                else
+                    hash.update("\x01", 1);
+            }
 
             continue;
         }
@@ -99,12 +108,14 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char *
     return hash.get64();
 }
 
+template <bool keep_names>
 inline UInt64 ALWAYS_INLINE normalizedQueryHash(const String & query)
 {
-    return normalizedQueryHash(query.data(), query.data() + query.size());
+    return normalizedQueryHash<keep_names>(query.data(), query.data() + query.size());
 }
 
 
+template <bool keep_names>
 inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArray<UInt8> & res_data)
 {
     Lexer lexer(begin, end);
@@ -126,9 +137,17 @@ inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const cha
             if (!prev_insignificant)
             {
                 if (0 == num_literals_in_sequence)
-                    res_data.push_back(' ');
+                {
+                    // If it's leading whitespace, ignore it altogether.
+                    if (token.begin != begin)
+                    {
+                        res_data.push_back(' ');
+                    }
+                }
                 else
+                {
                     prev_whitespace = true;
+                }
             }
             prev_insignificant = true;
             continue;
@@ -179,36 +198,44 @@ inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const cha
             /// By the way, there is padding in columns and pointer dereference is Ok.
             || (token.type == TokenType::BareWord && *token.end != '('))
         {
-            /// Identifier is complex if it contains whitespace or more than two digits
-            /// or it's at least 36 bytes long (UUID for example).
-            size_t num_digits = 0;
-
-            const char * pos = token.begin;
-            if (token.size() < 36)
-            {
-                for (; pos != token.end; ++pos)
-                {
-                    if (isWhitespaceASCII(*pos))
-                        break;
-
-                    if (isNumericASCII(*pos))
-                    {
-                        ++num_digits;
-                        if (num_digits > 2)
-                            break;
-                    }
-                }
-            }
-
-            if (pos == token.end)
+            /// Explicitly ask to normalize with identifier names
+            if constexpr (keep_names)
             {
                 res_data.insert(token.begin, token.end);
             }
             else
             {
-                res_data.push_back('`');
-                res_data.push_back('?');
-                res_data.push_back('`');
+                /// Identifier is complex if it contains whitespace or more than two digits
+                /// or it's at least 36 bytes long (UUID for example).
+                size_t num_digits = 0;
+
+                const char * pos = token.begin;
+                if (token.size() < 36)
+                {
+                    for (; pos != token.end; ++pos)
+                    {
+                        if (isWhitespaceASCII(*pos))
+                            break;
+
+                        if (isNumericASCII(*pos))
+                        {
+                            ++num_digits;
+                            if (num_digits > 2)
+                                break;
+                        }
+                    }
+                }
+
+                if (pos == token.end)
+                {
+                    res_data.insert(token.begin, token.end);
+                }
+                else
+                {
+                    res_data.push_back('`');
+                    res_data.push_back('?');
+                    res_data.push_back('`');
+                }
             }
 
             continue;

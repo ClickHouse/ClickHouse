@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeOneElementTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <IO/ReadBuffer.h>
@@ -41,7 +42,7 @@ bool DataTypeNullable::onlyNull() const
 }
 
 
-void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeNullable::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::NullMap);
     callback(path, *this);
@@ -51,7 +52,7 @@ void DataTypeNullable::enumerateStreams(const StreamCallback & callback, Substre
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStatePrefix(
+void DataTypeNullable::serializeBinaryBulkStatePrefixImpl(
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const
 {
@@ -61,7 +62,7 @@ void DataTypeNullable::serializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkStateSuffix(
+void DataTypeNullable::serializeBinaryBulkStateSuffixImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -71,7 +72,7 @@ void DataTypeNullable::serializeBinaryBulkStateSuffix(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkStatePrefix(
+void DataTypeNullable::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -81,7 +82,7 @@ void DataTypeNullable::deserializeBinaryBulkStatePrefix(
 }
 
 
-void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
+void DataTypeNullable::serializeBinaryBulkWithMultipleStreamsImpl(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -103,20 +104,28 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 }
 
 
-void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeNullable::deserializeBinaryBulkWithMultipleStreamsImpl(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto * stream = settings.getter(settings.path))
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    {
+        col.getNullMapColumnPtr() = cached_column;
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
+    }
 
     settings.path.back() = Substream::NullableElements;
-    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state);
+    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), limit, settings, state, cache);
     settings.path.pop_back();
 }
 
@@ -523,6 +532,23 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
+}
+
+DataTypePtr DataTypeNullable::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    if (subcolumn_name == "null")
+        return createOneElementTuple(std::make_shared<DataTypeUInt8>(), subcolumn_name, false);
+
+    return nested_data_type->tryGetSubcolumnType(subcolumn_name);
+}
+
+ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
+    if (subcolumn_name == "null")
+        return column_nullable.getNullMapColumnPtr();
+
+    return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
 }
 
 

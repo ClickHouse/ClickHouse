@@ -39,18 +39,18 @@ public:
     readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
     std::unique_ptr<WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, WriteMode mode) override;
-    void remove(const String & path) override;
+    void removeFile(const String & path) override;
+    void removeFileIfExists(const String & path) override;
+    void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
     Poco::Timestamp getLastModified(const String & path) override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;
-    int open(const String & path, mode_t mode) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
     const String getType() const override { return delegate->getType(); }
     Executor & getExecutor() override;
+    SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
 protected:
     DiskPtr delegate;

@@ -112,11 +112,13 @@ static void writeSignalIDtoSignalPipe(int sig)
 /** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
 static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeSignalIDtoSignalPipe(sig);
 }
 
@@ -125,6 +127,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     char buf[signal_pipe_buf_size];

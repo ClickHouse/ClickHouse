@@ -10,6 +10,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -76,7 +78,26 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    DataTypePtr res = findCreatorByName(family_name)(parameters);
+
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
+    }
+
+    return res;
+}
+
+DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
+{
+    if (!customization->name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create custom type without name");
+
+    auto type = get(customization->name->getName());
+    type->setCustomization(std::move(customization));
+    return type;
 }
 
 

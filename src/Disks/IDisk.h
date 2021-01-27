@@ -58,6 +58,19 @@ public:
 using SpacePtr = std::shared_ptr<Space>;
 
 /**
+ * A guard, that should synchronize file's or directory's state
+ * with storage device (e.g. fsync in POSIX) in its destructor.
+ */
+class ISyncGuard
+{
+public:
+    ISyncGuard() = default;
+    virtual ~ISyncGuard() = default;
+};
+
+using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
+
+/**
  * A unit of storage persisting data and metadata.
  * Abstract underlying storage technology.
  * Responsible for:
@@ -150,18 +163,17 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) = 0;
 
-    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
-    virtual void remove(const String & path) = 0;
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    virtual void removeFile(const String & path) = 0;
+
+    /// Remove file if it exists.
+    virtual void removeFileIfExists(const String & path) = 0;
+
+    /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
+    virtual void removeDirectory(const String & path) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
-
-    /// Remove file or directory if it exists.
-    void removeIfExists(const String & path)
-    {
-        if (exists(path))
-            remove(path);
-    }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -175,15 +187,6 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
-    /// Wrapper for POSIX open
-    virtual int open(const String & path, mode_t mode) const = 0;
-
-    /// Wrapper for POSIX close
-    virtual void close(int fd) const = 0;
-
-    /// Wrapper for POSIX fsync
-    virtual void sync(int fd) const = 0;
-
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
@@ -195,6 +198,9 @@ public:
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Returns guard, that insures synchronization of directory metadata with storage device.
+    virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
 private:
     std::unique_ptr<Executor> executor;

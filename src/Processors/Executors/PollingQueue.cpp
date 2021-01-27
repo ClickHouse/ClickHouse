@@ -61,7 +61,7 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
         throwFromErrno("Cannot add socket descriptor to epoll", ErrorCodes::CANNOT_OPEN_FILE);
 }
 
-std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
+static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
 {
     WriteBufferFromOwnString res;
     res << "Tasks = [";
@@ -121,7 +121,6 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 void PollingQueue::finish()
 {
     is_finished = true;
-    tasks.clear();
 
     uint64_t buf = 0;
     while (-1 == write(pipe_fd[1], &buf, sizeof(buf)))

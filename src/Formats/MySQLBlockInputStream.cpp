@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 MySQLBlockInputStream::Connection::Connection(
@@ -114,6 +115,8 @@ namespace
             case ValueType::vtFixedString:
                 assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
                 break;
+            default:
+                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
