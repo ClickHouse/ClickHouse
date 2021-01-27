@@ -20,9 +20,8 @@ import psycopg2
 import pymongo
 import pymysql
 import requests
-import xml.dom.minidom
+from dict2xml import dict2xml
 from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
-from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
@@ -1192,8 +1191,8 @@ class ClickHouseInstance:
 
     @staticmethod
     def dict_to_xml(dictionary):
-        xml_str = dicttoxml(dictionary, custom_root="yandex", attr_type=False)
-        return xml.dom.minidom.parseString(xml_str).toprettyxml()
+        xml_str = dict2xml(dictionary, wrap="yandex", indent="  ", newlines=True)
+        return xml_str
 
     @property
     def odbc_drivers(self):
