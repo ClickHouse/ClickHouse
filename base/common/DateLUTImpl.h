@@ -229,8 +229,12 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
+        UInt16 idx = year - DATE_LUT_MIN_YEAR;
+        if (unlikely(idx >= DATE_LUT_YEARS))
+            return 31;  /// Implementation specific behaviour on overflow.
+
         /// 32 makes arithmetic more simple.
-        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
+        DayNum any_day_of_month = DayNum(years_lut[idx] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
@@ -767,7 +771,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline time_t addDays(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -847,7 +851,7 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    inline time_t addYears(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addYears(time_t t, Int64 delta) const
     {
         DayNum result_day = addYears(toDayNum(t), delta);
 
@@ -859,7 +863,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addYears(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 

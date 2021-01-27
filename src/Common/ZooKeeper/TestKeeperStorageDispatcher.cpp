@@ -18,29 +18,29 @@ namespace zkutil
 void TestKeeperStorageDispatcher::processingThread()
 {
     setThreadName("TestKeeperSProc");
-    try
+
+    while (!shutdown)
     {
-        while (!shutdown)
+        RequestInfo info;
+
+        UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
+
+        if (requests_queue.tryPop(info, max_wait))
         {
-            RequestInfo info;
+            if (shutdown)
+                break;
 
-            UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
-
-            if (requests_queue.tryPop(info, max_wait))
+            try
             {
-                if (shutdown)
-                    break;
-
                 auto responses = storage.processRequest(info.request, info.session_id);
                 for (const auto & response_for_session : responses)
                     setResponse(response_for_session.session_id, response_for_session.response);
             }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize();
     }
 }
 

@@ -35,13 +35,16 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     if (lower_name != "sum" && lower_name != "sumif")
         return;
 
-    auto & func_arguments = func.arguments->children;
+    const auto & func_arguments = func.arguments->children;
 
     if (lower_name == "sumif")
     {
         /// sumIf(1, cond) -> countIf(cond)
         const auto * literal = func_arguments[0]->as<ASTLiteral>();
-        if (func_arguments.size() == 2 && literal && literal->value.get<UInt64>() == 1)
+        if (!literal || !DB::isInt64FieldType(literal->value.getType()))
+            return;
+
+        if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
         {
             auto new_func = createNewFunctionWithOneArgument("countIf", func_arguments[1]);
             new_func->setAlias(func.alias);
@@ -49,7 +52,6 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             return;
         }
     }
-
     else
     {
         const auto * nested_func = func_arguments[0]->as<ASTFunction>();
@@ -57,13 +59,16 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
         if (!nested_func || Poco::toLower(nested_func->name) != "if" || nested_func->arguments->children.size() != 3)
             return;
 
-        auto & if_arguments = nested_func->arguments->children;
+        const auto & if_arguments = nested_func->arguments->children;
 
         const auto * first_literal = if_arguments[1]->as<ASTLiteral>();
         const auto * second_literal = if_arguments[2]->as<ASTLiteral>();
 
         if (first_literal && second_literal)
         {
+            if (!DB::isInt64FieldType(first_literal->value.getType()) || !DB::isInt64FieldType(second_literal->value.getType()))
+                return;
+
             auto first_value = first_literal->value.get<UInt64>();
             auto second_value = second_literal->value.get<UInt64>();
             /// sum(if(cond, 1, 0)) -> countIf(cond)

@@ -12,6 +12,9 @@ using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, To
 void registerFunctionToDayOfYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfYear>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToDayOfYear>("DAYOFYEAR", FunctionFactory::CaseInsensitive);
 }
 
 }
