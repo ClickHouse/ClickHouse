@@ -359,4 +359,14 @@ SHOW QUOTAS
 SHOW [CURRENT] QUOTA
 ```
 
+## SHOW ACCESS {#show-access-statement}
+
+Выводит список всех [пользователей](../../operations/access-rights.md#user-account-management), [ролей](../../operations/access-rights.md#role-management), [профилей](../../operations/access-rights.md#settings-profiles-management) и пр., а также все [привилегии](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Синтаксис {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->

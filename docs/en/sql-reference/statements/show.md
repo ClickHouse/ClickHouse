@@ -307,7 +307,6 @@ Returns a list of [roles](../../operations/access-rights.md#role-management). To
 ``` sql
 SHOW [CURRENT|ENABLED] ROLES
 ```
-
 ## SHOW PROFILES {#show-profiles-statement}
 
 Returns a list of [setting profiles](../../operations/access-rights.md#settings-profiles-management). To view user accounts parameters, see the system table [settings_profiles](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
@@ -347,7 +346,15 @@ Returns a [quota](../../operations/quotas.md) consumption for all users or for c
 ``` sql
 SHOW [CURRENT] QUOTA
 ```
+## SHOW ACCESS {#show-access-statement}
 
+Shows all [users](../../operations/access-rights.md#user-account-management), [roles](../../operations/access-rights.md#role-management), [profiles](../../operations/access-rights.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Syntax {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
 ## SHOW CLUSTER(s) {#show-cluster-statement}
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
