@@ -246,15 +246,17 @@ void HTMLForm::readUrl(ReadBuffer & in)
 {
     int fields = 0;
     char ch;
-    in.read(ch);
     bool is_first = true;
-    while (!in.eof())
+
+    while (true)
     {
         if (field_limit > 0 && fields == field_limit)
             throw Poco::Net::HTMLFormException("Too many form fields");
+
         std::string name;
         std::string value;
-        while (!in.eof() && ch != '=' && ch != '&')
+
+        while (in.read(ch) && ch != '=' && ch != '&')
         {
             if (ch == '+')
                 ch = ' ';
@@ -262,36 +264,36 @@ void HTMLForm::readUrl(ReadBuffer & in)
                 name += ch;
             else
                 throw Poco::Net::HTMLFormException("Field name too long");
-            in.read(ch);
         }
+
         if (ch == '=')
         {
-            in.read(ch);
-            while (!in.eof() && ch != '&')
+            while (in.read(ch) && ch != '&')
             {
                 if (ch == '+')
                     ch = ' ';
                 if (value.size() < value_length_limit)
-                    value += char(ch);
+                    value += ch;
                 else
                     throw Poco::Net::HTMLFormException("Field value too long");
-                in.read(ch);
             }
         }
-        // remove UTF-8 byte order mark from first name, if present
+
+        // Remove UTF-8 BOM from first name, if present
         if (is_first)
-        {
             Poco::UTF8::removeBOM(name);
-        }
+
         std::string decoded_name;
         std::string decoded_value;
         Poco::URI::decode(name, decoded_name);
         Poco::URI::decode(value, decoded_value);
         add(decoded_name, decoded_value);
         ++fields;
-        if (ch == '&')
-            in.read(ch);
+
         is_first = false;
+
+        if (in.eof())
+            break;
     }
 }
 
