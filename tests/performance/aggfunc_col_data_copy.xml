@@ -16,8 +16,8 @@
    ORDER BY(dim)
    SETTINGS index_granularity = 8192;
   </create_query>  
-  <fill_query>insert into test_bm2 SELECT 1,number FROM numbers(0, 2000)</fill_query>  
-  <fill_query>insert into test_bm_join2 SELECT 1, bitmapBuild(range(toUInt64(0),toUInt64(30000000)))</fill_query>  
+  <fill_query>insert into test_bm2 SELECT 1,number FROM numbers(0, 1000)</fill_query>  
+  <fill_query>insert into test_bm_join2 SELECT 1, bitmapBuild(range(toUInt64(0),toUInt64(10000000)))</fill_query>  
   <query>select a.dim,bitmapCardinality(b.ids) from test_bm2 a left join test_bm_join2 b using(dim)</query>  
   <drop_query>drop table if exists test_bm2</drop_query> 
   <drop_query>drop table if exists test_bm_join2</drop_query> 
