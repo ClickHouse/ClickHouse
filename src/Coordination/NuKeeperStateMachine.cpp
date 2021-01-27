@@ -223,4 +223,10 @@ int NuKeeperStateMachine::read_logical_snp_obj(
     return 0;
 }
 
+TestKeeperStorage::ResponsesForSessions NuKeeperStateMachine::processReadRequest(const TestKeeperStorage::RequestForSession & request_for_session)
+{
+    std::lock_guard lock(storage_lock);
+    return storage.processRequest(request_for_session.request, request_for_session.session_id);
+}
+
 }
