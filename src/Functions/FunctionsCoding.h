@@ -298,6 +298,7 @@ public:
             const ColumnString::Chars & vec_src = col_in->getChars();
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
+            char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
             {
@@ -307,8 +308,10 @@ public:
                 /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
                 if (tryParseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset])))
                 {
-                    char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
-                    std::strcat(src_ipv4_buf, reinterpret_cast<const char *>(&vec_src[src_offset]));
+                    std::memcpy(
+                        src_ipv4_buf + std::strlen("::ffff:"),
+                        reinterpret_cast<const char *>(&vec_src[src_offset]),
+                        std::strlen(reinterpret_cast<const char *>(&vec_src[src_offset])));
                     parseIPv6(src_ipv4_buf, reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 }
                 else
