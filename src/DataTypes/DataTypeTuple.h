@@ -53,33 +53,32 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
-    void serializeBinaryBulkStatePrefixImpl(
+    void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkStateSuffixImpl(
+    void serializeBinaryBulkStateSuffix(
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefixImpl(
+    void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinaryBulkWithMultipleStreamsImpl(
+    void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
             size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkWithMultipleStreamsImpl(
+    void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsCache * cache) const override;
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
@@ -98,9 +97,6 @@ public:
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
-
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }

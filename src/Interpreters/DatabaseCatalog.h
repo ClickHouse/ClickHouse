@@ -73,6 +73,7 @@ struct TemporaryTableHolder : boost::noncopyable
 {
     typedef std::function<StoragePtr(const StorageID &)> Creator;
 
+    TemporaryTableHolder() = default;
     TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
@@ -94,7 +95,7 @@ struct TemporaryTableHolder : boost::noncopyable
 
     operator bool () const { return id != UUIDHelpers::Nil; }
 
-    const Context & global_context;
+    const Context * global_context = nullptr;
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
 };
@@ -110,7 +111,7 @@ public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(Context & global_context_);
+    static DatabaseCatalog & init(Context * global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
@@ -198,7 +199,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    DatabaseCatalog(Context & global_context_);
+    DatabaseCatalog(Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -239,7 +240,7 @@ private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
 
     /// For some reason Context is required to get Storage from Database object
-    Context & global_context;
+    Context * global_context;
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;

@@ -25,7 +25,7 @@ def without_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
 )
 def user_with_privilege(self, table_type, node=None):
     """Check that user can select from a table on which they have select privilege.
@@ -47,7 +47,7 @@ def user_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
     """Check that user is unable to select from a table after select privilege
@@ -76,7 +76,7 @@ def user_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Select_Column("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass", [
     ("d", "d", "x", "d", '\'2020-01-01\''),
@@ -115,7 +115,7 @@ def user_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Grant_Privilege_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Grant("1.0"),
 )
 def role_with_privilege(self, table_type, node=None):
     """Check that user can select from a table after it is granted a role that
@@ -142,7 +142,7 @@ def role_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Revoke_Privilege_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Revoke("1.0"),
 )
 def role_with_revoked_privilege(self, table_type, node=None):
     """Check that user with a role that has select privilege on a table is unable
@@ -197,7 +197,7 @@ def role_with_privilege_on_columns(self, table_type):
 
 @TestOutline
 @Requirements(
-    RQ_SRS_006_RBAC_Select_Column("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_Column("1.0"),
 )
 @Examples("grant_columns revoke_columns select_columns_fail select_columns_pass data_pass", [
     ("d", "d", "x", "d", '\'2020-01-01\''),
@@ -241,7 +241,7 @@ def role_column_privileges(self, grant_columns, select_columns_pass, data_pass, 
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_Select_Cluster("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant("1.0"),
 )
 def user_with_privilege_on_cluster(self, table_type, node=None):
     """Check that user is able to select from a table with
@@ -268,18 +268,222 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
             with Finally("I drop the user"):
                 node.query(f"DROP USER {user_name} ON CLUSTER sharded_cluster")
 
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant("1.0"),
+)
+def user_with_privilege_from_user_with_grant_option(self, table_type, node=None):
+    """Check that user is able to select from a table when granted privilege
+    from another user with grant option.
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with Given("I have some data inserted into table"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"):
+            with When("I grant privilege with grant option to user"):
+                node.query(f"GRANT SELECT ON {table_name} TO {user0_name} WITH GRANT OPTION")
+            with And("I grant privilege to another user via grant option"):
+                node.query(f"GRANT SELECT ON {table_name} TO {user1_name}", settings = [("user",user0_name)])
+            with Then("I verify SELECT command"):
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
+                assert user_select.output == default.output, error()
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant("1.0"),
+)
+def role_with_privilege_from_user_with_grant_option(self, table_type, node=None):
+    """Check that user is able to select from a table when granted a role with
+    select privilege that was granted by another user with grant option.
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with Given("I have some data inserted into table"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
+            with When("I grant privilege with grant option to user"):
+                node.query(f"GRANT SELECT ON {table_name} TO {user0_name} WITH GRANT OPTION")
+            with And("I grant privilege to a role via grant option"):
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name}", settings = [("user",user0_name)])
+            with And("I grant the role to another user"):
+                node.query(f"GRANT {role_name} TO {user1_name}")
+            with Then("I verify SELECT command"):
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
+                assert user_select.output == default.output, error()
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant("1.0"),
+)
+def user_with_privilege_from_role_with_grant_option(self, table_type, node=None):
+    """Check that user is able to select from a table when granted privilege from
+    a role with grant option
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with Given("I have some data inserted into table"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
+            with When("I grant privilege with grant option to a role"):
+                node.query(f"GRANT SELECT ON {table_name} TO {role_name} WITH GRANT OPTION")
+            with When("I grant role to a user"):
+                node.query(f"GRANT {role_name} TO {user0_name}")
+            with And("I grant privilege to a user via grant option"):
+                node.query(f"GRANT SELECT ON {table_name} TO {user1_name}", settings = [("user",user0_name)])
+            with Then("I verify SELECT command"):
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
+                assert user_select.output == default.output, error()
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Grant("1.0"),
+)
+def role_with_privilege_from_role_with_grant_option(self, table_type, node=None):
+    """Check that a user is able to select from a table with a role that was
+    granted privilege by another role with grant option
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with Given("I have some data inserted into table"):
+            node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')")
+        with user(node, f"{user0_name},{user1_name}"), role(node, f"{role0_name},{role1_name}"):
+            with When("I grant privilege with grant option to role"):
+                node.query(f"GRANT SELECT ON {table_name} TO {role0_name} WITH GRANT OPTION")
+            with And("I grant the role to a user"):
+                node.query(f"GRANT {role0_name} TO {user0_name}")
+            with And("I grant privilege to another role via grant option"):
+                node.query(f"GRANT SELECT ON {table_name} TO {role1_name}", settings = [("user",user0_name)])
+            with And("I grant the second role to another user"):
+                node.query(f"GRANT {role1_name} TO {user1_name}")
+            with Then("I verify SELECT command"):
+                user_select = node.query(f"SELECT d FROM {table_name}", settings = [("user",user1_name)])
+                default = node.query(f"SELECT d FROM {table_name}")
+                assert user_select.output == default.output, error()
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke("1.0"),
+)
+def revoke_privilege_from_user_via_user_with_grant_option(self, table_type, node=None):
+    """Check that user is unable to revoke a column they don't have access to from a user.
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with user(node, f"{user0_name},{user1_name}"):
+            with When("I grant privilege with grant option to user"):
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {user0_name} WITH GRANT OPTION")
+            with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name=user0_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {user1_name}", settings=[("user",user0_name)],
+                    exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke("1.0"),
+)
+def revoke_privilege_from_role_via_user_with_grant_option(self, table_type, node=None):
+    """Check that user is unable to revoke a column they dont have acces to from a role.
+    """
+    user_name = f"user_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, role_name):
+            with When("I grant privilege with grant option to user"):
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {user_name} WITH GRANT OPTION")
+            with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {role_name}", settings=[("user",user_name)],
+                    exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke("1.0"),
+)
+def revoke_privilege_from_user_via_role_with_grant_option(self, table_type, node=None):
+    """Check that user with a role is unable to revoke a column they dont have acces to from a user.
+    """
+    user0_name = f"user0_{getuid()}"
+    user1_name = f"user1_{getuid()}"
+    role_name = f"role_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with user(node, f"{user0_name},{user1_name}"), role(node, role_name):
+            with When("I grant privilege with grant option to a role"):
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {role_name} WITH GRANT OPTION")
+            with And("I grant the role to a user"):
+                node.query(f"GRANT {role_name} TO {user0_name}")
+            with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name=user0_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {user1_name}", settings=[("user",user0_name)],
+                    exitcode=exitcode, message=message)
+
+@TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_Select_GrantOption_Revoke("1.0"),
+)
+def revoke_privilege_from_role_via_role_with_grant_option(self, table_type, node=None):
+    """Check that user with a role is unable to revoke a column they dont have acces to from a role.
+    """
+    user_name = f"user_{getuid()}"
+    role0_name = f"role0_{getuid()}"
+    role1_name = f"role1_{getuid()}"
+    table_name = f"table_{getuid()}"
+    if node is None:
+        node = self.context.node
+    with table(node, table_name, table_type):
+        with user(node, user_name), role(node, f"{role0_name},{role1_name}"):
+            with When("I grant privilege with grant option to a role"):
+                node.query(f"GRANT SELECT(d) ON {table_name} TO {role0_name} WITH GRANT OPTION")
+            with And("I grant the role to a user"):
+                node.query(f"GRANT {role0_name} TO {user_name}")
+            with Then("I revoke privilege on a column the user with grant option does not have access to"):
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"REVOKE SELECT(b) ON {table_name} FROM {role1_name}", settings=[("user",user_name)],
+                    exitcode=exitcode, message=message)
+
 @TestOutline(Feature)
 @Requirements(
-    RQ_SRS_006_RBAC_Select("1.0"),
-    RQ_SRS_006_RBAC_Select_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_Select("1.0"),
+    RQ_SRS_006_RBAC_Privileges_Select_TableEngines("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
 @Name("select")
 def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
-    """Check the RBAC functionality of SELECT.
-    """
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:
@@ -288,10 +492,10 @@ def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
         self.context.stress = parallel
 
     tasks = []
-    pool = Pool(10)
+    pool = Pool(3)
 
     try:
         for scenario in loads(current_module(), Scenario):
-            run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+            run_scenario(pool, tasks, scenario, {"table_type" : table_type})
     finally:
         join(tasks)

@@ -77,20 +77,17 @@ ORDER BY expr
 
 -   `SETTINGS` — дополнительные параметры, регулирующие поведение `MergeTree` (необязательные):
 
-    -   `index_granularity` — максимальное количество строк данных между засечками индекса. По умолчанию — 8192. Смотрите [Хранение данных](#mergetree-data-storage).
-    -   `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
+    - `index_granularity` — максимальное количество строк данных между засечками индекса. По умолчанию — 8192. Смотрите [Хранение данных](#mergetree-data-storage).
+    - `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
     -   `min_index_granularity_bytes` — минимально допустимый размер гранул данных в байтах. Значение по умолчанию — 1024b. Для обеспечения защиты от случайного создания таблиц с очень низким значением `index_granularity_bytes`. Смотрите [Хранение данных](#mergetree-data-storage).
-    -   `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
-    -   `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
-    -   `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
-    -   <a name="mergetree_setting-merge_with_ttl_timeout"></a>`merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
-    -   `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
-    -   `merge_max_block_size` — максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
-    -   `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
+    - `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
+    - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
+    - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
+    - <a name="mergetree_setting-merge_with_ttl_timeout"></a>`merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
+    - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
+    - `merge_max_block_size` — максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
+    - `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
     -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — минимальное количество байт/строк в куске данных для хранения в формате `Wide`. Можно задать одну или обе настройки или не задавать ни одной. Подробнее см. в разделе [Хранение данных](#mergetree-data-storage).
-	-   `max_parts_in_total` — максимальное количество кусков во всех партициях.
-	-   `max_compress_block_size` — максимальный размер блоков несжатых данных перед сжатием для записи в таблицу. Вы также можете задать этот параметр в глобальных настройках (смотрите [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
-	-   `min_compress_block_size` — минимальный размер блоков несжатых данных, необходимых для сжатия при записи следующей засечки. Вы также можете задать этот параметр в глобальных настройках (смотрите [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
 
 **Пример задания секций**
 
@@ -180,28 +177,24 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 ClickHouse не требует уникального первичного ключа. Можно вставить много строк с одинаковым первичным ключом.
 
-Ключ в `PRIMARY KEY` и `ORDER BY` может иметь тип `Nullable`. За поддержку этой возможности отвечает настройка [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key).
-
-При сортировке с использованием выражения `ORDER BY` для значений `NULL` всегда работает принцип [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values).
-
 ### Выбор первичного ключа {#vybor-pervichnogo-kliucha}
 
 Количество столбцов в первичном ключе не ограничено явным образом. В зависимости от структуры данных в первичный ключ можно включать больше или меньше столбцов. Это может:
 
 -   Увеличить эффективность индекса.
 
-    Пусть первичный ключ — `(a, b)`, тогда добавление ещё одного столбца `c` повысит эффективность, если выполнены условия:
+        Пусть первичный ключ — `(a, b)`, тогда добавление ещё одного столбца `c` повысит эффективность, если выполнены условия:
 
-    - Есть запросы с условием на столбец `c`.
-    - Часто встречаются достаточно длинные (в несколько раз больше `index_granularity`) диапазоны данных с одинаковыми значениями `(a, b)`. Иначе говоря, когда добавление ещё одного столбца позволит пропускать достаточно длинные диапазоны данных.
+        - Есть запросы с условием на столбец `c`.
+        - Часто встречаются достаточно длинные (в несколько раз больше `index_granularity`) диапазоны данных с одинаковыми значениями `(a, b)`. Иначе говоря, когда добавление ещё одного столбца позволит пропускать достаточно длинные диапазоны данных.
 
 -   Улучшить сжатие данных.
 
-    ClickHouse сортирует данные по первичному ключу, поэтому чем выше однородность, тем лучше сжатие.
+        ClickHouse сортирует данные по первичному ключу, поэтому чем выше однородность, тем лучше сжатие.
 
 -   Обеспечить дополнительную логику при слиянии кусков данных в движках [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) и [SummingMergeTree](summingmergetree.md).
 
-    В этом случае имеет смысл указать отдельный *ключ сортировки*, отличающийся от первичного ключа.
+        В этом случае имеет смысл указать отдельный *ключ сортировки*, отличающийся от первичного ключа.
 
 Длинный первичный ключ будет негативно влиять на производительность вставки и потребление памяти, однако на производительность ClickHouse при запросах `SELECT` лишние столбцы в первичном ключе не влияют.
 
@@ -316,11 +309,11 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 -   `bloom_filter([false_positive])` — [фильтр Блума](https://en.wikipedia.org/wiki/Bloom_filter) для указанных стоблцов.
 
-    Необязательный параметр `false_positive` — это вероятность получения ложноположительного срабатывания. Возможные значения: (0, 1). Значение по умолчанию: 0.025.
+        Необязательный параметр `false_positive` — это вероятность получения ложноположительного срабатывания. Возможные значения: (0, 1). Значение по умолчанию: 0.025.
 
-    Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
-    
-    Фильтром могут пользоваться функции: [equals](../../../engines/table-engines/mergetree-family/mergetree.md), [notEquals](../../../engines/table-engines/mergetree-family/mergetree.md), [in](../../../engines/table-engines/mergetree-family/mergetree.md), [notIn](../../../engines/table-engines/mergetree-family/mergetree.md).
+        Поддержанные типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+
+        Фильтром могут пользоваться функции: [equals](../../../engines/table_engines/mergetree_family/mergetree.md), [notEquals](../../../engines/table_engines/mergetree_family/mergetree.md), [in](../../../engines/table_engines/mergetree_family/mergetree.md), [notIn](../../../engines/table_engines/mergetree_family/mergetree.md).
 
 **Примеры**
 
@@ -339,8 +332,8 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✗           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
@@ -572,7 +565,6 @@ ALTER TABLE example_table
 -   `disk` — диск, находящийся внутри тома.
 -   `max_data_part_size_bytes` — максимальный размер куска данных, который может находится на любом из дисков этого тома.
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).
--   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
 Примеры конфигураций:
 
@@ -601,19 +593,6 @@ ALTER TABLE example_table
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
-
-		<small_jbod_with_external_no_merges>
-            <volumes>
-                <main>
-                    <disk>jbod1</disk>
-                </main>
-                <external>
-                    <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
-                </external>
-            </volumes>
-        </small_jbod_with_external_no_merges>
-
     </policies>
     ...
 </storage_configuration>
@@ -666,4 +645,4 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

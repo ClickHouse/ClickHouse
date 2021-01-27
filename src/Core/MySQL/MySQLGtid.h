@@ -27,7 +27,7 @@ public:
 
     void tryMerge(size_t i);
 
-    static void tryShrink(GTIDSet & set, unsigned int i, Interval & current);
+    static void tryShirnk(GTIDSet & set, unsigned int i, Interval & current);
 };
 
 class GTIDSets

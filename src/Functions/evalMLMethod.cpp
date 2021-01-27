@@ -62,7 +62,7 @@ public:
         return type->getReturnTypeToPredict();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);

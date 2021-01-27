@@ -5,7 +5,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -230,28 +229,19 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (!is_dictionary)
     {
-        String action = "CREATE";
-        if (attach)
-            action = "ATTACH";
-        else if (replace_view)
-            action = "CREATE OR REPLACE";
-        else if (replace_table && create_or_replace)
-            action = "CREATE OR REPLACE";
-        else if (replace_table)
-            action = "REPLACE";
-
-        String what = "TABLE";
-        if (is_ordinary_view)
+        std::string what = "TABLE";
+        if (is_view)
             what = "VIEW";
-        else if (is_materialized_view)
+        if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        else if (is_live_view)
+        if (is_live_view)
             what = "LIVE VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
-                << action << " "
+                << (attach ? "ATTACH " : "CREATE ")
                 << (temporary ? "TEMPORARY " : "")
+                << (replace_view ? "OR REPLACE " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
@@ -260,12 +250,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
-
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                          << quoteString(*attach_from_path);
-
         if (live_view_timeout)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
                           << *live_view_timeout;
