@@ -75,7 +75,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     auto & best_state = states[*best_input];
     best_state.to_row = states[*best_input].num_rows;
 
-    /// Find the positions upto which need to aggregate in other chunks.
+    /// Find the positions up to which need to aggregate in other chunks.
     for (size_t i = 0; i < num_inputs; ++i)
     {
         if (!states[i].isValid() || i == *best_input)
