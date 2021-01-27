@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+./check-style -n
+./check-typos
+./check-whitespaces -n
+./check-duplicate-includes.sh
+./shellcheck-run.sh
