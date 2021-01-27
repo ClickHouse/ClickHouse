@@ -16,7 +16,8 @@
         "01474_executable_dictionary", /// informational stderr from sanitizer at start
         "functions_bad_arguments", /// Too long for TSan
         "01603_read_with_backoff_bug", /// Too long for TSan
-        "01646_system_restart_replicas_smoke" /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
+        "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
+        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy for TSan
     ],
     "address-sanitizer": [
         "00877",
@@ -62,7 +63,8 @@
         "hyperscan",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
-        "01396_inactive_replica_cleanup_nodes"
+        "01396_inactive_replica_cleanup_nodes",
+        "01641_memory_tracking_insert_optimize" /// INSERT lots of rows is too heavy in debug build
     ],
     "unbundled-build": [
         "00429",
@@ -162,7 +164,6 @@
         "01039_test_setting_parse",
         "01042_system_reload_dictionary_reloads_completely",
         "01045_dictionaries_restrictions",
-        "01048_exists_query",
         "01055_compact_parts_1",
         "01056_create_table_as",
         "01066_bit_count",
@@ -197,7 +198,6 @@
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
         "01192_rename_database_zookeeper",
-        "01210_drop_view",
         "01213_alter_rename_column",
         "01232_untuple",
         "01244_optimize_distributed_group_by_sharding_key",
@@ -209,7 +209,6 @@
         "01269_create_with_null",
         "01271_show_privileges",
         "01272_offset_without_limit",
-        "01275_parallel_mv",
         "01277_alter_rename_column_constraint_zookeeper",
         "01278_min_insert_block_size_rows_for_materialized_views",
         "01280_min_map_max_map",
@@ -309,7 +308,9 @@
         "01632_max_partitions_to_read",
         "01638_div_mod_ambiguities",
         "01642_if_nullable_regression",
-        "01643_system_suspend"
+        "01643_system_suspend",
+        "01655_plan_optimizations",
+        "01475_read_subcolumns_storages"
     ],
     "parallel":
     [
@@ -475,12 +476,15 @@
         "01494_storage_join_persistency",
         "01516_drop_table_stress",
         "01541_max_memory_usage_for_user",
+        "01646_system_restart_replicas_smoke", // system restart replicas is a global query
+        "01600_count_of_parts_metrics", // tests global system metrics
         "attach",
         "ddl_dictionaries",
         "dictionary",
         "limit_memory",
         "live_view",
         "memory_leak",
-        "memory_limit"
+        "memory_limit",
+        "polygon_dicts" // they use an explicitly specified database
     ]
 }

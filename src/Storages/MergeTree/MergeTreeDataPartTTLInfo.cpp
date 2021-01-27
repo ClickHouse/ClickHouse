@@ -138,7 +138,7 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeString("}", out);
     }
 
-    auto write_infos = [&out](const auto & infos, const auto & type, bool is_first)
+    auto write_infos = [&out](const TTLInfoMap & infos, const String & type, bool is_first)
     {
         if (!is_first)
             writeString(",", out);

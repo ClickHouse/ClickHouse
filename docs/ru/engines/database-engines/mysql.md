@@ -51,6 +51,23 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 [Nullable](../../engines/database-engines/mysql.md) поддержан.
 
+## Использование глобальных переменных {#global-variables-support}
+
+Для лучшей совместимости к глобальным переменным можно обращаться в формате MySQL, как `@@identifier`. 
+
+Поддерживаются следующие переменные:
+- `version`
+- `max_allowed_packet`
+
+!!! warning "Предупреждение"
+    В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
+
+Пример:
+
+``` sql
+SELECT @@version;
+```
+
 ## Примеры использования {#primery-ispolzovaniia}
 
 Таблица в MySQL:

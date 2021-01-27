@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/createReadBufferFromFileBase.h>
 #include <common/logger_useful.h>
@@ -20,11 +21,9 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_FSYNC;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -237,9 +236,25 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
     return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
-void DiskLocal::remove(const String & path)
+void DiskLocal::removeFile(const String & path)
 {
-    Poco::File(disk_path + path).remove(false);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeFileIfExists(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeDirectory(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != rmdir(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -297,26 +312,9 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
-int DiskLocal::open(const String & path, mode_t mode) const
+SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
-    String full_path = disk_path + path;
-    int fd = ::open(full_path.c_str(), mode);
-    if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
-                        errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-    return fd;
-}
-
-void DiskLocal::close(int fd) const
-{
-    if (-1 == ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
-}
-
-void DiskLocal::sync(int fd) const
-{
-    if (-1 == ::fsync(fd))
-        throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
+    return std::make_unique<LocalDirectorySyncGuard>(disk_path + path);
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
