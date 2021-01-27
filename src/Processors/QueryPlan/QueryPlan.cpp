@@ -7,9 +7,6 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include "ExpressionStep.h"
-#include "ArrayJoinStep.h"
-#include "FilterStep.h"
 
 namespace DB
 {
@@ -338,59 +335,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize()
 {
-    /* Stack contains info for every nodes in the path from tree root to the current node.
-     * Every optimization changes only current node and it's children.
-     * Optimization may change QueryPlanStep, but not QueryPlan::Node (only add a new one).
-     * So, QueryPlan::Node::children will be always valid.
-     */
-
-    struct Frame
-    {
-        Node * node;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-
-        if (frame.next_child == 0)
-        {
-            if (frame.node->children.size() == 1)
-            {
-                QueryPlanOptimizations::tryPushDownLimit(frame.node->step, frame.node->children.front());
-
-                while (QueryPlanOptimizations::tryMergeExpressions(frame.node, frame.node->children.front()));
-
-                if (frame.node->children.size() == 1)
-                    QueryPlanOptimizations::tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
-
-                QueryPlanOptimizations::trySplitFilter(frame.node, nodes);
-            }
-        }
-
-        if (frame.next_child < frame.node->children.size())
-        {
-            stack.push(Frame{frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-        else
-        {
-            if (frame.node->children.size() == 1)
-            {
-                while (QueryPlanOptimizations::tryMergeExpressions(frame.node, frame.node->children.front()));
-
-                QueryPlanOptimizations::trySplitFilter(frame.node, nodes);
-
-                QueryPlanOptimizations::tryLiftUpArrayJoin(frame.node, frame.node->children.front(), nodes);
-            }
-
-            stack.pop();
-        }
-    }
+    QueryPlanOptimizations::optimizeTree(*root, nodes);
 }
 
 }
