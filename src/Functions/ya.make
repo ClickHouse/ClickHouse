@@ -429,6 +429,7 @@ SRCS(
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
+    sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp

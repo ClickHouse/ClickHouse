@@ -413,4 +413,68 @@ Result:
 
 -   [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
 
+## sign(x) {#signx}
+
+The `sign` function can extract the sign of a real number.
+
+**Syntax**
+
+``` sql
+sign(x)
+```
+
+**Parameters**
+
+-   `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
+
+**Returned value**
+
+- -1 for `x < 0`
+-  0 for `x = 0`
+-  1 for `x > 0`
+
+**Example**
+
+Query:
+
+``` sql
+SELECT sign(0);
+```
+
+Result:
+
+``` text
+┌─sign(0)─┐
+│       0 │
+└─────────┘
+```
+
+Query:
+
+``` sql
+SELECT sign(1);
+```
+
+Result:
+
+``` text
+┌─sign(1)─┐
+│       1 │
+└─────────┘
+```
+
+Query:
+
+``` sql
+SELECT sign(-1);
+```
+
+Result:
+
+``` text
+┌─sign(-1)─┐
+│       -1 │
+└──────────┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->

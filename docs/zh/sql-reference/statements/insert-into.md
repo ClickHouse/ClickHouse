@@ -25,7 +25,6 @@ CREATE TABLE insert_select_testtable
 )
 ENGINE = MergeTree()
 ORDER BY a
-SETTINGS index_granularity = 8192 
 ```
 
 ``` sql
