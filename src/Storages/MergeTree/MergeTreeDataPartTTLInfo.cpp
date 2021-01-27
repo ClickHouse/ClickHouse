@@ -70,7 +70,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
 
-    auto fill_ttl_info_map = [](const JSON & json_part, TTLInfoMap & ttl_info_map)
+    auto fill_ttl_info_map = [this](const JSON & json_part, TTLInfoMap & ttl_info_map, bool update_min_max)
     {
         for (auto elem : json_part) // NOLINT
         {
@@ -79,28 +79,31 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             ttl_info.max = elem["max"].getUInt();
             String expression = elem["expression"].getString();
             ttl_info_map.emplace(expression, ttl_info);
+
+            if (update_min_max)
+                updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     };
 
     if (json.has("moves"))
     {
         const JSON & moves = json["moves"];
-        fill_ttl_info_map(moves, moves_ttl);
+        fill_ttl_info_map(moves, moves_ttl, false);
     }
     if (json.has("recompression"))
     {
         const JSON & recompressions = json["recompression"];
-        fill_ttl_info_map(recompressions, recompression_ttl);
+        fill_ttl_info_map(recompressions, recompression_ttl, false);
     }
     if (json.has("group_by"))
     {
         const JSON & group_by = json["group_by"];
-        fill_ttl_info_map(group_by, group_by_ttl);
+        fill_ttl_info_map(group_by, group_by_ttl, true);
     }
     if (json.has("rows_where"))
     {
         const JSON & rows_where = json["rows_where"];
-        fill_ttl_info_map(rows_where, rows_where_ttl);
+        fill_ttl_info_map(rows_where, rows_where_ttl, true);
     }
 }
 

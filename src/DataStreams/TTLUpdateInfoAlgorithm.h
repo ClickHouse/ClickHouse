@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Calculates new ttl_info and does nothing with data.
 class TTLUpdateInfoAlgorithm : public ITTLAlgorithm
 {
 public:
