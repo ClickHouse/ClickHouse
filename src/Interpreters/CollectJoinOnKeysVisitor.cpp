@@ -78,14 +78,48 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(ast, left, right, data);
-        data.addJoinKeys(left, right, table_numbers);
+        auto table_numbers = getTableNumbers(left, right, data);
+        if (table_numbers.first != 0)
+        {
+            data.addJoinKeys(left, right, table_numbers);
+            if (!data.new_on_expression)
+                data.new_on_expression = ast->clone();
+            else
+                data.new_on_expression = makeASTFunction("and", data.new_on_expression, ast->clone());
+        }
+        else
+        {
+            if (!data.new_where_conditions)
+                data.new_where_conditions = ast->clone();
+            else
+                data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
+
+            data.move_to_where = true;
+        }
+
     }
     else if (inequality != ASOF::Inequality::None)
     {
         if (!data.is_asof)
-            throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        {
+            ASTPtr left = func.arguments->children.at(0);
+            ASTPtr right = func.arguments->children.at(1);
+            auto table_numbers = getTableNumbers(left, right, data);
+            if (table_numbers.first != 0)
+            {
+                throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
+                    ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else
+            {
+                if (!data.new_where_conditions)
+                    data.new_where_conditions = ast->clone();
+                else
+                    data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
+
+                data.move_to_where = true;
+            }
+        }
 
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
@@ -93,7 +127,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(ast, left, right, data);
+        auto table_numbers = getTableNumbers(left, right, data);
 
         data.addAsofJoinKeys(left, right, table_numbers, inequality);
     }
@@ -118,7 +152,7 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
         getIdentifiers(child, out);
 }
 
-std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast,
+std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast,
                                                                     Data & data)
 {
     std::vector<const ASTIdentifier *> left_identifiers;
@@ -128,10 +162,7 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
     getIdentifiers(right_ast, right_identifiers);
 
     if (left_identifiers.empty() || right_identifiers.empty())
-    {
-        throw Exception("Not equi-join ON expression: " + queryToString(expr) + ". No columns in one of equality side.",
-                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-    }
+        return std::make_pair(0, 0);
 
     size_t left_idents_table = getTableForIdentifiers(left_identifiers, data);
     size_t right_idents_table = getTableForIdentifiers(right_identifiers, data);
@@ -141,8 +172,7 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
         auto left_name = queryToString(*left_identifiers[0]);
         auto right_name = queryToString(*right_identifiers[0]);
 
-        throw Exception("In expression " + queryToString(expr) + " columns " + left_name + " and " + right_name
-            + " are from the same table but from different arguments of equal function", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        return std::make_pair(0, 0);
     }
 
     return std::make_pair(left_idents_table, right_idents_table);
