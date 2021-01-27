@@ -267,7 +267,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
-    auto block = blockForIds(ids);
+    auto block = blockForIds(dict_struct, ids);
 
     auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
         context, format, sample_block, command, log,
