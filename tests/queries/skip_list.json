@@ -569,6 +569,6 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts", // they use an explicitly specified database
+        "polygon_dicts" // they use an explicitly specified database
     ]
 }
