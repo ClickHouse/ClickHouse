@@ -106,6 +106,7 @@ plaintexts = [
     ("DateTime", "reinterpretAsFixedString(toDateTime('2020-01-01 20:01:02'))"),
     ("DateTime64", "reinterpretAsFixedString(toDateTime64('2020-01-01 20:01:02.123', 3))"),
     ("LowCardinality", "toLowCardinality('1')"),
+    ("LowCardinalityFixedString", "toLowCardinality(toFixedString('1',2))"),
     #("Array", "[1,2]"), - not supported
     #("Tuple", "(1,'a')") - not supported
     ("NULL", "reinterpretAsFixedString(toDateOrNull('foo'))"),
