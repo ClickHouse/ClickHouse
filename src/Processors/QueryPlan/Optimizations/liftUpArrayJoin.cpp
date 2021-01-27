@@ -8,8 +8,13 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_node, QueryPlan::Nodes & nodes)
+bool tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
+    if (parent_node->children.size() != 1)
+        return false;
+
+    QueryPlan::Node * child_node = parent_node->children.front();
+
     auto & parent = parent_node->step;
     auto & child = child_node->step;
     auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
@@ -17,7 +22,7 @@ void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_n
     auto * array_join_step = typeid_cast<ArrayJoinStep *>(child.get());
 
     if (!(expression_step || filter_step) || !array_join_step)
-        return;
+        return false;
 
     const auto & array_join = array_join_step->arrayJoin();
     const auto & expression = expression_step ? expression_step->getExpression()
@@ -27,7 +32,7 @@ void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_n
 
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first->empty())
-        return;
+        return false;
 
     auto description = parent->getStepDescription();
 
@@ -52,7 +57,7 @@ void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * child_n
         child->setStepDescription(std::move(description));
 
         array_join_step->updateInputStream(child->getOutputStream(), expected_header);
-        return;
+        return false;
     }
 
     /// Add new expression step before ARRAY JOIN.

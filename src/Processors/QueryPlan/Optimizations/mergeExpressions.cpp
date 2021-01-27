@@ -6,8 +6,13 @@
 namespace DB::QueryPlanOptimizations
 {
 
-bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
+bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
+    if (parent_node->children.size() != 1)
+        return false;
+
+    QueryPlan::Node * child_node = parent_node->children.front();
+
     auto & parent = parent_node->step;
     auto & child = child_node->step;
 
