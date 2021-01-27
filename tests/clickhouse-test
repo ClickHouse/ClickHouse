@@ -342,9 +342,10 @@ def run_tests_array(all_tests_with_params):
                             SERVER_DIED = True
                             break
 
+                    file_suffix = ('.' + str(os.getpid())) if is_concurrent else ''
                     reference_file = os.path.join(suite_dir, name) + '.reference'
-                    stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
-                    stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
+                    stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
+                    stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
                     proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
 
@@ -717,6 +718,7 @@ def main(args):
             all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
             if args.test:
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+            all_tests = all_tests * args.test_runs
             all_tests.sort(key=key_func)
 
             jobs = args.jobs
@@ -886,6 +888,7 @@ if __name__ == '__main__':
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
+    parser.add_argument('--test-runs', default=1, nargs='?', type=int, help='Run each test many times (useful for e.g. flaky check)')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
     parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--skip-list-path', help="Path to skip-list file")

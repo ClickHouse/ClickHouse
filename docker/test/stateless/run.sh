@@ -55,12 +55,11 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
     fi
 
-    for _ in $(seq 1 "$NUM_TRIES"); do
-        clickhouse-test --testname --shard --zookeeper --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a test_output/test_result.txt
-        if [ "${PIPESTATUS[0]}" -ne "0" ]; then
-            break;
-        fi
-    done
+    clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
+            --test-runs "$NUM_TRIES" --jobs 4 \
+            "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+        | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a test_output/test_result.txt
 }
 
 export -f run_tests
