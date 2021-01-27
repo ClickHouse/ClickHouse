@@ -2,10 +2,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <hs.h>
+
 #include <utility>
 #include <vector>
 #include <algorithm>
+
+#if USE_HYPERSCAN
+#  include <hs.h>
+#endif
 
 namespace DB
 {
@@ -14,6 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -29,7 +34,7 @@ private:
         {
             id = obj.id;
             matchSpace = obj.matchSpace;
-        };
+        }
         spanInfo& operator=(const spanInfo& obj)
         {
             id = obj.id;
@@ -231,6 +236,7 @@ private:
                             }
                         }
                     }
+                    break;
                 }
                 default:
                 {
@@ -387,6 +393,7 @@ private:
                             }
                         }
                     }
+                    break;
                 }
                 default:
                 {
@@ -399,14 +406,14 @@ private:
 
     static hs_database_t* buildDatabase(const std::vector<const char* > &expressions,
                                         const std::vector<const unsigned> flags,
-                                        const std::vector<const unsigned> ids,
+                                        const std::vector<const unsigned> id,
                                         unsigned int mode)
     {
         hs_database_t *db;
         hs_compile_error_t *compileErr;
         hs_error_t err;
 
-        err = hs_compile_multi(expressions.data(), flags.data(), ids.data(),
+        err = hs_compile_multi(expressions.data(), flags.data(), id.data(),
                             expressions.size(), mode, nullptr, &db, &compileErr);
 
         if (err != HS_SUCCESS)
@@ -428,14 +435,17 @@ public:
         ColumnString::Chars & dst_chars,
         ColumnString::Offsets & dst_offsets)
     {
-        hs_database_t * db = buildDatabase(patterns, patterns_flag, ids, HS_MODE_BLOCK);
-        hs_scratch_t* scratch = NULL;
-        if(hs_alloc_scratch(db, &scratch) != HS_SUCCESS)
-        {
-            hs_free_database(db);
-            throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-        }
-
+        #if USE_HYPERSCAN
+            hs_database_t * db = buildDatabase(patterns, patterns_flag, ids, HS_MODE_BLOCK);
+            hs_scratch_t* scratch = nullptr;
+            if(hs_alloc_scratch(db, &scratch) != HS_SUCCESS)
+            {
+                hs_free_database(db);
+                throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+            }
+        #elif
+            throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::ILLEGAL_COLUMN);
+        #endif
         dst_chars.resize(src_chars.size());
         dst_offsets.resize(src_offsets.size());
 
@@ -449,7 +459,11 @@ public:
 
         for(size_t off = 0; off < src_offsets.size(); ++off)
         {
-            hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);      
+            #if USE_HYPERSCAN
+                hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);
+            #elif
+                throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::ILLEGAL_COLUMN);
+            #endif    
             for(size_t i = 0; i < matchZoneAll.tag_stack.size(); ++i)
             {
                 std::cout << matchZoneAll.tag_stack[i].id << " " << matchZoneAll.tag_stack[i].matchSpace.first << " " << matchZoneAll.tag_stack[i].matchSpace.second << std::endl;
