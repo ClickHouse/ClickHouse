@@ -69,6 +69,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
 
+# FIXME: for now only clickhouse-test
+pylint --score=n $ROOT_PATH/tests/clickhouse-test
+
 # Machine translation to Russian is strictly prohibited
 find $ROOT_PATH/docs/ru -name '*.md' |
     grep -vP $EXCLUDE_DIRS |
@@ -126,3 +129,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
+
+# Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
+find $ROOT_PATH'/tests/integration' -name '*.py' |
+    xargs grep -F 'subprocess.check_call' | grep -v "STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL" && echo "Use helpers.cluster.run_and_check or subprocess.run instead of subprocess.check_call to print detailed info on error"

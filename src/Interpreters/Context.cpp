@@ -946,11 +946,48 @@ bool Context::hasScalar(const String & name) const
 void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
 {
     assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
-    auto lock = getLock();
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
+}
+
+
+void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
+{
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+
+    switch (factory_type)
+    {
+        case QueryLogFactories::AggregateFunction:
+            query_factories_info.aggregate_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::AggregateFunctionCombinator:
+            query_factories_info.aggregate_function_combinators.emplace(created_object);
+            break;
+        case QueryLogFactories::Database:
+            query_factories_info.database_engines.emplace(created_object);
+            break;
+        case QueryLogFactories::DataType:
+            query_factories_info.data_type_families.emplace(created_object);
+            break;
+        case QueryLogFactories::Dictionary:
+            query_factories_info.dictionaries.emplace(created_object);
+            break;
+        case QueryLogFactories::Format:
+            query_factories_info.formats.emplace(created_object);
+            break;
+        case QueryLogFactories::Function:
+            query_factories_info.functions.emplace(created_object);
+            break;
+        case QueryLogFactories::Storage:
+            query_factories_info.storages.emplace(created_object);
+            break;
+        case QueryLogFactories::TableFunction:
+            query_factories_info.table_functions.emplace(created_object);
+    }
 }
 
 
