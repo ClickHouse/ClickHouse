@@ -1,0 +1,47 @@
+---------Q1----------
+2	2	2	20
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL INNER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON a = table2.a
+WHERE table2.b = toUInt32(20)
+---------Q2----------
+2	2	2	20
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL INNER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON a = table2.a
+WHERE (table2.a < table2.b) AND (table2.b = toUInt32(20))
+---------Q3----------
+---------Q4----------
+6	40
+SELECT
+    a,
+    table2.b
+FROM table1
+ALL INNER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON a = toUInt32(10 - table2.a)
+WHERE (b = 6) AND (table2.b > 20)
