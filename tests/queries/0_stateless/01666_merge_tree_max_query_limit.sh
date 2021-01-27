@@ -19,7 +19,7 @@ insert into simple select number, number + 100 from numbers(1000);
 "
 
 echo "Spin up a long running query"
-${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.01) from simple settings max_block_size = 1 format Null" --query_id "long_running_query" 2>&1 | grep -o 'was cancelled' | head -1 &
+${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.01) from simple settings max_block_size = 1 format Null" --query_id "long_running_query" > /dev/null 2>&1 &
 wait_for_query_to_start 'long_running_query'
 
 # query which reads marks >= min_marks_to_honor_max_concurrent_queries is throttled
