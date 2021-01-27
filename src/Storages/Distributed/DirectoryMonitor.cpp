@@ -453,8 +453,6 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles() con
         }
     }
 
-    metric_pending_files.changeTo(files.size());
-
     {
         std::lock_guard metrics_lock(metrics_mutex);
 
@@ -463,6 +461,7 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles() con
         if (bytes_count != new_bytes_count)
             LOG_TRACE(log, "Bytes set to {} (was {})", new_bytes_count, bytes_count);
 
+        metric_pending_files.changeTo(files.size());
         files_count = files.size();
         bytes_count = new_bytes_count;
     }
@@ -911,14 +910,14 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 {
     Poco::File file(file_path);
 
+    size_t file_size = file.getSize();
+
     {
         std::lock_guard metrics_lock(metrics_mutex);
-
-        size_t file_size = file.getSize();
+        metric_pending_files.sub();
         --files_count;
         bytes_count -= file_size;
     }
-    metric_pending_files.sub();
 
     file.remove();
 }
