@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/DirectorySyncGuard.h>
 #include <Common/CurrentMetrics.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
@@ -1002,9 +1001,9 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
 
-    std::optional<DirectorySyncGuard> sync_guard;
+    SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
-        sync_guard.emplace(volume->getDisk(), to);
+        sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 }
 
 
