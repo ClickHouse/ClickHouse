@@ -286,7 +286,7 @@ Strings DictionaryStructure::getKeysNames() const
     if (id)
         return { id->name };
 
-    auto & key_attributes = *key;
+    const auto & key_attributes = *key;
 
     Strings keys_names;
     keys_names.reserve(key_attributes.size());
