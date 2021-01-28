@@ -5,13 +5,11 @@ import os
 import os.path
 import re
 import json
+import traceback
 
 from argparse import ArgumentParser
-from argparse import FileType
-from pprint import pprint
 import shlex
 import subprocess
-from subprocess import check_call
 from subprocess import Popen
 from subprocess import PIPE
 from subprocess import CalledProcessError
@@ -23,8 +21,8 @@ try:
     import termcolor
 except ImportError:
     termcolor = None
-from random import random
-import subprocess
+import random
+import string
 import multiprocessing
 from contextlib import closing
 
@@ -43,7 +41,7 @@ def json_minify(string):
     The code taken from https://github.com/getify/JSON.minify/tree/python under the MIT license.
     """
 
-    tokenizer = re.compile('"|(/\*)|(\*/)|(//)|\n|\r')
+    tokenizer = re.compile(r'"|(/\*)|(\*/)|(//)|\n|\r')
     end_slashes_re = re.compile(r'(\\)*$')
 
     in_string = False
@@ -124,8 +122,6 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         # If --database is not specified, we will create temporary database with unique name
         # And we will recreate and drop it for each test
         def random_str(length=6):
-            import random
-            import string
             alphabet = string.ascii_lowercase + string.digits
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
@@ -236,15 +232,15 @@ def get_server_pid(server_tcp_port):
             return int(output)
         else:
             return None # server dead
-    except Exception as ex:
+    except Exception:
         return None
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
-       if termcolor and (sys.stdout.isatty() or args.force_color):
-           return termcolor.colored(text, color, on_color, attrs)
-       else:
-           return text
+    if termcolor and (sys.stdout.isatty() or args.force_color):
+        return termcolor.colored(text, color, on_color, attrs)
+    else:
+        return text
 
 
 SERVER_DIED = False
@@ -281,7 +277,7 @@ def run_tests_array(all_tests_with_params):
         else:
             return ''
 
-    if len(all_tests):
+    if all_tests:
         print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
 
     for case in all_tests:
@@ -297,7 +293,7 @@ def run_tests_array(all_tests_with_params):
 
         try:
             status = ''
-            is_concurrent = multiprocessing.current_process().name != "MainProcess";
+            is_concurrent = multiprocessing.current_process().name != "MainProcess"
             if not is_concurrent:
                 sys.stdout.flush()
                 sys.stdout.write("{0:72}".format(name + ": "))
@@ -306,7 +302,7 @@ def run_tests_array(all_tests_with_params):
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
             else:
-                status = "{0:72}".format(name + ": ");
+                status = "{0:72}".format(name + ": ")
 
             if args.skip and any(s in name for s in args.skip):
                 status += MSG_SKIPPED + " - skip\n"
@@ -398,7 +394,7 @@ def run_tests_array(all_tests_with_params):
                                 status += ", result:\n\n"
                                 status += '\n'.join(
                                     open(stdout_file).read().split('\n')[:100])
-                                status += '\n';
+                                status += '\n'
 
                         elif stderr:
                             failures += 1
@@ -444,7 +440,6 @@ def run_tests_array(all_tests_with_params):
             print(colored("Break tests execution", args, "red"))
             raise e
         except:
-            import traceback
             exc_type, exc_value, tb = sys.exc_info()
             failures += 1
             print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
@@ -455,10 +450,12 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(
+            passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
         exit_code = 1
     else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
+        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(
+            passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
 
 
 server_logs_level = "warning"
@@ -504,7 +501,7 @@ def check_server_started(client, retry_count):
     return False
 
 
-class BuildFlags(object):
+class BuildFlags():
     THREAD = 'thread-sanitizer'
     ADDRESS = 'address-sanitizer'
     UNDEFINED = 'ub-sanitizer'
@@ -630,7 +627,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        _, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -640,7 +637,7 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        _, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
@@ -655,25 +652,25 @@ def main(args):
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
-        (name, ext) = os.path.splitext(case)
+        (_, ext) = os.path.splitext(case)
         # We could also test for executable files (os.access(case_file, os.X_OK),
         # but it interferes with 01610_client_spawn_editor.editor, which is invoked
         # as a query editor in the test, and must be marked as executable.
-        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py' or ext == '.expect')
+        return os.path.isfile(case_file) and (ext in ['.sql', '.sh', '.py', '.expect'])
 
     def sute_key_func(item):
-       if args.order == 'random':
-             return random()
+        if args.order == 'random':
+            return random.random()
 
-       if -1 == item.find('_'):
-           return 99998, ''
+        if -1 == item.find('_'):
+            return 99998, ''
 
-       prefix, suffix = item.split('_', 1)
+        prefix, suffix = item.split('_', 1)
 
-       try:
-           return int(prefix), suffix
-       except ValueError:
-           return 99997, ''
+        try:
+            return int(prefix), suffix
+        except ValueError:
+            return 99997, ''
 
     total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
@@ -706,14 +703,14 @@ def main(args):
             # And not reverse subtests
             def key_func(item):
                 if args.order == 'random':
-                    return random()
+                    return random.random()
 
                 reverse = 1 if args.order == 'asc' else -1
 
                 if -1 == item.find('_'):
                     return 99998
 
-                prefix, suffix = item.split('_', 1)
+                prefix, _ = item.split('_', 1)
 
                 try:
                     return reverse * int(prefix)
@@ -766,7 +763,7 @@ def main(args):
     if args.hung_check:
 
         # Some queries may execute in background for some time after test was finished. This is normal.
-        for n in range(1, 60):
+        for _ in range(1, 60):
             timeout, processlist = get_processlist(args)
             if timeout or not processlist:
                 break
@@ -777,7 +774,7 @@ def main(args):
                 print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
                 print(processlist)
             else:
-                print(colored("Seems like server hung and cannot respond to queries", "red", attrs=["bold"]))
+                print(colored("Seems like server hung and cannot respond to queries", args, "red", attrs=["bold"]))
 
             clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
             server_pid = get_server_pid(clickhouse_tcp_port)
@@ -921,7 +918,7 @@ if __name__ == '__main__':
 
     if args.queries and not os.path.isdir(args.queries):
         print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)
-        exit(1)
+        sys.exit(1)
 
     # Autodetect the directory with queries if not specified
     if args.queries is None:
@@ -943,7 +940,7 @@ if __name__ == '__main__':
 
     if not os.path.isdir(args.queries):
         print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
-        exit(1)
+        sys.exit(1)
 
     print("Using queries from '" + args.queries + "' directory")
 
@@ -967,7 +964,7 @@ if __name__ == '__main__':
         else:
             print("No 'clickhouse' or 'clickhouse-client' client binary found", file=sys.stderr)
             parser.print_help()
-            exit(1)
+            sys.exit(1)
 
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
@@ -981,25 +978,25 @@ if __name__ == '__main__':
     if args.client_option:
         # Set options for client
         if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
-           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' '
+            os.environ['CLICKHOUSE_CLIENT_OPT'] += ' '
         else:
-           os.environ['CLICKHOUSE_CLIENT_OPT'] = ''
+            os.environ['CLICKHOUSE_CLIENT_OPT'] = ''
 
         os.environ['CLICKHOUSE_CLIENT_OPT'] += get_additional_client_options(args)
 
         # Set options for curl
         if 'CLICKHOUSE_URL_PARAMS' in os.environ:
-           os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
+            os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
         else:
-           os.environ['CLICKHOUSE_URL_PARAMS'] = ''
+            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
 
     if args.antlr:
         if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
-           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
+            os.environ['CLICKHOUSE_CLIENT_OPT'] += ' --use_antlr_parser=1'
         else:
-           os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
+            os.environ['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

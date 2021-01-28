@@ -930,7 +930,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), materializeBlock(right_sample_block));
             return std::make_shared<Block>(input.block_in->read());
         };
 
