@@ -158,6 +158,7 @@ struct MetadataTransaction
     void addOps(Coordination::Requests & other_ops)
     {
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
+        ops.clear();
     }
 
     void commit();

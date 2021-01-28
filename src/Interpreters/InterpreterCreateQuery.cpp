@@ -800,11 +800,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String current_database = context.getCurrentDatabase();
     auto database_name = create.database.empty() ? current_database : create.database;
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -869,7 +869,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     //TODO make code better if possible
+    DatabasePtr database;
     bool need_add_to_database = !create.temporary;
+    if (need_add_to_database)
+        database = DatabaseCatalog::instance().getDatabase(database_name);
+
     if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);

@@ -400,6 +400,12 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
         auto query_context = task.makeQueryContext(context);
         query_scope.emplace(*query_context);
         executeQuery(istr, ostr, false, *query_context, {});
+
+        if (auto txn = query_context->getMetadataTransaction())
+        {
+            if (txn->state == MetadataTransaction::CREATED)
+                txn->commit();
+        }
     }
     catch (const DB::Exception & e)
     {
