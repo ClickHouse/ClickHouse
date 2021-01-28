@@ -99,6 +99,9 @@ ThreadStatus::~ThreadStatus()
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
     }
 
+    /// It may cause segfault if query_context was destroyed, but was not detached
+    assert((!query_context && query_id.empty()) || (query_id == query_context->getCurrentQueryId()));
+
     if (deleter)
         deleter();
     current_thread = nullptr;
