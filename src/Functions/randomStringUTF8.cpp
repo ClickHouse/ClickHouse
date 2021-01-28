@@ -120,12 +120,11 @@ public:
 
                 /// We have padding in column buffers that we can overwrite.
                 auto length1 = UTF8::convert(code_point1, pos, sizeof(int));
-                auto length2 = UTF8::convert(code_point2, pos, sizeof(int));
-
                 assert(length1 >= 0 && length1 <= 4);
-                assert(length2 >= 0 && length2 <= 4);
-
                 pos += length1;
+
+                auto length2 = UTF8::convert(code_point2, pos, sizeof(int));
+                assert(length2 >= 0 && length2 <= 4);
                 last_writen_bytes = length2;
                 pos += last_writen_bytes;
             }
