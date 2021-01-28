@@ -495,3 +495,56 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 ## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
 Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+
+## sequenceNextNode {#sequenceNextNode}
+
+Returns a value of next event that matched an event chain.
+
+**Syntax**
+
+``` sql
+sequenceNextNode([descending_order])(timestamp, event_column, event1, event2, ... event32)
+```
+
+**Parameters**
+-   `descending_order` - Used to sort the timestamp in ascending or descending order. 0 or 1.
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: Date, DateTime and other unsigned integer types.
+-   `event_column` - Name of the column containing the value of the next event to be returned. Data types supported: String and Nullable(String)
+-   `cond` — Conditions or data describing the chain of events. UInt8.
+
+**Returned value**
+
+Nullable(String).
+
+-  event_column[next_index] - if the pattern is matched and next value exists.
+-  null - if the pattern isn’t matched or next value doesn't exist.
+
+Type: `Nullable(String)`.
+
+**Example**
+
+It can be used when events are A->B->C->E->F and you want to know the event following B->C, which is E.
+
+The query statement searching the event following B->C :
+
+``` sql
+CREATE TABLE test_flow (
+    dt DateTime, 
+    id int, 
+    action String) 
+ENGINE = MergeTree() 
+PARTITION BY toYYYYMMDD(dt) 
+ORDER BY id;
+
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'E') (5, 1, 'F');
+
+SELECT id, sequenceNextNode(0)(dt, action, action = 'B', action = 'C') as next_flow FROM test_flow GROUP BY id;
+```
+
+Result:
+
+``` text
+┌─id─┬─next_flow─┐
+│  1 │ E         │
+└────┴───────────┘
+```
