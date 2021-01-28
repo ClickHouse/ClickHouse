@@ -587,7 +587,7 @@ include (cmake/sanitize_target_link_libraries.cmake)
 option(FASTBUILD_CONTRIB_UNITY "Use unity builds on the contrib/ folder." ON)
 
 # Combine files in src/Functions into single translation units to accelerate builds. Requires CMake 3.16 or later.
-option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder." ON)
+option(FASTBUILD_FUNCTIONS_UNITY "Use unity builds on the src/Functions folder." OFF)
 
 # Trade off GDB initialization speed for reduced IO while linking, especially when using FASTBUILD_SPLIT_DWARF. Requires Clang.
 option(FASTBUILD_NO_PUBNAMES "Do not emit DWARF pubnames when using Clang. Slows GDB symbol loading. Reduces IO." OFF)
@@ -702,4 +702,12 @@ if (FASTBUILD_FUNCTIONS_UNITY)
                           UNITY_BUILD ON
                           UNITY_BUILD_BATCH_SIZE 4
                           )
+
+    # Wsubobject-linkage thinks .cpp files are header files and treats them accordingly when doing unity builds.
+    # As a result, it runs checks on source files that were only ever meant to be ran on actual, header-style includes.
+    # This creates false-warnings. Working around these warnings in a more "correct way" creates unnecessary exports.
+    if (COMPILER_GCC)
+        target_compile_options(${FUNCTION_TARGETS} -Wno-subobject-linkage)
+    endif()
+
 endif()
