@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -56,6 +57,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+    : Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , parse_proxy_protocol(parse_proxy_protocol_)
+    , log(&Poco::Logger::get("TCPHandler"))
+    , connection_context(server.context())
+    , query_context(server.context())
+    , server_display_name(std::move(server_display_name_))
+{
+}
 
 void TCPHandler::runImpl()
 {
