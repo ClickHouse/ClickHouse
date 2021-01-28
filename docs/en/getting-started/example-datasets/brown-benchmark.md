@@ -5,7 +5,7 @@ toc_title: Brown University Benchmark
 
 # Brown University Benchmark
 
-MgBench - A new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
+`MgBench` is a new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
 Download the data:
 ```
@@ -153,7 +153,7 @@ ORDER BY dt,
          hr;
 
 
--- Q1.4: Over a 1-month period, how often was each server blocked on disk I/O?
+-- Q1.4: Over 1 month, how often was each server blocked on disk I/O?
 
 SELECT machine_name,
        COUNT(*) AS spikes
@@ -301,7 +301,7 @@ WHERE event_type = 'temperature'
   AND log_time >= '2019-11-29 17:00:00.000';
 
 
--- Q3.4: Over the past 6 months, how frequently was each door opened?
+-- Q3.4: Over the past 6 months, how frequently were each door opened?
 
 SELECT device_name,
        device_floor,

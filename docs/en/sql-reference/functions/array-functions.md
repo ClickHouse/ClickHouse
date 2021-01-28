@@ -1294,15 +1294,47 @@ Returns the min of the `func` values. If the function is omitted, it just return
 
 Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
-```sql
+**Syntax** 
+
+``` sql
+arrayMin(arr)
+```
+
+**Returned value**
+
+-   A number.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Parameters** 
+
+-   `arr` — [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
 SELECT arrayMin([1, 2, 4]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │   1 │
 └─────┘
+```
 
+Query:
 
+``` sql
 SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │  -4 │
 └─────┘
@@ -1314,15 +1346,47 @@ Returns the max of the `func` values. If the function is omitted, it just return
 
 Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax** 
+
+``` sql
+arrayMax(arr)
+```
+
+**Returned value**
+
+-   A number.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Parameters** 
+
+-   `arr` — [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
 ```sql
 SELECT arrayMax([1, 2, 4]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │   4 │
 └─────┘
+```
 
+Query:
 
+``` sql
 SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │  -1 │
 └─────┘
@@ -1334,20 +1398,51 @@ Returns the sum of the `func` values. If the function is omitted, it just return
 
 Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-Examples:
+**Syntax** 
+
+``` sql
+arraySum(arr)
+```
+
+**Returned value**
+
+-   A number.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Parameters** 
+
+-   `arr` — [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
 ```sql
 SELECT arraySum([2,3]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │   5 │
 └─────┘
+```
 
+Query:
 
+``` sql
 SELECT arraySum(x -> x*x, [2, 3]) AS res
+```
+
+Result:
+
+``` text
 ┌─res─┐
 │  13 │
 └─────┘
 ```
-
 
 ## arrayAvg(\[func,\] arr1, …) {#array-avg}
 
