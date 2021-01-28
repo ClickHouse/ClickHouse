@@ -7,22 +7,22 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
+size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (!filter_step)
-        return false;
+        return 0;
 
     const auto & expr = filter_step->getExpression();
 
     /// Do not split if there are function like runningDifference.
     if (expr->hasStatefulFunctions())
-        return false;
+        return 0;
 
     auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
 
     if (split.second->trivial())
-        return false;
+        return 0;
 
     if (filter_step->removesFilterColumn())
         split.second->removeUnusedInput(filter_step->getFilterColumnName());
@@ -44,7 +44,7 @@ bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);
 
-    return true;
+    return 2;
 }
 
 }

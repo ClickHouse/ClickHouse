@@ -51,12 +51,12 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
         for (const auto & optimization : optimizations)
         {
             /// Just in case, skip optimization if it is not initialized.
-            if (!optimization.run)
+            if (!optimization.apply)
                 continue;
 
             /// Try to apply optimization.
-            if (optimization.run(frame.node, nodes))
-                max_update_depth = std::max<size_t>(max_update_depth, optimization.update_depth);
+            auto update_depth = optimization.apply(frame.node, nodes);
+            max_update_depth = std::max<size_t>(max_update_depth, update_depth);
         }
 
         /// Traverse `max_update_depth` layers of tree again.

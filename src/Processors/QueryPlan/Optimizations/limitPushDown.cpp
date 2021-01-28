@@ -54,10 +54,10 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
     return updated;
 }
 
-bool tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     if (parent_node->children.size() != 1)
-        return false;
+        return 0;
 
     QueryPlan::Node * child_node = parent_node->children.front();
 
@@ -66,25 +66,25 @@ bool tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     auto * limit = typeid_cast<LimitStep *>(parent.get());
 
     if (!limit)
-        return false;
+        return 0;
 
     /// Skip LIMIT WITH TIES by now.
     if (limit->withTies())
-        return false;
+        return 0;
 
     const auto * transforming = dynamic_cast<const ITransformingStep *>(child.get());
 
     /// Skip everything which is not transform.
     if (!transforming)
-        return false;
+        return 0;
 
     /// Special cases for sorting steps.
     if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
-        return false;
+        return 0;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
     if (typeid_cast<const TotalsHavingStep *>(child.get()))
-        return false;
+        return 0;
 
     /// Now we should decide if pushing down limit possible for this step.
 
@@ -93,22 +93,22 @@ bool tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// Cannot push down if child changes the number of rows.
     if (!transform_traits.preserves_number_of_rows)
-        return false;
+        return 0;
 
     /// Cannot push down if data was sorted exactly by child stream.
     if (!child->getOutputStream().sort_description.empty() && !data_stream_traits.preserves_sorting)
-        return false;
+        return 0;
 
     /// Now we push down limit only if it doesn't change any stream properties.
     /// TODO: some of them may be changed and, probably, not important for following streams. We may add such info.
     if (!limit->getOutputStream().hasEqualPropertiesWith(transforming->getOutputStream()))
-        return false;
+        return 0;
 
     /// Input stream for Limit have changed.
     limit->updateInputStream(transforming->getInputStreams().front());
 
     parent.swap(child);
-    return true;
+    return 2;
 }
 
 }
