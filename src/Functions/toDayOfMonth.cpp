@@ -12,6 +12,10 @@ using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, To
 void registerFunctionToDayOfMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfMonth>();
+
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToDayOfMonth>("DAY", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToDayOfMonth>("DAYOFMONTH", FunctionFactory::CaseInsensitive);
 }
 
 }
