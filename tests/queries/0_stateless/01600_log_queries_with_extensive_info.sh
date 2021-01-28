@@ -26,4 +26,4 @@ ${CLICKHOUSE_CLIENT} -q "drop table if exists test_log_queries.logtable3" "--que
 ${CLICKHOUSE_CLIENT} -q "drop database if exists test_log_queries" "--query_id=01600_log_queries_with_extensive_info_018"
 
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
-${CLICKHOUSE_CLIENT} -q "select columns(query, normalized_query_hash, query_kind, databases, tables, columns) apply (any) from system.query_log where type = 'QueryFinish' and query_id like '01600_log_queries_with_extensive_info%' group by query_id order by query_id"
+${CLICKHOUSE_CLIENT} -q "select columns(query, normalized_query_hash, query_kind, databases, tables, columns) apply (any) from system.query_log where current_database = currentDatabase() AND type = 'QueryFinish' and query_id like '01600_log_queries_with_extensive_info%' group by query_id order by query_id"
