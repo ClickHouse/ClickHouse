@@ -65,3 +65,4 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_ma
 DROP TABLE t_arr;
 DROP TABLE t_nul;
 DROP TABLE t_tup;
+DROP TABLE t_map;

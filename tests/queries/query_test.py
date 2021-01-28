@@ -71,11 +71,18 @@ SKIP_LIST = [
     "01555_system_distribution_queue_mask",
     "01558_ttest_scipy",
     "01561_mann_whitney_scipy",
+    "01564_test_hint_woes",  # echo-mode
     "01582_distinct_optimization",
-    "01591_window_functions",  # problem with global echo-mode
+    "01591_window_functions",  # echo-mode
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
-    "01610_client_spawn_editor",
+    "01610_client_spawn_editor",  # expect-test
+    "01611_constant_folding_subqueries",  # echo-mode
+    "01661_arraySlice_ubsan",  # echo-mode
+    "01662_date_ubsan",  # echo-mode
+    "01664_decimal_ubsan",  # echo-mode
+    "01666_gcd_ubsan",  # echo-mode
+    "01666_lcm_ubsan",  # echo-mode
 ]
 
 
