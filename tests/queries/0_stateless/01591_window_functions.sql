@@ -144,3 +144,7 @@ window w as (partition by p order by o range unbounded preceding)
 order by number
 settings max_block_size = 5
 ;
+
+-- A case where the partition end is in the current block, and the frame end
+-- is triggered by the partition end.
+select min(number) over (partition by p)  from (select number, intDiv(number, 3) p from numbers(10));
