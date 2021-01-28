@@ -52,7 +52,7 @@ $CLICKHOUSE_CLIENT --query "drop table if exists ttl_01280_3"
 
 echo "ttl_01280_3"
 $CLICKHOUSE_CLIENT -n --query "
-create table ttl_01280_3 (a Int, b Int, x Int64, y Int, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by a set x = argMax(x, d), y = argMax(y, d), d = max(d);
+create table ttl_01280_3 (a Int, b Int, x Int64, y Int, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by a set b = min(b), x = argMax(x, d), y = argMax(y, d), d = max(d);
 insert into ttl_01280_3 values (1, 1, 0, 4, now() + 10);
 insert into ttl_01280_3 values (1, 1, 10, 6, now() + 1);
 insert into ttl_01280_3 values (1, 2, 3, 7, now());
