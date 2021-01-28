@@ -87,7 +87,7 @@ struct AddMinutesImpl : public AddOnDateTime64DefaultImpl<AddMinutesImpl>
 
     static constexpr auto name = "addMinutes";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 60;
     }
@@ -106,7 +106,7 @@ struct AddHoursImpl : public AddOnDateTime64DefaultImpl<AddHoursImpl>
 
     static constexpr auto name = "addHours";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 3600;
     }
@@ -150,7 +150,7 @@ struct AddWeeksImpl : public AddOnDateTime64DefaultImpl<AddWeeksImpl>
 
     static constexpr auto name = "addWeeks";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addWeeks(t, delta);
     }
@@ -288,14 +288,14 @@ struct Adder
 
 private:
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);

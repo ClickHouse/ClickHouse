@@ -31,6 +31,7 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
 
     const bool has_host = config.has(ldap_server_config + ".host");
     const bool has_port = config.has(ldap_server_config + ".port");
+    const bool has_bind_dn = config.has(ldap_server_config + ".bind_dn");
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
@@ -51,11 +52,19 @@ auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const Str
     if (params.host.empty())
         throw Exception("Empty 'host' entry", ErrorCodes::BAD_ARGUMENTS);
 
-    if (has_auth_dn_prefix)
-        params.auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+    if (has_bind_dn)
+    {
+        if (has_auth_dn_prefix || has_auth_dn_suffix)
+            throw Exception("Deprecated 'auth_dn_prefix' and 'auth_dn_suffix' entries cannot be used with 'bind_dn' entry", ErrorCodes::BAD_ARGUMENTS);
 
-    if (has_auth_dn_suffix)
-        params.auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        params.bind_dn = config.getString(ldap_server_config + ".bind_dn");
+    }
+    else if (has_auth_dn_prefix || has_auth_dn_suffix)
+    {
+        const auto auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+        const auto auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        params.bind_dn = auth_dn_prefix + "{user_name}" + auth_dn_suffix;
+    }
 
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
@@ -168,7 +177,8 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 }
 
-bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const String & user_name, const String & password) const
+bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const String & user_name, const String & password,
+    const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results) const
 {
     std::optional<LDAPServerParams> params;
     std::size_t params_hash = 0;
@@ -184,7 +194,15 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
         params = pit->second;
         params->user = user_name;
         params->password = password;
-        params_hash = params->getCoreHash();
+
+        params->combineCoreHash(params_hash);
+        if (search_params)
+        {
+            for (const auto & params_instance : *search_params)
+            {
+                params_instance.combineHash(params_hash);
+            }
+        }
 
         // Check the cache, but only if the caching is enabled at all.
         if (params->verification_cooldown > std::chrono::seconds{0})
@@ -208,9 +226,19 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
                         // Check if we can safely "reuse" the result of the previous successful password verification.
                         entry.last_successful_params_hash == params_hash &&
                         last_check_period >= std::chrono::seconds{0} &&
-                        last_check_period <= params->verification_cooldown
+                        last_check_period <= params->verification_cooldown &&
+
+                        // Ensure that search_params are compatible.
+                        (
+                            search_params == nullptr ?
+                            entry.last_successful_search_results.empty() :
+                            search_params->size() == entry.last_successful_search_results.size()
+                        )
                     )
                     {
+                        if (search_results)
+                            *search_results = entry.last_successful_search_results;
+
                         return true;
                     }
 
@@ -227,7 +255,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
     }
 
     LDAPSimpleAuthClient client(params.value());
-    const auto result = client.check();
+    const auto result = client.authenticate(search_params, search_results);
     const auto current_check_timestamp = std::chrono::steady_clock::now();
 
     // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
@@ -244,8 +272,18 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
         new_params.user = user_name;
         new_params.password = password;
 
+        std::size_t new_params_hash = 0;
+        new_params.combineCoreHash(new_params_hash);
+        if (search_params)
+        {
+            for (const auto & params_instance : *search_params)
+            {
+                params_instance.combineHash(new_params_hash);
+            }
+        }
+
         // If the critical server params have changed while we were checking the password, we discard the current result.
-        if (params_hash != new_params.getCoreHash())
+        if (params_hash != new_params_hash)
             return false;
 
         auto & entry = ldap_server_caches[server][user_name];
@@ -253,8 +291,20 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const S
         {
             entry.last_successful_params_hash = params_hash;
             entry.last_successful_authentication_timestamp = current_check_timestamp;
+
+            if (search_results)
+                entry.last_successful_search_results = *search_results;
+            else
+                entry.last_successful_search_results.clear();
         }
-        else if (entry.last_successful_params_hash != params_hash)
+        else if (
+            entry.last_successful_params_hash != params_hash ||
+            (
+                search_params == nullptr ?
+                !entry.last_successful_search_results.empty() :
+                search_params->size() != entry.last_successful_search_results.size()
+            )
+        )
         {
             // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
             return false;

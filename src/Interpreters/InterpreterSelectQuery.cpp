@@ -294,9 +294,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
-    if (context->getSettingsRef().enable_global_with_statement)
-        ApplyWithAliasVisitor().visit(query_ptr);
-    ApplyWithSubqueryVisitor().visit(query_ptr);
+    // Only propagate WITH elements to subqueries if we're not a subquery
+    if (options.subquery_depth == 0)
+    {
+        if (context->getSettingsRef().enable_global_with_statement)
+            ApplyWithAliasVisitor().visit(query_ptr);
+        ApplyWithSubqueryVisitor().visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
