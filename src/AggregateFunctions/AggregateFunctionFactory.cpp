@@ -98,6 +98,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
+    bool is_case_insensitive = false;
     Value found;
 
     /// Find by exact match.
@@ -107,7 +108,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     }
 
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+    {
         found = jt->second;
+        is_case_insensitive = true;
+    }
 
     const Context * query_context = nullptr;
     if (CurrentThread::isInitialized())
@@ -118,7 +122,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         out_properties = found.properties;
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
+            query_context->addQueryFactoriesInfo(
+                    Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? Poco::toLower(name) : name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)

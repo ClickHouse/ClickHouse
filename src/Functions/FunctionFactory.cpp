@@ -92,7 +92,8 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
         res = it->second(context);
     else
     {
-        it = case_insensitive_functions.find(Poco::toLower(name));
+        name = Poco::toLower(name);
+        it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
             res = it->second(context);
     }

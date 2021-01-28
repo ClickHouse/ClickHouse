@@ -78,16 +78,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    DataTypePtr res = findCreatorByName(family_name)(parameters);
-
-    if (CurrentThread::isInitialized())
-    {
-        const auto * query_context = CurrentThread::get().getQueryContext();
-        if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
-    }
-
-    return res;
+    return findCreatorByName(family_name)(parameters);
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
@@ -159,10 +150,18 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
+    const Context * query_context = nullptr;
+    if (CurrentThread::isInitialized())
+        query_context = CurrentThread::get().getQueryContext();
+
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
+        {
+            if (query_context && query_context->getSettingsRef().log_queries)
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return it->second;
+        }
     }
 
     String family_name_lowercase = Poco::toLower(family_name);
@@ -170,7 +169,11 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
     {
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
+        {
+            if (query_context && query_context->getSettingsRef().log_queries)
+                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return it->second;
+        }
     }
 
     auto hints = this->getHints(family_name);
