@@ -81,22 +81,24 @@ void WindowTransform::advancePartitionEnd()
 
 //    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
 
-    // If we're at the total end of data, we must end the partition. This is the
-    // only place in calculations where we need special handling for end of data,
-    // other places will work as usual based on `partition_ended` = true, because
-    // end of data is logically the same as any other end of partition.
+    // If we're at the total end of data, we must end the partition. This is one
+    // of the few places in calculations where we need special handling for end
+    // of data, other places will work as usual based on
+    // `partition_ended` = true, because end of data is logically the same as
+    // any other end of partition.
     // We must check this first, because other calculations might not be valid
     // when we're at the end of data.
-    // FIXME not true, we also handle it elsewhere
     if (input_is_finished)
     {
         partition_ended = true;
-        partition_end = end;
+        // We receive empty chunk at the end of data, so the partition_end must
+        // be already at the end of data.
+        assert(partition_end == end);
         return;
     }
 
-    // If we got to the end of the block already, but expect more data, wait for
-    // it.
+    // If we got to the end of the block already, but we are going to get more
+    // input data, wait for it.
     if (partition_end == end)
     {
         return;
@@ -296,9 +298,8 @@ void WindowTransform::advanceFrameEnd()
         return;
     }
 
-    // Add the columns over which we advanced the frame to the aggregate function
-    // states.
-    // We could have advanced over at most the entire last block.
+    // Add the rows over which we advanced the frame to the aggregate function
+    // states. We could have advanced over at most the entire last block.
     uint64_t rows_end = frame_end.row;
     if (frame_end.row == 0)
     {
@@ -539,13 +540,9 @@ IProcessor::Status WindowTransform::prepare()
 
             output.pushData(std::move(output_data));
         }
-        else
-        {
-            // Not sure what this branch means. The output port is full and we
-            // apply backoff pressure on the input?
-            input.setNotNeeded();
-        }
 
+        // We don't need input.setNotNeeded() here, because we already pull with
+        // the set_not_needed flag.
         return Status::PortFull;
     }
 
@@ -566,6 +563,11 @@ IProcessor::Status WindowTransform::prepare()
     // Consume input data if we have any ready.
     if (!has_input && input.hasData())
     {
+        // Pulling with set_not_needed = true and using an explicit setNeeded()
+        // later is somewhat more efficient, because after the setNeeded(), the
+        // required input block will be generated in the same thread and passed
+        // to our prepare() + work() methods in the same thread right away, so
+        // hopefully we will work on hot (cached) data.
         input_data = input.pullData(true /* set_not_needed */);
 
         // If we got an exception from input, just return it and mark that we're
