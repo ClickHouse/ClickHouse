@@ -197,3 +197,4 @@
 01658_test_base64Encode_mysql_compatibility
 01659_test_base64Decode_mysql_compatibility
 01674_htm_xml_coarse_parse
+01671_aggregate_function_group_bitmap_data
