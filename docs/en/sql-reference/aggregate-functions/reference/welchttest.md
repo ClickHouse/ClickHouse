@@ -5,8 +5,8 @@ toc_title: welchTTest
 
 ## welchTTest {#welchttest}
 
-Calculates the t-statistic and p-value for the means of two independent samples. 
-This is a test for the null hypothesis that 2 independent samples have identical average values. Samples may have unequal variances.
+Applies Welch's t-test to samples. 
+This is a test for the null hypothesis that two independent samples have identical average values. Samples may have unequal variances.
 
 **Syntax**
 
@@ -61,6 +61,6 @@ Result:
 **See Also**
 
 -   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
--   [studentttest](studentttest.md#studentttest)
+-   [studentTTest function](studentttest.md#studentttest)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/welchTTest/) <!--hide-->

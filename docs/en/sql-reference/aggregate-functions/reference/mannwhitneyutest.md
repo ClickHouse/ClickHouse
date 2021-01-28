@@ -5,7 +5,7 @@ toc_title: mannWhitneyUTest
 
 ## mannWhitneyUTest {#mannwhitneyutest}
 
-Calculates the Mann-Whitney rank test for two independent samples from distinct distributions.
+Applies the Mann-Whitney rank test to independent samples from distinct distributions.
 
 **Syntax**
 
@@ -19,7 +19,7 @@ Values of both samples are in the `sample_data` column. If `sample_index` equals
 
 **Parameters**
 
--   `alternative` — alternative hypothesis. [String](../../../sql-reference/data-types/string.md) Allowed values are:
+-   `alternative` — alternative hypothesis. [String](../../../sql-reference/data-types/string.md)
     -   `"two-sided"`;
     -   `"greater"`;
     -   `"less"`;

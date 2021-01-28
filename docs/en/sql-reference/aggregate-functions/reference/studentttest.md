@@ -5,8 +5,8 @@ toc_title: studentTTest
 
 ## studentTTest {#studentttest}
 
-Calculates the t-statistic and p-value for the means of two independent samples. 
-This is a test for the null hypothesis that 2 independent samples have identical average values. This test assumes that samples have identical variances.
+Applies Student's t-test to samples. 
+This is a test for the null hypothesis that two independent samples have identical average values. Samples may have unequal variances. This test assumes that samples have identical variances.
 
 **Syntax**
 
@@ -61,6 +61,6 @@ Result:
 **See Also**
 
 -   [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
--   [welchTTest](welchttest.md#welchttest)
+-   [welchTTest function](welchttest.md#welchttest)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/studentttest/) <!--hide-->
