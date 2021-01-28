@@ -186,7 +186,7 @@ In ClickHouse, queries are always run on blocks (sets of column parts). This fun
 
 Returns estimation of uncompressed byte size of its arguments in memory.
 
-E.g. for [UInt32](/../../sql-reference/data-types/int-uint.md) argument it will return constant 4, for [String](/../../sql-reference/data-types/string.md) arguments — the string length + 9 (terminating zero + length).
+E.g. for [UInt32](../../sql-reference/data-types/int-uint.md) argument it will return constant 4, for [String](../../sql-reference/data-types/string.md) arguments — the string length + 9 (terminating zero + length).
 
 The function can take multiple arguments. The typical application is byteSize(*).
 
@@ -206,7 +206,7 @@ byteSize(arguments)
 
 -   Estimation of byte size of the arguments in memory.
 
-Type: [UInt64](/../../sql-reference/data-types/int-uint.md).
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
