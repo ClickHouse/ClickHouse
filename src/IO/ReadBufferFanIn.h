@@ -24,25 +24,32 @@ private:
 
 public:
 
-    ReadBufferFanIn(size_t max_working_readers_, size_t max_segments_per_worker_ = 10)
-    : ReadBuffer(nullptr, 0)
-    , max_working_readers(max_working_readers_)
-    , max_segments_per_worker(max_segments_per_worker_)
+    class ReadBufferFactory
     {
-        pool.setMaxThreads(max_working_readers);
+    public:
+        virtual ReadBufferPtr getReader() = 0;
+        virtual ~ReadBufferFactory() = default;
+    };
+
+    explicit ReadBufferFanIn(
+        std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers, size_t max_segments_per_worker_ = 0)
+        : ReadBuffer(nullptr, 0)
+        , max_segments_per_worker(max_segments_per_worker_)
+        , pool(max_working_readers)
+        , reader_factory(std::move(reader_factory_))
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (size_t i = 0; i < max_working_readers; ++i)
+            pool.scheduleOrThrow([this] {
+                while (auto reader = chooseNextReader())
+                    readerThreadFunction(reader);
+            });
     }
 
     ~ReadBufferFanIn() override
     {
         finishAndWait();
     }
-
-    /// Adds reader to queue
-    /// Mustn't be called after start
-    void addReader(ReadBufferPtr reader);
-
-    /// Indicates that all readers passed to addReader
-    void start();
 
 private:
 
@@ -55,7 +62,6 @@ private:
 
         ReadBufferPtr reader;
         std::deque<Memory<>> segments;
-        bool executing{false};
         bool finished{false};
 
         const size_t number;
@@ -73,12 +79,12 @@ private:
 
     Memory<> segment;
 
-    const size_t max_working_readers;
     const size_t max_segments_per_worker;
     ThreadPool pool;
 
+    std::unique_ptr<ReadBufferFactory> reader_factory;
     /// FIFO queue of readers
-    /// Each unit contains reader itself and up to max_working_readers read segments
+    /// Each unit contains reader itself and up to max_segments_per_worker read segments
     std::deque<ProcessingUnitPtr> readers;
 
     std::mutex mutex;
@@ -91,7 +97,6 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    bool started{false};
     bool all_done{false};
 
     std::atomic_size_t last_num{0};

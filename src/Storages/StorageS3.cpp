@@ -88,30 +88,18 @@ namespace
 
 
             std::unique_ptr<ReadBuffer> s3_read_buf;
-            if (max_read_threads <= 1 || object_size <= 4 * DBMS_DEFAULT_BUFFER_SIZE)
+            if (max_read_threads <= 1 || object_size <= max_read_threads * DBMS_DEFAULT_BUFFER_SIZE)
             {
                 LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading from S3 in single thread");
                 s3_read_buf = std::make_unique<ReadBufferFromS3>(client, bucket, key);
             }
             else
             {
-                /// Download two segments per each worker.
-                /// Not so much, but better than one, because some worker can steal segment if other one is slow
-                size_t number_of_ranges = max_read_threads * 2;
-                size_t split_size = (object_size + number_of_ranges) / number_of_ranges;
                 LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
                           "Downloading from S3 in {} threads. Object size: {}, Range size: {}",
-                          max_read_threads, object_size, split_size);
-                auto mul_s3_read_buf = std::make_unique<ReadBufferFanIn>(max_read_threads);
-                for (size_t from_range = 0; from_range < object_size; from_range += split_size + 1)
-                {
-                    auto subreader = std::make_shared<ReadBufferFromS3>(client, bucket, key);
-                    size_t to_range = std::min(object_size - 1, from_range + split_size);
-                    subreader->setRange(from_range, to_range);
-                    mul_s3_read_buf->addReader(subreader);
-                }
-                mul_s3_read_buf->start();
-                s3_read_buf = std::move(mul_s3_read_buf);
+                          max_read_threads, object_size, DBMS_DEFAULT_BUFFER_SIZE);
+                auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, DBMS_DEFAULT_BUFFER_SIZE, object_size);
+                s3_read_buf = std::make_unique<ReadBufferFanIn>(std::move(factory), max_read_threads);
             }
 
             read_buf = wrapReadBufferWithCompressionMethod(std::move(s3_read_buf), compression_method);

@@ -53,38 +53,15 @@ bool ReadBufferFanIn::nextImpl()
     return true;
 }
 
-void ReadBufferFanIn::addReader(ReadBufferPtr reader)
-{
-    if (started)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Calling addReader after start");
-
-    readers.emplace_back(std::make_shared<ProcessingUnit>(reader, last_num++));
-}
-
-void ReadBufferFanIn::start()
-{
-    started = true;
-
-    for (size_t i = 0; i < max_working_readers; ++i)
-        pool.scheduleOrThrow([this]
-        {
-            while (auto reader = chooseNextReader())
-                readerThreadFunction(reader);
-        });
-}
-
 ReadBufferFanIn::ProcessingUnitPtr ReadBufferFanIn::chooseNextReader()
 {
     std::lock_guard<std::mutex> lock(mutex);
-
-    for (const auto & reader : readers)
-    {
-        if (reader->executing)
-            continue;
-        reader->executing = true;
-        return reader;
-    }
-    return nullptr;
+    auto reader = reader_factory->getReader();
+    if (reader == nullptr)
+        return nullptr;
+    auto unit = std::make_shared<ProcessingUnit>(reader, last_num++);
+    readers.emplace_back(unit);
+    return unit;
 }
 
 void ReadBufferFanIn::readerThreadFunction(ProcessingUnitPtr unit)
