@@ -6,7 +6,9 @@ namespace DB
 {
 
 class FunctionFactory;
+#if USE_HYPERSCAN
 void registerFunctionHtmlOrXmlCoarseParse(FunctionFactory &);
+#endif
 void registerFunctionRepeat(FunctionFactory &);
 void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
@@ -45,7 +47,9 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 
 void registerFunctionsString(FunctionFactory & factory)
 {
+#if USE_HYPERSCAN
     registerFunctionHtmlOrXmlCoarseParse(factory);
+#endif
     registerFunctionRepeat(factory);
     registerFunctionEmpty(factory);
     registerFunctionNotEmpty(factory);

@@ -8,17 +8,16 @@
 #include <algorithm>
 
 #if USE_HYPERSCAN
-#  include <hs.h>
-#endif
+#   include <hs.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -434,17 +433,14 @@ public:
         ColumnString::Chars & dst_chars,
         ColumnString::Offsets & dst_offsets)
     {
-        #if USE_HYPERSCAN
-            hs_database_t * db = buildDatabase(patterns, patterns_flag, ids, HS_MODE_BLOCK);
-            hs_scratch_t* scratch = nullptr;
-            if(hs_alloc_scratch(db, &scratch) != HS_SUCCESS)
-            {
-                hs_free_database(db);
-                throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-            }
-        #else
-            throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::CANNOT_COMPILE_REGEXP);
-        #endif
+    #if USE_HYPERSCAN
+        hs_database_t * db = buildDatabase(patterns, patterns_flag, ids, HS_MODE_BLOCK);
+        hs_scratch_t* scratch = nullptr;
+        if(hs_alloc_scratch(db, &scratch) != HS_SUCCESS)
+        {
+            hs_free_database(db);
+            throw Exception("Unable to allocate scratch space.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        }
         dst_chars.resize(src_chars.size());
         dst_offsets.resize(src_offsets.size());
 
@@ -458,11 +454,7 @@ public:
 
         for(size_t off = 0; off < src_offsets.size(); ++off)
         {
-            #if USE_HYPERSCAN
-                hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);
-            #else
-                throw Exception("The function must depend on the third party: HyperScan. Please check your compile option.", ErrorCodes::ILLEGAL_COLUMN);
-            #endif
+            hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);
             for(size_t i = 0; i < matchZoneAll.tag_stack.size(); ++i)
             {
                 std::cout << matchZoneAll.tag_stack[i].id << " " << matchZoneAll.tag_stack[i].matchSpace.first << " " << matchZoneAll.tag_stack[i].matchSpace.second << std::endl;
@@ -512,11 +504,18 @@ public:
             matchZoneAll.copy_stack.clear();
             matchZoneAll.tag_stack.clear();
         }
-        #if USE_HYPERSCAN
             dst_chars.resize(dst_chars.size());
             hs_free_scratch(scratch);
             hs_free_database(db);
-        #endif
+    #else
+        (void)src_chars;
+        (void)src_offsets;
+        (void)dst_chars;
+        (void)dst_offsets;
+        throw Exception(
+            "htmlOrXmlCoarseParse is not implemented when hyperscan is off (is it x86 processor?)",
+            ErrorCodes::NOT_IMPLEMENTED);
+    #endif
     }
 };
 
@@ -547,7 +546,6 @@ std::vector<const unsigned> hxCoarseParseImpl::patterns_flag =
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, HS_FLAG_SOM_LEFTMOST, 0
     };
 #endif
-
 std::vector<const unsigned> hxCoarseParseImpl::ids =
     {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
@@ -585,7 +583,7 @@ public:
         }
         else
         {
-            throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENTS);
+            throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 };
@@ -597,3 +595,4 @@ void registerFunctionHtmlOrXmlCoarseParse(FunctionFactory & factory)
 }
 
 }
+#endif
