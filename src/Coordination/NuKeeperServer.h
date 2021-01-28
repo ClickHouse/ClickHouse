@@ -46,7 +46,7 @@ public:
 
     int64_t getSessionID();
 
-    void addServer(int server_id_, const std::string & server_uri, bool can_become_leader_);
+    void addServer(int server_id_, const std::string & server_uri, bool can_become_leader_, int32_t priority);
 
     bool isLeader() const;
 

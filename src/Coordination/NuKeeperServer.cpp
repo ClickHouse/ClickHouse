@@ -29,9 +29,9 @@ NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, in
 {
 }
 
-void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_)
+void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_, int32_t priority)
 {
-    nuraft::srv_config config(server_id_, 0, server_uri_, "", /*FIXME follower=*/ !can_become_leader_);
+    nuraft::srv_config config(server_id_, 0, server_uri_, "", /* follower= */ !can_become_leader_, priority);
     auto ret1 = raft_instance->add_srv(config);
     if (ret1->get_result_code() != nuraft::cmd_result_code::OK)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot add server to RAFT quorum with code {}, message '{}'", ret1->get_result_code(), ret1->get_result_str());
@@ -146,7 +146,7 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
-    if (requests.size() == 1 && requests[0].request->isReadRequest())
+    if (isLeader() && requests.size() == 1 && requests[0].request->isReadRequest())
     {
         return state_machine->processReadRequest(requests[0]);
     }
@@ -238,7 +238,7 @@ void NuKeeperServer::waitForServers(const std::vector<int32_t> & ids) const
 
 void NuKeeperServer::waitForCatchUp() const
 {
-    while (raft_instance->is_catching_up() || raft_instance->is_receiving_snapshot())
+    while (raft_instance->is_catching_up() || raft_instance->is_receiving_snapshot() || raft_instance->is_leader())
     {
         LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting current RAFT instance to catch up");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
