@@ -67,6 +67,18 @@ TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket
     , server_display_name(std::move(server_display_name_))
 {
 }
+TCPHandler::~TCPHandler()
+{
+    try
+    {
+        state.reset();
+        out->next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void TCPHandler::runImpl()
 {

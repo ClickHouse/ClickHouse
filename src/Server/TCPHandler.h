@@ -112,6 +112,7 @@ public:
       */
     TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_,
         std::string server_display_name_);
+    ~TCPHandler() override;
 
     void run() override;
 
