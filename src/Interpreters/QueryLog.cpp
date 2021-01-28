@@ -94,6 +94,8 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
+        {std::make_shared<DataTypeString>(),                                  "log_comment"},
+
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "thread_ids"},
         {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents"},
         {std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings"},
@@ -167,6 +169,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     appendClientInfo(client_info, columns, i);
 
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+
+    columns[i++]->insertData(log_comment.data(), log_comment.size());
 
     {
         Array threads_array;

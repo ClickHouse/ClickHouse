@@ -309,6 +309,7 @@
         "01638_div_mod_ambiguities",
         "01642_if_nullable_regression",
         "01643_system_suspend",
+        "01655_plan_optimizations",
         "01475_read_subcolumns_storages"
     ],
     "parallel":
