@@ -434,6 +434,9 @@ def run_tests_array(all_tests_with_params):
                                 if os.path.exists(stderr_file):
                                     os.remove(stderr_file)
 
+            if status and not status.endswith('\n'):
+                status += '\n'
+
             sys.stdout.write(status)
             sys.stdout.flush()
         except KeyboardInterrupt as e:
