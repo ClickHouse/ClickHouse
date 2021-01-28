@@ -51,7 +51,7 @@ WHERE (query_id =
         [NULL, NULL, NULL, NULL, 0.00009999999747378752, NULL, NULL, NULL, NULL, NULL],
         query_id
     FROM system.query_log
-    WHERE (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
+    WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
 )) AND (symbol LIKE '%Source%');
@@ -66,7 +66,7 @@ WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterd
         ignore(ignore(ignore(ignore(65536)), ignore(65537), ignore(2)), ''),
         query_id
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
+    WHERE current_database = currentDatabase() AND (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
     ORDER BY event_time DESC
     LIMIT 1
 )); -- { serverError 42 }
@@ -79,6 +79,7 @@ WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS time_with_microseconds, 
@@ -87,6 +88,7 @@ WITH (
             inf,
             query_start_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
@@ -96,12 +98,14 @@ WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS time_with_microseconds, 
     (
         SELECT query_start_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
