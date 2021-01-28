@@ -609,10 +609,10 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
-bool ActionsDAG::empty() const
+bool ActionsDAG::trivial() const
 {
     for (const auto & node : nodes)
-        if (node.type != ActionType::INPUT)
+        if (node.type == ActionType::FUNCTION || node.type == ActionType::ARRAY_JOIN)
             return false;
 
     return true;

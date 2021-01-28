@@ -223,7 +223,7 @@ public:
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
-    bool empty() const; /// If actions only contain inputs.
+    bool trivial() const; /// If actions has no functions or array join.
 
     const ActionsSettings & getSettings() const { return settings; }
 

@@ -31,13 +31,13 @@ bool tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
     auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
 
     /// No actions can be moved before ARRAY JOIN.
-    if (split_actions.first->empty())
+    if (split_actions.first->trivial())
         return false;
 
     auto description = parent->getStepDescription();
 
     /// All actions was moved before ARRAY JOIN. Swap Expression and ArrayJoin.
-    if (split_actions.second->empty())
+    if (split_actions.second->trivial())
     {
         auto expected_header = parent->getOutputStream().header;
 
