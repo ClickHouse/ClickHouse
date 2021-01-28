@@ -202,11 +202,12 @@ void DDLWorker::shutdown()
     queue_updated_event->set();
     cleanup_event->set();
 
-    worker_pool.reset();
     if (main_thread.joinable())
         main_thread.join();
     if (cleanup_thread.joinable())
         cleanup_thread.join();
+
+    worker_pool.reset();
 }
 
 DDLWorker::~DDLWorker()
@@ -355,8 +356,6 @@ void DDLWorker::scheduleTasks()
         if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            //task->was_executed = true;
-            //saveTask(std::move(task));
             continue;
         }
 
@@ -379,7 +378,7 @@ void DDLWorker::scheduleTasks()
 
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
-    std::remove_if(current_tasks.begin(), current_tasks.end(), [](const DDLTaskPtr & t) { return t->completely_processed.load(); });
+    current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
     assert(current_tasks.size() <= pool_size);
     current_tasks.emplace_back(std::move(task));
     return *current_tasks.back();
@@ -394,10 +393,12 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     ReadBufferFromString istr(query_to_execute);
     String dummy_string;
     WriteBufferFromString ostr(dummy_string);
+    std::optional<CurrentThread::QueryScope> query_scope;
 
     try
     {
         auto query_context = task.makeQueryContext(context);
+        query_scope.emplace(*query_context);
         executeQuery(istr, ostr, false, *query_context, {});
     }
     catch (const DB::Exception & e)
@@ -431,20 +432,6 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     LOG_DEBUG(log, "Executed query: {}", query);
 
     return true;
-}
-
-void DDLWorker::attachToThreadGroup()
-{
-    if (thread_group)
-    {
-        /// Put all threads to one thread pool
-        CurrentThread::attachToIfDetached(thread_group);
-    }
-    else
-    {
-        CurrentThread::initializeQuery();
-        thread_group = CurrentThread::getGroup();
-    }
 }
 
 void DDLWorker::processTask(DDLTaskBase & task)
@@ -909,7 +896,6 @@ void DDLWorker::runMainThread()
     };
 
     setThreadName("DDLWorker");
-    attachToThreadGroup();
     LOG_DEBUG(log, "Starting DDLWorker thread");
 
     while (!stop_flag)

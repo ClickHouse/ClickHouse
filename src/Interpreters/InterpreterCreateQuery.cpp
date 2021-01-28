@@ -929,7 +929,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 drop_ast->table = create.table;
                 drop_ast->no_ddl_lock = true;
 
-                InterpreterDropQuery interpreter(drop_ast, context);
+                Context drop_context = context;
+                InterpreterDropQuery interpreter(drop_ast, drop_context);
                 interpreter.execute();
             }
             else
