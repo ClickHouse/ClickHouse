@@ -1,7 +1,6 @@
 #pragma once
 
-#include <string>
-#include <memory>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -13,17 +12,16 @@ using DiskPtr = std::shared_ptr<IDisk>;
 /// It's used to keep descriptor open, while doing some operations with it, and do fsync at the end.
 /// Guaranties of sequence 'close-reopen-fsync' may depend on kernel version.
 /// Source: linux-fsdevel mailing-list https://marc.info/?l=linux-fsdevel&m=152535409207496
-class DirectorySyncGuard
+class LocalDirectorySyncGuard final : public ISyncGuard
 {
 public:
     /// NOTE: If you have already opened descriptor, it's preferred to use
     /// this constructor instead of constructor with path.
-    DirectorySyncGuard(const DiskPtr & disk_, int fd_) : disk(disk_), fd(fd_) {}
-    DirectorySyncGuard(const DiskPtr & disk_, const std::string & path);
-    ~DirectorySyncGuard();
+    LocalDirectorySyncGuard(int fd_) : fd(fd_) {}
+    LocalDirectorySyncGuard(const String & full_path);
+    ~LocalDirectorySyncGuard() override;
 
 private:
-    DiskPtr disk;
     int fd = -1;
 };
 
