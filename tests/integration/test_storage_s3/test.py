@@ -410,6 +410,20 @@ def test_custom_auth_headers(cluster):
     assert result == '1\t2\t3\n'
 
 
+def test_custom_auth_headers_exclusion(cluster):
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = f"SELECT * FROM s3('http://resolver:8080/{cluster.minio_restricted_bucket}/restricteddirectory/{filename}', 'CSV', '{table_format}')"
+
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        result = run_query(instance, get_query)
+        print(result)
+
+    assert ei.value.returncode == 243
+    assert '403 Forbidden' in ei.value.stderr
+
+
 def test_infinite_redirect(cluster):
     bucket = "redirected"
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"

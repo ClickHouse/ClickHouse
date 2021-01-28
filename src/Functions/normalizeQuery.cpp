@@ -17,8 +17,10 @@ namespace ErrorCodes
 namespace
 {
 
+template <bool keep_names>
 struct NormalizeQueryImpl
 {
+    static constexpr auto name = keep_names ? "normalizeQueryKeepNames" : "normalizeQuery";
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
@@ -32,7 +34,7 @@ struct NormalizeQueryImpl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            normalizeQueryToPODArray(
+            normalizeQueryToPODArray<keep_names>(
                 reinterpret_cast<const char *>(&data[prev_src_offset]),
                 reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
                 res_data);
@@ -47,16 +49,12 @@ struct NormalizeQueryImpl
     }
 };
 
-struct Name
-{
-    static constexpr auto name = "normalizeQuery";
-};
-
 }
 
 void registerFunctionNormalizeQuery(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionStringToString<NormalizeQueryImpl, Name>>();
+    factory.registerFunction<FunctionStringToString<NormalizeQueryImpl<true>, NormalizeQueryImpl<true>>>();
+    factory.registerFunction<FunctionStringToString<NormalizeQueryImpl<false>, NormalizeQueryImpl<false>>>();
 }
 
 }
