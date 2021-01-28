@@ -693,12 +693,18 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            ss << ", maybe you meant: ";
+            String hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
                 if (!hints.empty())
-                    ss << " '" << toString(hints) << "'";
+                    hint_name = hint_name + " '" + toString(hints) + "'";
+            }
+
+            if (!hint_name.empty())
+            {
+                ss << ", maybe you meant: ";
+                ss << hint_name;
             }
         }
         else
