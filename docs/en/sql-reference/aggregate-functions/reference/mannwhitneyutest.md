@@ -12,7 +12,7 @@ Applies the Mann-Whitney rank test to independent samples from distinct distribu
 ``` sql
 mannWhitneyUTest(alternative)(sample_data, sample_index)
 ```
-If values X and Y are randomly selected from two population the null hypothesis is that the probability of X being greater than Y is equal to the probability of Y being greater than X. There are also one-sided hypothesises which may be tested.
+Values X and Y are randomly selected from two populations. The null hypothesis is that the probability of X being greater than Y is equal to the probability of Y being greater than X. There are also one-sided hypothesises which may be tested.
   
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the first sample. Otherwise it belongs to the second sample. 
 
