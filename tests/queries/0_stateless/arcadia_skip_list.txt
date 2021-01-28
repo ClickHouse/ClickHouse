@@ -194,3 +194,6 @@
 01669_columns_declaration_serde
 01666_blns
 01181_db_atomic_drop_on_cluster
+01658_test_base64Encode_mysql_compatibility
+01659_test_base64Decode_mysql_compatibility
+01671_aggregate_function_group_bitmap_data
