@@ -1,17 +1,17 @@
 ---
-toc_priority: 300
-toc_title: studentTTest
+toc_priority: 301
+toc_title: welchTTest
 ---
 
-## studentTTest {#studentttest}
+## welchTTest {#welchttest}
 
 Calculates the t-statistic and p-value for the means of two independent samples. 
-This is a test for the null hypothesis that 2 independent samples have identical average values. This test assumes that samples have identical variances.
+This is a test for the null hypothesis that 2 independent samples have identical average values. Samples may have unequal variances.
 
 **Syntax**
 
 ``` sql
-studentTTest(sample_data, sample_index)
+welchTTest(sample_data, sample_index)
 ```
 
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the first sample. Otherwise it belongs to the second sample.
@@ -36,31 +36,31 @@ Input table:
 ``` text
 ┌─sample_data─┬─sample_index─┐
 │        20.3 │            0 │
-│        21.1 │            0 │
-│        21.9 │            1 │
-│        21.7 │            0 │
-│        19.9 │            1 │
-│        21.8 │            1 │
+│        22.1 │            0 │
+│        21.9 │            0 │
+│        18.9 │            1 │
+│        20.3 │            1 │
+│          19 │            1 │
 └─────────────┴──────────────┘
 ```
 
 Query:
 
 ``` sql
-SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
+SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
 ```
 
 Result:
 
 ``` text
-┌─studentTTest(sample_data, sample_index)───┐
-│ (-0.21739130434783777,0.8385421208415731) │
+┌─welchTTest(sample_data, sample_index)─────┐
+│ (2.7988719532211235,0.051807360348581945) │
 └───────────────────────────────────────────┘
 ```
 
 **See Also**
 
--   [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
--   [welchTTest](welchttest.md#welchttest)
+-   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
+-   [studentttest](studentttest.md#studentttest)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/studentttest/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/welchTTest/) <!--hide-->
