@@ -216,9 +216,9 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
 
     /// It's important to check zookeeper first and after that check local storage,
     /// because our checks of local storage and zookeeper are not consistent.
-    /// If part exists in zookeeper and doesn't exists in local storage definetely require
+    /// If part exists in zookeeper and doesn't exists in local storage definitely require
     /// to fetch this part. But if we check local storage first and than check zookeeper
-    /// some background process can successfuly commit part between this checks (both to the local stoarge and zookeeper),
+    /// some background process can successfully commit part between this checks (both to the local stoarge and zookeeper),
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
