@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 Creates a table named `name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
-The structure of the table is a list of column descriptions, secondary indexes and constraints . If primary key is supported by the engine, it will be indicated as parameter for the table engine.
+The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
@@ -39,13 +39,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-## From a Table Function {#from-a-table-function}
+### From a Table Function {#from-a-table-function}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Creates a table with the structure and data returned by a [table function](../../../sql-reference/table-functions/index.md#table-functions).
+Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
@@ -111,7 +111,7 @@ It is not possible to set default values for elements in nested data structures.
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways: 
 
-- inside the column list
+- Inside the column list
 
 ``` sql
 CREATE TABLE db.table_name 
@@ -122,7 +122,7 @@ CREATE TABLE db.table_name
 ENGINE = engine;
 ```
 
-- outside the column list
+- Outside the column list
 
 ``` sql
 CREATE TABLE db.table_name
@@ -133,7 +133,8 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-You can't combine both ways in one query.
+!!! warning "Warning"
+    You can't combine both ways in one query.
 
 ## Constraints {#constraints}
 
@@ -259,3 +260,78 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
 
 It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engines/special/memory.md) instead of temporary tables.
+
+## REPLACE TABLE {#replace-table-query}
+
+'REPLACE' query allows you to update the table atomically.
+
+!!!note "Note"
+    This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+
+If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that doesn't retrieve unwanted data, then drop the old table and rename the new one:
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
+DROP TABLE myOldTable;
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+Instead of above, you can use the following:
+
+```sql
+REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
+```
+
+### Syntax
+
+{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+
+All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
+
+### Examples:
+
+Consider the table:
+
+```sql
+CREATE DATABASE base ENGINE = Atomic;
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (1, 'test');
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s────┐
+│ 1 │ test │
+└───┴──────┘
+```
+
+Using `REPLACE` query to clear all data:
+
+```sql
+CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (2, null);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┬─s──┐
+│ 2 │ \N │
+└───┴────┘
+```
+
+Using `REPLACE` query to change table structure:
+
+```sql
+REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO base.t1 VALUES (3);
+SELECT * FROM base.t1;
+```
+
+```text
+┌─n─┐
+│ 3 │
+└───┘
+```
+
+ [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/table) <!--hide-->
