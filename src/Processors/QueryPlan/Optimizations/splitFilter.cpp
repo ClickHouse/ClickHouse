@@ -21,7 +21,7 @@ bool trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 
     auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
 
-    if (split.second->empty())
+    if (split.second->trivial())
         return false;
 
     if (filter_step->removesFilterColumn())

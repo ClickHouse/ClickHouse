@@ -45,7 +45,7 @@ inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 4> optimizations =
     {{
-        {tryLiftUpArrayJoin, 2, 2},
+        {tryLiftUpArrayJoin, 2, 3},
         {tryPushDownLimit, 2, 2},
         {trySplitFilter, 1, 2},
         {tryMergeExpressions, 2, 1},
