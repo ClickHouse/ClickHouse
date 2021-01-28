@@ -256,7 +256,6 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 ``` sql
@@ -452,7 +451,6 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS index_granularity = 8192
 ```
 
 Puede ejecutar esas consultas utilizando el modo interactivo de `clickhouse-client` (simplemente ejecútelo en un terminal sin especificar una consulta por adelantado) o pruebe algunos [interfaz alternativa](../interfaces/index.md) Si quieres.

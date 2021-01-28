@@ -1995,6 +1995,21 @@ SELECT * FROM a;
 
 -   [Оптимизация чтения данных](../../sql-reference/statements/select/order-by.md#optimize_read_in_order) в секции `ORDER BY`
 
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](../../sql-reference/statements/select/group-by.md) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+
+Возможные значения:
+
+-   0 — оптимизация по ключу сортировки отключена.
+-   1 — оптимизация по ключу сортировки включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   [Оптимизация GROUP BY для отсортированных таблиц](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
+
 ## mutations_sync {#mutations_sync}
 
 Позволяет выполнять запросы `ALTER TABLE ... UPDATE|DELETE` ([мутации](../../sql-reference/statements/alter/index.md#mutations)) синхронно.
@@ -2360,11 +2375,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 Рассмотрим запрос с агрегирующими функциями:
 ```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 ```
 
 Результат запроса с настройкой `aggregate_functions_null_for_empty = 0`:
@@ -2396,6 +2407,16 @@ WHERE 0
 
 Смотрите примеры в разделе [UNION](../../sql-reference/statements/select/union.md).
 
+## data_type_default_nullable {#data_type_default_nullable}
+
+Позволяет использовать по умолчанию тип данных [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
+
+Возможные значения:
+
+- 1 — типы данных в определении столбца заданы по умолчанию как `Nullable`.
+- 0 — типы данных в определении столбца не заданы по умолчанию как `Nullable`.
+
+Значение по умолчанию: `0`.
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -2415,5 +2436,16 @@ WHERE 0
 Большие значения этой настройки могут привести к задержкам репликации.
 
 Эта настройка полезна, когда скорость слияния ограничивается мощностью процессора, а не скоростью операций ввода-вывода (при выполнении "тяжелого" сжатия данных, при расчете агрегатных функций или выражений по умолчанию, требующих большого объема вычислений, или просто при большом количестве мелких слияний).
+
+## max_final_threads {#max-final-threads}
+
+Устанавливает максимальное количество параллельных потоков для фазы чтения данных запроса `SELECT` с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 или 1 — настройка отключена. `SELECT` запросы выполняются в один поток.
+
+Значение по умолчанию: `16`.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

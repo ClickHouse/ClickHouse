@@ -12,6 +12,8 @@ using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonth
 void registerFunctionToMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToMonth>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToMonth>("MONTH", FunctionFactory::CaseInsensitive);
 }
 
 }

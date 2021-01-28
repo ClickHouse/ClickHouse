@@ -29,7 +29,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -145,6 +144,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
     if (random_shard_insert)
     {
         writeAsyncImpl(block, storage.getRandomShardIndex(cluster->getShardsInfo()));
+        ++inserted_blocks;
     }
     else
     {
@@ -352,7 +352,12 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// Forward user settings
                 job.local_context = std::make_unique<Context>(context);
 
-                /// InterpreterInsertQuery is modifying the AST, but the same AST is also used to insert to remote shards.
+                /// Copying of the query AST is required to avoid race,
+                /// in case of INSERT into multiple local shards.
+                ///
+                /// Since INSERT into local node uses AST,
+                /// and InterpreterInsertQuery::execute() is modifying it,
+                /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
                 InterpreterInsertQuery interp(copy_query_ast, *job.local_context);
@@ -608,7 +613,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
     /// tmp directory is used to ensure atomicity of transactions
     /// and keep monitor thread out from reading incomplete data
-    std::string first_file_tmp_path{};
+    std::string first_file_tmp_path;
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
     const auto disk = reservation->getDisk();
@@ -617,11 +622,11 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
     auto make_directory_sync_guard = [&](const std::string & current_path)
     {
-        std::unique_ptr<DirectorySyncGuard> guard;
+        SyncGuardPtr guard;
         if (dir_fsync)
         {
             const std::string relative_path(data_path + current_path);
-            guard = std::make_unique<DirectorySyncGuard>(disk, relative_path);
+            guard = disk->getDirectorySyncGuard(relative_path);
         }
         return guard;
     };
@@ -649,6 +654,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
+            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
+            ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
             WriteBufferFromOwnString header_buf;
