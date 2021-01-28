@@ -50,9 +50,9 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
                 throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (IsDecimalNumber<T>)
-                dst = bigint_cast<NativeU>(src.value);
+                dst = static_cast<NativeU>(src.value);
             else
-                dst = bigint_cast<NativeU>(src);
+                dst = static_cast<NativeU>(src);
         }
         else
             dst = static_cast<NativeU>(src);

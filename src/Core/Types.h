@@ -156,7 +156,7 @@ struct Decimal
             return convertTo<typename U::NativeType>();
         }
         else
-            return bigint_cast<U>(value);
+            return static_cast<U>(value);
     }
 
     const Decimal<T> & operator += (const T & x) { value += x; return *this; }
