@@ -62,7 +62,6 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
-        lsof \
        --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas
