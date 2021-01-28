@@ -5,7 +5,6 @@ LIBRARY()
 
 ADDINCL(
     GLOBAL clickhouse/base
-    GLOBAL contrib/libs/cctz/include
 )
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)
@@ -24,7 +23,7 @@ ELSEIF (OS_LINUX)
 ENDIF ()
 
 PEERDIR(
-    contrib/libs/cctz/src
+    contrib/libs/cctz
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
@@ -48,6 +47,7 @@ SRCS(
     errnoToString.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
+    getPageSize.cpp
     getResource.cpp
     getThreadId.cpp
     mremap.cpp

@@ -10,10 +10,12 @@
 # Most of the command line options are the same, for more information type
 # ./clickhouse_grpc_client.py --help
 
-import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid, grpc
+import grpc  # pip3 install grpcio
+import grpc_tools  # pip3 install grpcio-tools
+import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid
 
 default_host = 'localhost'
-default_port = 9001
+default_port = 9100
 default_user_name = 'default'
 default_output_format_for_interactive_mode = 'PrettyCompact'
 history_filename = '~/.clickhouse_grpc_history'
@@ -196,7 +198,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         errors = p.stderr.read().decode().strip('\n').split('\n')
         only_warnings = all(('Warning' in error) for error in errors)
         if not only_warnings:
-            error_print(errors.join('\n'))
+            error_print('\n'.join(errors))
 
     # Import the generated *pb2.py files.
     @staticmethod
@@ -261,7 +263,7 @@ def main(args):
     parser = argparse.ArgumentParser(description='ClickHouse client accessing server through gRPC protocol.', add_help=False)
     parser.add_argument('--help', help='Show this help message and exit', action='store_true')
     parser.add_argument('--host', '-h', help='The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.', default='localhost')
-    parser.add_argument('--port', help='The port to connect to. This port should be enabled on the ClickHouse server (see grpc_port in the config).', default=9001)
+    parser.add_argument('--port', help='The port to connect to. This port should be enabled on the ClickHouse server (see grpc_port in the config).', default=9100)
     parser.add_argument('--user', '-u', dest='user_name', help='The username. Default value: ‘default’.', default='default')
     parser.add_argument('--password', help='The password. Default value: empty string.', default='')
     parser.add_argument('--query', '-q', help='The query to process when using non-interactive mode.', default='')

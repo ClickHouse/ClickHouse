@@ -386,16 +386,17 @@ static void appendBlock(const Block & from, Block & to)
 
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
+    MutableColumnPtr last_col;
     try
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            col_to->insertRangeFrom(col_from, 0, rows);
+            last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(col_to);
+            to.getByPosition(column_no).column = std::move(last_col);
         }
     }
     catch (...)
@@ -406,6 +407,16 @@ static void appendBlock(const Block & from, Block & to)
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
+                /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
+                if (!col_to)
+                {
+                    col_to = std::move(last_col);
+                    /// Suppress clang-tidy [bugprone-use-after-move]
+                    last_col = {};
+                }
+                /// But if there is still nothing, abort
+                if (!col_to)
+                    throw Exception("No column to rollback", ErrorCodes::LOGICAL_ERROR);
                 if (col_to->size() != old_rows)
                     col_to = col_to->cut(0, old_rows);
             }
@@ -569,7 +580,7 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
@@ -583,7 +594,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, global_context);
     }
     catch (...)
     {
@@ -608,6 +619,7 @@ bool StorageBuffer::optimize(
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
+    const Names & /* deduplicate_by_columns */,
     const Context & /*context*/)
 {
     if (partition)
@@ -817,7 +829,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushBack()
+void StorageBuffer::backgroundFlush()
 {
     try
     {
@@ -867,13 +879,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 }
 
-std::optional<UInt64> StorageBuffer::totalRows() const
+std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
     auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
 
     if (underlying)
-        underlying_rows = underlying->totalRows();
+        underlying_rows = underlying->totalRows(settings);
     if (!underlying_rows)
         return underlying_rows;
 
@@ -886,7 +898,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
     return rows + *underlying_rows;
 }
 
-std::optional<UInt64> StorageBuffer::totalBytes() const
+std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) const
 {
     UInt64 bytes = 0;
     for (const auto & buffer : buffers)
@@ -906,7 +918,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);

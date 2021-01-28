@@ -71,6 +71,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
+        bool input_format_arrays_as_nested_csv = false;
     } csv;
 
     struct Custom

@@ -1,22 +1,7 @@
-#!/usr/bin/expect -f
+#!/usr/bin/env bash
 
-log_user 0
-set timeout 5
-match_max 100000
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
-
-spawn clickhouse-client --port "$env(CLICKHOUSE_PORT_TCP)"
-expect ":) "
-
-# Make a query
-send -- "SELECT 'print query id'\r"
-expect {
-    "Query id: *" { }
-    timeout { exit 1 }
-}
-expect "print query id"
-expect ":) "
-
-send -- "\4"
-expect eof
+${CURDIR}/01520_client_print_query_id.expect

@@ -3,9 +3,6 @@ from rbac.helper.common import *
 import rbac.helper.errors as errors
 
 @TestSuite
-@Requirements(
-    RQ_SRS_006_RBAC_Privileges_DropTable_Access("1.0"),
-)
 def privilege_granted_directly_or_via_role(self, node=None):
     """Check that user is only able to execute DROP  TABLE when they have required privilege, either directly or via role.
     """

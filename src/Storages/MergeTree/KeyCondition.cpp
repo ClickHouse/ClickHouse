@@ -2,12 +2,14 @@
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/typeid_cast.h>
@@ -22,7 +24,6 @@
 
 #include <cassert>
 #include <stack>
-
 
 namespace DB
 {
@@ -945,6 +946,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
     if (const auto * func = node->as<ASTFunction>())
     {
+        if (!func->arguments)
+            return false;
+
         const auto & args = func->arguments->children;
         if (args.size() > 2 || args.empty())
             return false;
@@ -975,9 +979,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
 static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const ASTPtr & node)
 {
-    if (desired_type->equals(*src_type))
-        return;
-
     try
     {
         src_value = convertFieldToType(src_value, *desired_type, src_type.get());
@@ -1084,15 +1085,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-            if (is_constant_transformed)
-            {
-                if (func_name == "less")
-                    func_name = "lessOrEquals";
-                else if (func_name == "greater")
-                    func_name = "greaterOrEquals";
-            }
-
             /// Replace <const> <sign> <data> on to <data> <-sign> <const>
             if (key_arg_pos == 1)
             {
@@ -1114,12 +1106,55 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 }
             }
 
-            bool cast_not_needed =
-                is_set_const /// Set args are already casted inside Set::createFromAST
-                || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+            bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
+                || ((isNativeNumber(key_expr_type) || isDateTime(key_expr_type))
+                    && (isNativeNumber(const_type) || isDateTime(const_type))); /// Numbers and DateTime are accurately compared without cast.
 
-            if (!cast_not_needed)
-                castValueToType(key_expr_type, const_value, const_type, node);
+            if (!cast_not_needed && !key_expr_type->equals(*const_type))
+            {
+                if (const_value.getType() == Field::Types::String)
+                {
+                    const_value = convertFieldToType(const_value, *key_expr_type);
+                    if (const_value.isNull())
+                        return false;
+                    // No need to set is_constant_transformed because we're doing exact conversion
+                }
+                else
+                {
+                    DataTypePtr common_type = getLeastSupertype({key_expr_type, const_type});
+                    if (!const_type->equals(*common_type))
+                    {
+                        castValueToType(common_type, const_value, const_type, node);
+
+                        // Need to set is_constant_transformed unless we're doing exact conversion
+                        if (!key_expr_type->equals(*common_type))
+                            is_constant_transformed = true;
+                    }
+                    if (!key_expr_type->equals(*common_type))
+                    {
+                        ColumnsWithTypeAndName arguments{
+                            {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
+                        FunctionOverloadResolverPtr func_builder_cast
+                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                        auto func_cast = func_builder_cast->build(arguments);
+
+                        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+                        if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
+                            return false;
+                        chain.push_back(func_cast);
+                    }
+                }
+            }
+
+            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
+            if (is_constant_transformed)
+            {
+                if (func_name == "less")
+                    func_name = "lessOrEquals";
+                else if (func_name == "greater")
+                    func_name = "greaterOrEquals";
+            }
+
         }
         else
             return false;
@@ -1675,12 +1710,28 @@ String KeyCondition::RPNElement::toString() const
 
 bool KeyCondition::alwaysUnknownOrTrue() const
 {
+    return unknownOrAlwaysTrue(false);
+}
+bool KeyCondition::anyUnknownOrAlwaysTrue() const
+{
+    return unknownOrAlwaysTrue(true);
+}
+bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
+{
     std::vector<UInt8> rpn_stack;
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN
-            || element.function == RPNElement::ALWAYS_TRUE)
+        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            /// If unknown_any is true, return instantly,
+            /// to avoid processing it with FUNCTION_AND, and change the outcome.
+            if (unknown_any)
+                return true;
+            /// Otherwise, it may be AND'ed via FUNCTION_AND
+            rpn_stack.push_back(true);
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
         {
             rpn_stack.push_back(true);
         }
@@ -1718,7 +1769,7 @@ bool KeyCondition::alwaysUnknownOrTrue() const
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::alwaysUnknownOrTrue", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::unknownOrAlwaysTrue", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0];
 }

@@ -41,13 +41,13 @@ SRCS(
     AggregateFunctionRetention.cpp
     AggregateFunctionSequenceMatch.cpp
     AggregateFunctionSimpleLinearRegression.cpp
+    AggregateFunctionSimpleState.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
     AggregateFunctionStudentTTest.cpp
     AggregateFunctionSum.cpp
     AggregateFunctionSumMap.cpp
-    AggregateFunctionTimeSeriesGroupSum.cpp
     AggregateFunctionTopK.cpp
     AggregateFunctionUniq.cpp
     AggregateFunctionUniqCombined.cpp
