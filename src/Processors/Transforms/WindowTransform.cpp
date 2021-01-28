@@ -211,6 +211,8 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 
 void WindowTransform::advanceFrameEndCurrentRow()
 {
+//    fmt::print(stderr, "starting from frame_end {}\n", frame_end);
+
     // We only process one block here, and frame_end must be already in it: if
     // we didn't find the end in the previous block, frame_end is now the first
     // row of the current block. We need this knowledge to write a simpler loop
@@ -229,24 +231,46 @@ void WindowTransform::advanceFrameEndCurrentRow()
         return;
     }
 
-    const auto block_rows = blockRowsNumber(frame_end);
+    // We advance until the partition end. It's either in the current block or
+    // in the next one, which is also the past-the-end block. Figure out how
+    // many rows we have to process.
+    uint64_t rows_end;
+    if (partition_end.row == 0)
+    {
+        assert(partition_end == blocksEnd());
+        rows_end = blockRowsNumber(frame_end);
+    }
+    else
+    {
+        assert(frame_end.block == partition_end.block);
+        rows_end = partition_end.row;
+    }
+    // Equality would mean "no data to process", for which we checked above.
+    assert(frame_end.row < rows_end);
+
+//    fmt::print(stderr, "first row {} last {}\n", frame_end.row, rows_end);
+
     // We could retreat the frame_end here, but for some reason I am reluctant
     // to do this... It would have better data locality.
     auto reference = current_row;
-    for (; frame_end.row < block_rows; ++frame_end.row)
+    for (; frame_end.row < rows_end; ++frame_end.row)
     {
         if (!arePeers(reference, frame_end))
         {
-            //fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
+//            fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
             frame_ended = true;
             return;
         }
         reference = frame_end;
     }
 
-    // Got to the end of current block, have to properly update the row number.
-    ++frame_end.block;
-    frame_end.row = 0;
+    // Might have gotten to the end of the current block, have to properly
+    // update the row number.
+    if (frame_end.row == blockRowsNumber(frame_end))
+    {
+        ++frame_end.block;
+        frame_end.row = 0;
+    }
 
     // Got to the end of partition (frame ended as well then) or end of data.
     assert(frame_end == partition_end);
@@ -263,6 +287,8 @@ void WindowTransform::advanceFrameEnd()
     // The only frame end we have for now is CURRENT ROW.
     advanceFrameEndCurrentRow();
 
+//    fmt::print(stderr, "frame_end {} -> {}\n", frame_end_before, frame_end);
+
     // We might not have advanced the frame end if we found out we reached the
     // end of input or the partition, or if we still don't know the frame start.
     if (frame_end_before == frame_end)
@@ -273,17 +299,18 @@ void WindowTransform::advanceFrameEnd()
     // Add the columns over which we advanced the frame to the aggregate function
     // states.
     // We could have advanced over at most the entire last block.
-    uint64_t last_row = frame_end.row;
+    uint64_t rows_end = frame_end.row;
     if (frame_end.row == 0)
     {
         assert(frame_end == blocksEnd());
-        last_row = blockRowsNumber(frame_end_before);
+        rows_end = blockRowsNumber(frame_end_before);
     }
     else
     {
         assert(frame_end_before.block == frame_end.block);
     }
-    assert(frame_end_before.row < last_row);
+    // Equality would mean "no data to process", for which we checked above.
+    assert(frame_end_before.row < rows_end);
 
     for (auto & ws : workspaces)
     {
@@ -302,7 +329,7 @@ void WindowTransform::advanceFrameEnd()
         const auto * a = ws.window_function.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
         auto * columns = ws.argument_columns.data();
-        for (auto row = frame_end_before.row; row < last_row; ++row)
+        for (auto row = frame_end_before.row; row < rows_end; ++row)
         {
             a->add(buf, columns, row, arena.get());
         }

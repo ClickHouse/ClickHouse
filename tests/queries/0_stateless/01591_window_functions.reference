@@ -459,3 +459,16 @@ settings max_block_size = 5
 28	14	1	1
 29	14	2	2
 30	15	0	1
+-- A case where the partition end is in the current block, and the frame end
+-- is triggered by the partition end.
+select min(number) over (partition by p)  from (select number, intDiv(number, 3) p from numbers(10));
+0
+0
+0
+3
+3
+3
+6
+6
+6
+9
