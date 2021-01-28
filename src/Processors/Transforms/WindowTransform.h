@@ -61,17 +61,14 @@ struct RowNumber
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
  * We need to track the following pointers:
  * 1) boundaries of partition -- rows that compare equal w/PARTITION BY.
- * 2) boundaries of peer group -- rows that compare equal w/ORDER BY (empty
- *    ORDER BY means all rows are peers).
- * 3) boundaries of the frame.
+ * 2) current row for which we will compute the window functions.
+ * 3) boundaries of the frame for this row.
  * Both the peer group and the frame are inside the partition, but can have any
  * position relative to each other.
- * All pointers only move forward. For partition and group boundaries, this is
- * ensured by the order of input data. This property also trivially holds for
- * the ROWS and GROUPS frames. For the RANGE frame, the proof requires the
- * additional fact that the ranges are specified in terms of (the single)
- * ORDER BY column.
- * The value of the window function is the same for all rows of the peer group.
+ * All pointers only move forward. For partition boundaries, this is ensured by
+ * the order of input data. This property also trivially holds for the ROWS and
+ * GROUPS frames. For the RANGE frame, the proof requires the additional fact
+ * that the ranges are specified in terms of (the single) ORDER BY column.
  */
 class WindowTransform : public IProcessor /* public ISimpleTransform */
 {
@@ -105,13 +102,11 @@ public:
 
 private:
     void advancePartitionEnd();
-    void advanceGroupEnd();
-    void advanceGroupEndOrderBy();
-    void advanceGroupEndTrivial();
-    void advanceGroupEndRange();
     void advanceFrameStart();
     void advanceFrameEnd();
-    void writeOutGroup();
+    void advanceFrameEndCurrentRow();
+    bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -179,7 +174,8 @@ private:
 
 public:
     /*
-     * Data (formerly) inherited from ISimpleTransform.
+     * Data (formerly) inherited from ISimpleTransform, needed for the
+     * implementation of the IProcessor interface.
      */
     InputPort & input;
     OutputPort & output;
@@ -231,21 +227,18 @@ public:
     RowNumber partition_end;
     bool partition_ended = false;
 
-    // Current peer group is [group_start, group_end) if group_ended,
-    // [group_start, ?) otherwise.
-    RowNumber group_start;
-    RowNumber group_end;
-    bool group_ended = false;
+    // This is the row for which we are computing the window functions now.
+    RowNumber current_row;
 
     // The frame is [frame_start, frame_end) if frame_ended, and unknown
-    // otherwise. Note that when we move to the next peer group, both the
+    // otherwise. Note that when we move to the next row, both the
     // frame_start and the frame_end may jump forward by an unknown amount of
     // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
     // know neither frame_end nor frame_start.
     // We update the states of the window functions as we track the frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
-    // output the result for the current group, w/o waiting for more data.
+    // output the result for the current row, w/o waiting for more data.
     RowNumber frame_start;
     RowNumber frame_end;
     bool frame_ended = false;
