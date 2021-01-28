@@ -223,25 +223,28 @@ public:
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        writeVarUInt(data(place).value.size(), buf);
+        writeBinary(data(place).sorted, buf);
 
         auto & value = data(place).value;
+        writeVarUInt(value.size(), buf);
         for (auto & node : value)
             node->write(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        UInt64 elems;
-        readVarUInt(elems, buf);
+        readBinary(data(place).sorted, buf);
 
-        if (unlikely(elems == 0))
+        UInt64 size;
+        readVarUInt(size, buf);
+
+        if (unlikely(size == 0))
             return;
 
         auto & value = data(place).value;
 
-        value.resize(elems, arena);
-        for (UInt64 i = 0; i < elems; ++i)
+        value.resize(size, arena);
+        for (UInt64 i = 0; i < size; ++i)
             value[i] = Node::read(buf, arena);
     }
 
