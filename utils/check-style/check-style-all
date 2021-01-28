@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-./check-style -n
-./check-typos
-./check-whitespaces -n
-./check-duplicate-includes.sh
-./shellcheck-run.sh
+dir=$(dirname $0)
+$dir/check-style -n
+$dir/check-typos
+$dir/check-whitespaces -n
+$dir/check-duplicate-includes.sh
+$dir/shellcheck-run.sh
