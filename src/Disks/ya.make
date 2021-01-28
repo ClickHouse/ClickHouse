@@ -17,6 +17,7 @@ SRCS(
     DiskSelector.cpp
     IDisk.cpp
     IVolume.cpp
+    LocalDirectorySyncGuard.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     VolumeJBOD.cpp

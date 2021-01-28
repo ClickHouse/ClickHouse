@@ -2489,7 +2489,6 @@ Possible values:
 
 Default value: `0`.
 
-
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -2506,11 +2505,7 @@ Default value: 0.
 
 Consider the following query with aggregate functions:
 ```sql
-SELECT
-    SUM(-1),
-    MAX(0)
-FROM system.one
-WHERE 0
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 ```
 
 With `aggregate_functions_null_for_empty = 0` it would produce:
@@ -2527,7 +2522,6 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 
-
 ## union_default_mode {#union-default-mode}
 
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -2542,7 +2536,6 @@ Default value: `''`.
 
 See examples in [UNION](../../sql-reference/statements/select/union.md).
 
-
 ## data_type_default_nullable {#data_type_default_nullable}
 
 Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
@@ -2553,7 +2546,6 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 
 Default value: `0`.
-
 
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
@@ -2573,5 +2565,16 @@ Selects one replica to perform the merge on. Sets the time threshold from the st
 High values for that threshold may lead to replication delays.
 
 It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
+
+## max_final_threads {#max-final-threads}
+
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
+
+Default value: `16`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
