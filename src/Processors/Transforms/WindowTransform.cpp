@@ -272,6 +272,8 @@ void WindowTransform::advanceFrameEnd()
         const auto * a = f.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
 
+        // FIXME we don't need these complex loops, because frame_end advances
+        // by one block at most.
         // We use two explicit loops here instead of using advanceRowNumber(),
         // because we want to cache the argument columns array per block. Later
         // we also use batch add.
@@ -502,13 +504,10 @@ IProcessor::Status WindowTransform::prepare()
         return Status::Finished;
     }
 
-//    // Technically the past-the-end next_output_block_number is also valid if
-//    // we haven't yet received the corresponding input block.
-//    assert(next_output_block_number < first_block_number + blocks.size()
-//        || blocks.empty());
-
     assert(first_not_ready_row.block >= first_block_number);
-    // Might be past-the-end, so equality also valid.
+    // The first_not_ready_row might be past-the-end if we have already
+    // calculated the window functions for all input rows. That's why the
+    // equality is also valid here.
     assert(first_not_ready_row.block <= first_block_number + blocks.size());
     assert(next_output_block_number >= first_block_number);
 
