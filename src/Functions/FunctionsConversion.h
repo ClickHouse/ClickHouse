@@ -158,7 +158,7 @@ struct ConvertImpl
                     if constexpr (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>)
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                     else
-                        vec_to[i] = bigint_cast<ToFieldType>(vec_from[i]);
+                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }
                 else if constexpr (std::is_same_v<ToFieldType, UInt128> && sizeof(FromFieldType) <= sizeof(UInt64))
                     vec_to[i] = static_cast<ToFieldType>(static_cast<UInt64>(vec_from[i]));

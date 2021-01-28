@@ -60,7 +60,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
         return col_res;
     }
 
@@ -71,7 +71,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a[i]) : bigint_cast<ResultType>(b);
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
         return col_res;
     }
 
@@ -82,7 +82,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b[i]);
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
         return col_res;
     }
 
@@ -93,7 +93,7 @@ struct NumIfImpl
         typename ColVecResult::Container & res = col_res->getData();
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? bigint_cast<ResultType>(a) : bigint_cast<ResultType>(b);
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
         return col_res;
     }
 };
