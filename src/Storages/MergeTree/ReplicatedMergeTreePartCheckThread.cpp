@@ -195,7 +195,11 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
         if (!storage.queue.remove(zookeeper, part_name))
         {
             /// The part was not in our queue. Why did it happen?
+#ifdef NDEBUG
+            LOG_ERROR(log, "Missing part {} is not in our queue.", part_name);
+#else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing part {} is not in our queue.", part_name);
+#endif
         }
 
         /** This situation is possible if on all the replicas where the part was, it deteriorated.
