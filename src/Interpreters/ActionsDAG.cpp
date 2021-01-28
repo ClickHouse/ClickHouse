@@ -821,6 +821,13 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 
+    /// Here we rebuild index because some string_view from the first map now may point to string from second.
+    ActionsDAG::Index first_index;
+    for (auto * node : first.index)
+        first_index.insert(node);
+
+    first.index.swap(first_index);
+
 #if USE_EMBEDDED_COMPILER
     if (first.compilation_cache == nullptr)
         first.compilation_cache = second.compilation_cache;
