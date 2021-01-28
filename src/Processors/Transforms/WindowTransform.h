@@ -22,11 +22,9 @@ struct WindowFunctionWorkspace
     AlignedBuffer aggregate_function_state;
     std::vector<size_t> argument_column_indices;
 
-    /*
-    // Argument and result columns. Be careful, they are per-chunk.
+    // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
-    MutableColumnPtr result_column;
-    */
+    uint64_t cached_block_number = std::numeric_limits<uint64_t>::max();
 };
 
 struct WindowTransformBlock

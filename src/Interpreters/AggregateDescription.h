@@ -46,10 +46,10 @@ struct WindowFrame
 
     // This flag signifies that the frame properties were not set explicitly by
     // user, but the fields of this structure still have to contain proper values
-    // for the default frame of ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
+    // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
     bool is_default = true;
 
-    FrameType type = FrameType::Rows;
+    FrameType type = FrameType::Range;
 
     /*
      * We don't need these yet.

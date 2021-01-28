@@ -561,7 +561,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         {
             return false;
         }
-
     }
     else
     {
