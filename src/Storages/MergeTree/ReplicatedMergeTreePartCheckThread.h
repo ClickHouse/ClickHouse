@@ -12,6 +12,7 @@
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -75,7 +76,9 @@ private:
 
     /// Search for missing part and queue fetch if possible. Otherwise
     /// remove part from zookeeper and queue.
-    void searchForMissingPartAndFetchIfPossible(const String & part_name);
+    void searchForMissingPartAndFetchIfPossible(const String & part_name, bool exists_in_zookeeper);
+
+    std::pair<bool, MergeTreeDataPartPtr> findLocalPart(const String & part_name);
 
     enum MissingPartSearchResult
     {
