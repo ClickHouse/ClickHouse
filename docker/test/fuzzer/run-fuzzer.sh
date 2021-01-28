@@ -192,14 +192,14 @@ case "$stage" in
         echo "failure" > status.txt
         if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*" server.log > description.txt
         then
-            echo "Lost connection to server. See the logs" > description.txt
+            echo "Lost connection to server. See the logs." > description.txt
         fi
     else
         # Something different -- maybe the fuzzer itself died? Don't grep the
         # server log in this case, because we will find a message about normal
         # server termination (Received signal 15), which is confusing.
         echo "failure" > status.txt
-        echo "Fuzzer failed ($fuzzer_exit_code). See the logs" > description.txt
+        echo "Fuzzer failed ($fuzzer_exit_code). See the logs." > description.txt
     fi
     ;&
 "report")
