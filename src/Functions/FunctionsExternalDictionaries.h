@@ -292,8 +292,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        std::cerr << "FunctionDictGetNoType::executeImpl " << this << std::endl;
-
         if (input_rows_count == 0)
             return result_type->createColumn();
 
