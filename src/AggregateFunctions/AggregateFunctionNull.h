@@ -157,15 +157,8 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                if (unlikely(nested_function->doesInsertResultNeedNullableColumn()))
-                {
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete, arena);
-                }
-                else
-                {
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                    to_concrete.getNullMapData().push_back(0);
-                }
+                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                to_concrete.getNullMapData().push_back(0);
             }
             else
             {
@@ -235,7 +228,7 @@ public:
 };
 
 
-template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
+template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped, bool insertion_requires_nullable_column = false>
 class AggregateFunctionNullVariadic final
     : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
@@ -282,6 +275,35 @@ public:
         this->setFlag(place);
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
+
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    {
+        if constexpr (result_is_nullable)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            if (this->getFlag(place))
+            {
+                if constexpr (insertion_requires_nullable_column)
+                {
+                    this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete, arena);
+                }
+                else
+                {
+                    this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(0);
+                }
+            }
+            else
+            {
+                to_concrete.insertDefault();
+            }
+        }
+        else
+        {
+            this->nested_function->insertResultInto(this->nestedPlace(place), to, arena);
+        }
+    }
+
 
 private:
     enum { MAX_ARGS = 8 };
