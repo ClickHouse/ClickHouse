@@ -219,9 +219,6 @@ public:
     // need it, and we want to be able to drop the starting blocks to save memory.
     // The `partition_end` is past-the-end, as usual. When partition_ended = false,
     // it still haven't ended, and partition_end is the next row to check.
-    // We still need to keep some not-too-far-away row in the partition, to use
-    // it as an etalon for PARTITION BY comparison.
-    RowNumber partition_etalon;
     RowNumber partition_end;
     bool partition_ended = false;
 

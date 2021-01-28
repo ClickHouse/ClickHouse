@@ -125,20 +125,19 @@ void WindowTransform::advancePartitionEnd()
     // The partition ends when the PARTITION BY columns change. We need
     // some reference columns for comparison. We might have already
     // dropped the blocks where the partition starts, but any row in the
-    // partition will do. We use a special partition_etalon pointer for this.
-    // It might be the same as the partition_end if we're at the first row of the
-    // first partition, so we compare it to itself, but it still works correctly.
-    const auto block_number = partition_end.block;
+    // partition will do. We use the current_row for this. It might be the same
+    // as the partition_end if we're at the first row of the first partition, so
+    // we will compare it to itself, but it still works correctly.
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
         size_t i = 0;
         for (; i < n; i++)
         {
-            const auto * ref = inputAt(partition_etalon)[partition_by_indices[i]].get();
+            const auto * ref = inputAt(current_row)[partition_by_indices[i]].get();
             const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
             if (c->compareAt(partition_end.row,
-                    partition_etalon.row, *ref,
+                    current_row.row, *ref,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -159,12 +158,6 @@ void WindowTransform::advancePartitionEnd()
 
     // Went until the end of data and didn't find the new partition.
     assert(!partition_ended && partition_end == blocksEnd());
-
-    // Advance the partition etalon so that we can drop the old blocks.
-    // We can use the last valid row of the block as the partition etalon.
-    // Shouldn't have empty blocks here (what would it mean?).
-    assert(block_rows > 0);
-    partition_etalon = RowNumber{block_number, block_rows - 1};
 }
 
 void WindowTransform::advanceFrameStart()
@@ -389,10 +382,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // Start the calculations. First, advance the partition end.
     for (;;)
     {
-//        const auto old_etalon = partition_etalon;
         advancePartitionEnd();
-//        fmt::print(stderr, "partition [?, {}), {}, etalon old {} new {}\n",
-//            partition_end, partition_ended, old_etalon, partition_etalon);
+//        fmt::print(stderr, "partition [?, {}), {}\n",
+//            partition_end, partition_ended);
 
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
@@ -458,7 +450,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
         const auto new_partition_start = partition_end;
         advanceRowNumber(partition_end);
         partition_ended = false;
-        partition_etalon = new_partition_start;
         // We have to reset the frame when the new partition starts. This is not a
         // generally correct way to do so, but we don't really support moving frame
         // for now.
@@ -625,13 +616,12 @@ void WindowTransform::work()
     // We don't really have to keep the entire partition, and it can be big, so
     // we want to drop the starting blocks to save memory.
     // We can drop the old blocks if we already returned them as output, and the
-    // frame, the current row and the partition etalon are already past them.
-    // Note that the frame start can be further than current row for some frame
-    // specs (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    // frame and the current row are already past them. Note that the frame
+    // start can be further than current row for some frame specs (e.g. EXCLUDE
+    // CURRENT ROW), so we have to check both.
     const auto first_used_block = std::min(next_output_block_number,
-        std::min(frame_start.block,
-            std::min(current_row.block,
-                partition_etalon.block)));
+        std::min(frame_start.block, current_row.block));
+
     if (first_block_number < first_used_block)
     {
 //        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
