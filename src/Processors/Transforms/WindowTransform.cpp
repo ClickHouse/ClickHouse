@@ -263,68 +263,48 @@ void WindowTransform::advanceFrameEnd()
     // The only frame end we have for now is CURRENT ROW.
     advanceFrameEndCurrentRow();
 
+    // We might not have advanced the frame end if we found out we reached the
+    // end of input or the partition, or if we still don't know the frame start.
+    if (frame_end_before == frame_end)
+    {
+        return;
+    }
+
     // Add the columns over which we advanced the frame to the aggregate function
     // states.
-    std::vector<const IColumn *> argument_columns;
+    // We could have advanced over at most the entire last block.
+    uint64_t last_row = frame_end.row;
+    if (frame_end.row == 0)
+    {
+        assert(frame_end == blocksEnd());
+        last_row = blockRowsNumber(frame_end_before);
+    }
+    else
+    {
+        assert(frame_end_before.block == frame_end.block);
+    }
+    assert(frame_end_before.row < last_row);
+
     for (auto & ws : workspaces)
     {
-        const auto & f = ws.window_function;
-        const auto * a = f.aggregate_function.get();
-        auto * buf = ws.aggregate_function_state.data();
-
-        // FIXME we don't need these complex loops, because frame_end advances
-        // by one block at most.
-        // We use two explicit loops here instead of using advanceRowNumber(),
-        // because we want to cache the argument columns array per block. Later
-        // we also use batch add.
-        // Unfortunately this leads to tricky loop conditions, because the
-        // frame_end might be either a past-the-end block, or a valid block, in
-        // which case we also have to process its head.
-        // And we also have to remember to reset the row number when moving to
-        // the next block.
-
-        uint64_t past_the_end_block;
-        // Note that the past-the-end row is not in the past-the-end block, but
-        // in the block before it.
-        uint64_t past_the_end_row;
-
-        if (frame_end.block < first_block_number + blocks.size())
+        if (frame_end_before.block != ws.cached_block_number)
         {
-            // The past-the-end row is in some valid block.
-            past_the_end_block = frame_end.block + 1;
-            past_the_end_row = frame_end.row;
-        }
-        else
-        {
-            // The past-the-end row is at the total end of data.
-            past_the_end_block = first_block_number + blocks.size();
-            // It's in the previous block!
-            past_the_end_row = blocks.back().numRows();
-        }
-        for (auto r = frame_end_before;
-            r.block < past_the_end_block;
-            ++r.block, r.row = 0)
-        {
-            const auto & block = blocks[r.block - first_block_number];
-
-            argument_columns.clear();
+            const auto & block
+                = blocks[frame_end_before.block - first_block_number];
+            ws.argument_columns.clear();
             for (const auto i : ws.argument_column_indices)
             {
-                argument_columns.push_back(block.input_columns[i].get());
+                ws.argument_columns.push_back(block.input_columns[i].get());
             }
+            ws.cached_block_number = frame_end_before.block;
+        }
 
-            // We process all rows of intermediate blocks, and the head of the
-            // last block.
-            const auto end = ((r.block + 1) == past_the_end_block)
-                ? past_the_end_row
-                : block.numRows();
-            for (; r.row < end; ++r.row)
-            {
-                a->add(buf,
-                    argument_columns.data(),
-                    r.row,
-                    arena.get());
-            }
+        const auto * a = ws.window_function.aggregate_function.get();
+        auto * buf = ws.aggregate_function_state.data();
+        auto * columns = ws.argument_columns.data();
+        for (auto row = frame_end_before.row; row < last_row; ++row)
+        {
+            a->add(buf, columns, row, arena.get());
         }
     }
 }
