@@ -577,7 +577,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
     }
 
-    if (node->frame != WindowFrame{})
+    if (!(node->frame == WindowFrame{}))
     {
         node->frame.is_default = false;
     }
