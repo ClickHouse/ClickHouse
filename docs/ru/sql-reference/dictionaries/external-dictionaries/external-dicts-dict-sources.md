@@ -572,7 +572,7 @@ SOURCE(CLICKHOUSE(
 или
 
 ``` sql
-SOURCE(MONGO(
+SOURCE(MONGODB(
     host 'localhost'
     port 27017
     user ''

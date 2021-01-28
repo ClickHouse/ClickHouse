@@ -9,22 +9,52 @@ toc_title: "\u0421\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0435\u0020\u0442\u
 
 Системные таблицы содержат информацию о:
 
--   Состоянии сервера, процессов и окружении.
--   Внутренних процессах сервера.
+-   состоянии сервера, процессов и окружении.
+-   внутренних процессах сервера.
 
 Системные таблицы:
 
--   Находятся в базе данных `system`.
--   Доступны только для чтения данных.
--   Не могут быть удалены или изменены, но их можно отсоединить.
+-   находятся в базе данных `system`.
+-   доступны только для чтения данных.
+-   не могут быть удалены или изменены, но их можно отсоединить.
 
-Системные таблицы `metric_log`, `query_log`, `query_thread_log`, `trace_log` системные таблицы хранят данные в файловой системе. Остальные системные таблицы хранят свои данные в оперативной памяти. Сервер ClickHouse создает такие системные таблицы при запуске.
+Большинство системных таблиц хранят свои данные в оперативной памяти. Сервер ClickHouse создает эти системные таблицы при старте.
+
+В отличие от других системных таблиц, таблицы системного журнала [metric_log](../../operations/system-tables/metric_log.md), [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), [trace_log](../../operations/system-tables/trace_log.md), [part_log](../../operations/system-tables/part_log.md), `crash_log` и [text_log](../../operations/system-tables/text_log.md) обслуживаются механизмом таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) и по умолчанию хранят свои данные в файловой системе хранения. Если вы удалите таблицу из файловой системы, сервер ClickHouse снова создаст пустую таблицу во время следующей записи данных. Если схема системной таблицы изменилась в новом выпуске, то ClickHouse переименует текущую таблицу и создает новую.
+
+Таблицы системного журнала `log` можно настроить, создав конфигурационный файл с тем же именем, что и таблица в разделе `/etc/clickhouse-server/config.d/` или указав соответствующие элементов в `/etc/clickhouse-server/config.xml`. Элементы могут быть настроены следующим образом:
+
+-   `database`: база данных, к которой принадлежит таблица системного журнала. Эта опция на текущий момент устарела. Все таблицы системного журнала находятся в базе данных `system`.
+-   `table`: таблица для добавления данных.
+-   `partition_by`: указывает выражение [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+-   `ttl`: указывает выражение таблицуы [TTL](../../sql-reference/statements/alter/ttl.md).
+-   `flush_interval_milliseconds`: интервал сброса данных на диск.
+-   `engine`: обеспечивает полное выражение механизма (начиная с `ENGINE =` ) с параметрами. Эта опция противоречит `partition_by` и `ttl`. Если указать оба параметра вместе, сервер возвратит ошибку и завершит работу.
+
+Пример:
+
+```xml
+<yandex>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <!--
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        -->
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+</yandex>
+```
+
+По умолчанию размер таблицы не ограничен. Для управления размером таблицы можно указать настройки [TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl) для удаления устаревших записей журнала. Также вы можете использовать функцию партиционирования для таблиц `MergeTree`.
 
 ### Источники системных показателей 
 
 Для сбора системных показателей сервер ClickHouse использует:
 
--   Возможности `CAP_NET_ADMIN`.
+-   возможности `CAP_NET_ADMIN`.
 -   [procfs](https://ru.wikipedia.org/wiki/Procfs) (только Linux).
 
 **procfs**

@@ -6,8 +6,8 @@ toc_title: ALL
 
 `SELECT ALL` is identical to `SELECT` without `DISTINCT`.
 
-- If `ALL` specified, ignore it.
-- If both `ALL` and `DISTINCT` specified, exception will be thrown.
+-   If `ALL` specified, ignore it.
+-   If both `ALL` and `DISTINCT` specified, exception will be thrown.
 
 `ALL` can also be specified inside aggregate function with the same effect(noop), for instance:
 
@@ -19,3 +19,5 @@ equals to
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/all) <!--hide-->
