@@ -732,6 +732,10 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         return {};
     }
 
+    /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
+    if (isTTLMergeType(future_part.merge_type))
+        global_context.getMergeList().bookMergeWithTTL();
+
     merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
 }
