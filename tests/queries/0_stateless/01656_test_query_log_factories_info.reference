@@ -1,5 +1,5 @@
-2	 worl	1	0.7615946626193841	0	4950	99	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
-2	 worl	1	0.7615946626193841	0	4950	99	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
+2	 worl	1	1	0	4950	99	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
+2	 worl	1	1	0	4950	99	[123,1,1]	49	\N	50	4950	Nullable(UInt64)	50
 
 arraySort(used_aggregate_functions)
 ['avg','count','groupBitAnd','max','sum','uniq']
@@ -11,7 +11,7 @@ arraySort(used_table_functions)
 ['numbers']
 
 arraySort(used_functions)
-['addDays','array','arrayFlatten','cast','crc32','modulo','plus','pow','substring','tanh','toDate','toDayOfYear','toTypeName','toWeek']
+['addDays','array','arrayFlatten','cast','crc32','modulo','plus','pow','round','substring','tanh','toDate','toDayOfYear','toTypeName','toWeek']
 
 arraySort(used_data_type_families)
 ['Array','Int32','Nullable','String']
