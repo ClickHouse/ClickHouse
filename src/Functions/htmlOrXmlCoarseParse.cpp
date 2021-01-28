@@ -564,7 +564,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if(!isString(arguments[0]))
+        if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arguments[0];
