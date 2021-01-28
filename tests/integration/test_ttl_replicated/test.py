@@ -340,15 +340,15 @@ def test_ttl_empty_parts(started_cluster):
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)]
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
-    drop_table([node_left, node_right], "test_ttl")
+    drop_table([node_left, node_right], "test_ttl_delete")
     drop_table([node_left, node_right], "test_ttl_group_by")
     drop_table([node_left, node_right], "test_ttl_where")
 
     for node in [node_left, node_right]:
         node.query(
             '''
-                CREATE TABLE test_ttl(date DateTime, id UInt32)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_{suff}', '{replica}')
+                CREATE TABLE test_ttl_delete(date DateTime, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_delete_{suff}', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
                 TTL date + INTERVAL 3 SECOND
             '''.format(suff=num_run, replica=node.name))
@@ -369,10 +369,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
             '''.format(suff=num_run, replica=node.name))
 
-    node_left.query("INSERT INTO test_ttl VALUES (now(), 1)")
-    node_left.query("INSERT INTO test_ttl VALUES (toDateTime('2100-10-11 10:00:00'), 2)")
-    node_right.query("INSERT INTO test_ttl VALUES (now(), 3)")
-    node_right.query("INSERT INTO test_ttl VALUES (toDateTime('2100-10-11 10:00:00'), 4)")
+    node_left.query("INSERT INTO test_ttl_delete VALUES (now(), 1)")
+    node_left.query("INSERT INTO test_ttl_delete VALUES (toDateTime('2100-10-11 10:00:00'), 2)")
+    node_right.query("INSERT INTO test_ttl_delete VALUES (now(), 3)")
+    node_right.query("INSERT INTO test_ttl_delete VALUES (toDateTime('2100-10-11 10:00:00'), 4)")
 
     node_left.query("INSERT INTO test_ttl_group_by VALUES (now(), 0, 1)")
     node_left.query("INSERT INTO test_ttl_group_by VALUES (now(), 0, 2)")
@@ -392,12 +392,12 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     
     time.sleep(5) # Wait for TTL
 
-    node_right.query("OPTIMIZE TABLE test_ttl FINAL")
+    node_right.query("OPTIMIZE TABLE test_ttl_delete FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
 
-    assert node_left.query("SELECT id FROM test_ttl ORDER BY id") == "2\n4\n"
-    assert node_right.query("SELECT id FROM test_ttl ORDER BY id") == "2\n4\n"
+    assert node_left.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
+    assert node_right.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
 
     assert node_left.query("SELECT val FROM test_ttl_group_by ORDER BY id") == "10\n"
     assert node_right.query("SELECT val FROM test_ttl_group_by ORDER BY id") == "10\n"
