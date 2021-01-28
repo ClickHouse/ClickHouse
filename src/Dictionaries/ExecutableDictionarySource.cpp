@@ -197,7 +197,7 @@ namespace
 
     /** A stream, adds additional columns to each block that it will read from inner stream.
      *
-     *  block_to_add rows size must be equal to final summ rows size of all inner stream readed blocks.
+     *  block_to_add rows size must be equal to final summ rows size of all inner stream blocks.
      */
     class BlockInputStreamWithAdditionalColumns final: public IBlockInputStream
     {
