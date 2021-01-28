@@ -182,13 +182,119 @@ If `NULL` is passed to the function as input, then it returns the `Nullable(Noth
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## byteSize(...) {#function-bytesize}
+## byteSize {#function-bytesize}
 
-Get an estimate of uncompressed byte size of its arguments in memory.
-E.g. for UInt32 argument it will return constant 4, for String argument - the string length + 9 (terminating zero + length).
+Returns estimation of uncompressed byte size of its arguments in memory.
+
+E.g. for [UInt32](/../../sql-reference/data-types/int-uint.md) argument it will return constant 4, for [String](/../../sql-reference/data-types/string.md) arguments — the string length + 9 (terminating zero + length).
+
 The function can take multiple arguments. The typical application is byteSize(*).
 
-Use case: Suppose you have a service that stores data for multiple clients in one table. Users will pay per data volume. So, you need to implement accounting of users data volume. The function will allow to calculate the data size on per-row basis.
+Use case: suppose you have a service that stores data for multiple clients in one table. Users will pay per data volume. So, you need to implement accounting of users data volume. The function will allow to calculate the data size on per-row basis.
+
+**Syntax**
+
+```sql
+byteSize(arguments)
+```
+
+**Parameters**
+
+-   `argument` — Value.
+
+**Returned value**
+
+-   Estimation of byte size of the arguments in memory.
+
+Type: [UInt64](/../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT byteSize('string');
+```
+
+Result:
+
+┌─byteSize('string')─┐
+│                 15 │
+└────────────────────┘
+
+For this table:
+
+Query:
+
+```sql
+CREATE TABLE test
+(
+    `key` Int32,
+    `u8` UInt8,
+    `u16` UInt16,
+    `u32` UInt32,
+    `u64` UInt64,
+    `i8` Int8,
+    `i16` Int16,
+    `i32` Int32,
+    `i64` Int64,
+    `f32` Float32,
+    `f64` Float64
+)
+ENGINE = MergeTree
+ORDER BY key;
+```
+
+Insert this values:
+
+Query:
+
+```sql
+insert into test values(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
+```
+
+Query:
+
+```sql
+SELECT key, toTypeName(u8), byteSize(u8), toTypeName(u16), byteSize(u16), toTypeName(u32), byteSize(u32), toTypeName(u64), byteSize(u64) FROM test ORDER BY key ASC;
+
+SELECT key, toTypeName(i8), byteSize(i8), toTypeName(i16), byteSize(i16), toTypeName(i32), byteSize(i32), toTypeName(i64), byteSize(i64), FROM test ORDER BY key ASC;
+
+SELECT key, toTypeName(f32), byteSize(f32), toTypeName(f64), byteSize(f64) FROM test ORDER BY key ASC;
+```
+
+Result:
+
+``` text
+┌─key─┬─toTypeName(u8)─┬─byteSize(u8)─┬─toTypeName(u16)─┬─byteSize(u16)─┬─toTypeName(u32)─┬─byteSize(u32)─┬─toTypeName(u64)─┬─byteSize(u64)─┐
+│   1 │ UInt8          │            1 │ UInt16          │             2 │ UInt32          │             4 │ UInt64          │             8 │
+└─────┴────────────────┴──────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+
+┌─key─┬─toTypeName(i8)─┬─byteSize(i8)─┬─toTypeName(i16)─┬─byteSize(i16)─┬─toTypeName(i32)─┬─byteSize(i32)─┬─toTypeName(i64)─┬─byteSize(i64)─┐
+│   1 │ Int8           │            1 │ Int16           │             2 │ Int32           │             4 │ Int64           │             8 │
+└─────┴────────────────┴──────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+
+┌─key─┬─toTypeName(f32)─┬─byteSize(f32)─┬─toTypeName(f64)─┬─byteSize(f64)─┐
+│   1 │ Float32         │             4 │ Float64         │             8 │
+└─────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+```
+
+With multiple arguments:
+
+Query:
+
+```sql
+SELECT byteSize(NULL, 1, 0.3, '');
+```
+
+Result:
+
+```text
+
+┌─byteSize(NULL, 1, 0.3, '')─┐
+│                         19 │
+└────────────────────────────┘
+```
 
 ## materialize(x) {#materializex}
 
