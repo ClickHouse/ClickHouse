@@ -32,26 +32,11 @@ public:
     static ClientFactory & instance();
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const String & endpoint,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
-        const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials);
 
