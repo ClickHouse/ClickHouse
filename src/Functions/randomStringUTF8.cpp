@@ -122,8 +122,8 @@ public:
                 auto length1 = UTF8::convert(code_point1, pos, sizeof(int));
                 auto length2 = UTF8::convert(code_point2, pos, sizeof(int));
 
-                assert(length1 >= 0);
-                assert(length2 >= 0);
+                assert(length1 >= 0 && length1 <= 4);
+                assert(length2 >= 0 && length2 <= 4);
 
                 pos += length1;
                 last_writen_bytes = length2;
