@@ -95,9 +95,11 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUUIDOrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrZero>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrNull>();
     factory.registerFunction<FunctionParseDateTime32BestEffort>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();
