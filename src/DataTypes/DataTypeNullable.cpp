@@ -546,7 +546,7 @@ ColumnPtr DataTypeNullable::getSubcolumn(const String & subcolumn_name, const IC
 {
     const auto & column_nullable = assert_cast<const ColumnNullable &>(column);
     if (subcolumn_name == "null")
-        return column_nullable.getNullMapColumnPtr()->assumeMutable();
+        return column_nullable.getNullMapColumnPtr();
 
     return nested_data_type->getSubcolumn(subcolumn_name, column_nullable.getNestedColumn());
 }
