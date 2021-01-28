@@ -112,7 +112,6 @@ public:
     /// in `runningAccumulate`, or when calculating an aggregate function as a
     /// window function.
     virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
-    virtual bool doesInsertResultNeedNullableColumn() const { return false; }
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
