@@ -49,6 +49,9 @@ struct NodeBase
     {
         writeVarUInt(size, buf);
         buf.write(data(), size);
+
+        writeBinary(event_time, buf);
+        writeBinary(events_bitset, buf);
     }
 
     static Node * read(ReadBuffer & buf, Arena * arena)
@@ -59,6 +62,10 @@ struct NodeBase
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
         buf.read(node->data(), size);
+
+        readBinary(node->event_time, buf);
+        readBinary(node->events_bitset, buf);
+
         return node;
     }
 };
