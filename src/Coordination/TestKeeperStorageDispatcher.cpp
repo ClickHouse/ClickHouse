@@ -74,18 +74,43 @@ bool TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperReques
     return true;
 }
 
+namespace
+{
+    bool shouldBuildQuorum(int32_t myid, int32_t my_priority, bool my_can_become_leader, const std::vector<std::tuple<int, std::string, int, bool, int32_t>> & server_configs)
+    {
+        if (!my_can_become_leader)
+            return false;
+
+        int32_t minid = myid;
+        bool has_equal_priority = false;
+        for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
+        {
+            if (my_priority < priority)
+                return false;
+            else if (my_priority == priority)
+                has_equal_priority = true;
+            minid = std::min(minid, id);
+        }
+
+        if (has_equal_priority)
+            return minid == myid;
+        else
+            return true;
+    }
+}
 
 void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     int myid = config.getInt("test_keeper_server.server_id");
     std::string myhostname;
     int myport;
+    int32_t my_priority = 1;
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys("test_keeper_server.raft_configuration", keys);
     bool my_can_become_leader = true;
 
-    std::vector<std::tuple<int, std::string, int, bool>> server_configs;
+    std::vector<std::tuple<int, std::string, int, bool, int32_t>> server_configs;
     std::vector<int32_t> ids;
     for (const auto & server_key : keys)
     {
@@ -93,28 +118,30 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
         std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
         int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
         bool can_become_leader = config.getBool("test_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
+        int32_t priority = config.getInt("test_keeper_server.raft_configuration." + server_key + ".priority", 1);
         if (server_id == myid)
         {
             myhostname = hostname;
             myport = port;
             my_can_become_leader = can_become_leader;
+            my_priority = priority;
         }
         else
         {
-            server_configs.emplace_back(server_id, hostname, port, can_become_leader);
+            server_configs.emplace_back(server_id, hostname, port, can_become_leader, priority);
         }
         ids.push_back(server_id);
     }
 
     server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
     server->startup();
-    if (my_can_become_leader)
+    if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
     {
-        for (const auto & [id, hostname, port, can_become_leader] : server_configs)
+        for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
         {
             do
             {
-                server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader);
+                server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader, priority);
             }
             while (!server->waitForServer(id));
         }
