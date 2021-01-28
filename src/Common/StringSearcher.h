@@ -103,8 +103,11 @@ public:
             /// Invalid UTF-8
             if (first_u32 < 0)
             {
-                l = needle[0];
-                u = needle[0];
+                /// Process it verbatim as a sequence of bytes.
+                size_t src_len = UTF8::seqLength(*needle);
+
+                memcpy(l_seq, needle, src_len);
+                memcpy(u_seq, needle, src_len);
             }
             else
             {
@@ -113,10 +116,11 @@ public:
 
                 /// lower and uppercase variants of the first octet of the first character in `needle`
                 UTF8::convert(first_l_u32, l_seq, sizeof(l_seq));
-                l = l_seq[0];
                 UTF8::convert(first_u_u32, u_seq, sizeof(u_seq));
-                u = u_seq[0];
             }
+
+            l = l_seq[0];
+            u = u_seq[0];
         }
 
 #ifdef __SSE4_1__
