@@ -1,6 +1,6 @@
 SELECT uniqArray([1, 1, 2]),
        SUBSTRING('Hello, world', 7, 5),
-       POW(1, 2), TANh(1), CrC32(''),
+       POW(1, 2), ROUND(TANh(1)), CrC32(''),
        SUM(number), MAX(number),
        flatten([[[BIT_AND(123)]], [[mod(3, 2)], [CAST('1' AS INTEGER)]]]),
        week(toDate('2000-12-05')),
