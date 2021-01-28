@@ -59,7 +59,7 @@ public:
 
 void registerFunctionIsNull(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIsNull>();
+    factory.registerFunction<FunctionIsNull>(FunctionFactory::CaseInsensitive);
 }
 
 }
