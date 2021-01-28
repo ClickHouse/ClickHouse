@@ -6,7 +6,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     if (parent_node->children.size() != 1)
         return false;
@@ -29,7 +29,7 @@ bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
         /// Such a query will return two zeroes if we combine actions together.
         if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
+            return 0;
 
         auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
 
@@ -38,7 +38,7 @@ bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
-        return true;
+        return 1;
     }
     else if (parent_filter && child_expr)
     {
@@ -46,7 +46,7 @@ bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         const auto & parent_actions = parent_filter->getExpression();
 
         if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
+            return 0;
 
         auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
 
@@ -56,10 +56,10 @@ bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
-        return true;
+        return 1;
     }
 
-    return false;
+    return 0;
 }
 
 }
