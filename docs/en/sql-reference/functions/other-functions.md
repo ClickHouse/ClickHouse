@@ -195,7 +195,7 @@ Use case: suppose you have a service that stores data for multiple clients in on
 **Syntax**
 
 ```sql
-byteSize(arguments)
+byteSize(argument [, ...])
 ```
 
 **Parameters**
@@ -290,7 +290,6 @@ SELECT byteSize(NULL, 1, 0.3, '');
 Result:
 
 ```text
-
 ┌─byteSize(NULL, 1, 0.3, '')─┐
 │                         19 │
 └────────────────────────────┘
