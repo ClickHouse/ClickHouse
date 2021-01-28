@@ -158,7 +158,7 @@ public:
         //   aggregated events: [A -> B -> C]
         //   events to find: [C -> D]
         //   [C -> D] is not matched to 'A -> B -> C' so that it returns null.
-        return std::make_shared<AggregateFunctionNullVariadic<false, false, false, true>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<true, false, true, true>>(nested_function, arguments, params);
     }
 
     void insert(Data & a, const Node * v, Arena * arena) const
