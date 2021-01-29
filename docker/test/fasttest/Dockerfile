@@ -43,6 +43,7 @@ RUN apt-get update \
         clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
+        lsof \
         expect \
         fakeroot \
         git \
