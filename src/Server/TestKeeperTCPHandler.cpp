@@ -232,14 +232,10 @@ TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::S
 {
 }
 
-void TestKeeperTCPHandler::sendHandshake(bool is_leader)
+void TestKeeperTCPHandler::sendHandshake()
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
-    if (is_leader)
-        Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
-    else /// Specially ignore connections if we are not leader, client will throw exception
-        Coordination::write(42, *out);
-
+    Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
     Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);
     Coordination::write(session_id, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
@@ -319,17 +315,17 @@ void TestKeeperTCPHandler::runImpl()
         return;
     }
 
-    if (test_keeper_storage_dispatcher->isLeader())
+    try
     {
         session_id = test_keeper_storage_dispatcher->getSessionID();
-        sendHandshake(true);
     }
-    else
+    catch (const Exception & e)
     {
-        sendHandshake(false);
-        LOG_WARNING(log, "Ignoring connection because we are not leader");
+        LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
         return;
     }
+
+    sendHandshake();
 
     auto response_fd = poll_wrapper->getResponseFD();
     auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)

@@ -47,6 +47,7 @@ void NuKeeperServer::startup()
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = 10000;
+    params.auto_forwarding_ = true;
     params.return_method_ = nuraft::raft_params::blocking;
 
     raft_instance = launcher.init(
@@ -146,7 +147,7 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
-    if (isLeader() && requests.size() == 1 && requests[0].request->isReadRequest())
+    if (raft_instance->is_leader_alive() && requests.size() == 1 && requests[0].request->isReadRequest())
     {
         return state_machine->processReadRequest(requests[0]);
     }

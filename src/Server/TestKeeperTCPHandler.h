@@ -45,7 +45,7 @@ private:
 
     void runImpl();
 
-    void sendHandshake(bool is_leader);
+    void sendHandshake();
     void receiveHandshake();
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();

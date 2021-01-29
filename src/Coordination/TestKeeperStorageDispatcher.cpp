@@ -175,12 +175,9 @@ void TestKeeperStorageDispatcher::shutdown()
         if (server)
         {
             TestKeeperStorage::RequestsForSessions expired_requests;
-            if (server->isLeader())
-            {
-                TestKeeperStorage::RequestForSession request;
-                while (requests_queue.tryPop(request))
-                    expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
-            }
+            TestKeeperStorage::RequestForSession request;
+            while (requests_queue.tryPop(request))
+                expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
 
             auto expired_responses = server->shutdown(expired_requests);
 
