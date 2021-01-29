@@ -367,6 +367,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
+        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features);

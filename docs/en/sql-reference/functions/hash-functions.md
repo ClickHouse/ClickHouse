@@ -157,14 +157,14 @@ Levels are the same as in URLHierarchy. This function is specific to Yandex.Metr
 
 ## farmHash64 {#farmhash64}
 
-Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. Prefer `farmFingerprint64` for a stable and portable value.
+Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. `farmFingerprint64` is preferred for a stable and portable value.
 
 ``` sql
 farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
 
-These functions use the `Fingerprint64` and `Hash64` method respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
+These functions use the `Fingerprint64` and `Hash64` methods respectively from all [available methods](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
 **Parameters**
 

@@ -60,7 +60,7 @@ public:
     static void terminate();
 
     /// Forceful shutdown
-    void kill();
+    [[noreturn]] void kill();
 
     /// Cancellation request has been received.
     bool isCancelled() const
@@ -121,6 +121,9 @@ public:
     /// argv0 is needed to change process name (consequently, it is needed for scripts involving "pgrep", "pidof" to work correctly).
     void shouldSetupWatchdog(char * argv0_);
 
+    /// Hash of the binary for integrity checks.
+    String getStoredBinaryHash() const;
+
 protected:
     virtual void logRevision() const;
 
@@ -168,6 +171,7 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id_info;
+    String stored_binary_hash;
 
     std::vector<int> handled_signals;
 

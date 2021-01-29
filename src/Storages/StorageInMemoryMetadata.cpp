@@ -3,7 +3,10 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <Common/quoteString.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
 
@@ -270,7 +273,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     std::unordered_map<String, DataTypePtr> columns_map;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
+    auto all_columns = getColumns().getAllWithSubcolumns();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -459,7 +462,7 @@ namespace
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysical();
+    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
 
     const String list_of_columns = listOfColumns(available_columns);

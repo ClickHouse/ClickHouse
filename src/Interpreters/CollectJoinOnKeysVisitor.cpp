@@ -127,6 +127,12 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
     getIdentifiers(left_ast, left_identifiers);
     getIdentifiers(right_ast, right_identifiers);
 
+    if (left_identifiers.empty() || right_identifiers.empty())
+    {
+        throw Exception("Not equi-join ON expression: " + queryToString(expr) + ". No columns in one of equality side.",
+                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+    }
+
     size_t left_idents_table = getTableForIdentifiers(left_identifiers, data);
     size_t right_idents_table = getTableForIdentifiers(right_identifiers, data);
 

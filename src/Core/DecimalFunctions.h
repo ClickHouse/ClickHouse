@@ -6,6 +6,7 @@
 #include <common/arithmeticOverflow.h>
 
 #include <limits>
+#include <type_traits>
 
 
 namespace DB

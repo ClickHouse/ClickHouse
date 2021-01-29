@@ -994,7 +994,7 @@ namespace
 
         AsynchronousBlockInputStream async_in(io.in);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, async_in.getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1066,7 +1066,7 @@ namespace
 
         auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, executor->getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
@@ -1321,7 +1321,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputFormat(output_format, buf, totals);
+        auto stream = query_context->getOutputStream(output_format, buf, totals);
         stream->writePrefix();
         stream->write(totals);
         stream->writeSuffix();
@@ -1333,7 +1333,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputFormat(output_format, buf, extremes);
+        auto stream = query_context->getOutputStream(output_format, buf, extremes);
         stream->writePrefix();
         stream->write(extremes);
         stream->writeSuffix();

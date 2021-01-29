@@ -211,6 +211,11 @@ size_t ColumnMap::byteSize() const
     return nested->byteSize();
 }
 
+size_t ColumnMap::byteSizeAt(size_t n) const
+{
+    return nested->byteSizeAt(n);
+}
+
 size_t ColumnMap::allocatedBytes() const
 {
     return nested->allocatedBytes();

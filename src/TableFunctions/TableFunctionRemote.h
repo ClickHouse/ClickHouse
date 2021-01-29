@@ -40,6 +40,7 @@ private:
     ClusterPtr cluster;
     StorageID remote_table_id = StorageID::createEmpty();
     ASTPtr remote_table_function_ptr;
+    ASTPtr sharding_key = nullptr;
 };
 
 }

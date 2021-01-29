@@ -344,6 +344,22 @@ void ASTAlterCommand::formatImpl(
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
+bool ASTAlterQuery::isSettingsAlter() const
+{
+    if (command_list)
+    {
+        if (command_list->children.empty())
+            return false;
+        for (const auto & child : command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type != ASTAlterCommand::MODIFY_SETTING)
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const

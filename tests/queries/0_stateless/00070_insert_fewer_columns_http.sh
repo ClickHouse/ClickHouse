@@ -2,6 +2,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 echo 'DROP TABLE IF EXISTS insert_fewer_columns'                            | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @-

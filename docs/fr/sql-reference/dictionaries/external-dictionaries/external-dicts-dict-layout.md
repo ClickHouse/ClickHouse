@@ -367,6 +367,12 @@ Exemple:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 ou
@@ -396,6 +402,6 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Les autres types ne sont pas encore pris en charge. La fonction renvoie l'attribut du préfixe correspondant à cette adresse IP. S'il y a chevauchement des préfixes, le plus spécifique est retourné.
 
-Les données sont stockées dans une `trie`. Il doit complètement s'intégrer dans la RAM.
+Les données doit complètement s'intégrer dans la RAM.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

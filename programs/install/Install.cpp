@@ -21,6 +21,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
 #include <common/getResource.h>
+#include <common/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -763,7 +764,7 @@ namespace
                 fmt::print("Server started\n");
                 break;
             }
-            ::sleep(1);
+            sleepForSeconds(1);
         }
 
         if (try_num == num_tries)
@@ -875,7 +876,7 @@ namespace
                 fmt::print("Server stopped\n");
                 break;
             }
-            ::sleep(1);
+            sleepForSeconds(1);
         }
 
         if (try_num == num_tries)

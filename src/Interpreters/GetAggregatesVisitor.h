@@ -31,13 +31,22 @@ public:
     {
         if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
+        if (auto * select = node->as<ASTSelectQuery>())
+        {
+            // We don't analysis WITH statement because it might contain useless aggregates
+            if (child == select->with())
+                return false;
+        }
         if (auto * func = node->as<ASTFunction>())
         {
-            if (isAggregateFunction(*func)
-                || func->is_window_function)
+            if (isAggregateFunction(*func))
             {
                 return false;
             }
+
+            // Window functions can contain aggregation results as arguments
+            // to the window functions, or columns of PARTITION BY or ORDER BY
+            // of the window.
         }
         return true;
     }

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Common/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/hex.h>
+#include <Common/IPv6ToBinary.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -1617,20 +1618,28 @@ public:
 class FunctionIPv6CIDRToRange : public IFunction
 {
 private:
-    /// TODO Inefficient.
+
+#if defined(__SSE2__)
+
+    #include <emmintrin.h>
+
+    static inline void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
+    {
+        __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep)));
+        __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_lower), lower);
+
+        __m128i inv_mask = _mm_xor_si128(mask, _mm_cmpeq_epi32(_mm_setzero_si128(), _mm_setzero_si128()));
+        __m128i upper = _mm_or_si128(lower, inv_mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_upper), upper);
+    }
+
+#else
+
     /// NOTE IPv6 is stored in memory in big endian format that makes some difficulties.
     static void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
-        UInt8 mask[16]{};
-
-        UInt8 bytes_to_keep = bits_to_keep / 8;
-        UInt8 bits_to_keep_in_last_byte = bits_to_keep % 8;
-
-        for (size_t i = 0; i < bits_to_keep / 8; ++i)
-            mask[i] = 0xFFU;
-
-        if (bits_to_keep_in_last_byte)
-            mask[bytes_to_keep] = 0xFFU << (8 - bits_to_keep_in_last_byte);
+        const auto * mask = getCIDRMaskIPv6(bits_to_keep);
 
         for (size_t i = 0; i < 16; ++i)
         {
@@ -1638,6 +1647,8 @@ private:
             dst_upper[i] = dst_lower[i] | ~mask[i];
         }
     }
+
+#endif
 
 public:
     static constexpr auto name = "IPv6CIDRToRange";

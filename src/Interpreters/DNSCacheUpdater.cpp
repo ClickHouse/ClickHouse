@@ -1,7 +1,7 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+
 
 namespace DB
 {

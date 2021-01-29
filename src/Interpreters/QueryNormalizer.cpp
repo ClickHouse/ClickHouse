@@ -148,9 +148,9 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
+void QueryNormalizer::visitChildren(IAST * node, Data & data)
 {
-    if (const auto * func_node = node->as<ASTFunction>())
+    if (auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
         {
@@ -175,6 +175,11 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
                 if (needVisitChild(child))
                     visit(child, data);
             }
+        }
+
+        if (func_node->window_definition)
+        {
+            visitChildren(func_node->window_definition.get(), data);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -221,7 +226,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast, data);
+        visitChildren(ast.get(), data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());

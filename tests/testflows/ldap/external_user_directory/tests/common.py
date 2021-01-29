@@ -5,10 +5,11 @@ from contextlib import contextmanager
 import testflows.settings as settings
 from testflows.core import *
 from testflows.asserts import error
-from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config, restart
+from ldap.authentication.tests.common import getuid, Config, ldap_servers, add_config, modify_config, restart
 from ldap.authentication.tests.common import xmltree, xml_indent, xml_append, xml_with_utf8
 from ldap.authentication.tests.common import ldap_user, ldap_users, add_user_to_ldap, delete_user_from_ldap
 from ldap.authentication.tests.common import change_user_password_in_ldap, change_user_cn_in_ldap
+from ldap.authentication.tests.common import create_ldap_servers_config_content
 from ldap.authentication.tests.common import randomword
 
 def join(tasks, timeout):
@@ -76,7 +77,7 @@ def verify_ldap_user_exists(server, username, password):
     with By("searching LDAP database"):
         ldap_node = current().context.cluster.node(server)
         r = ldap_node.command(
-            f"ldapwhoami -H ldap://localhost -D 'cn={username},ou=users,dc=company,dc=com' -w {password}")
+            f"ldapwhoami -H ldap://localhost -D 'cn={user_name},ou=users,dc=company,dc=com' -w {password}")
         assert r.exitcode == 0, error()
 
 def create_ldap_external_user_directory_config_content(server=None, roles=None, **kwargs):
@@ -95,7 +96,10 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
         <user_directories>
             <ldap>
                 <server>my_ldap_server</server>
-                <user_template>my_user</user_template>
+                <roles>
+                    <my_local_role1 />
+                    <my_local_role2 />
+                </roles>
             </ldap>
         </user_directories>
     ```

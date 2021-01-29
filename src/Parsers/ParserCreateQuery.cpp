@@ -228,7 +228,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         {
             if (primary_key)
             {
-                throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                /// Multiple primary keys are not allowed.
+                return false;
             }
             primary_key = elem;
         }
@@ -355,6 +356,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_replace("REPLACE");
+    ParserKeyword s_or_replace("OR REPLACE");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
@@ -383,25 +386,32 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String cluster_str;
     bool attach = false;
+    bool replace = false;
+    bool or_replace = false;
     bool if_not_exists = false;
     bool is_temporary = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (s_create.ignore(pos, expected))
     {
-        if (s_attach.ignore(pos, expected))
-            attach = true;
-        else
-            return false;
+        if (s_or_replace.ignore(pos, expected))
+            replace = or_replace = true;
     }
+    else if (s_attach.ignore(pos, expected))
+        attach = true;
+    else if (s_replace.ignore(pos, expected))
+        replace = true;
+    else
+        return false;
 
-    if (s_temporary.ignore(pos, expected))
+
+    if (!replace && !or_replace && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
     }
     if (!s_table.ignore(pos, expected))
         return false;
 
-    if (s_if_not_exists.ignore(pos, expected))
+    if (!replace && !or_replace && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
     if (!table_name_p.parse(pos, table, expected))
@@ -505,6 +515,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->as_table_function = as_table_function;
 
     query->attach = attach;
+    query->replace_table = replace;
+    query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
@@ -745,7 +757,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
-    bool is_view = false;
+    bool is_ordinary_view = false;
     bool is_materialized_view = false;
     bool is_populate = false;
     bool replace_view = false;
@@ -769,7 +781,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         is_materialized_view = true;
     }
     else
-        is_view = true;
+        is_ordinary_view = true;
 
     if (!s_view.ignore(pos, expected))
         return false;
@@ -826,7 +838,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->attach = attach;
     query->if_not_exists = if_not_exists;
-    query->is_view = is_view;
+    query->is_ordinary_view = is_ordinary_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
     query->replace_view = replace_view;

@@ -39,9 +39,16 @@ from . import social_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml', 'configs/kafka_macros.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True,
+                                macros={"kafka_broker":"kafka1",
+                                        "kafka_topic_old":"old",
+                                        "kafka_group_name_old":"old",
+                                        "kafka_topic_new":"new",
+                                        "kafka_group_name_new":"new",
+                                        "kafka_client_id":"instance",
+                                        "kafka_format_json_each_row":"JSONEachRow"},
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
 
@@ -322,7 +329,7 @@ def test_kafka_formats(kafka_cluster):
                 # /src/IO/VarInt.h:149: DB::readVarUInt(unsigned long&, DB::ReadBuffer&) @ 0x15c68844 in /usr/bin/clickhouse
                 # /src/DataStreams/NativeBlockInputStream.cpp:124: DB::NativeBlockInputStream::readImpl() @ 0x1d3e2778 in /usr/bin/clickhouse
                 # /src/DataStreams/IBlockInputStream.cpp:60: DB::IBlockInputStream::read() @ 0x1c9c92fd in /usr/bin/clickhouse
-                # /src/Processors/Formats/Impl/NativeFormat.cpp:42: DB::NativeInputFormatFromNativeBlockInputStream::generate() @ 0x1df1ea79 in /usr/bin/clickhouse
+                # /src/Processors/Formats/Impl/NativeFormat.h:42: DB::NativeInputFormatFromNativeBlockInputStream::generate() @ 0x1df1ea79 in /usr/bin/clickhouse
                 # /src/Processors/ISource.cpp:48: DB::ISource::work() @ 0x1dd79737 in /usr/bin/clickhouse
             ],
         },
@@ -1732,6 +1739,11 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 
 @pytest.mark.timeout(600)
 def test_kafka_flush_by_time(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="flush_by_time", num_partitions=1, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1771,7 +1783,7 @@ def test_kafka_flush_by_time(kafka_cluster):
 
     time.sleep(18)
 
-    result = instance.query('SELECT uniqExact(ts) = 2, count() > 15 FROM test.view')
+    result = instance.query('SELECT uniqExact(ts) = 2, count() >= 15 FROM test.view')
 
     cancel.set()
     kafka_thread.join()
@@ -2357,9 +2369,9 @@ def test_premature_flush_on_eof(kafka_cluster):
     ''')
 
     # messages created here will be consumed immedeately after MV creation
-    # reaching topic EOF. 
+    # reaching topic EOF.
     # But we should not do flush immedeately after reaching EOF, because
-    # next poll can return more data, and we should respect kafka_flush_interval_ms 
+    # next poll can return more data, and we should respect kafka_flush_interval_ms
     # and try to form bigger block
     messages = [json.dumps({'key': j + 1, 'value': j + 1}) for j in range(1)]
     kafka_produce('premature_flush_on_eof', messages)
@@ -2379,11 +2391,11 @@ def test_premature_flush_on_eof(kafka_cluster):
 
     # all subscriptions/assignments done during select, so it start sending data to test.destination
     # immediately after creation of MV
-    
+
     time.sleep(1.5) # that sleep is needed to ensure that first poll finished, and at least one 'empty' polls happened.
                   # Empty poll before the fix were leading to premature flush.
-                  # TODO: wait for messages in log: "Polled batch of 1 messages", followed by "Stalled"  
-    
+                  # TODO: wait for messages in log: "Polled batch of 1 messages", followed by "Stalled"
+
     # produce more messages after delay
     kafka_produce('premature_flush_on_eof', messages)
 

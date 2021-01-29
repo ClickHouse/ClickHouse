@@ -13,9 +13,7 @@ Basic query format:
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-You can specify a list of columns to insert using  the `(c1, c2, c3)` or `COLUMNS(c1,c2,c3)` syntax. 
-
-Instead of listing all the required columns you can use the `(* EXCEPT(column_list))` syntax.
+You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#apply-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
 
 For example, consider the table:
 
@@ -23,9 +21,8 @@ For example, consider the table:
 SHOW CREATE insert_select_testtable;
 ```
 
-```
-┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE insert_select_testtable
+```text
+CREATE TABLE insert_select_testtable
 (
     `a` Int8,
     `b` String,
@@ -33,8 +30,6 @@ SHOW CREATE insert_select_testtable;
 )
 ENGINE = MergeTree()
 ORDER BY a
-SETTINGS index_granularity = 8192 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ``` sql
@@ -59,7 +54,7 @@ SELECT * FROM insert_select_testtable;
 │ 1 │ a │ 1 │
 └───┴───┴───┘
 ```
- 
+
 In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
 
 If a list of columns doesn't include all existing columns, the rest of the columns are filled with:

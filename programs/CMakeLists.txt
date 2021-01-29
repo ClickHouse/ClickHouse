@@ -216,7 +216,13 @@ if (CLICKHOUSE_SPLIT_BINARY)
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
     add_executable (clickhouse main.cpp)
-    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
+
+    # A library that prevent usage of several functions from libc.
+    if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
+        set (HARMFUL_LIB harmful)
+    endif ()
+
+    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)
@@ -311,6 +317,10 @@ else ()
 
     if (USE_GDB_ADD_INDEX)
         add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
+    endif()
+
+    if (USE_BINARY_HASH)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
     endif()
 endif ()
 

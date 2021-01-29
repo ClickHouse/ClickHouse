@@ -25,7 +25,7 @@ thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
 #if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
-    alignas(4096) static thread_local char alt_stack[4096];
+    alignas(4096) static thread_local char alt_stack[std::max<size_t>(MINSIGSTKSZ, 4096)];
     static thread_local bool has_alt_stack = false;
 #endif
 
@@ -96,7 +96,7 @@ ThreadStatus::~ThreadStatus()
     catch (const DB::Exception &)
     {
         /// It's a minor tracked memory leak here (not the memory itself but it's counter).
-        /// We've already allocated a little bit more then the limit and cannot track it in the thread memory tracker or its parent.
+        /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
     }
 
     if (deleter)

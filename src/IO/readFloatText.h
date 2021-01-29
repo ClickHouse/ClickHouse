@@ -152,7 +152,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
     static constexpr int MAX_LENGTH = 316;
 
-    if (likely(buf.position() + MAX_LENGTH <= buf.buffer().end()))
+    if (likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
     {
         auto initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);

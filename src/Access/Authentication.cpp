@@ -51,14 +51,8 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const
+bool Authentication::areCredentialsValid(const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const
 {
-    if (!credentials.isReady())
-        return false;
-
-    if (credentials.getUserName() != user.getName())
-        return false;
-
     if (const auto * gss_acceptor_context = dynamic_cast<const GSSAcceptorContext *>(&credentials))
     {
         switch (type)
@@ -71,15 +65,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
                 throw Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case KERBEROS:
-            {
-                if (gss_acceptor_context->isFailed())
-                    return false;
-
-                if (!kerberos_realm.empty() && kerberos_realm != gss_acceptor_context->getRealm())
-                    return false;
-
-                return true; // The name and readiness was verified earlier.
-            }
+                return external_authenticators.checkKerberosCredentials(kerberos_realm, *gss_acceptor_context);
 
             case MAX_TYPE:
                 break;
@@ -104,9 +90,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
             }
 
             case SHA256_PASSWORD:
-            {
                 return encodeSHA256(basic_credentials->getPassword()) == password_hash;
-            }
 
             case DOUBLE_SHA1_PASSWORD:
             {
@@ -120,14 +104,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
             }
 
             case LDAP:
-            {
-                auto ldap_client_params = external_authenticators.getLDAPClientParamsBlueprint(ldap_server_name);
-                ldap_client_params.user = credentials.getUserName();
-                ldap_client_params.password = basic_credentials->getPassword();
-
-                LDAPSimpleAuthClient ldap_client(ldap_client_params);
-                return ldap_client.check();
-            }
+                return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials);
 
             case KERBEROS:
                 throw Require<GSSAcceptorContext>(kerberos_realm);
@@ -140,7 +117,7 @@ bool Authentication::areCredentialsValid(const User & user, const Credentials & 
     if ([[maybe_unused]] const auto * always_allow_credentials = dynamic_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception("makeAuthenticator(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("areCredentialsValid(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

@@ -140,6 +140,11 @@ public:
             {
                 executeImpl(block, result_type, input_rows_count);
             }
+            else if (mode == "harmful function")
+            {
+                double res = drand48();
+                (void)res;
+            }
             else if (mode == "mmap many")
             {
                 std::vector<void *> maps;

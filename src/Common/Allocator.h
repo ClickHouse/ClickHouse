@@ -28,7 +28,7 @@
 #include <common/mremap.h>
 #include <common/getPageSize.h>
 
-#include <Common/MemoryTracker.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 

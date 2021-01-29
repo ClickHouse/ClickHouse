@@ -29,7 +29,6 @@ class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, pub
 public:
     std::string getName() const override { return "RabbitMQ"; }
 
-    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;

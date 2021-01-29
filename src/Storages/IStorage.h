@@ -120,9 +120,6 @@ public:
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
-    /// Returns true if the storage supports settings.
-    virtual bool supportsSettings() const { return false; }
-
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
     virtual bool noPushingToViews() const { return false; }
 
@@ -130,6 +127,9 @@ public:
     /// So, it's impossible for one stream run out of data when there is data in other streams.
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
+
+    /// Returns true if the storage supports reading of subcolumns of complex types.
+    virtual bool supportsSubcolumns() const { return false; }
 
 
     /// Optional size information of each physical column.

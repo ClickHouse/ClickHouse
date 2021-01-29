@@ -333,6 +333,9 @@ public:
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
 
+    /// Size of single value in memory (for accounting purposes)
+    virtual size_t byteSizeAt(size_t /*n*/) const = 0;
+
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could not be determined.

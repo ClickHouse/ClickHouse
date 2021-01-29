@@ -225,7 +225,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         if (!read_context->resumeRoutine())
             return Block();
 
-        if (read_context->is_read_in_progress)
+        if (read_context->is_read_in_progress.load(std::memory_order_relaxed))
         {
             read_context->setTimer();
             return read_context->epoll_fd;

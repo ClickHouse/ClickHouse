@@ -328,12 +328,3 @@ long double lgammal_r(long double x, int *sg)
 	return lgamma_r(x, sg);
 }
 #endif
-
-
-int signgam_lgammal;
-
-long double lgammal(long double x)
-{
-	return lgammal_r(x, &signgam_lgammal);
-}
-

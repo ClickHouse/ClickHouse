@@ -1,5 +1,4 @@
 #include "BackgroundSchedulePool.h"
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -251,7 +250,16 @@ void BackgroundSchedulePool::threadFunction()
 
     while (!shutdown)
     {
-        if (Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification())
+        /// We have to wait with timeout to prevent very rare deadlock, caused by the following race condition:
+        /// 1. Background thread N: threadFunction(): checks for shutdown (it's false)
+        /// 2. Main thread: ~BackgroundSchedulePool(): sets shutdown to true, calls queue.wakeUpAll(), it triggers
+        ///    all existing Poco::Events inside Poco::NotificationQueue which background threads are waiting on.
+        /// 3. Background thread N: threadFunction(): calls queue.waitDequeueNotification(), it creates
+        ///    new Poco::Event inside Poco::NotificationQueue and starts to wait on it
+        /// Background thread N will never be woken up.
+        /// TODO Do we really need Poco::NotificationQueue? Why not to use std::queue + mutex + condvar or maybe even DB::ThreadPool?
+        constexpr size_t wait_timeout_ms = 500;
+        if (Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification(wait_timeout_ms))
         {
             TaskNotification & task_notification = static_cast<TaskNotification &>(*notification);
             task_notification.execute();

@@ -19,12 +19,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct ComparePairFirst final
+struct ComparePair final
 {
     template <typename T1, typename T2>
     bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
     {
-        return lhs.first < rhs.first;
+        return lhs.first == rhs.first ? lhs.second < rhs.second : lhs.first < rhs.first;
     }
 };
 
@@ -33,8 +33,8 @@ template <typename T>
 struct AggregateFunctionWindowFunnelData
 {
     using TimestampEvent = std::pair<T, UInt8>;
-    using TimestampEvents = PODArray<TimestampEvent, 64>;
-    using Comparator = ComparePairFirst;
+    using TimestampEvents = PODArrayWithStackMemory<TimestampEvent, 64>;
+    using Comparator = ComparePair;
 
     bool sorted = true;
     TimestampEvents events_list;
@@ -47,8 +47,13 @@ struct AggregateFunctionWindowFunnelData
     void add(T timestamp, UInt8 event)
     {
         // Since most events should have already been sorted by timestamp.
-        if (sorted && events_list.size() > 0 && events_list.back().first > timestamp)
-            sorted = false;
+        if (sorted && events_list.size() > 0)
+        {
+            if (events_list.back().first == timestamp)
+                sorted = events_list.back().second <= event;
+            else
+                sorted = events_list.back().first <= timestamp;
+        }
         events_list.emplace_back(timestamp, event);
     }
 

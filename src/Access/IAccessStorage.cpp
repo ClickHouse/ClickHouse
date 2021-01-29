@@ -465,7 +465,13 @@ bool IAccessStorage::areCredentialsValidImpl(
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators) const
 {
-    return user.authentication.areCredentialsValid(user, credentials, external_authenticators);
+    if (!credentials.isReady())
+        return false;
+
+    if (credentials.getUserName() != user.getName())
+        return false;
+
+    return user.authentication.areCredentialsValid(credentials, external_authenticators);
 }
 
 

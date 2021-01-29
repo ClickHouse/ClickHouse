@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 set -eo pipefail
@@ -43,6 +44,7 @@ EOF
 # To generate the file 00825_protobuf_format_input.insh use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
+# shellcheck source=./00825_protobuf_format_input.insh
 source "$CURDIR"/00825_protobuf_format_input.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"
@@ -51,6 +53,7 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM in_squares_00825 ORDER BY number;"
 $CLICKHOUSE_CLIENT --query "TRUNCATE TABLE in_persons_00825;"
 $CLICKHOUSE_CLIENT --query "TRUNCATE TABLE in_squares_00825;"
 
+# shellcheck source=./00825_protobuf_format_input_single.insh
 source "$CURDIR"/00825_protobuf_format_input_single.insh
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM in_persons_00825 ORDER BY uuid;"

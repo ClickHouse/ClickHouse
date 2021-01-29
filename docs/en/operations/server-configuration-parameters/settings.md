@@ -80,17 +80,26 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 -   [Custom settings](../../operations/settings/index.md#custom_settings)
 
-## core_dump
+## core_dump {#server_configuration_parameters-core_dump}
 
-Configures soft limit for core dump file size, one gigabyte by default.
+Configures soft limit for core dump file size.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1073741824` (1 GB).
+
+!!! info "Note"
+    Hard limit is configured via system tools
+
+**Example**
+
 ```xml
 <core_dump>
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
-
-(Hard limit is configured via system tools)
-
 
 ## default_database {#default-database}
 
@@ -431,7 +440,7 @@ Limits total RAM usage by the ClickHouse server.
 Possible values:
 
 -   Positive integer.
--   0 (auto).
+-   0 — Auto.
 
 Default value: `0`.
 
@@ -565,6 +574,35 @@ For more information, see the MergeTreeSettings.h header file.
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
+```
+
+## metric_log {#metric_log}
+
+It is enabled by default. If it`s not, you can do this manually.
+
+**Enabling**
+
+To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Disabling**
+
+To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
+</yandex>
 ```
 
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}

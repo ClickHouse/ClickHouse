@@ -14,6 +14,8 @@
 #endif
 
 #include <chrono>
+#include <set>
+#include <vector>
 
 
 namespace DB
@@ -22,6 +24,29 @@ namespace DB
 class LDAPClient
 {
 public:
+    struct SearchParams
+    {
+        enum class Scope
+        {
+            BASE,
+            ONE_LEVEL,
+            SUBTREE,
+            CHILDREN
+        };
+
+        String base_dn;
+        Scope scope = Scope::SUBTREE;
+        String search_filter;
+        String attribute = "cn";
+        String prefix;
+
+        void combineHash(std::size_t & seed) const;
+    };
+
+    using SearchParamsList = std::vector<SearchParams>;
+    using SearchResults = std::set<String>;
+    using SearchResultsList = std::vector<SearchResults>;
+
     struct Params
     {
         enum class ProtocolVersion
@@ -76,16 +101,18 @@ public:
 
         SASLMechanism sasl_mechanism = SASLMechanism::SIMPLE;
 
-        String auth_dn_prefix;
-        String auth_dn_suffix;
-
+        String bind_dn;
         String user;
         String password;
+
+        std::chrono::seconds verification_cooldown{0};
 
         std::chrono::seconds operation_timeout{40};
         std::chrono::seconds network_timeout{30};
         std::chrono::seconds search_timeout{20};
         std::uint32_t search_limit = 100;
+
+        void combineCoreHash(std::size_t & seed) const;
     };
 
     explicit LDAPClient(const Params & params_);
@@ -97,9 +124,10 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    MAYBE_NORETURN void diag(const int rc);
+    MAYBE_NORETURN void diag(const int rc, String text = "");
     MAYBE_NORETURN void openConnection();
     void closeConnection() noexcept;
+    SearchResults search(const SearchParams & search_params);
 
 protected:
     const Params params;
@@ -113,7 +141,7 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
-    bool check();
+    bool authenticate(const SearchParamsList * search_params, SearchResultsList * search_results);
 };
 
 }

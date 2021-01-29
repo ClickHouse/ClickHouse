@@ -107,8 +107,8 @@ public:
     const String & getKerberosRealm() const;
     void setKerberosRealm(const String & realm);
 
-    /// Verifies the credentials.
-    bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    /// Checks the credentials (passwords, readiness, etc.)
+    bool areCredentialsValid(const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }

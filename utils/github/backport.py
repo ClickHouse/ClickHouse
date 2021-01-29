@@ -32,8 +32,8 @@ class Backport:
                 branches.append(pull_request['headRefName'])
         return branches
 
-    def execute(self, repo, until_commit, number, run_cherrypick, find_lts=False):
-        repo = LocalRepo(repo, 'origin', self.default_branch_name)
+    def execute(self, repo, upstream, until_commit, number, run_cherrypick, find_lts=False):
+        repo = LocalRepo(repo, upstream, self.default_branch_name)
         all_branches = repo.get_release_branches()  # [(branch_name, base_commit)]
 
         last_branches = set([branch[0] for branch in all_branches[-number:]])
@@ -42,7 +42,7 @@ class Backport:
         branches = []
         # iterate over all branches to preserve their precedence.
         for branch in all_branches:
-            if branch in last_branches or branch in lts_branches:
+            if branch[0] in last_branches or branch[0] in lts_branches:
                 branches.append(branch)
 
         if not branches:
@@ -119,6 +119,7 @@ if __name__ == "__main__":
     parser.add_argument('--lts',       action='store_true',     help='consider branches with LTS')
     parser.add_argument('--dry-run',   action='store_true',     help='do not create or merge any PRs', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', help='more verbose output', default=False)
+    parser.add_argument('--upstream', '-u', type=str,           help='remote name of upstream in repository', default='origin')
     args = parser.parse_args()
 
     if args.verbose:
@@ -128,4 +129,4 @@ if __name__ == "__main__":
 
     cherrypick_run = lambda token, pr, branch: CherryPick(token, 'ClickHouse', 'ClickHouse', 'core', pr, branch).execute(args.repo, args.dry_run)
     bp = Backport(args.token, 'ClickHouse', 'ClickHouse', 'core')
-    bp.execute(args.repo, args.til, args.number, cherrypick_run, args.lts)
+    bp.execute(args.repo, args.upstream, args.til, args.number, cherrypick_run, args.lts)

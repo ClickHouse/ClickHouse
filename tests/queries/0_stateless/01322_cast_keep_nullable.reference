@@ -4,7 +4,6 @@
 1	Nullable(Int32)
 2	Nullable(Float32)
 2	Nullable(UInt8)
-00000000-0000-0002-0000-000000000000	Nullable(UUID)
 3	Nullable(Int32)
 \N	Nullable(Int32)
 42	Nullable(Int32)

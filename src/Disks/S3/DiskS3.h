@@ -88,12 +88,11 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        size_t estimated_size,
-        size_t aio_threshold) override;
+        WriteMode mode) override;
 
-    void remove(const String & path) override;
-
+    void removeFile(const String & path) override;
+    void removeFileIfExists(const String & path) override;
+    void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
@@ -105,10 +104,6 @@ public:
     void createFile(const String & path) override;
 
     void setReadOnly(const String & path) override;
-
-    int open(const String & path, mode_t mode) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
 
     const String getType() const override { return "s3"; }
 
