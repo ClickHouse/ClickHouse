@@ -22,40 +22,44 @@ namespace ErrorCodes
 
 namespace
 {
-struct hxCoarseParseImpl
+struct HxCoarseParseImpl
 {
 private:
-    struct spanInfo
+    struct SpanInfo
     {
-        spanInfo(): id(0), matchSpace(std::pair<unsigned long long, unsigned long long>(0, 0)) {}
-        spanInfo(unsigned int matchId, std::pair<unsigned long long, unsigned long long> matchSpan): id(matchId), matchSpace(matchSpan){}
-        spanInfo(const spanInfo& obj)
+        SpanInfo(): id(0), match_space(std::pair<unsigned long long, unsigned long long>(0, 0)) {}
+        SpanInfo(unsigned int matchId, std::pair<unsigned long long, unsigned long long> matchSpan): id(matchId), match_space(matchSpan){}
+        SpanInfo(const SpanInfo& obj)
         {
             id = obj.id;
-            matchSpace = obj.matchSpace;
+            match_space = obj.match_space;
         }
-        spanInfo& operator=(const spanInfo& obj)
-        {
-            id = obj.id;
-            matchSpace = obj.matchSpace;
-            return (*this);
-        }
+        SpanInfo& operator=(const SpanInfo& obj) = default;
+        // {
+        //     if(this == &obj)
+        //     {
+        //         return *this;
+        //     }
+        //     id = obj.id;
+        //     match_space = obj.match_space;
+        //     return (*this);
+        // }
 
         unsigned int id;
-        std::pair<unsigned long long, unsigned long long> matchSpace;
+        std::pair<unsigned long long, unsigned long long> match_space;
     };
-    typedef std::vector<spanInfo> spanElement;
-    struct span
+    using SpanElement = std::vector<SpanInfo>;
+    struct Span
     {
-        span(): set_script(false), set_style(false), set_semi(false), is_finding_cdata(false) {}
+        Span(): set_script(false), set_style(false), set_semi(false), is_finding_cdata(false) {}
 
-        spanElement copy_stack;         // copy area
-        spanElement tag_stack;          // regexp area
-        spanInfo script_ptr;            // script pointer
+        SpanElement copy_stack;         // copy area
+        SpanElement tag_stack;          // regexp area
+        SpanInfo script_ptr;            // script pointer
         bool set_script;                // whether set script
-        spanInfo style_ptr;             // style pointer
+        SpanInfo style_ptr;             // style pointer
         bool set_style;                 // whether set style
-        spanInfo semi_ptr;              // tag ptr
+        SpanInfo semi_ptr;              // tag ptr
         bool set_semi;                  // whether set semi
 
         bool is_finding_cdata;
@@ -102,13 +106,13 @@ private:
                 dst_chars[current_dst_string_offset++] = ' ';
             }
         }
-        return;
+        // return;
     }
-    static inline void popArea(spanElement& stack, unsigned long long from, unsigned long long to)
+    static inline void popArea(SpanElement& stack, unsigned long long from, unsigned long long to)
     {
         while (!stack.empty())
         {
-            if (to > stack.back().matchSpace.second && from < stack.back().matchSpace.second)
+            if (to > stack.back().match_space.second && from < stack.back().match_space.second)
             {
                 stack.pop_back();
             }
@@ -117,10 +121,10 @@ private:
                 break;
             }
         }
-        return;
+        // return;
     }
 
-    static void deal_common_tag(span* matches)
+    static void dealCommonTag(Span* matches)
     {
         while (!matches->copy_stack.empty() && matches->copy_stack.back().id != 10)
         {
@@ -135,8 +139,8 @@ private:
         unsigned id;
         for (auto begin = matches->tag_stack.begin(); begin != matches->tag_stack.end(); ++begin)
         {
-            from = begin->matchSpace.first;
-            to = begin->matchSpace.second;
+            from = begin->match_space.first;
+            to = begin->match_space.second;
             id = begin->id;
             switch (id)
             {
@@ -144,8 +148,8 @@ private:
                 case 13:
                 {
                     popArea(matches->copy_stack, from, to);
-                    if (matches->copy_stack.empty() || from >= matches->copy_stack.back().matchSpace.second)
-                        matches->copy_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                    if (matches->copy_stack.empty() || from >= matches->copy_stack.back().match_space.second)
+                        matches->copy_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
                     break;
                 }
                 case 0:
@@ -159,16 +163,16 @@ private:
                 case 9:
                 case 10:
                 {
-                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.matchSpace.first))
+                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.match_space.first))
                     {
                         matches->set_semi = true;
-                        matches->semi_ptr = spanInfo(id, std::make_pair(from, to));
+                        matches->semi_ptr = SpanInfo(id, std::make_pair(from, to));
                     }
                     break;
                 }
                 case 1:
                 {
-                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().matchSpace.second)
+                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().match_space.second)
                     if (matches->set_semi)
                     {
                         switch (matches->semi_ptr.id)
@@ -180,25 +184,25 @@ private:
                             case 7:
                             case 10:
                             {
-                                if (matches->semi_ptr.id == 2 || (matches->semi_ptr.id == 3 && matches->semi_ptr.matchSpace.second == from))
+                                if (matches->semi_ptr.id == 2 || (matches->semi_ptr.id == 3 && matches->semi_ptr.match_space.second == from))
                                 {
                                     if (!matches->set_script)
                                     {
                                         matches->set_script = true;
-                                        matches->script_ptr = spanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.matchSpace.first, to));
+                                        matches->script_ptr = SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to));
                                     }
                                 }
-                                else if (matches->semi_ptr.id == 6 || (matches->semi_ptr.id == 7 && matches->semi_ptr.matchSpace.second == from))
+                                else if (matches->semi_ptr.id == 6 || (matches->semi_ptr.id == 7 && matches->semi_ptr.match_space.second == from))
                                 {
                                     if (!matches->set_style)
                                     {
                                         matches->set_style = true;
-                                        matches->style_ptr = spanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.matchSpace.first, to));
+                                        matches->style_ptr = SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to));
                                     }
                                 }
-                                popArea(matches->copy_stack, matches->semi_ptr.matchSpace.first, to);
-                                // if(matches->copy_stack.empty() || matches->semi_ptr.matchSpace.first >= matches->copy_stack.back().matchSpace.second)
-                                matches->copy_stack.push_back(spanInfo(0, std::make_pair(matches->semi_ptr.matchSpace.first, to)));
+                                popArea(matches->copy_stack, matches->semi_ptr.match_space.first, to);
+                                // if(matches->copy_stack.empty() || matches->semi_ptr.match_space.first >= matches->copy_stack.back().match_space.second)
+                                matches->copy_stack.push_back(SpanInfo(0, std::make_pair(matches->semi_ptr.match_space.first, to)));
                                 matches->set_semi = false;
                                 break;
                             }
@@ -207,29 +211,29 @@ private:
                             case 8:
                             case 9:
                             {
-                                spanInfo completeZone;
+                                SpanInfo complete_zone;
 
-                                completeZone.matchSpace.second = to;
-                                if (matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.matchSpace.second == from)))
+                                complete_zone.match_space.second = to;
+                                if (matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.match_space.second == from)))
                                 {
-                                    completeZone.id = matches->script_ptr.id;
-                                    completeZone.matchSpace.first = matches->script_ptr.matchSpace.first;
+                                    complete_zone.id = matches->script_ptr.id;
+                                    complete_zone.match_space.first = matches->script_ptr.match_space.first;
                                     matches->set_script = false;
                                 }
-                                else if (matches->set_style && (matches->semi_ptr.id == 8 || (matches->semi_ptr.id == 9 && matches->semi_ptr.matchSpace.second == from)))
+                                else if (matches->set_style && (matches->semi_ptr.id == 8 || (matches->semi_ptr.id == 9 && matches->semi_ptr.match_space.second == from)))
                                 {
-                                    completeZone.id = matches->style_ptr.id;
-                                    completeZone.matchSpace.first = matches->style_ptr.matchSpace.first;
+                                    complete_zone.id = matches->style_ptr.id;
+                                    complete_zone.match_space.first = matches->style_ptr.match_space.first;
                                     matches->set_style = false;
                                 }
                                 else
                                 {
-                                    completeZone.id = matches->semi_ptr.id;
-                                    completeZone.matchSpace.first = matches->semi_ptr.matchSpace.first;
+                                    complete_zone.id = matches->semi_ptr.id;
+                                    complete_zone.match_space.first = matches->semi_ptr.match_space.first;
                                 }
-                                // if(matches->copy_stack.empty() || completeZone.matchSpace.first >= matches->copy_stack.back().matchSpace.second)
-                                popArea(matches->copy_stack, completeZone.matchSpace.first, completeZone.matchSpace.second);
-                                matches->copy_stack.push_back(completeZone);
+                                // if(matches->copy_stack.empty() || complete_zone.match_space.first >= matches->copy_stack.back().match_space.second)
+                                popArea(matches->copy_stack, complete_zone.match_space.first, complete_zone.match_space.second);
+                                matches->copy_stack.push_back(complete_zone);
                                 matches->set_semi = false;
                                 break;
                             }
@@ -243,21 +247,21 @@ private:
                 }
             }
         }
-        return;
+        // return;
     }
     static int spanCollect(unsigned int id,
                           unsigned long long from,
                           unsigned long long to,
                           unsigned int , void * ctx)
     {
-        span* matches = static_cast<span*>(ctx);
+        Span* matches = static_cast<Span*>(ctx);
         from = id == 12 ? from : to - patterns_length[id];
 
         if (matches->is_finding_cdata)
         {
             if (id == 11)
             {
-                matches->copy_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                matches->copy_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
                 matches->is_finding_cdata = false;
                 matches->tag_stack.clear();
                 if (matches->semi_ptr.id == 10)
@@ -268,18 +272,18 @@ private:
             else if (id == 12 || id == 13)
             {
                 popArea(matches->copy_stack, from, to);
-                if (matches->copy_stack.empty() || from >= matches->copy_stack.back().matchSpace.second)
-                    matches->copy_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                if (matches->copy_stack.empty() || from >= matches->copy_stack.back().match_space.second)
+                    matches->copy_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
 
                 popArea(matches->tag_stack, from, to);
-                if (matches->tag_stack.empty() || from >= matches->tag_stack.back().matchSpace.second)
-                    matches->tag_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                if (matches->tag_stack.empty() || from >= matches->tag_stack.back().match_space.second)
+                    matches->tag_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
             }
             else
             {
                 popArea(matches->tag_stack, from, to);
-                // if(matches->tag_stack.empty() || from >= matches->tag_stack.back().matchSpace.second)
-                matches->tag_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                // if(matches->tag_stack.empty() || from >= matches->tag_stack.back().match_space.second)
+                matches->tag_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
             }
         }
         else
@@ -290,8 +294,8 @@ private:
                 case 13:
                 {
                     popArea(matches->copy_stack, from, to);
-                    if (matches->copy_stack.empty() || from >= matches->copy_stack.back().matchSpace.second)
-                        matches->copy_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                    if (matches->copy_stack.empty() || from >= matches->copy_stack.back().match_space.second)
+                        matches->copy_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
                     break;
                 }
                 case 0:
@@ -304,28 +308,28 @@ private:
                 case 8:
                 case 9:
                 {
-                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.matchSpace.first))
+                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.match_space.first))
                     {
                         matches->set_semi = true;
-                        matches->semi_ptr = spanInfo(id, std::make_pair(from, to));
+                        matches->semi_ptr = SpanInfo(id, std::make_pair(from, to));
                     }
                     break;
                 }
                 case 10:
                 {
-                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.matchSpace.first))
+                    if (!matches->set_semi || (matches->set_semi && from == matches->semi_ptr.match_space.first))
                     {
                         matches->set_semi = true;
-                        matches->semi_ptr = spanInfo(id, std::make_pair(from, to));
+                        matches->semi_ptr = SpanInfo(id, std::make_pair(from, to));
                     }
                     matches->is_finding_cdata = true;
-                    matches->copy_stack.push_back(spanInfo(id, std::make_pair(from, to)));
-                    matches->tag_stack.push_back(spanInfo(id, std::make_pair(from, to)));
+                    matches->copy_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
+                    matches->tag_stack.push_back(SpanInfo(id, std::make_pair(from, to)));
                     break;
                 }
                 case 1:
                 {
-                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().matchSpace.second)
+                    // if(!matches->copy_stack.empty() && matches->copy_stack.back().id == 11 && to == matches->copy_stack.back().match_space.second)
                     if (matches->set_semi)
                     {
                         switch (matches->semi_ptr.id)
@@ -337,25 +341,25 @@ private:
                             case 7:
                             case 10:
                             {
-                                if (matches->semi_ptr.id == 2 || (matches->semi_ptr.id == 3 && matches->semi_ptr.matchSpace.second == from))
+                                if (matches->semi_ptr.id == 2 || (matches->semi_ptr.id == 3 && matches->semi_ptr.match_space.second == from))
                                 {
                                     if (!matches->set_script)
                                     {
                                         matches->set_script = true;
-                                        matches->script_ptr = spanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.matchSpace.first, to));
+                                        matches->script_ptr = SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to));
                                     }
                                 }
-                                else if (matches->semi_ptr.id == 6 || (matches->semi_ptr.id == 7 && matches->semi_ptr.matchSpace.second == from))
+                                else if (matches->semi_ptr.id == 6 || (matches->semi_ptr.id == 7 && matches->semi_ptr.match_space.second == from))
                                 {
                                     if (!matches->set_style)
                                     {
                                         matches->set_style = true;
-                                        matches->style_ptr = spanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.matchSpace.first, to));
+                                        matches->style_ptr = SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to));
                                     }
                                 }
-                                popArea(matches->copy_stack, matches->semi_ptr.matchSpace.first, to);
-                                // if(matches->copy_stack.empty() || matches->semi_ptr.matchSpace.first >= matches->copy_stack.back().matchSpace.second)
-                                matches->copy_stack.push_back(spanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.matchSpace.first, to)));
+                                popArea(matches->copy_stack, matches->semi_ptr.match_space.first, to);
+                                // if(matches->copy_stack.empty() || matches->semi_ptr.match_space.first >= matches->copy_stack.back().match_space.second)
+                                matches->copy_stack.push_back(SpanInfo(matches->semi_ptr.id, std::make_pair(matches->semi_ptr.match_space.first, to)));
                                 matches->set_semi = false;
                                 break;
                             }
@@ -364,28 +368,28 @@ private:
                             case 8:
                             case 9:
                             {
-                                spanInfo completeZone;
-                                completeZone.matchSpace.second = to;
-                                if (matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.matchSpace.second == from)))
+                                SpanInfo complete_zone;
+                                complete_zone.match_space.second = to;
+                                if (matches->set_script && (matches->semi_ptr.id == 4 || (matches->semi_ptr.id == 5 && matches->semi_ptr.match_space.second == from)))
                                 {
-                                    completeZone.id = matches->script_ptr.id;
-                                    completeZone.matchSpace.first = matches->script_ptr.matchSpace.first;
+                                    complete_zone.id = matches->script_ptr.id;
+                                    complete_zone.match_space.first = matches->script_ptr.match_space.first;
                                     matches->set_script = false;
                                 }
-                                else if (matches->set_style && (matches->semi_ptr.id == 8 || (matches->semi_ptr.id == 9 && matches->semi_ptr.matchSpace.second == from)))
+                                else if (matches->set_style && (matches->semi_ptr.id == 8 || (matches->semi_ptr.id == 9 && matches->semi_ptr.match_space.second == from)))
                                 {
-                                    completeZone.id = matches->style_ptr.id;
-                                    completeZone.matchSpace.first = matches->style_ptr.matchSpace.first;
+                                    complete_zone.id = matches->style_ptr.id;
+                                    complete_zone.match_space.first = matches->style_ptr.match_space.first;
                                     matches->set_style = false;
                                 }
                                 else
                                 {
-                                    completeZone.id = matches->semi_ptr.id;
-                                    completeZone.matchSpace.first = matches->semi_ptr.matchSpace.first;
+                                    complete_zone.id = matches->semi_ptr.id;
+                                    complete_zone.match_space.first = matches->semi_ptr.match_space.first;
                                 }
-                                // if(matches->copy_stack.empty() || completeZone.matchSpace.first >= matches->copy_stack.back().matchSpace.second)
-                                popArea(matches->copy_stack, completeZone.matchSpace.first, completeZone.matchSpace.second);
-                                matches->copy_stack.push_back(completeZone);
+                                // if(matches->copy_stack.empty() || complete_zone.match_space.first >= matches->copy_stack.back().match_space.second)
+                                popArea(matches->copy_stack, complete_zone.match_space.first, complete_zone.match_space.second);
+                                matches->copy_stack.push_back(complete_zone);
                                 matches->set_semi = false;
                                 break;
                             }
@@ -403,19 +407,19 @@ private:
     }
     #if USE_HYPERSCAN
     static hs_database_t* buildDatabase(const std::vector<const char* > &expressions,
-                                        const std::vector<const unsigned> flags,
-                                        const std::vector<const unsigned> id,
+                                        const std::vector<const unsigned> &flags,
+                                        const std::vector<const unsigned> &id,
                                         unsigned int mode)
     {
         hs_database_t *db;
-        hs_compile_error_t *compileErr;
+        hs_compile_error_t *compile_err;
         hs_error_t err;
         err = hs_compile_multi(expressions.data(), flags.data(), id.data(),
-                            expressions.size(), mode, nullptr, &db, &compileErr);
+                            expressions.size(), mode, nullptr, &db, &compile_err);
 
         if (err != HS_SUCCESS)
         {
-            hs_free_compile_error(compileErr);
+            hs_free_compile_error(compile_err);
             throw Exception("Hyper scan database cannot be compiled.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
         return db;
@@ -450,45 +454,45 @@ public:
         ColumnString::Offset current_copy_end;
         unsigned is_space;
         size_t bytes_to_copy;
-        span matchZoneAll;
+        Span match_zoneall;
 
         for (size_t off = 0; off < src_offsets.size(); ++off)
         {
-            hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &matchZoneAll);
-            for (size_t i = 0; i < matchZoneAll.tag_stack.size(); ++i)
+            hs_scan(db, reinterpret_cast<const char *>(&src_chars[current_src_string_offset]), src_offsets[off] - current_src_string_offset, 0, scratch, spanCollect, &match_zoneall);
+            // for (size_t i = 0; i < match_zoneall.tag_stack.size(); ++i)
+            // {
+            //     std::cout << match_zoneall.tag_stack[i].id << " " << match_zoneall.tag_stack[i].match_space.first << " " << match_zoneall.tag_stack[i].match_space.second << std::endl;
+            // }
+            if (match_zoneall.is_finding_cdata)
             {
-                std::cout << matchZoneAll.tag_stack[i].id << " " << matchZoneAll.tag_stack[i].matchSpace.first << " " << matchZoneAll.tag_stack[i].matchSpace.second << std::endl;
+                dealCommonTag(&match_zoneall);
             }
-            if (matchZoneAll.is_finding_cdata)
-            {
-                deal_common_tag(&matchZoneAll);
-            }
-            spanElement& matchZone = matchZoneAll.copy_stack;
+            SpanElement& match_zone = match_zoneall.copy_stack;
             current_copy_loc = current_src_string_offset;
-            if (matchZone.empty())
+            if (match_zone.empty())
             {
                 current_copy_end = src_offsets[off];
                 is_space = 0;
             }
             else
             {
-                current_copy_end = current_src_string_offset + matchZone.begin()->matchSpace.first;
-                is_space = (matchZone.begin()->id == 12 || matchZone.begin()->id == 13)?1:0;
+                current_copy_end = current_src_string_offset + match_zone.begin()->match_space.first;
+                is_space = (match_zone.begin()->id == 12 || match_zone.begin()->id == 13)?1:0;
             }
 
             bytes_to_copy = current_copy_end - current_copy_loc;
             copyZone(current_dst_string_offset, current_copy_loc, dst_chars, src_chars, bytes_to_copy, is_space);
-            for (auto begin = matchZone.begin(); begin != matchZone.end(); ++begin)
+            for (auto begin = match_zone.begin(); begin != match_zone.end(); ++begin)
             {
-                current_copy_loc = current_src_string_offset + begin->matchSpace.second;
-                if (begin + 1 >= matchZone.end())
+                current_copy_loc = current_src_string_offset + begin->match_space.second;
+                if (begin + 1 >= match_zone.end())
                 {
                     current_copy_end = src_offsets[off];
                     is_space = 0;
                 }
                 else
                 {
-                    current_copy_end = current_src_string_offset + (begin+1)->matchSpace.first;
+                    current_copy_end = current_src_string_offset + (begin+1)->match_space.first;
                     is_space = ((begin+1)->id == 12 || (begin+1)->id == 13)?1:0;
                 }
                 bytes_to_copy = current_copy_end - current_copy_loc;
@@ -501,8 +505,8 @@ public:
             }
             dst_offsets[off] = current_dst_string_offset;
             current_src_string_offset = src_offsets[off];
-            matchZoneAll.copy_stack.clear();
-            matchZoneAll.tag_stack.clear();
+            match_zoneall.copy_stack.clear();
+            match_zoneall.tag_stack.clear();
         }
             dst_chars.resize(dst_chars.size());
             hs_free_scratch(scratch);
@@ -519,7 +523,7 @@ public:
     }
 };
 
-std::vector<const char*> hxCoarseParseImpl::patterns =
+std::vector<const char*> HxCoarseParseImpl::patterns =
     {
         "<[^\\s<>]",       // 0  "<", except "< ", "<<", "<>"
         ">",               // 1  ">"
@@ -536,17 +540,17 @@ std::vector<const char*> hxCoarseParseImpl::patterns =
         "\\s{2,}",         // 12 "   ", continuous blanks
         "[^\\S ]"          // 13 "\n", "\t" and other white space, it does not include single ' '.
     };
-std::vector<const std::size_t> hxCoarseParseImpl::patterns_length =
+std::vector<const std::size_t> HxCoarseParseImpl::patterns_length =
     {
         2, 1, 8, 7, 9, 8, 7, 6, 8, 7, 9, 3, 0, 1
     };
 #if USE_HYPERSCAN
-std::vector<const unsigned> hxCoarseParseImpl::patterns_flag =
+std::vector<const unsigned> HxCoarseParseImpl::patterns_flag =
     {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, HS_FLAG_SOM_LEFTMOST, 0
     };
 #endif
-std::vector<const unsigned> hxCoarseParseImpl::ids =
+std::vector<const unsigned> HxCoarseParseImpl::ids =
     {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
     };
@@ -575,10 +579,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & , size_t) const override
     {
         const auto & strcolumn = arguments[0].column;
-        if (const ColumnString* htmlSentence = checkAndGetColumn<ColumnString>(strcolumn.get()))
+        if (const ColumnString* html_sentence = checkAndGetColumn<ColumnString>(strcolumn.get()))
         {
             auto col_res = ColumnString::create();
-            hxCoarseParseImpl::executeInternal(htmlSentence->getChars(), htmlSentence->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            HxCoarseParseImpl::executeInternal(html_sentence->getChars(), html_sentence->getOffsets(), col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
         else
