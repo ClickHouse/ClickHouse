@@ -1,5 +1,3 @@
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 NO_COMPILER_WARNINGS()

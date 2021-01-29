@@ -555,7 +555,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -616,7 +616,7 @@ private:
     using ToType = typename Impl::ReturnType;
 
     template <typename FromType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeType(ColumnsWithTypeAndName & arguments) const
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
@@ -659,7 +659,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
@@ -713,7 +713,7 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
@@ -806,7 +806,16 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                ToType h;
+                if constexpr (OverBigInt<FromType>)
+                {
+                    using NativeT = typename NativeType<FromType>::Type;
+
+                    std::string buffer = BigInt<NativeT>::serialize(vec_from[i]);
+                    h = Impl::apply(buffer.data(), buffer.size());
+                }
+                else
+                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
 
                 if constexpr (first)
                     vec_to[i] = h;
@@ -818,7 +827,16 @@ private:
         {
             auto value = col_from_const->template getValue<FromType>();
 
-            ToType h = Impl::apply(reinterpret_cast<const char *>(&value), sizeof(value));
+            ToType h;
+            if constexpr (OverBigInt<FromType>)
+            {
+                using NativeT = typename NativeType<FromType>::Type;
+
+                std::string buffer = BigInt<NativeT>::serialize(value);
+                h = Impl::apply(buffer.data(), buffer.size());
+            }
+            else
+                h = Impl::apply(reinterpret_cast<const char *>(&value), sizeof(value));
 
             size_t size = vec_to.size();
             if constexpr (first)
@@ -1047,7 +1065,7 @@ public:
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t rows = input_rows_count;
         auto col_to = ColumnVector<ToType>::create(rows);
@@ -1089,7 +1107,7 @@ public:
     #endif
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
@@ -1212,7 +1230,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
@@ -1225,7 +1243,7 @@ public:
     }
 
 private:
-    ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeSingleArg(ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_untyped = arguments.front().column.get();
 
@@ -1255,7 +1273,7 @@ private:
                 " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeTwoArgs(ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         if (!isColumnConst(*level_col))

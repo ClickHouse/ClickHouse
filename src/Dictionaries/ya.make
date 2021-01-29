@@ -1,6 +1,4 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
@@ -53,7 +51,6 @@ SRCS(
     FlatDictionary.cpp
     HTTPDictionarySource.cpp
     HashedDictionary.cpp
-    IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp

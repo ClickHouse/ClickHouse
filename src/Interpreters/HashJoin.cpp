@@ -357,35 +357,7 @@ void HashJoin::init(Type type_)
     joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
-bool HashJoin::overDictionary() const
-{
-    return data->type == Type::DICT;
-}
-
-bool HashJoin::empty() const
-{
-    return data->type == Type::EMPTY;
-}
-
-size_t HashJoin::getTotalByteCount() const
-{
-    std::shared_lock lock(data->rwlock);
-    return getTotalByteCountLocked();
-}
-
 size_t HashJoin::getTotalRowCount() const
-{
-    std::shared_lock lock(data->rwlock);
-    return getTotalRowCountLocked();
-}
-
-bool HashJoin::alwaysReturnsEmptySet() const
-{
-    std::shared_lock lock(data->rwlock);
-    return isInnerOrRight(getKind()) && data->empty && !overDictionary();
-}
-
-size_t HashJoin::getTotalRowCountLocked() const
 {
     size_t res = 0;
 
@@ -402,7 +374,7 @@ size_t HashJoin::getTotalRowCountLocked() const
     return res;
 }
 
-size_t HashJoin::getTotalByteCountLocked() const
+size_t HashJoin::getTotalByteCount() const
 {
     size_t res = 0;
 
@@ -620,8 +592,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             return true;
 
         /// TODO: Do not calculate them every time
-        total_rows = getTotalRowCountLocked();
-        total_bytes = getTotalByteCountLocked();
+        total_rows = getTotalRowCount();
+        total_bytes = getTotalByteCount();
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -702,7 +674,7 @@ public:
         if (lazy_defaults_count)
         {
             for (size_t j = 0; j < right_indexes.size(); ++j)
-                JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
+                columns[j]->insertManyDefaults(lazy_defaults_count);
             lazy_defaults_count = 0;
         }
     }
@@ -1016,10 +988,6 @@ void HashJoin::joinBlockImpl(
             const auto & right_key = required_right_keys.getByPosition(i);
             const auto & left_name = required_right_keys_sources[i];
 
-            /// asof column is already in block.
-            if (is_asof_join && right_key.name == key_names_right.back())
-                continue;
-
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();
             block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
@@ -1038,10 +1006,6 @@ void HashJoin::joinBlockImpl(
         {
             const auto & right_key = required_right_keys.getByPosition(i);
             const auto & left_name = required_right_keys_sources[i];
-
-            /// asof column is already in block.
-            if (is_asof_join && right_key.name == key_names_right.back())
-                continue;
 
             const auto & col = block.getByName(left_name);
             bool is_nullable = nullable_right_side || right_key.type->isNullable();

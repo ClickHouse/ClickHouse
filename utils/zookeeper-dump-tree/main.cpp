@@ -40,7 +40,7 @@ int main(int argc, char ** argv)
         size_t num_reconnects = 0;
         constexpr size_t max_reconnects = 100;
 
-        auto ensure_session = [&]
+        auto ensureSession = [&]
         {
             if (zookeeper->expired())
             {
@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
                 else if (Coordination::isHardwareError(e.code))
                 {
                     /// Reinitialize the session and move the node to the end of the queue for later retry.
-                    if (!ensure_session())
+                    if (!ensureSession())
                         throw;
                     list_futures.emplace_back(it->first, zookeeper->asyncGetChildren(it->first));
                     continue;
@@ -85,7 +85,7 @@ int main(int argc, char ** argv)
             {
                 std::string child_path = it->first == "/" ? it->first + name : it->first + '/' + name;
 
-                ensure_session();
+                ensureSession();
                 list_futures.emplace_back(child_path, zookeeper->asyncGetChildren(child_path));
             }
         }

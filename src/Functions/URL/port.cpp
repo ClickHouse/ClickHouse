@@ -48,7 +48,7 @@ struct FunctionPort : public IFunction
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)

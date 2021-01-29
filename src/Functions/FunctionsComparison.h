@@ -81,8 +81,8 @@ namespace ErrorCodes
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
-    using ContainerA = PaddedPODArray<A>;
-    using ContainerB = PaddedPODArray<B>;
+    using ContainerA = std::conditional_t<!is_big_int_v<A>, PaddedPODArray<A>, std::vector<A>>;
+    using ContainerB = std::conditional_t<!is_big_int_v<B>, PaddedPODArray<B>, std::vector<B>>;
 
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
@@ -1136,7 +1136,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & col_with_type_and_name_left = arguments[0];
         const auto & col_with_type_and_name_right = arguments[1];
@@ -1216,10 +1216,7 @@ public:
         {
             return res;
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
-                 // Comparing Date and DateTime64 requires implicit conversion,
-                 // otherwise Date is treated as number.
-                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
+        else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {
             // compare
             if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)

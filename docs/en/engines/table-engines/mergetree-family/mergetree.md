@@ -98,9 +98,6 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
     -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — Minimum number of bytes/rows in a data part that can be stored in `Wide` format. You can set one, both or none of these settings. See [Data Storage](#mergetree-data-storage).
-    -   `max_parts_in_total` — Maximum number of parts in all partitions.
-	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
-	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
 
 **Example of Sections Setting**
 
@@ -186,10 +183,6 @@ A sparse index allows extra data to be read. When reading a single range of the 
 Sparse indexes allow you to work with a very large number of table rows, because in most cases, such indexes fit in the computer’s RAM.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
-
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses. To allow this feature, turn on the [allow_nullable_key](../../../operations/settings/settings.md#allow-nullable-key) setting.
-
-The [NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting the Primary Key {#selecting-the-primary-key}
 
@@ -350,8 +343,8 @@ The `set` index can be used with all functions. Function subsets for other index
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
@@ -586,7 +579,6 @@ Tags:
 -   `disk` — a disk within a volume.
 -   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
--   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 
 Cofiguration examples:
 
@@ -615,18 +607,6 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
-		
-		<small_jbod_with_external_no_merges>
-            <volumes>
-                <main>
-                    <disk>jbod1</disk>
-                </main>
-                <external>
-                    <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
-                </external>
-            </volumes>
-        </small_jbod_with_external_no_merges>
     </policies>
     ...
 </storage_configuration>
@@ -656,96 +636,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
-
-## Using S3 for Data Storage {#table_engine-mergetree-s3}
-
-`MergeTree` family table engines is able to store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
-
-Configuration markup:
-``` xml
-<storage_configuration>
-    ...
-    <disks>
-        <s3>
-            <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-            <proxy>
-                <uri>http://proxy1</uri>
-                <uri>http://proxy2</uri>
-            </proxy>
-            <connect_timeout_ms>10000</connect_timeout_ms>
-            <request_timeout_ms>5000</request_timeout_ms>
-            <max_connections>100</max_connections>
-            <retry_attempts>10</retry_attempts>
-            <min_bytes_for_seek>1000</min_bytes_for_seek>
-            <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
-            <skip_access_check>false</skip_access_check>
-        </s3>
-    </disks>
-    ...
-</storage_configuration>
-```
-
-Required parameters:
--   `endpoint` — S3 endpoint url in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint url should contain bucket and root path to store data.
--   `access_key_id` — S3 access key id. 
--   `secret_access_key` — S3 secret access key.
-
-Optional parameters:    
--   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
--   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
--   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
--   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
--   `max_connections` — S3 connections pool size. Default value is `100`. 
--   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
--   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
--   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
--   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
--   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
--   `skip_access_check` — If true disk access checks will not be performed on disk start-up. Default value is `false`.
-
-
-S3 disk can be configured as `main` or `cold` storage:
-``` xml
-<storage_configuration>
-    ...
-    <disks>
-        <s3>
-            <type>s3</type>
-            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-        </s3>
-    </disks>
-    <policies>
-        <s3_main>
-            <volumes>
-                <main>
-                    <disk>s3</disk>
-                </main>
-            </volumes>
-        </s3_main>
-        <s3_cold>
-            <volumes>
-                <main>
-                    <disk>default</disk>
-                </main>
-                <external>
-                    <disk>s3</disk>
-                </external>
-            </volumes>
-            <move_factor>0.2</move_factor>
-        </s3_cold>
-    </policies>
-    ...
-</storage_configuration>
-```
-
-In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule. 
 
 ### Details {#details}
 
