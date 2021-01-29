@@ -860,7 +860,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
 
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result)
 {
-    if (prewhere_info_list->empty())
+    if (!prewhere_info_list || prewhere_info_list->empty())
         return;
 
     const auto & header = merge_tree_reader->getColumns();
