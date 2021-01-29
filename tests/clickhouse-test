@@ -136,7 +136,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         os.environ["CLICKHOUSE_DATABASE"] = database
 
     # This is for .sh tests
-    os.environ.setdefault["CLICKHOUSE_LOG_COMMENT"] = test
+    os.environ.setdefault["CLICKHOUSE_LOG_COMMENT"] = case_file
 
     params = {
         'client': args.client + ' --database=' + database,
