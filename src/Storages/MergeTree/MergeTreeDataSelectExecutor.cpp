@@ -1335,13 +1335,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         data_settings->index_granularity,
         index_granularity_bytes);
 
-    const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
-        settings.merge_tree_min_rows_for_concurrent_read,
-        settings.merge_tree_min_bytes_for_concurrent_read,
-        data_settings->index_granularity,
-        index_granularity_bytes,
-        sum_marks);
-
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
 
@@ -1381,6 +1374,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     /// we will store lonely parts with level > 0 to use parallel select on them.
     std::vector<RangesInDataPart> lonely_parts;
     size_t total_rows_in_lonely_parts = 0;
+    size_t sum_marks_in_lonely_parts = 0;
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
@@ -1398,6 +1392,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                 parts_to_merge_ranges[range_index]->data_part->info.level > 0)
             {
                 total_rows_in_lonely_parts += parts_to_merge_ranges[range_index]->getRowsCount();
+                sum_marks_in_lonely_parts += parts_to_merge_ranges[range_index]->getMarksCount();
                 lonely_parts.push_back(std::move(*parts_to_merge_ranges[range_index]));
                 continue;
             }
@@ -1485,9 +1480,21 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
 
+        const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
+            settings.merge_tree_min_rows_for_concurrent_read,
+            settings.merge_tree_min_bytes_for_concurrent_read,
+            data_settings->index_granularity,
+            index_granularity_bytes,
+            sum_marks_in_lonely_parts);
+
+        /// Reduce the number of num_streams_for_lonely_parts if the data is small.
+        if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
+            num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
+
+
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
             num_streams_for_lonely_parts,
-            sum_marks,
+            sum_marks_in_lonely_parts,
             min_marks_for_concurrent_read,
             std::move(lonely_parts),
             data,
