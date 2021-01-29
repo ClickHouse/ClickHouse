@@ -51,7 +51,13 @@ public:
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
-    bool shouldAlignRightInPrettyFormats() const override { return true; }
+
+    bool shouldAlignRightInPrettyFormats() const override
+    {
+        /// Just a number, without customizations. Counterexample: IPv4.
+        return !custom_text_serialization;
+    }
+
     bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }

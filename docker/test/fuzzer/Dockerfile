@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-fuzzer .
-FROM ubuntu:18.04
+FROM yandex/clickhouse-test-base
 
 ENV LANG=C.UTF-8
 ENV TZ=Europe/Moscow
@@ -7,11 +7,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-            bash \
             ca-certificates \
-            curl \
-            gdb \
-            git \
             libc6-dbg \
             moreutils \
             ncdu \

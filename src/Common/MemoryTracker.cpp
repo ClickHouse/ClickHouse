@@ -145,8 +145,9 @@ void MemoryTracker::alloc(Int64 size)
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    if (metric != CurrentMetrics::end())
-        CurrentMetrics::add(metric, size);
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::add(metric_loaded, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -286,8 +287,9 @@ void MemoryTracker::free(Int64 size)
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
 
-    if (metric != CurrentMetrics::end())
-        CurrentMetrics::sub(metric, accounted_size);
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::sub(metric_loaded, accounted_size);
 }
 
 
@@ -302,8 +304,9 @@ void MemoryTracker::resetCounters()
 
 void MemoryTracker::reset()
 {
-    if (metric != CurrentMetrics::end())
-        CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end())
+        CurrentMetrics::sub(metric_loaded, amount.load(std::memory_order_relaxed));
 
     resetCounters();
 }
@@ -313,6 +316,12 @@ void MemoryTracker::set(Int64 to)
 {
     amount.store(to, std::memory_order_relaxed);
     updatePeak(to);
+}
+
+
+void MemoryTracker::setHardLimit(Int64 value)
+{
+    hard_limit.store(value, std::memory_order_relaxed);
 }
 
 

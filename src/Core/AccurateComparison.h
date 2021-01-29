@@ -93,7 +93,7 @@ using bool_if_gt_int_vs_uint = std::enable_if_t<is_gt_int_vs_uint<TInt, TUInt>, 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TInt a, TUInt b)
 {
-    return bigint_cast<TInt>(a) > bigint_cast<TInt>(b);
+    return static_cast<TInt>(a) > static_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
@@ -101,19 +101,19 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
     using CastA = std::conditional_t<is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>, DB::UInt256, TInt>;
 
-    return bigint_cast<CastA>(a) > b;
+    return static_cast<CastA>(a) > b;
 }
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TInt a, TUInt b)
 {
-    return bigint_cast<TInt>(a) == bigint_cast<TInt>(b);
+    return static_cast<TInt>(a) == static_cast<TInt>(b);
 }
 
 template <typename TInt, typename TUInt>
 inline bool_if_gt_int_vs_uint<TInt, TUInt> equalsOpTmpl(TUInt a, TInt b)
 {
-    return bigint_cast<TInt>(a) == bigint_cast<TInt>(b);
+    return static_cast<TInt>(a) == static_cast<TInt>(b);
 }
 
 
@@ -196,7 +196,7 @@ inline bool_if_safe_conversion<A, B> greaterOp(A a, B b)
     using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
 
     if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        return bigint_cast<CastA>(a) > bigint_cast<CastB>(b);
+        return static_cast<CastA>(a) > static_cast<CastB>(b);
     else
         return a > b;
 }
@@ -306,7 +306,7 @@ inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 {
     using LargestType = std::conditional_t<(sizeof(A) > sizeof(B)) || ((sizeof(A) == sizeof(B)) && !std::is_same_v<A, DB::UInt128>), A, B>;
 
-    return bigint_cast<LargestType>(a) == bigint_cast<LargestType>(b);
+    return static_cast<LargestType>(a) == static_cast<LargestType>(b);
 }
 
 template <>
@@ -429,7 +429,7 @@ inline bool_if_safe_conversion<A, B> notEqualsOp(A a, B b)
     using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
 
     if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        return bigint_cast<CastA>(a) != bigint_cast<CastB>(b);
+        return static_cast<CastA>(a) != static_cast<CastB>(b);
     else
         return a != b;
 }
@@ -451,7 +451,7 @@ inline bool_if_safe_conversion<A, B> lessOp(A a, B b)
     using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
 
     if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        return bigint_cast<CastA>(a) < bigint_cast<CastB>(b);
+        return static_cast<CastA>(a) < static_cast<CastB>(b);
     else
         return a < b;
 }
@@ -475,7 +475,7 @@ inline bool_if_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
     using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
 
     if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        return bigint_cast<CastA>(a) <= bigint_cast<CastB>(b);
+        return static_cast<CastA>(a) <= static_cast<CastB>(b);
     else
         return a <= b;
 }
@@ -499,7 +499,7 @@ inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
     using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, DB::UInt128>, A, CastB1>;
 
     if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-        return bigint_cast<CastA>(a) >= bigint_cast<CastB>(b);
+        return static_cast<CastA>(a) >= static_cast<CastB>(b);
     else
         return a >= b;
 }

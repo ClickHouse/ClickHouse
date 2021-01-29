@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -92,6 +93,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 void Connection::disconnect()
 {
 //    LOG_DEBUG(log_wrapper.get(), "disconnect");
+    
+    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -580,6 +583,9 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 //    LOG_DEBUG(log_wrapper.get(), "sendPreparedData");
 
+    if (input.eof())
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
+
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -844,6 +850,9 @@ Packet Connection::receivePacket(AsyncCallback async_callback)
     }
     catch (Exception & e)
     {
+        /// This is to consider ATTEMPT_TO_READ_AFTER_EOF as a remote exception.
+        e.setRemoteException();
+
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
             e.addMessage("while receiving packet from " + getDescription());
@@ -933,7 +942,7 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 

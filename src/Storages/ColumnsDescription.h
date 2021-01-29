@@ -85,6 +85,8 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
+    bool hasSubcolumn(const String & column_name) const;
+    bool hasInStorageOrSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
 
     template <typename F>
