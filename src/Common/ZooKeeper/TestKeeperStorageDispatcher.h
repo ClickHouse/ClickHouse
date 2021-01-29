@@ -53,6 +53,8 @@ public:
         return storage.getSessionID();
     }
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    /// Call if we don't need any responses for this session no more (session was expired)
+    void finishSession(int64_t session_id);
 };
 
 }

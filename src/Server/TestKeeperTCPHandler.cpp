@@ -28,14 +28,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYSTEM_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
 struct PollResult
 {
-    bool has_responses;
-    bool has_requests;
-    bool error;
+    size_t ready_responses_count{0};
+    bool has_requests{false};
+    bool error{false};
 };
 
 /// Queue with mutex. As simple as possible.
@@ -191,10 +192,17 @@ struct SocketInterruptablePollWrapper
                         result.has_requests = true;
                     else
                     {
-                        /// Skip all of them, we are not interested in exact
-                        /// amount because responses ordered in responses queue.
-                        response_in.ignore();
-                        result.has_responses = true;
+                        UInt8 dummy;
+                        do
+                        {
+                            /// All ready responses stored in responses queue,
+                            /// but we have to count amount of ready responses in pipe
+                            /// and process them only. Otherwise states of response_in
+                            /// and response queue will be inconsistent and race condition is possible.
+                            readIntBinary(dummy, response_in);
+                            result.ready_responses_count++;
+                        }
+                        while (response_in.available());
                     }
                 }
             }
@@ -349,23 +357,27 @@ void TestKeeperTCPHandler::runImpl()
                 while (in->available());
             }
 
-            if (result.has_responses)
+            /// Process exact amount of responses from pipe
+            /// otherwise state of responses queue and signaling pipe
+            /// became inconsistent and race condition is possible.
+            while (result.ready_responses_count != 0)
             {
                 Coordination::ZooKeeperResponsePtr response;
-                while (responses->tryPop(response))
-                {
-                    if (response->xid == close_xid)
-                    {
-                        LOG_DEBUG(log, "Session #{} successfully closed", session_id);
-                        return;
-                    }
+                if (!responses->tryPop(response))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have at least {} ready responses, but queue is empty. It's a bug.", result.ready_responses_count);
 
-                    if (response->error == Coordination::Error::ZOK)
-                        response->write(*out);
-                    else if (response->xid != Coordination::WATCH_XID)
-                        response->write(*out);
-                    /// skipping bad response for watch
+                if (response->xid == close_xid)
+                {
+                    LOG_DEBUG(log, "Session #{} successfully closed", session_id);
+                    return;
                 }
+
+                if (response->error == Coordination::Error::ZOK)
+                    response->write(*out);
+                else if (response->xid != Coordination::WATCH_XID)
+                    response->write(*out);
+                /// skipping bad response for watch
+                result.ready_responses_count--;
             }
 
             if (result.error)
@@ -390,7 +402,11 @@ void TestKeeperTCPHandler::finish()
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
     request->xid = close_xid;
+    /// Put close request (so storage will remove all info about session)
     test_keeper_storage_dispatcher->putRequest(request, session_id);
+    /// We don't need any callbacks because session can be already dead and
+    /// nobody wait for response
+    test_keeper_storage_dispatcher->finishSession(session_id);
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveRequest()
