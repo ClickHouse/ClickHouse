@@ -71,6 +71,10 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
             boost::algorithm::to_lower(matched_region);
             region = matched_region;
         }
+        else
+        {
+            region = Aws::Region::AWS_GLOBAL;
+        }
     }
 }
 
