@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace ArrayImpl
@@ -86,8 +87,6 @@ private:
     ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     /** For a map the function finds the matched value for a key.
-     *  Currently implemented just as linear search in array.
-     *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
@@ -951,50 +950,43 @@ ColumnPtr FunctionArrayElement::executeMap(
     if (!col_map)
         return nullptr;
 
-    const auto & nested_column = col_map->getNestedColumn();
-    const auto & keys_data = col_map->getNestedData().getColumn(0);
-    const auto & values_data = col_map->getNestedData().getColumn(1);
-    const auto & offsets = nested_column.getOffsets();
-
-    /// At first step calculate indices in array of values for requested keys.
-    auto indices_column = DataTypeNumber<UInt64>().createColumn();
-    indices_column->reserve(input_rows_count);
-    auto & indices_data = assert_cast<ColumnVector<UInt64> &>(*indices_column).getData();
-
-    if (!isColumnConst(*arguments[1].column))
+    ColumnPtr col_key = arguments[1].column;
+    if (isColumnConst(*col_key))
     {
-        if (input_rows_count > 0 && !matchKeyToIndex(keys_data, offsets, arguments, indices_data))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function {}",
-                arguments[0].type->getName(), arguments[1].type->getName(), getName());
+        const String & key = col_key->getDataAt(0).toString();
+        ColumnPtr col_val = col_map->getSubColumn(key);
+        if (!col_val)
+        {
+            MutableColumnPtr mcp = result_type->createColumn();
+            mcp->insertManyDefaults(input_rows_count);
+            ColumnPtr res = std::move(mcp);
+            return res;
+        }
+        else
+        {
+            auto res = col_val->cloneResized(input_rows_count);
+            return res;
+        }
     }
     else
     {
-        Field index = (*arguments[1].column)[0];
-
-        // Get Matched key's value
-        if (input_rows_count > 0 && !matchKeyToIndexConst(keys_data, offsets, index, indices_data))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments: {}, {} for function {}",
-                arguments[0].type->getName(), arguments[1].type->getName(), getName());
-    }
-
-    /// Prepare arguments to call arrayElement for array with values and calculated indices at previous step.
-    ColumnsWithTypeAndName new_arguments =
-    {
+        MutableColumnPtr mcp = result_type->createColumn();
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            ColumnArray::create(values_data.getPtr(), nested_column.getOffsetsPtr()),
-            std::make_shared<DataTypeArray>(result_type),
-            ""
-        },
-        {
-            std::move(indices_column),
-            std::make_shared<DataTypeNumber<UInt64>>(),
-            ""
+            const String & key = col_key->getDataAt(i).toString();
+            const auto & col_val = col_map->getSubColumn(key);
+            if (!col_val)
+            {
+                mcp->insertDefault();
+            }
+            else
+            {
+                mcp->insertFrom(*col_val, i);
+            }
         }
-    };
-
-    return executeImpl(new_arguments, result_type, input_rows_count);
+        ColumnPtr res = std::move(mcp);
+        return res;
+    }
 }
 
 String FunctionArrayElement::getName() const
@@ -1004,21 +996,31 @@ String FunctionArrayElement::getName() const
 
 DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    if (arguments.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function '{}' doesn't match: passed '{}', should be 2",
+            getName(), toString(arguments.size()));
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
+    {
+        if (!isString(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}(map, string)' must be string, got '{}' instead",
+            getName(), arguments[1]->getName());
         return map_type->getValueType();
+    }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function '{}' must be array, got '{}' instead",
+            "First argument for function '{}' must be array or map, got '{}' instead",
             getName(), arguments[0]->getName());
     }
 
     if (!isInteger(arguments[1]))
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function '{}' must be integer, got '{}' instead",
+            "Second argument for function '{}(array, integer)' must be integer, got '{}' instead",
             getName(), arguments[1]->getName());
     }
 

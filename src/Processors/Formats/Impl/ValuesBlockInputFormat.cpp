@@ -243,24 +243,12 @@ namespace
         else if (type.isMap() && value.getType() == Field::Types::Map)
         {
             const DataTypeMap & type_map = static_cast<const DataTypeMap &>(data_type);
-
-            const auto & key_type = *type_map.getKeyType();
             const auto & value_type = *type_map.getValueType();
-
             auto & map = value.get<Map>();
-            size_t map_size = map.size();
 
-            for (size_t i = 0; i < map_size; ++i)
+            for (auto & elem : map)
             {
-                auto & map_entry = map[i].get<Tuple>();
-
-                auto & entry_key = map_entry[0];
-                auto & entry_value = map_entry[1];
-
-                if (entry_key.isNull() && !key_type.isNullable())
-                    entry_key = key_type.getDefault();
-
-                tryToReplaceNullFieldsInComplexTypesWithDefaultValues(entry_key, key_type);
+                auto & entry_value = elem.second;
 
                 if (entry_value.isNull() && !value_type.isNullable())
                     entry_value = value_type.getDefault();

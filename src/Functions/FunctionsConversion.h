@@ -2631,7 +2631,7 @@ private:
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "CAST AS Map can only be performed from tuple of arrays with equal sizes.");
 
-            return ColumnMap::create(converted_columns[0], converted_columns[1], offsets[0]);
+            return ColumnMap::create(to_kv_types[1], converted_columns[0], converted_columns[1], offsets[0]);
         };
     }
 
@@ -2640,18 +2640,19 @@ private:
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
-            const auto * col = arguments.front().column.get();
-            const auto & column_map = typeid_cast<const ColumnMap &>(*col);
-            const auto & nested_data = column_map.getNestedData();
-
-            Columns converted_columns(2);
-            for (size_t i = 0; i < 2; ++i)
+            const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+            auto & sub_columns = col_map->subColumns;
+            std::vector<String> keys;
+            Columns converted_columns;
+            for (auto & elem : sub_columns)
             {
-                ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+                ColumnPtr cp = std::move(elem.second);
+                ColumnsWithTypeAndName element = {{cp, from_kv_types[1], ""}};
+                const auto & converted_column = element_wrappers[1](element, to_kv_types[1], nullable_source, input_rows_count);
+                converted_columns.push_back(converted_column);
+                keys.push_back(elem.first);
             }
-
-            return ColumnMap::create(converted_columns[0], converted_columns[1], column_map.getNestedColumn().getOffsetsPtr());
+            return ColumnMap::create(to_kv_types[1], keys, converted_columns);
         };
     }
 
@@ -2672,7 +2673,7 @@ private:
                 converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
             }
 
-            return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
+            return ColumnMap::create(to_kv_types[1], converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
         };
     }
 

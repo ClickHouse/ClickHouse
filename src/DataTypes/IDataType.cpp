@@ -43,6 +43,10 @@ String IDataType::Substream::toString() const
             return "DictionaryKeys";
         case DictionaryIndexes:
             return "DictionaryIndexes";
+        case MapKeys:
+            return "MapKeys";
+        case MapValues:
+            return "MapValues(" + map_key + ")";
     }
 
     __builtin_unreachable();
@@ -183,6 +187,10 @@ static String getNameForSubstreamPath(
             ++array_level;
         else if (elem.type == IDataType::Substream::DictionaryKeys)
             stream_name += ".dict";
+        else if (elem.type == IDataType::Substream::MapKeys)
+            stream_name += "._mapkeys";
+        else if (elem.type == IDataType::Substream::MapValues)
+            stream_name += "." + escapeForFileName(elem.map_key);
         else if (elem.type == IDataType::Substream::TupleElement)
         {
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.

@@ -1530,7 +1530,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 ++pos;
             }
-            else if (pos->type == TokenType::Colon && std::is_same_v<Collection, Map> && arr.size() % 2 == 1)
+            else if (pos->type == TokenType::Colon)
             {
                 ++pos;
             }
@@ -1545,7 +1545,8 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
             return false;
 
-        arr.push_back(literal_node->as<ASTLiteral &>().value);
+        Field & fld = literal_node->as<ASTLiteral &>().value;
+        arr.push_back(fld);
     }
 
     expected.add(pos, getTokenName(closing_bracket));
@@ -1554,7 +1555,70 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+template <>
+bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != opening_bracket)
+        return false;
+
+    Pos literal_begin = pos;
+
+    Map arr;
+    ParserLiteral literal_p;
+    ParserCollectionOfLiterals<Map> collection_p(opening_bracket, closing_bracket);
+    String key;
+    bool parsing_key(true);
+
+    ++pos;
+    while (pos.isValid())
+    {
+        if (!arr.empty())
+        {
+            if (pos->type == closing_bracket)
+            {
+                std::shared_ptr<ASTLiteral> literal;
+                literal = std::make_shared<ASTLiteral>(arr);
+                literal->begin = literal_begin;
+                literal->end = ++pos;
+                node = literal;
+                return true;
+            }
+            else if (pos->type == TokenType::Comma)
+            {
+                parsing_key = true;
+                ++pos;
+            }
+            else if (pos->type == TokenType::Colon && parsing_key)
+            {
+                parsing_key = false;
+                ++pos;
+            }
+            else
+            {
+                expected.add(pos, "comma or closing bracket");
+                return false;
+            }
+        }
+
+        ASTPtr literal_node;
+        if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
+            return false;
+
+        Field & fld = literal_node->as<ASTLiteral &>().value;
+        if (parsing_key)
+        {
+            key = String(fld.safeGet<String>());
+        }
+        else
+        {
+            arr[key] = fld;
+        }
+    }
+
+    expected.add(pos, getTokenName(closing_bracket));
+    return false;
+}
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

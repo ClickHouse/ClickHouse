@@ -1722,38 +1722,6 @@ namespace
     };
 
 
-    /// Serializes a ColumnMap.
-    class ProtobufSerializerMap : public ProtobufSerializer
-    {
-    public:
-        explicit ProtobufSerializerMap(std::unique_ptr<ProtobufSerializer> nested_serializer_)
-            : nested_serializer(std::move(nested_serializer_))
-        {
-        }
-
-        void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
-        {
-            assert(num_columns == 1);
-            const auto & column_map = assert_cast<const ColumnMap &>(*columns[0]);
-            ColumnPtr nested_column = column_map.getNestedColumnPtr();
-            nested_serializer->setColumns(&nested_column, 1);
-        }
-
-        void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
-        {
-            assert(num_columns == 1);
-            ColumnPtr column0 = columns[0]->getPtr();
-            setColumns(&column0, 1);
-        }
-
-        void writeRow(size_t row_num) override { nested_serializer->writeRow(row_num); }
-        void readRow(size_t row_num) override { nested_serializer->readRow(row_num); }
-        void insertDefaults(size_t row_num) override { nested_serializer->insertDefaults(row_num); }
-
-    private:
-        const std::unique_ptr<ProtobufSerializer> nested_serializer;
-    };
-
 
     /// Serializes a ColumnLowCardinality.
     class ProtobufSerializerLowCardinality : public ProtobufSerializer
@@ -2796,15 +2764,6 @@ namespace
                     if (!nested_serializer)
                         return nullptr;
                     return std::make_unique<ProtobufSerializerLowCardinality>(std::move(nested_serializer));
-                }
-
-                case TypeIndex::Map:
-                {
-                    const auto & map_data_type = assert_cast<const DataTypeMap &>(*data_type);
-                    auto nested_serializer = buildFieldSerializer(column_name, map_data_type.getNestedType(), field_descriptor, allow_repeat);
-                    if (!nested_serializer)
-                        return nullptr;
-                    return std::make_unique<ProtobufSerializerMap>(std::move(nested_serializer));
                 }
 
                 case TypeIndex::Array:

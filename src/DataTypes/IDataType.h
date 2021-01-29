@@ -94,11 +94,17 @@ public:
 
             DictionaryKeys,
             DictionaryIndexes,
+
+            MapKeys,
+            MapValues,
         };
         Type type;
 
         /// Index of tuple element, starting at 1 or name.
         String tuple_element_name;
+
+        /// Name of map key.
+        String map_key;
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;

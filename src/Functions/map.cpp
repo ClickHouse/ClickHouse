@@ -74,11 +74,11 @@ public:
             keys.emplace_back(arguments[i]);
             values.emplace_back(arguments[i + 1]);
         }
-
-        DataTypes tmp;
-        tmp.emplace_back(getLeastSupertype(keys));
-        tmp.emplace_back(getLeastSupertype(values));
-        return std::make_shared<DataTypeMap>(tmp);
+        DataTypePtr key_type = getLeastSupertype(keys);
+        DataTypePtr value_type = getLeastSupertype(values);
+        if (!isStringOrFixedString(*key_type))
+            throw Exception("Function " + getName() + " key shall be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeMap>(value_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -131,11 +131,7 @@ public:
             offsets->insert(current_offset);
         }
 
-        auto nested_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
-            std::move(offsets));
-
-        return ColumnMap::create(nested_column);
+        return ColumnMap::create(value_type, std::move(keys_data), std::move(values_data), std::move(offsets));
     }
 };
 
@@ -163,140 +159,57 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-
         if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map",
+            throw Exception{"First argument for function " + getName() + " must be a Map but it has type " + arguments[0].type->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        auto key_type = map_type->getKeyType();
-
-        if (!(isNumber(arguments[1].type) && isNumber(key_type))
-            && key_type->getName() != arguments[1].type->getName())
-            throw Exception{"Second argument for function " + getName() + " must be a " + key_type->getName(),
+        if (!isString(arguments[1].type))
+            throw Exception{"Second argument for function " + getName() + " must be a String but it has type " + arguments[1].type->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
         return std::make_shared<DataTypeUInt8>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
         if (!col_map)
             return nullptr;
+        auto res = ColumnVector<UInt8>::create(input_rows_count);
+        typename ColumnVector<UInt8>::Container & vec_to = res->getData();
 
-        const auto & nested_column = col_map->getNestedColumn();
-        const auto & keys_data = col_map->getNestedData().getColumn(0);
-
-        /// Prepare arguments to call arrayIndex for check has the array element.
-        ColumnsWithTypeAndName new_arguments =
+        ColumnPtr col_key = arguments[1].column;
+        if (isColumnConst(*col_key))
         {
+            const String & key = col_key->getDataAt(0).toString();
+            const auto & col_val = col_map->getSubColumn(key);
+            if (!col_val)
+                return res;
+            const auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr()),
-                std::make_shared<DataTypeArray>(result_type),
-                ""
-            },
-            arguments[1]
-        };
-
-        return FunctionArrayIndex<HasAction, NameMapContains>().executeImpl(new_arguments, result_type, input_rows_count);
+                if (!col_val_nullable.isNullAt(i))
+                    vec_to[i] = 0x01;
+            }
+            return res;
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const String & key = col_key->getDataAt(i).toString();
+                const auto & col_val = col_map->getSubColumn(key);
+                if (!col_val)
+                    continue;
+                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
+                if (!col_val_nullable.isNullAt(i))
+                    vec_to[i] = 0x01;
+            }
+            return res;
+        }
     }
 };
 
-
-class FunctionMapKeys : public IFunction
-{
-public:
-    static constexpr auto name = "mapKeys";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapKeys>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-
-        if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        auto key_type = map_type->getKeyType();
-
-        return std::make_shared<DataTypeArray>(key_type);
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
-    {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
-        if (!col_map)
-            return nullptr;
-
-        const auto & nested_column = col_map->getNestedColumn();
-        const auto & keys_data = col_map->getNestedData().getColumn(0);
-
-        return ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr());
-    }
-};
-
-
-class FunctionMapValues : public IFunction
-{
-public:
-    static constexpr auto name = "mapValues";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapValues>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-
-        if (!map_type)
-            throw Exception{"First argument for function " + getName() + " must be a map",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        auto value_type = map_type->getValueType();
-
-        return std::make_shared<DataTypeArray>(value_type);
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
-    {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
-        if (!col_map)
-            return nullptr;
-
-        const auto & nested_column = col_map->getNestedColumn();
-        const auto & values_data = col_map->getNestedData().getColumn(1);
-
-        return ColumnArray::create(values_data.getPtr(), nested_column.getOffsetsPtr());
-    }
-};
 
 }
 
@@ -304,8 +217,6 @@ void registerFunctionsMap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMap>();
     factory.registerFunction<FunctionMapContains>();
-    factory.registerFunction<FunctionMapKeys>();
-    factory.registerFunction<FunctionMapValues>();
 }
 
 }

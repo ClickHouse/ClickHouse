@@ -138,13 +138,17 @@ void writeText(const Tuple & x, WriteBuffer & buf)
 void readBinary(Map & x, ReadBuffer & buf)
 {
     size_t size;
+    UInt8 type;
     DB::readBinary(size, buf);
-
-    for (size_t index = 0; index < size; ++index)
+    if (size != 0)
     {
-        UInt8 type;
         DB::readBinary(type, buf);
-        x.push_back(getBinaryValue(type, buf));
+        for (size_t index = 0; index < size; ++index)
+        {
+            String key;
+            DB::readStringBinary(key, buf);
+            x[key] = getBinaryValue(type, buf);
+        }
     }
 }
 
@@ -152,12 +156,15 @@ void writeBinary(const Map & x, WriteBuffer & buf)
 {
     const size_t size = x.size();
     DB::writeBinary(size, buf);
-
-    for (const auto & elem : x)
+    if (!x.empty())
     {
-        const UInt8 type = elem.getType();
+        const UInt8 type = x.begin()->second.getType();
         DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
+        for (const auto & elem : x)
+        {
+            DB::writeStringBinary(elem.first, buf);
+            Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem.second);
+        }
     }
 }
 
@@ -360,15 +367,22 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return tuple;
     }
 
-    prefix = std::string_view{"Map_("};
+    prefix = std::string_view{"Map_{"};
     if (dump.starts_with(prefix))
     {
         std::string_view tail = dump.substr(prefix.length());
         trimLeft(tail);
         Map map;
-        while (tail != ")")
+        size_t separator;
+        while (tail != "}")
         {
-            size_t separator = tail.find_first_of(",)");
+            separator = tail.find_first_of(":");
+            if (separator == std::string_view::npos)
+                show_error();
+            String key(tail.substr(0, separator));
+            tail.remove_prefix(separator + 1);
+
+            separator = tail.find_first_of(",}");
             if (separator == std::string_view::npos)
                 show_error();
             bool comma = (tail[separator] == ',');
@@ -377,9 +391,9 @@ Field Field::restoreFromDump(const std::string_view & dump_)
             if (comma)
                 tail.remove_prefix(1);
             trimLeft(tail);
-            if (!comma && tail != ")")
+            if (!comma && tail != "}")
                 show_error();
-            map.push_back(Field::restoreFromDump(element));
+            map[key] = Field::restoreFromDump(element);
         }
         return map;
     }

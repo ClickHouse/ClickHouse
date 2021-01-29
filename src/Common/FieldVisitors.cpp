@@ -97,14 +97,16 @@ String FieldVisitorDump::operator() (const Map & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << "Map_(";
+    wb << "Map_{";
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb << ", ";
-        wb << applyVisitor(*this, *it);
+        writeQuoted(it->first, wb);
+        wb << ": ";
+        wb << applyVisitor(*this, it->second);
     }
-    wb << ')';
+    wb << '}';
 
     return wb.str();
 }
@@ -206,14 +208,16 @@ String FieldVisitorToString::operator() (const Map & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << '(';
+    wb << '{';
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb << ", ";
-        wb << applyVisitor(*this, *it);
+        writeQuoted(it->first, wb);
+        wb << ": ";
+        wb << applyVisitor(*this, it->second);
     }
-    wb << ')';
+    wb << '}';
 
     return wb.str();
 }
@@ -270,11 +274,12 @@ void FieldVisitorWriteBinary::operator() (const Map & x, WriteBuffer & buf) cons
     const size_t size = x.size();
     DB::writeBinary(size, buf);
 
-    for (size_t i = 0; i < size; ++i)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
-        const UInt8 type = x[i].getType();
+        writeBinary(it->first, buf);
+        const UInt8 type = it->second.getType();
         writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, x[i]);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, it->second);
     }
 }
 
@@ -346,8 +351,11 @@ void FieldVisitorHash::operator() (const Map & x) const
     hash.update(type);
     hash.update(x.size());
 
-    for (const auto & elem : x)
-        applyVisitor(*this, elem);
+    for (const auto & it : x)
+    {
+        hash.update(it.first);
+        applyVisitor(*this, it.second);
+    }
 }
 
 void FieldVisitorHash::operator() (const Array & x) const

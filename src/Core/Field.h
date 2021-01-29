@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <vector>
+#include <map>
 #include <algorithm>
 #include <type_traits>
 #include <functional>
@@ -51,10 +52,9 @@ struct X : public FieldVector \
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
 
-/// An array with the following structure: [(key1, value1), (key2, value2), ...]
-DEFINE_FIELD_VECTOR(Map);
-
 #undef DEFINE_FIELD_VECTOR
+
+using Map = std::map<String, Field>;
 
 struct AggregateFunctionStateData
 {

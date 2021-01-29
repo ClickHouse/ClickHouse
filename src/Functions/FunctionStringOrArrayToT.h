@@ -94,16 +94,6 @@ public:
 
             return col_res;
         }
-        else if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(column.get()))
-        {
-            auto col_res = ColumnVector<ResultType>::create();
-            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-            vec_res.resize(col_map->size());
-            const auto & col_nested = col_map->getNestedColumn();
-
-            Impl::array(col_nested.getOffsets(), vec_res);
-            return col_res;
-        }
         else
             throw Exception("Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);

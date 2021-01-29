@@ -7,9 +7,8 @@ namespace DB
 {
 
 /** Map data type.
-  * Map is implemented as two arrays of keys and values.
-  * Serialization of type 'Map(K, V)' is similar to serialization.
-  * of 'Array(Tuple(keys K, values V))' or in other words of 'Nested(keys K, valuev V)'.
+  * Map(K, V) is implemented as dynamic subcolumns.
+  * There's a subcolumn for each key, and one special subcolumn '_mapkeys' Array(String).
   */
 class DataTypeMap final : public DataTypeWithSimpleSerialization
 {
@@ -17,14 +16,10 @@ private:
     DataTypePtr key_type;
     DataTypePtr value_type;
 
-    /// 'nested' is an Array(Tuple(key_type, value_type))
-    DataTypePtr nested;
-
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeMap(const DataTypes & elems);
-    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
+    explicit DataTypeMap(const DataTypePtr & value_type_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
@@ -81,7 +76,7 @@ public:
     Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
-    bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
+    bool isComparable() const override { return value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
 
@@ -89,17 +84,14 @@ public:
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }
 
-    const DataTypePtr & getNestedType() const { return nested; }
-
 private:
-    template <typename Writer>
-    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const;
+    template <typename KeyWriter, typename ValWriter>
+    void serializeTextImpl(const IColumn & column, WriteBuffer & ostr, KeyWriter && keyWriter, ValWriter valWriter) const;
 
-    template <typename Reader>
-    void deserializeTextImpl(IColumn & column, ReadBuffer & istr, bool need_safe_get_int_key, Reader && reader) const;
+    template <typename KeyReader, typename ValReader>
+    void deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyReader && keyReader, ValReader && valReader) const;
 
     void assertKeyType() const;
 };
 
 }
-

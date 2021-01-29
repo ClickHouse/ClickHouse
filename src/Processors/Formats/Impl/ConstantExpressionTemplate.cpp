@@ -269,11 +269,8 @@ private:
         else if (field_type == Field::Types::Map)
         {
             info.special_parser.is_map = true;
-
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
-            fillLiteralInfo(nested_types, info);
-            info.type = std::make_shared<DataTypeMap>(nested_types);
+            info.type = std::make_shared<DataTypeMap>(info.type);
         }
         else
             throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",

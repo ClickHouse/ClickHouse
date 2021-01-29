@@ -184,9 +184,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = HashMap<Key, Value, AlternativeHash>;
-        Map map;
-        Map::LookupResult it;
+        using MyMap = HashMap<Key, Value, AlternativeHash>;
+        MyMap map;
+        MyMap::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -216,9 +216,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = HashMap<Key, Value, CRC32HashTest>;
-        Map map;
-        Map::LookupResult it;
+        using MyMap = HashMap<Key, Value, CRC32HashTest>;
+        MyMap map;
+        MyMap::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)

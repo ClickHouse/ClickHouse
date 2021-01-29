@@ -121,20 +121,15 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 
 DataTypePtr FieldToDataType::operator() (const Map & map) const
 {
-    DataTypes key_types;
     DataTypes value_types;
-    key_types.reserve(map.size());
     value_types.reserve(map.size());
 
-    for (const auto & elem : map)
+    for (const auto & it : map)
     {
-        const auto & tuple = elem.safeGet<const Tuple &>();
-        assert(tuple.size() == 2);
-        key_types.push_back(applyVisitor(FieldToDataType(), tuple[0]));
-        value_types.push_back(applyVisitor(FieldToDataType(), tuple[1]));
+        value_types.push_back(applyVisitor(FieldToDataType(), it.second));
     }
 
-    return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
+    return std::make_shared<DataTypeMap>(getLeastSupertype(value_types));
 }
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const
