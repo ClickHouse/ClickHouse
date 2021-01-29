@@ -22,6 +22,7 @@ INSERT INTO select_final SELECT toDate('2020-01-01'), number, '' FROM numbers(2)
 INSERT INTO select_final SELECT toDate('2020-01-01'), number, 'updated' FROM numbers(2);
 
 SELECT max(x) FROM select_final FINAL where string = 'updated' SETTINGS do_not_merge_across_partitions_select_final = 1;
+SELECT arrayUniq(thread_ids) FROM system.query_log ORDER BY event_time LIMIT 1;
 
 DROP TABLE select_final;
 
