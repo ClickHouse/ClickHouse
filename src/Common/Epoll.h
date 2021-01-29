@@ -1,4 +1,5 @@
 #pragma once
+#if defined(OS_LINUX)
 
 #include <sys/epoll.h>
 #include <vector>
@@ -34,6 +35,8 @@ public:
 
     int size() const { return events_count; }
 
+    bool empty() const { return events_count == 0; }
+
     ~Epoll();
 
 private:
@@ -42,3 +45,4 @@ private:
 };
 
 }
+#endif

@@ -56,7 +56,7 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
 private:
-    Packet receivePacketUnlocked(AsyncCallback async_callback = {}) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;

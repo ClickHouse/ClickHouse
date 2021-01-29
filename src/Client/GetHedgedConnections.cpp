@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Client/GetHedgedConnections.h>
 #include <Common/typeid_cast.h>
 
@@ -72,7 +74,7 @@ std::vector<GetHedgedConnections::ReplicaStatePtr> GetHedgedConnections::getMany
                     DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
 
             throw DB::NetException(
-                "Could not connect to " + std::to_string(min_entries) + " replicas. Log: \n\n" + fail_messages + "\n",
+                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
         }
         replicas.push_back(replica);
@@ -89,7 +91,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
     int index;
 
     /// Check if it's the first time.
-    if (epoll.size() == 0 && ready_indexes.size() == 0)
+    if (epoll.empty() && ready_indexes.empty())
     {
         index = 0;
         last_used_index = 0;
@@ -99,7 +101,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
 
     bool is_first = true;
 
-    while (index != -1 || epoll.size() != 0)
+    while (index != -1 || !epoll.empty())
     {
         if (index == -1 && !is_first && non_blocking)
         {
@@ -515,3 +517,4 @@ void removeTimeoutFromReplica(
 }
 
 }
+#endif

@@ -1,4 +1,5 @@
 #pragma once
+#if defined(OS_LINUX)
 
 #include <Client/GetHedgedConnections.h>
 #include <Client/IConnections.h>
@@ -35,7 +36,7 @@ public:
 
     Packet receivePacket() override;
 
-    Packet receivePacketUnlocked(AsyncCallback async_callback = {}) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 
@@ -98,3 +99,4 @@ private:
 };
 
 }
+#endif
