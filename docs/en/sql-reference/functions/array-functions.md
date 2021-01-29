@@ -1421,7 +1421,7 @@ arraySum([func,] arr)
 
 -   The sum of the function values (or the array sum).
 
-Type: for decimal numbers in source array — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [Int64](sql-reference/data-types/int-uint.md), and for numeric signed — [UInt64](sql-reference/data-types/int-uint.md).
+Type: for decimal numbers in source array — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [UInt64](sql-reference/data-types/int-uint.md), and for numeric signed — [Int64](sql-reference/data-types/int-uint.md).
 
 **Examples**
 
