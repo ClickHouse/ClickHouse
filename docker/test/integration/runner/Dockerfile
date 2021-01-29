@@ -62,7 +62,7 @@ RUN python3 -m pip install \
     avro \
     cassandra-driver \
     confluent-kafka \
-    dicttoxml \
+    dict2xml \
     docker \
     docker-compose==1.22.0 \
     grpcio \
