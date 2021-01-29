@@ -92,7 +92,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-//    LOG_DEBUG(log_wrapper.get(), "disconnect");
+     LOG_DEBUG(log_wrapper.get(), "disconnect");
     
     maybe_compressed_out = nullptr;
     in = nullptr;
@@ -106,7 +106,7 @@ void Connection::disconnect()
 
 void Connection::prepare(const ConnectionTimeouts & timeouts)
 {
-//    LOG_DEBUG(log_wrapper.get(), "Connect");
+    LOG_DEBUG(log_wrapper.get(), "Connect");
 
     LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
               default_database.empty() ? "(not specified)" : default_database,
@@ -160,7 +160,7 @@ void Connection::prepare(const ConnectionTimeouts & timeouts)
 
 void Connection::sendHello()
 {
-//    LOG_DEBUG(log_wrapper.get(), "sendHello");
+    LOG_DEBUG(log_wrapper.get(), "sendHello");
 
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -218,7 +218,7 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
-//    LOG_DEBUG(log_wrapper.get(), "receiveHello");
+    LOG_DEBUG(log_wrapper.get(), "receiveHello");
 
     /// Receive hello packet.
     UInt64 packet_type = 0;
@@ -323,7 +323,7 @@ const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeo
 
 void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
-//    LOG_DEBUG(log_wrapper.get(), "forceConnected");
+    LOG_DEBUG(log_wrapper.get(), "forceConnected");
 
     if (!connected)
     {
@@ -351,7 +351,7 @@ void Connection::sendClusterNameAndSalt()
 
 bool Connection::ping()
 {
-//    LOG_DEBUG(log_wrapper.get(), "ping");
+    LOG_DEBUG(log_wrapper.get(), "ping");
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
@@ -404,7 +404,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
 void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
 {
-//    LOG_DEBUG(log_wrapper.get(), "sendTablesStatusRequest");
+    LOG_DEBUG(log_wrapper.get(), "sendTablesStatusRequest");
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -413,7 +413,7 @@ void Connection::sendTablesStatusRequest(const TablesStatusRequest & request)
 
 TablesStatusResponse Connection::receiveTablesStatusResponse()
 {
-//    LOG_DEBUG(log_wrapper.get(), "receiveTablesStatusResponse");
+    LOG_DEBUG(log_wrapper.get(), "receiveTablesStatusResponse");
 
     UInt64 response_type = 0;
     readVarUInt(response_type, *in);
@@ -440,7 +440,7 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-//    LOG_DEBUG(log_wrapper.get(), "sendQuery");
+    LOG_DEBUG(log_wrapper.get(), "sendQuery");
 
     TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
@@ -540,7 +540,7 @@ void Connection::sendCancel()
     if (!out)
         return;
 
-//    LOG_DEBUG(log_wrapper.get(), "sendCancel");
+    LOG_DEBUG(log_wrapper.get(), "sendCancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->next();
@@ -549,7 +549,7 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
-//    LOG_DEBUG(log_wrapper.get(), "sendData");
+    LOG_DEBUG(log_wrapper.get(), "sendData");
 
     if (!block_out)
     {
@@ -581,7 +581,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
-//    LOG_DEBUG(log_wrapper.get(), "sendPreparedData");
+    LOG_DEBUG(log_wrapper.get(), "sendPreparedData");
 
     if (input.eof())
         throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
@@ -602,7 +602,7 @@ void Connection::sendScalarsData(Scalars & data)
     if (data.empty())
         return;
 
-//    LOG_DEBUG(log_wrapper.get(), "sendScalarsData");
+    LOG_DEBUG(log_wrapper.get(), "sendScalarsData");
 
     Stopwatch watch;
     size_t out_bytes = out ? out->count() : 0;
@@ -689,7 +689,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         return;
     }
 
-//    LOG_DEBUG(log_wrapper.get(), "sendExternalTablesData");
+    LOG_DEBUG(log_wrapper.get(), "sendExternalTablesData");
 
     Stopwatch watch;
     size_t out_bytes = out ? out->count() : 0;
@@ -789,7 +789,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
 Packet Connection::receivePacket(AsyncCallback async_callback)
 {
-//    LOG_DEBUG(log_wrapper.get(), "receivePacket");
+    LOG_DEBUG(log_wrapper.get(), "receivePacket");
 
     in->setAsyncCallback(std::move(async_callback));
     SCOPE_EXIT(in->setAsyncCallback({}));
