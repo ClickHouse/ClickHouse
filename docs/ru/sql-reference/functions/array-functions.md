@@ -1178,7 +1178,7 @@ SELECT arrayMin([1, 2, 4]) AS res;
 
 Запрос:
 
-```
+```sql
 SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 ```
 
