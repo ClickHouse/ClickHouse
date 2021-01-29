@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
-    extern const int LOGICAL_ERROR;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
