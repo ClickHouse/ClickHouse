@@ -1579,6 +1579,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 std::make_shared<ExpressionActions>(expressions.filter_info->actions_dag),
                 expressions.filter_info->column_name);
 
+            if (alias_actions)
+            {
+                query_info.prewhere_info_list->back().alias_actions = std::make_shared<ExpressionActions>(alias_actions);
+                alias_actions = nullptr;
+            }
+
             auto & new_filter_info = query_info.prewhere_info_list->front();
 
             new_filter_info.remove_prewhere_column = expressions.filter_info->do_remove_column;
