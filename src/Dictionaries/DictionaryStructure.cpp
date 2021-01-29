@@ -218,7 +218,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     }
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name, const DataTypePtr & type) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name) const
 {
     auto find_iter
         = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
@@ -226,13 +226,18 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attr
     if (find_iter == attributes.end())
         throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
-    const auto & attribute = *find_iter;
+    return *find_iter;
+}
+
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name, const DataTypePtr & type) const
+{
+    const auto & attribute = getAttribute(attribute_name);
 
     if (!areTypesEqual(attribute.type, type))
         throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
             ErrorCodes::TYPE_MISMATCH};
 
-    return *find_iter;
+    return attribute;
 }
 
 std::string DictionaryStructure::getKeyDescription() const
