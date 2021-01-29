@@ -871,7 +871,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                         "Expected " + toString(num_columns) + ", "
                         "got " + toString(result.columns.size()), ErrorCodes::LOGICAL_ERROR);
 
-    size_t prewhere_column_pos;
+    size_t prewhere_column_pos = 0;
 
     {
         /// Restore block from columns list.
