@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct User;
 class Credentials;
 class ExternalAuthenticators;
 
