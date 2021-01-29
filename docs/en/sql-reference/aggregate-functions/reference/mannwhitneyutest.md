@@ -3,34 +3,34 @@ toc_priority: 310
 toc_title: mannWhitneyUTest
 ---
 
-## mannWhitneyUTest {#mannwhitneyutest}
+# mannWhitneyUTest {#mannwhitneyutest}
 
 Applies the Mann-Whitney rank test to independent samples from distinct distributions.
 
 **Syntax**
 
 ``` sql
-mannWhitneyUTest(alternative)(sample_data, sample_index)
+mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
 ```
-Values X and Y are randomly selected from two populations. The null hypothesis is that the probability of X being greater than Y is equal to the probability of Y being greater than X. Also one-sided hypothesis can be tested.
-  
-Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the first sample. Otherwise it belongs to the second sample. 
 
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
+The null hypothesis is that the probability of value X (sampled from the first population) being greater than Y (sampled from the second population) is equal to the probability of Y being greater than X. Also one-sided hypothesis can be tested.
+  
 
 **Parameters**
 
 -   `alternative` — alternative hypothesis. [String](../../../sql-reference/data-types/string.md)
-    -   `"two-sided"`;
+    -   `"two-sided"` (by default);
     -   `"greater"`;
-    -   `"less"`;
-    -   if parameter is not specified then default two sided hypothesis is tested.
+    -   `"less"`.
+-   `continuity_correction` - whether to apply continuity correction in the normal approximation for the p-value. (Correction is applied by default.) [UInt64](../../../sql-reference/data-types/int-uint.md)
 -   `sample_data` — sample data. [Float64](../../../sql-reference/data-types/float.md).
--   `sample_index` — sample index. [Int8](../../../sql-reference/data-types/int-uint.md).
+-   `sample_index` — sample index. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   statistic - calculated statistic;
--   p-value - calculated p-value.
+-   `u_statistic` - calculated statistic;
+-   `p_value` - calculated p-value.
 
 Type: [Float64](../../../sql-reference/data-types/float.md).
 
@@ -53,8 +53,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT mannWhitneyUTest('greater')(sample_data, sample_index)
-FROM mww_ttest;
+SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
 ```
 
 Result:

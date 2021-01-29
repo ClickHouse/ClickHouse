@@ -3,7 +3,7 @@ toc_priority: 300
 toc_title: studentTTest
 ---
 
-## studentTTest {#studentttest}
+# studentTTest {#studentttest}
 
 Applies Student's t-test to samples. 
 This is a test for the null hypothesis that two independent samples have identical average values. Samples may have unequal variances. This test assumes that samples have identical variances.
@@ -19,12 +19,12 @@ Values of both samples are in the `sample_data` column. If `sample_index` equals
 **Parameters**
 
 -   `sample_data` — sample data. [Float64](../../../sql-reference/data-types/float.md).
--   `sample_index` — sample index. [Int8](../../../sql-reference/data-types/int-uint.md).
+-   `sample_index` — sample index. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   t-statistic - calculated statistic;
--   p-value - calculated p-value.
+-   `t_statistic` - calculated statistic;
+-   `p_value` - calculated p-value.
 
 Type: [Float64](../../../sql-reference/data-types/float.md).
 
