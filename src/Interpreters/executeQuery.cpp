@@ -51,7 +51,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
-#include <Interpreters/DNSCacheUpdater.h>
 #include <Common/SensitiveDataMasker.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
