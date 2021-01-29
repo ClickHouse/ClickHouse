@@ -1299,7 +1299,7 @@ Note that the `arrayMin` is a [higher-order function](../../sql-reference/functi
 **Syntax**
 
 ```sql
-arrayMin([func,] arr1)
+arrayMin([func,] arr)
 ```
 
 **Parameters**
@@ -1409,7 +1409,7 @@ Note that the `arraySum` is a [higher-order function](../../sql-reference/functi
 **Syntax**
 
 ```sql
-arraySum([func, ] arr)
+arraySum([func,] arr)
 ```
 
 **Parameters**
@@ -1428,7 +1428,7 @@ Type: matches the array type.
 Query:
 
 ```sql
-SELECT arraySum([2,3]) AS res;
+SELECT arraySum([2, 3]) AS res;
 ```
 
 Result:
