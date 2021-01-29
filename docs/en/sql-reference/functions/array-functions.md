@@ -1311,7 +1311,7 @@ arrayMin([func,] arr)
 
 -   The minimum of function values (or the array minimum). 
 
-Type: matches the array type. 
+Type: matches the array elements type. 
 
 **Examples**
 
@@ -1366,7 +1366,7 @@ arrayMax([func,] arr)
 
 -   The maximum of function values (or the array maximum). 
 
-Type: matches the array type (or type of function result). 
+Type: matches the array elements type. 
 
 **Examples**
 
@@ -1421,7 +1421,7 @@ arraySum([func,] arr)
 
 -   The sum of the function values (or the array sum).
 
-Type: matches the array type. 
+Type: for decimal numbers in source array — [Decimal128](../../sql-reference/data-types/decimal.md), for floating point numbers — [Float64](../../sql-reference/data-types/float.md), for numeric unsigned — [Int64](sql-reference/data-types/int-uint.md), and for numeric signed — [UInt64](sql-reference/data-types/int-uint.md).
 
 **Examples**
 
