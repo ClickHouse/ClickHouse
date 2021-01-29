@@ -95,7 +95,7 @@ void geodistInit()
 
         sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
 
-        sphere_metric_lut[i] = sqr(cosf(latitude));
+        sphere_metric_lut[i] = sqrf(cosf(latitude));
     }
 }
 
