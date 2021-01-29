@@ -21,7 +21,7 @@
 #include "registerDictionaries.h"
 
 #if USE_ODBC
-#    include <Poco/Data/ODBC/Connector.h>
+#    include <Poco/Data/ODBC/Connector.h> // Y_IGNORE
 #endif
 
 namespace DB
