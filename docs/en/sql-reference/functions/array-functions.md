@@ -1292,7 +1292,7 @@ Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference
 
 Returns the minimum of elements in the source array. 
 
-If the `func` function is specified, returns the miminum of elements converted by this function.
+If the `func` function is specified, returns the mininum of elements converted by this function.
 
 Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
@@ -1366,7 +1366,7 @@ arrayMax([func,] arr)
 
 -   The maximum of function values (or the array maximum). 
 
-Type: matches the array type. 
+Type: matches the array type (or type of function result). 
 
 **Examples**
 
@@ -1375,6 +1375,7 @@ Query:
 ```sql
 SELECT arrayMax([1, 2, 4]) AS res;
 ```
+
 Result:
 
 ```text
@@ -1399,7 +1400,7 @@ Result:
 
 ## arraySum {#array-sum}
 
-Returns the sum of the elements in the source array. 
+Returns the sum of elements in the source array. 
 
 If the `func` function is specified, returns the sum of elements converted by this function.
 
@@ -1454,7 +1455,7 @@ Result:
 
 ## arrayAvg {#array-avg}
 
-Returns the average of the elements in the source array. 
+Returns the average of elements in the source array. 
 
 If the `func` function is specified, returns the average of elements converted by this function.
 
@@ -1473,7 +1474,7 @@ arrayAvg([func,] arr)
 
 **Returned value**
 
--   The average of the function values (or the array average).
+-   The average of function values (or the array average).
 
 Type: [Float64](../../sql-reference/data-types/float.md).
 
