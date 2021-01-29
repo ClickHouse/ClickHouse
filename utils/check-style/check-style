@@ -70,7 +70,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     xargs xmllint --noout --nonet
 
 # FIXME: for now only clickhouse-test
-pylint --score=n $ROOT_PATH/tests/clickhouse-test
+pylint --rcfile=$ROOT_PATH/.pylintrc --score=n $ROOT_PATH/tests/clickhouse-test
 
 # Machine translation to Russian is strictly prohibited
 find $ROOT_PATH/docs/ru -name '*.md' |
