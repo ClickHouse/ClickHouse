@@ -231,12 +231,12 @@ public:
 template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped, bool insertion_requires_nullable_column = false>
 class AggregateFunctionNullVariadic final
     : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
+        AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped, insertion_requires_nullable_column>>
 {
 public:
     AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>(std::move(nested_function_), arguments, params),
+            AggregateFunctionNullVariadic<result_is_nullable, serialize_flag, null_is_skipped, insertion_requires_nullable_column>>(std::move(nested_function_), arguments, params),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
