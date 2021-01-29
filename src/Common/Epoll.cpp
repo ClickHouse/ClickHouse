@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
@@ -80,3 +82,4 @@ Epoll::~Epoll()
 }
 
 }
+#endif

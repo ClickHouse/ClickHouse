@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Common/TimerDescriptor.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Core/Settings.h>
@@ -44,10 +46,10 @@ public:
             active_timeouts.clear();
         }
 
-        bool isReady() const { return state == State::READY; };
-        bool isNotReady() const { return state == State::NOT_READY; };
-        bool isEmpty() const { return state == State::EMPTY; };
-        bool isCannotChoose() const { return state == State::CANNOT_CHOOSE; };
+        bool isReady() const { return state == State::READY; }
+        bool isNotReady() const { return state == State::NOT_READY; }
+        bool isEmpty() const { return state == State::EMPTY; }
+        bool isCannotChoose() const { return state == State::CANNOT_CHOOSE; }
     };
 
     using ReplicaStatePtr = std::shared_ptr<ReplicaState>;
@@ -162,3 +164,4 @@ void removeTimeoutsFromReplica(
     std::unordered_map<int, GetHedgedConnections::ReplicaStatePtr> & timeout_fd_to_replica);
 
 }
+#endif

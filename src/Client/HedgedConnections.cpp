@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Client/HedgedConnections.h>
 #include <Interpreters/ClientInfo.h>
 
@@ -142,7 +144,7 @@ void HedgedConnections::sendQuery(
 
         replica->connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
         addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, this->epoll, this->timeout_fd_to_replica, timeouts);
-        addTimeoutToReplica(TimerTypes::RECEIVE_DATA_TIMEOUT, replica, this->epoll, this->timeout_fd_to_replica,  timeouts);
+        addTimeoutToReplica(TimerTypes::RECEIVE_DATA_TIMEOUT, replica, this->epoll, this->timeout_fd_to_replica, timeouts);
     };
 
     for (auto & replicas_with_same_offset : replicas)
@@ -178,12 +180,12 @@ std::string HedgedConnections::dumpAddresses() const
 
 //    LOG_DEBUG(log, "dumpAddresses");
 
-    std::string addresses = "";
+    std::string addresses;
     bool is_first = true;
 
-    for (auto & replicas_with_same_offset : replicas)
+    for (const auto & replicas_with_same_offset : replicas)
     {
-        for (auto & replica : replicas_with_same_offset)
+        for (const auto & replica : replicas_with_same_offset)
         {
             if (replica->isReady())
             {
@@ -226,7 +228,7 @@ Packet HedgedConnections::drain()
     Packet res;
     res.type = Protocol::Server::EndOfStream;
 
-    while (epoll.size() != 0)
+    while (!epoll.empty())
     {
         Packet packet = receivePacketImpl();
         switch (packet.type)
@@ -253,7 +255,7 @@ Packet HedgedConnections::drain()
 Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    return receivePacketUnlocked();
+    return receivePacketUnlocked({});
 }
 
 Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
@@ -263,7 +265,7 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (!hasActiveConnections())
         throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-    if (epoll.size() == 0)
+    if (epoll.empty())
         throw Exception("No pending events in epoll.", ErrorCodes::LOGICAL_ERROR);
 
     return receivePacketImpl(std::move(async_callback));
@@ -445,3 +447,4 @@ void HedgedConnections::finishProcessReplica(ReplicaStatePtr & replica, bool dis
 }
 
 }
+#endif

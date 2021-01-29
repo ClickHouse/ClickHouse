@@ -143,7 +143,7 @@ void MultiplexedConnections::sendQuery(
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -191,7 +191,7 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
