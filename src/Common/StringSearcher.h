@@ -142,7 +142,7 @@ public:
                 continue;
             }
 
-            size_t src_len = UTF8::seqLength(*needle_pos);
+            size_t src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos));
             int c_u32 = UTF8::convert(needle_pos);  /// This assumes valid UTF-8 or zero byte after needle.
 
             if (c_u32 >= 0)
