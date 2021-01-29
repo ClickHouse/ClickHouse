@@ -12,6 +12,7 @@
 #include <Parsers/formatAST.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <Interpreters/Context.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -59,7 +60,14 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
         created = Poco::File(metadata_path).createDirectory();
-        return getImpl(create, metadata_path, context);
+
+        DatabasePtr impl = getImpl(create, metadata_path, context);
+
+        if (impl && context.hasQueryContext() && context.getSettingsRef().log_queries)
+            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+
+        return impl;
+
     }
     catch (...)
     {

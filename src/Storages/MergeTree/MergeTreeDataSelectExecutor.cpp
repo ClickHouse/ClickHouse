@@ -547,7 +547,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
         .max_read_buffer_size = settings.max_read_buffer_size,
-        .save_marks_in_cache = true
+        .save_marks_in_cache = true,
+        .checksum_on_read = settings.checksum_on_read,
     };
 
     /// PREWHERE
@@ -849,21 +850,48 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 namespace
 {
 
+/// Marks are placed whenever threshold on rows or bytes is met.
+/// So we have to return the number of marks on whatever estimate is higher - by rows or by bytes.
 size_t roundRowsOrBytesToMarks(
     size_t rows_setting,
     size_t bytes_setting,
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    /// Marks are placed whenever threshold on rows or bytes is met.
-    /// So we have to return the number of marks on whatever estimate is higher - by rows or by bytes.
-
     size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
 
     if (bytes_granularity == 0)
         return res;
     else
         return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+}
+/// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
+size_t minMarksForConcurrentRead(
+    size_t rows_setting,
+    size_t bytes_setting,
+    size_t rows_granularity,
+    size_t bytes_granularity,
+    size_t max_marks)
+{
+    size_t marks = 1;
+
+    if (rows_setting + rows_granularity <= rows_setting) /// overflow
+        marks = max_marks;
+    else if (rows_setting)
+        marks = (rows_setting + rows_granularity - 1) / rows_granularity;
+
+    if (bytes_granularity == 0)
+        return marks;
+    else
+    {
+        /// Overflow
+        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+            return max_marks;
+        if (bytes_setting)
+            return std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+        else
+            return marks;
+    }
 }
 
 }
@@ -920,11 +948,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         data_settings->index_granularity,
         index_granularity_bytes);
 
-    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
+    const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
         settings.merge_tree_min_rows_for_concurrent_read,
         settings.merge_tree_min_bytes_for_concurrent_read,
         data_settings->index_granularity,
-        index_granularity_bytes);
+        index_granularity_bytes,
+        sum_marks);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
@@ -1051,11 +1080,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         data_settings->index_granularity,
         index_granularity_bytes);
 
-    const size_t min_marks_for_concurrent_read = roundRowsOrBytesToMarks(
+    const size_t min_marks_for_concurrent_read = minMarksForConcurrentRead(
         settings.merge_tree_min_rows_for_concurrent_read,
         settings.merge_tree_min_bytes_for_concurrent_read,
         data_settings->index_granularity,
-        index_granularity_bytes);
+        index_granularity_bytes,
+        sum_marks);
 
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;

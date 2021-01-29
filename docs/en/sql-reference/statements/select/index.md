@@ -25,6 +25,7 @@ SELECT [DISTINCT] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename]
 [FORMAT format]
@@ -263,6 +264,18 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 ┌─sum(plus(i, 1))─┬─sum(k)─┐
 │             222 │    347 │
 └─────────────────┴────────┘
+```
+
+## SETTINGS in SELECT Query {#settings-in-select}
+
+You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
+
+Other ways to make settings see [here](../../../operations/settings/index.md). 
+
+**Example**
+
+``` sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)

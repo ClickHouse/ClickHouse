@@ -77,7 +77,7 @@ def verify_ldap_user_exists(server, username, password):
     with By("searching LDAP database"):
         ldap_node = current().context.cluster.node(server)
         r = ldap_node.command(
-            f"ldapwhoami -H ldap://localhost -D 'cn={username},ou=users,dc=company,dc=com' -w {password}")
+            f"ldapwhoami -H ldap://localhost -D 'cn={user_name},ou=users,dc=company,dc=com' -w {password}")
         assert r.exitcode == 0, error()
 
 def create_ldap_external_user_directory_config_content(server=None, roles=None, **kwargs):
@@ -96,7 +96,10 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
         <user_directories>
             <ldap>
                 <server>my_ldap_server</server>
-                <user_template>my_user</user_template>
+                <roles>
+                    <my_local_role1 />
+                    <my_local_role2 />
+                </roles>
             </ldap>
         </user_directories>
     ```
