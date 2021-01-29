@@ -14,6 +14,8 @@ namespace ErrorCodes
 
 bool LimitReadBuffer::nextImpl()
 {
+    assert(position() >= in->position());
+
     /// Let underlying buffer calculate read bytes in `next()` call.
     in->position() = position();
 
@@ -26,7 +28,10 @@ bool LimitReadBuffer::nextImpl()
     }
 
     if (!in->next())
+    {
+        working_buffer = in->buffer();
         return false;
+    }
 
     working_buffer = in->buffer();
 
@@ -70,7 +75,7 @@ LimitReadBuffer::LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_,
 LimitReadBuffer::~LimitReadBuffer()
 {
     /// Update underlying buffer's position in case when limit wasn't reached.
-    if (working_buffer.size() != 0)
+    if (!working_buffer.empty())
         in->position() = position();
 
     if (owns_in)

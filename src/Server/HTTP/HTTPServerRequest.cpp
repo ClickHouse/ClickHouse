@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/HTTP/ReadHeaders.h>
 
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
@@ -89,84 +90,13 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipToNextLineOrEOF(in);
 
-    readHeaders(in);
+    readHeaders(*this, in);
 
     skipToNextLineOrEOF(in);
 
     setMethod(method);
     setURI(uri);
     setVersion(version);
-}
-
-void HTTPServerRequest::readHeaders(ReadBuffer & in)
-{
-    char ch;
-    std::string name;
-    std::string value;
-
-    name.reserve(32);
-    value.reserve(64);
-
-    int fields = 0;
-
-    while (true)
-    {
-        if (fields > MAX_FIELDS_NUMBER)
-            throw Poco::Net::MessageException("Too many header fields");
-
-        name.clear();
-        value.clear();
-
-        /// Field name
-        while (in.read(ch) && ch != ':' && !Poco::Ascii::isSpace(ch) && name.size() <= MAX_NAME_LENGTH)
-            name += ch;
-
-        if (in.eof())
-            throw Poco::Net::MessageException("Field is invalid");
-
-        if (name.empty())
-        {
-            if (ch == '\r')
-                /// Start of the empty-line delimiter
-                break;
-            if (ch == ':')
-                throw Poco::Net::MessageException("Field name is empty");
-        }
-        else
-        {
-            if (name.size() > MAX_NAME_LENGTH)
-                throw Poco::Net::MessageException("Field name is too long");
-            if (ch != ':')
-                throw Poco::Net::MessageException("Field name is invalid or no colon found");
-        }
-
-        skipWhitespaceIfAny(in, true);
-
-        if (in.eof())
-            throw Poco::Net::MessageException("Field is invalid");
-
-        /// Field value - folded values not supported.
-        while(in.read(ch) && ch != '\r' && ch != '\n' && value.size() <= MAX_VALUE_LENGTH)
-            value += ch;
-
-        if (in.eof())
-            throw Poco::Net::MessageException("Field is invalid");
-
-        if (value.empty())
-            throw Poco::Net::MessageException("Field value is empty");
-
-        if (ch == '\n')
-            throw Poco::Net::MessageException("No CRLF found");
-
-        if (value.size() > MAX_VALUE_LENGTH)
-            throw Poco::Net::MessageException("Field value is too long");
-
-        skipToNextLineOrEOF(in);
-
-        Poco::trimRightInPlace(value);
-        add(name, decodeWord(value));
-        ++fields;
-    }
 }
 
 }

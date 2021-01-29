@@ -50,7 +50,6 @@ private:
     Poco::Net::SocketAddress server_address;
 
     void readRequest(ReadBuffer & in);
-    void readHeaders(ReadBuffer & in);
 };
 
 }

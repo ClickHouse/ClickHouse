@@ -1,22 +1,22 @@
 #pragma once
 
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/NameValueCollection.h>
-#include <Poco/Net/PartHandler.h>
 #include <Poco/Net/PartSource.h>
 #include <Poco/URI.h>
 
 namespace DB
 {
 
-class ReadBuffer;
-
 class HTMLForm : public Poco::Net::NameValueCollection, private boost::noncopyable
 {
 public:
+    class PartHandler;
+
     enum Options
     {
         OPT_USE_CONTENT_LENGTH = 0x01 // don't use Chunked Transfer-Encoding for multipart requests.
@@ -32,7 +32,7 @@ public:
 
 	/// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
-    HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, Poco::Net::PartHandler & handler);
+    HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
 
 	/// Creates a HTMLForm from the given HTTP request.
     /// Uploaded files are silently discarded.
@@ -72,7 +72,7 @@ public:
 
 	/// Reads the form data from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
-    void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, Poco::Net::PartHandler & handler);
+    void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
 
 	/// Reads the form data from the given HTTP request.
     /// Uploaded files are silently discarded.
@@ -86,7 +86,7 @@ public:
 	/// Reads the form data from the given input stream.
     /// The form data read from the stream must be in the encoding specified for the form.
     /// Note that read() does not clear the form before reading the new values.
-    void read(ReadBuffer & in, Poco::Net::PartHandler & handler);
+    void read(ReadBuffer & in, PartHandler & handler);
 
 	/// Reads the URL-encoded form data from the given input stream.
     /// Note that read() does not clear the form before reading the new values.
@@ -95,36 +95,6 @@ public:
 	/// Reads the form data from the given HTTP query string.
     /// Note that read() does not clear the form before reading the new values.
     void read(const std::string & queryString);
-
-	/// Fills out the request object for submitting the form.
-    ///
-    /// If the request method is GET, the encoded form is appended to the
-    /// request URI as query string. Otherwise (the method is
-    /// POST), the form's content type is set to the form's encoding.
-    /// The form's parameters must be written to the
-    /// request body separately, with a call to write.
-    /// If the request's HTTP version is HTTP/1.0:
-    ///    - persistent connections are disabled
-    ///    - the content transfer encoding is set to identity encoding
-    /// Otherwise, if the request's HTTP version is HTTP/1.1:
-    ///    - the request's persistent connection state is left unchanged
-    ///    - the content transfer encoding is set to chunked, unless
-    ///      the OPT_USE_CONTENT_LENGTH is given in options
-    ///
-    /// NOTE: Not using chunked transfer encoding for multipart forms
-    ///       degrades performance, as the request content must be generated
-    ///       twice, first to determine its size, then to actually send it.
-    void prepareSubmit(Poco::Net::HTTPRequest & request, int options = 0);
-
-	/// Calculate the content length for the form.
-    /// May be UNKNOWN_CONTENT_LENGTH if not possible to calculate.
-    std::streamsize calculateContentLength();
-
-	/// Writes the form data to the given output stream, using the specified encoding.
-    void write(std::ostream & ostr, const std::string & boundary);
-
-	/// Writes the form data to the given output stream, using the specified encoding.
-    void write(std::ostream & ostr);
 
 	/// Returns the MIME boundary used for writing multipart form data.
     const std::string & getBoundary() const { return boundary; }
@@ -149,11 +119,12 @@ public:
 
 protected:
     void readUrl(ReadBuffer & in);
-    void readMultipart(ReadBuffer & in, Poco::Net::PartHandler & handler);
-    void writeUrl(std::ostream & ostr);
-    void writeMultipart(std::ostream & ostr);
+    void readMultipart(ReadBuffer & in, PartHandler & handler);
 
 private:
+    /// This buffer provides data line by line to check for boundary line in a convenient way.
+    class MultipartReadBuffer;
+
     enum Limits
     {
         DFL_FIELD_LIMIT = 100,
@@ -169,11 +140,36 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    int field_limit;
+    size_t field_limit;
     size_t value_length_limit;
     std::string encoding;
     std::string boundary;
     PartVec parts;
+};
+
+class HTMLForm::PartHandler
+{
+public:
+    virtual ~PartHandler() = default;
+    virtual void handlePart(const Poco::Net::MessageHeader &, ReadBuffer &) = 0;
+};
+
+class HTMLForm::MultipartReadBuffer : public ReadBuffer
+{
+public:
+    MultipartReadBuffer(ReadBuffer & in, const std::string & boundary);
+
+    /// Returns false if last boundary found.
+    bool skipToNextBoundary();
+
+private:
+    PeekableReadBuffer in;
+    const std::string boundary;
+    bool boundary_hit = true;
+
+    std::string readLine(bool strict = true);
+
+    bool nextImpl() override;
 };
 
 }

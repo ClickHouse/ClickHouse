@@ -56,14 +56,23 @@ public:
     bool next()
     {
         assert(!hasPendingData());
+        assert(position() <= working_buffer.end());
 
         bytes += offset();
         bool res = nextImpl();
         if (!res)
-            working_buffer.resize(0);
+        {
+            working_buffer = Buffer(working_buffer.end(), working_buffer.end());
+            pos = working_buffer.end();
+        }
+        else
+        {
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            nextimpl_working_buffer_offset = 0;
+        }
 
-        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-        nextimpl_working_buffer_offset = 0;
+        assert(position() <= working_buffer.end());
+
         return res;
     }
 
@@ -130,13 +139,25 @@ public:
         tryIgnore(std::numeric_limits<size_t>::max());
     }
 
-    /** Reads a single byte. */
-    bool ALWAYS_INLINE read(char & c)
+    /// Peeks a single byte.
+    bool ALWAYS_INLINE peek(char & c)
     {
         if (eof())
             return false;
-        c = *pos++;
+        c = *pos;
         return true;
+    }
+
+    /// Reads a single byte.
+    bool ALWAYS_INLINE read(char & c)
+    {
+        if (peek(c))
+        {
+            ++pos;
+            return true;
+        }
+
+        return false;
     }
 
     void ALWAYS_INLINE readStrict(char & c)

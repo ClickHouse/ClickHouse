@@ -2,6 +2,7 @@
 
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <Server/HTTP/ReadHeaders.h>
 
 #include <Poco/CountingStream.h>
 #include <Poco/Net/MultipartReader.h>
@@ -18,23 +19,20 @@
 namespace DB
 {
 
+namespace
+{
+
+class NullPartHandler : public HTMLForm::PartHandler
+{
+public:
+    void handlePart(const Poco::Net::MessageHeader &, ReadBuffer &) override {}
+};
+
+}  // namespace
+
 const std::string HTMLForm::ENCODING_URL = "application/x-www-form-urlencoded";
 const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
-
-
-class HTMLFormCountingOutputStream : public Poco::CountingOutputStream
-{
-public:
-    HTMLFormCountingOutputStream() : valid(true) { }
-
-    bool isValid() const { return valid; }
-
-    void setValid(bool v) { valid = v; }
-
-private:
-    bool valid;
-};
 
 
 HTMLForm::HTMLForm() : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH), encoding(ENCODING_URL)
@@ -48,7 +46,7 @@ HTMLForm::HTMLForm(const std::string & encoding_)
 }
 
 
-HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, Poco::Net::PartHandler & handler)
+HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
     : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH)
 {
     load(request, requestBody, handler);
@@ -90,7 +88,7 @@ void HTMLForm::addPart(const std::string & name, Poco::Net::PartSource * source)
 }
 
 
-void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, Poco::Net::PartHandler & handler)
+void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
 {
     clear();
 
@@ -123,20 +121,20 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
 
 void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody)
 {
-    Poco::Net::NullPartHandler nah;
+    NullPartHandler nah;
     load(request, requestBody, nah);
 }
 
 
 void HTMLForm::load(const Poco::Net::HTTPRequest & request)
 {
-    Poco::Net::NullPartHandler nah;
+    NullPartHandler nah;
     EmptyReadBuffer nis;
     load(request, nis, nah);
 }
 
 
-void HTMLForm::read(ReadBuffer & in, Poco::Net::PartHandler & handler)
+void HTMLForm::read(ReadBuffer & in, PartHandler & handler)
 {
     if (encoding == ENCODING_URL)
         readUrl(in);
@@ -158,93 +156,9 @@ void HTMLForm::read(const std::string & queryString)
 }
 
 
-void HTMLForm::prepareSubmit(Poco::Net::HTTPRequest & request, int options)
-{
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
-    {
-        if (encoding == ENCODING_URL)
-        {
-            request.setContentType(encoding);
-            request.setChunkedTransferEncoding(false);
-            Poco::CountingOutputStream ostr;
-            writeUrl(ostr);
-            request.setContentLength(ostr.chars());
-        }
-        else
-        {
-            boundary = Poco::Net::MultipartWriter::createBoundary();
-            std::string ct(encoding);
-            ct.append("; boundary=\"");
-            ct.append(boundary);
-            ct.append("\"");
-            request.setContentType(ct);
-        }
-        if (request.getVersion() == Poco::Net::HTTPMessage::HTTP_1_0)
-        {
-            request.setKeepAlive(false);
-            request.setChunkedTransferEncoding(false);
-        }
-        else if (encoding != ENCODING_URL && (options & OPT_USE_CONTENT_LENGTH) == 0)
-        {
-            request.setChunkedTransferEncoding(true);
-        }
-        if (!request.getChunkedTransferEncoding() && !request.hasContentLength())
-        {
-            request.setContentLength(calculateContentLength());
-        }
-    }
-    else
-    {
-        std::string uri = request.getURI();
-        std::ostringstream ostr;
-        writeUrl(ostr);
-        uri.append("?");
-        uri.append(ostr.str());
-        request.setURI(uri);
-    }
-}
-
-
-std::streamsize HTMLForm::calculateContentLength()
-{
-    if (encoding == ENCODING_MULTIPART && boundary.empty())
-        throw Poco::Net::HTMLFormException("Form must be prepared");
-
-    HTMLFormCountingOutputStream c;
-    write(c);
-    if (c.isValid())
-        return c.chars();
-    else
-        return UNKNOWN_CONTENT_LENGTH;
-}
-
-
-void HTMLForm::write(std::ostream & ostr, const std::string & boundary_)
-{
-    if (encoding == ENCODING_URL)
-    {
-        writeUrl(ostr);
-    }
-    else
-    {
-        boundary = boundary_;
-        writeMultipart(ostr);
-    }
-}
-
-
-void HTMLForm::write(std::ostream & ostr)
-{
-    if (encoding == ENCODING_URL)
-        writeUrl(ostr);
-    else
-        writeMultipart(ostr);
-}
-
-
 void HTMLForm::readUrl(ReadBuffer & in)
 {
-    int fields = 0;
+    size_t fields = 0;
     char ch;
     bool is_first = true;
 
@@ -298,116 +212,60 @@ void HTMLForm::readUrl(ReadBuffer & in)
 }
 
 
-void HTMLForm::readMultipart(ReadBuffer & /* in */, Poco::Net::PartHandler & /* handler */)
+void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 {
-    /// TODO: drop multi-part support for now
+    /// Assume there is always a boundary provided.
+    assert(!boundary.empty());
 
-    // int fields = 0;
-    // Poco::Net::MultipartReader reader(in, boundary);
-    // while (reader.hasNextPart())
-    // {
-    //     if (field_limit > 0 && fields == field_limit)
-    //         throw Poco::Net::HTMLFormException("Too many form fields");
-    //     Poco::Net::MessageHeader header;
-    //     reader.nextPart(header);
-    //     std::string disp;
-    //     NameValueCollection params;
-    //     if (header.has("Content-Disposition"))
-    //     {
-    //         std::string cd = header.get("Content-Disposition");
-    //         Poco::Net::MessageHeader::splitParameters(cd, disp, params);
-    //     }
-    //     if (params.has("filename"))
-    //     {
-    //         handler.handlePart(header, reader.stream());
-    //         // Ensure that the complete part has been read.
-    //         while (reader.stream().good())
-    //             reader.stream().get();
-    //     }
-    //     else
-    //     {
-    //         std::string name = params["name"];
-    //         std::string value;
-    //         std::istream & istr = reader.stream();
-    //         char ch;
-    //         in.read(ch);
-    //         while (!in.eof())
-    //         {
-    //             if (value.size() < value_length_limit)
-    //                 value += ch;
-    //             else
-    //                 throw Poco::Net::HTMLFormException("Field value too long");
-    //             ch = istr.get();
-    //         }
-    //         add(name, value);
-    //     }
-    //     ++fields;
-    // }
-}
+    size_t fields = 0;
+    MultipartReadBuffer in(in_, boundary);
 
+    /// Assume there is at least one part
+    in.skipToNextBoundary();
 
-void HTMLForm::writeUrl(std::ostream & ostr)
-{
-    for (NameValueCollection::ConstIterator it = begin(); it != end(); ++it)
+    /// Read each part until next boundary (or last boundary)
+    while (!in.eof())
     {
-        if (it != begin())
-            ostr << "&";
-        std::string name;
-        Poco::URI::encode(it->first, "!?#/'\",;:$&()[]*+=@", name);
-        std::string value;
-        Poco::URI::encode(it->second, "!?#/'\",;:$&()[]*+=@", value);
-        ostr << name << "=" << value;
-    }
-}
+        if (field_limit && fields > field_limit)
+            throw Poco::Net::HTMLFormException("Too many form fields");
 
-
-void HTMLForm::writeMultipart(std::ostream & ostr)
-{
-    HTMLFormCountingOutputStream * counting_output_stream(dynamic_cast<HTMLFormCountingOutputStream *>(&ostr));
-
-    Poco::Net::MultipartWriter writer(ostr, boundary);
-    for (const auto & it : *this)
-    {
         Poco::Net::MessageHeader header;
-        std::string disp("form-data; name=\"");
-        disp.append(it.first);
-        disp.append("\"");
-        header.set("Content-Disposition", disp);
-        writer.nextPart(header);
-        ostr << it.second;
-    }
-    for (auto & part : parts)
-    {
-        Poco::Net::MessageHeader header(part.source->headers());
-        std::string disp("form-data; name=\"");
-        disp.append(part.name);
-        disp.append("\"");
-        std::string filename = part.source->filename();
-        if (!filename.empty())
+        readHeaders(header, in);
+        skipToNextLineOrEOF(in);
+
+        NameValueCollection params;
+        if (header.has("Content-Disposition"))
         {
-            disp.append("; filename=\"");
-            disp.append(filename);
-            disp.append("\"");
+            std::string unused;
+            Poco::Net::MessageHeader::splitParameters(header.get("Content-Disposition"), unused, params);
         }
-        header.set("Content-Disposition", disp);
-        header.set("Content-Type", part.source->mediaType());
-        writer.nextPart(header);
-        if (counting_output_stream)
-        {
-            // count only, don't move stream position
-            std::streamsize partlen = part.source->getContentLength();
-            if (partlen != Poco::Net::PartSource::UNKNOWN_CONTENT_LENGTH)
-                counting_output_stream->addChars(static_cast<int>(partlen));
-            else
-                counting_output_stream->setValid(false);
-        }
+
+        if (params.has("filename"))
+            handler.handlePart(header, in);
         else
         {
-            Poco::StreamCopier::copyStream(part.source->stream(), ostr);
+            std::string name = params["name"];
+            std::string value;
+            char ch;
+
+            while(in.read(ch))
+            {
+                if (value.size() > value_length_limit)
+                    throw Poco::Net::HTMLFormException("Field value too long");
+                value += ch;
+            }
+
+            add(name, value);
         }
+
+        ++fields;
+
+        /// If we already encountered EOF for the buffer |in|, it's possible that the next symbol is a start of boundary line.
+        /// In this case reading the boundary line will reset the EOF state, potentially breaking invariant of EOF idempotency -
+        /// if there is such invariant in the first place.
+        if (!in.skipToNextBoundary())
+            break;
     }
-    writer.close();
-    boundary = writer.boundary();
 }
 
 
@@ -424,6 +282,100 @@ void HTMLForm::setValueLengthLimit(int limit)
     poco_assert(limit >= 0);
 
     value_length_limit = limit;
+}
+
+
+HTMLForm::MultipartReadBuffer::MultipartReadBuffer(ReadBuffer & in_, const std::string & boundary_)
+    : ReadBuffer(nullptr, 0), in(in_), boundary("--" + boundary_)
+{
+    /// For consistency with |nextImpl()|
+    position() = in.position();
+}
+
+bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
+{
+    assert(working_buffer.empty() || eof());
+    assert(boundary_hit);
+
+    boundary_hit = false;
+
+    while (!in.eof())
+    {
+        auto line = readLine();
+        if (startsWith(line, boundary))
+        {
+            set(in.position(), 0);
+            next();  /// We need to restrict our buffer to size of next available line.
+            return !startsWith(line, boundary + "--");
+        }
+    }
+
+    throw Poco::Net::HTMLFormException("No boundary line found");
+}
+
+std::string HTMLForm::MultipartReadBuffer::readLine(bool strict)
+{
+    std::string line;
+    char ch;
+
+    while (in.read(ch) && ch != '\r' && ch != '\n')
+        line += ch;
+
+    if (in.eof())
+    {
+        if (strict)
+            throw Poco::Net::HTMLFormException("Unexpected end of message");
+        return line;
+    }
+
+    line += ch;
+
+    if (ch == '\r')
+    {
+        if (!in.read(ch) || ch != '\n')
+            throw Poco::Net::HTMLFormException("No CRLF found");
+        else
+            line += ch;
+    }
+
+    return line;
+}
+
+bool HTMLForm::MultipartReadBuffer::nextImpl()
+{
+    if (boundary_hit)
+        return false;
+
+    assert(position() >= in.position());
+
+    in.position() = position();
+
+    /// We expect to start from the first symbol after EOL, so we can put checkpoint
+    /// and safely try to read til the next EOL and check for boundary.
+    in.setCheckpoint();
+
+    /// FIXME: there is an extra copy because we cannot traverse PeekableBuffer from checkpoint to position()
+    ///        since it may store different data parts in different sub-buffers,
+    ///        anyway calling makeContinuousMemoryFromCheckpointToPos() will also make an extra copy.
+    std::string line = readLine(false);
+
+    /// According to RFC2046 the preceding CRLF is a part of boundary line.
+    if (line == "\r\n")
+    {
+        line = readLine(false);
+        boundary_hit = startsWith(line, boundary);
+        if (!boundary_hit) line = "\r\n";
+    }
+    else
+        boundary_hit = startsWith(line, boundary);
+
+    in.rollbackToCheckpoint(true);
+
+    /// Rolling back to checkpoint may change underlying buffers.
+    /// Limit readable data to a single line.
+    BufferBase::set(in.position(), line.size(), 0);
+
+    return !boundary_hit && !line.empty();
 }
 
 }
