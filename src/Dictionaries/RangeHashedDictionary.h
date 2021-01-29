@@ -159,6 +159,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType>
+    ColumnUInt8::Ptr hasKeysImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        const PaddedPODArray<RangeStorageType> & dates) const;
+
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
