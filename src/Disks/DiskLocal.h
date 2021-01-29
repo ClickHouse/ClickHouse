@@ -108,9 +108,9 @@ public:
 
     const String getType() const override { return "local"; }
 
-    void updateFromConfig(const Poco::Util::AbstractConfiguration & config, 
+    void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config, 
                         const String & config_prefix,
-                        const Context & context);
+                        const Context & context) override;
 
 private:
     bool tryReserve(UInt64 bytes);

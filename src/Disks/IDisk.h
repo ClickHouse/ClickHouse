@@ -12,6 +12,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
 #include <Poco/Timestamp.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace CurrentMetrics
@@ -30,6 +31,7 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+class Context;
 
 /**
  * Mode of opening a file for write.
@@ -194,6 +196,11 @@ public:
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Reload config if config changed
+    virtual void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & /* config */, 
+                        const String & /* config_prefix */,
+                        const Context & /* context */) { }
 
 private:
     std::unique_ptr<Executor> executor;

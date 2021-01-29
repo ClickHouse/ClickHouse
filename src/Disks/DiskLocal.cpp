@@ -391,17 +391,17 @@ void DiskLocal::sync(int fd) const
         throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
 }
 
-void DiskLocal::updateFromConfig(const Poco::Util::AbstractConfiguration & config, 
+void DiskLocal::updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config, 
                         const String & config_prefix,
                         const Context & context)
 {
     String new_disk_path;
     UInt64 new_keep_free_space_bytes;
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
+
     if (disk_path != new_disk_path)
         throw Exception("Disk path can't update from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-
-    // Config of DiskLocal has been updated
+        
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
 }

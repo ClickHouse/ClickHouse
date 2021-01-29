@@ -77,9 +77,9 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
             /// TODO: Ideally ClickHouse shall complain if disk has changed, but
             /// implementing that may appear as not trivial task.
-            auto disk = std::static_pointer_cast<DiskLocal>(result->getDisksMap().find(disk_name)->second);
-            if (disk)
-                disk->updateFromConfig(config, disk_config_prefix, context);
+
+            /// TODO: Implete updateFromConfigIfChanged for DiskS3
+            result->getDisksMap().find(disk_name)->second->updateFromConfigIfChanged(config, disk_config_prefix, context);
         }
     }
 
