@@ -3,8 +3,6 @@
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <DataTypes/DataTypesNumber.h>
-
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 
 #include <Parsers/ASTSelectQuery.h>
@@ -367,7 +365,6 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
-        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features);

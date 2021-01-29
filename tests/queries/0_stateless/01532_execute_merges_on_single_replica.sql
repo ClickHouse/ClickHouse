@@ -10,8 +10,8 @@ SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
 SET optimize_throw_if_noop=1;
 
-SELECT '****************************';
-SELECT '*** emulate normal feature operation - merges are distributed between replicas';
+SELECT '############################';
+SELECT '### emulate normal feature operation - merges are distributed between replicas';
 
 /* all_0_0_1 - will be merged by r1, and downloaded by r2 */
 OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
@@ -29,8 +29,8 @@ SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 OPTIMIZE TABLE execute_on_single_replica_r2 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 
-SELECT '****************************';
-SELECT '*** emulate execute_merges_on_single_replica_time_threshold timeout';
+SELECT '############################';
+SELECT '### emulate execute_merges_on_single_replica_time_threshold timeout';
 
 SYSTEM STOP REPLICATION QUEUES execute_on_single_replica_r2;
 
@@ -40,8 +40,8 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL SETTINGS replication_alter_par
 /* if we will check immediately we can find the log entry unchecked */
 SELECT * FROM numbers(4) where sleepEachRow(1);
 
-SELECT '****************************';
-SELECT '*** timeout not exceeded, r1 waits for r2';
+SELECT '############################';
+SELECT '### timeout not exceeded, r1 waits for r2';
 
 /* we can now check that r1 waits for r2 */
 SELECT
@@ -59,8 +59,8 @@ FORMAT Vertical;
 /* we have execute_merges_on_single_replica_time_threshold exceeded */
 SELECT * FROM numbers(10) where sleepEachRow(1);
 
-SELECT '****************************';
-SELECT '*** timeout exceeded, r1 failed to get the merged part from r2 and did the merge by its own';
+SELECT '############################';
+SELECT '### timeout exceeded, r1 failed to get the merged part from r2 and did the merge by its own';
 
 SELECT
     table,
@@ -77,8 +77,8 @@ FORMAT Vertical;
 SYSTEM START REPLICATION QUEUES execute_on_single_replica_r2;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SELECT '****************************';
-SELECT '*** queue unfreeze';
+SELECT '############################';
+SELECT '### queue unfreeze';
 
 SELECT
     table,
@@ -92,8 +92,8 @@ AND database = currentDatabase()
 ORDER BY table
 FORMAT Vertical;
 
-SELECT '****************************';
-SELECT '*** disable the feature';
+SELECT '############################';
+SELECT '### disable the feature';
 
 ALTER TABLE execute_on_single_replica_r1 MODIFY SETTING execute_merges_on_single_replica_time_threshold=0;
 ALTER TABLE execute_on_single_replica_r2 MODIFY SETTING execute_merges_on_single_replica_time_threshold=0;
@@ -108,8 +108,8 @@ SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
 SYSTEM FLUSH LOGS;
 
-SELECT '****************************';
-SELECT '*** part_log';
+SELECT '############################';
+SELECT '### part_log';
 SELECT
     part_name,
     arraySort(groupArrayIf(table, event_type = 'MergeParts')) AS mergers,

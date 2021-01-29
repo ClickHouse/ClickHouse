@@ -1,1 +1,0 @@
-SELECT HEX(10);

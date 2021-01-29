@@ -403,21 +403,6 @@ size_t ColumnArray::byteSize() const
 }
 
 
-size_t ColumnArray::byteSizeAt(size_t n) const
-{
-    const auto & offsets_data = getOffsets();
-
-    size_t pos = offsets_data[n - 1];
-    size_t end = offsets_data[n];
-
-    size_t res = sizeof(offsets_data[0]);
-    for (; pos < end; ++pos)
-        res += getData().byteSizeAt(pos);
-
-    return res;
-}
-
-
 size_t ColumnArray::allocatedBytes() const
 {
     return getData().allocatedBytes() + getOffsets().allocated_bytes();

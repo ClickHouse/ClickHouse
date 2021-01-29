@@ -43,7 +43,6 @@ struct JobAndPool;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 namespace ErrorCodes
 {
@@ -357,8 +356,7 @@ public:
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
-    bool supportsSubcolumns() const override { return true; }
-
+    bool supportsSettings() const override { return true; }
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -424,6 +422,7 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
+    void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -767,7 +766,7 @@ protected:
 
     static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
     {
-        return {part->getState(), part->info};
+        return {part->state, part->info};
     }
 
     using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
@@ -813,7 +812,7 @@ protected:
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
-        return [state] (const DataPartPtr & part) { part->setState(state); };
+        return [state] (const DataPartPtr & part) { part->state = state; };
     }
 
     void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
@@ -906,7 +905,7 @@ protected:
     /// Used to receive AlterConversions for part and apply them on fly. This
     /// method has different implementations for replicated and non replicated
     /// MergeTree because they store mutations in different way.
-    virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    virtual MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
@@ -946,18 +945,6 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key{};
-
-    void addPartContributionToDataVolume(const DataPartPtr & part);
-    void removePartContributionToDataVolume(const DataPartPtr & part);
-
-    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
-    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
-
-    void setDataVolume(size_t bytes, size_t rows, size_t parts);
-
-    std::atomic<size_t> total_active_size_bytes = 0;
-    std::atomic<size_t> total_active_size_rows = 0;
-    std::atomic<size_t> total_active_size_parts = 0;
 };
 
 }

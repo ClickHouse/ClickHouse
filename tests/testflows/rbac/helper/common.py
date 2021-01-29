@@ -149,16 +149,11 @@ def grant_select_on_table(node, grants, target_name, *table_names):
     try:
         tables_granted = []
         for table_number in range(len(table_names)):
-
             if(grants & tables[f"table{table_number}"]):
-
                 with When(f"I grant select privilege on {table_names[table_number]}"):
                     node.query(f"GRANT SELECT ON {table_names[table_number]} TO {target_name}")
-
                     tables_granted.append(f'{table_names[table_number]}')
-
         yield (', ').join(tables_granted)
-
     finally:
         for table_number in range(len(table_names)):
             with Finally(f"I revoke the select privilege on {table_names[table_number]}"):

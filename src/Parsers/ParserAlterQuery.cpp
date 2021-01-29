@@ -588,6 +588,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else
             return false;
+
     }
 
     if (command->col_decl)
@@ -600,14 +601,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->order_by);
     if (command->sample_by)
         command->children.push_back(command->sample_by);
-    if (command->index_decl)
-        command->children.push_back(command->index_decl);
-    if (command->index)
-        command->children.push_back(command->index);
-    if (command->constraint_decl)
-        command->children.push_back(command->constraint_decl);
-    if (command->constraint)
-        command->children.push_back(command->constraint);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)
@@ -620,10 +613,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->ttl);
     if (command->settings_changes)
         command->children.push_back(command->settings_changes);
-    if (command->select)
-        command->children.push_back(command->select);
-    if (command->rename_to)
-        command->children.push_back(command->rename_to);
 
     return true;
 }
@@ -631,7 +620,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command_list = std::make_shared<ASTExpressionList>();
+    auto command_list = std::make_shared<ASTAlterCommandList>();
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
@@ -643,7 +632,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!p_command.parse(pos, command, expected))
             return false;
 
-        command_list->children.push_back(command);
+        command_list->add(command);
     }
     while (s_comma.ignore(pos, expected));
 
@@ -667,13 +656,12 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_equals.ignore(pos, expected))
         return false;
 
-    ASTPtr expression;
-    if (!p_expression.parse(pos, expression, expected))
+    if (!p_expression.parse(pos, assignment->expression, expected))
         return false;
 
     tryGetIdentifierNameInto(column, assignment->column_name);
-    if (expression)
-        assignment->children.push_back(expression);
+    if (assignment->expression)
+        assignment->children.push_back(assignment->expression);
 
     return true;
 }

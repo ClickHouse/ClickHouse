@@ -344,9 +344,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             }
             catch (Exception & e)
             {
-                String dictionary_name = config.getString(".dictionary.name", "");
-                e.addMessage("While parsing null_value for attribute with name " + name
-                    + " in dictionary " + dictionary_name);
+                e.addMessage("error parsing null_value");
                 throw;
             }
         }
