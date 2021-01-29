@@ -1490,7 +1490,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
+    /// Account TTL merge
+    if (isTTLMergeType(future_merged_part.merge_type))
+        global_context.getMergeList().bookMergeWithTTL();
+
     auto table_id = getStorageID();
+    /// Add merge to list
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
 
     Transaction transaction(*this);

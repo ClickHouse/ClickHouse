@@ -21,13 +21,16 @@ function clone
 
     git init
     git remote add origin https://github.com/ClickHouse/ClickHouse
-    git fetch --depth=100 origin "$SHA_TO_TEST"
-    git fetch --depth=100 origin master # Used to obtain the list of modified or added tests
+
+    # Network is unreliable. GitHub neither.
+    for _ in {1..100}; do git fetch --depth=100 origin "$SHA_TO_TEST" && break; sleep 1; done
+    # Used to obtain the list of modified or added tests
+    for _ in {1..100}; do git fetch --depth=100 origin master && break; sleep 1; done
 
     # If not master, try to fetch pull/.../{head,merge}
     if [ "$PR_TO_TEST" != "0" ]
     then
-        git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*"
+        for _ in {1..100}; do git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*" && break; sleep 1; done
     fi
 
     git checkout "$SHA_TO_TEST"
