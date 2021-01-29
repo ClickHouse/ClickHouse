@@ -135,17 +135,19 @@ DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::Abstrac
 
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
-    const auto has_id = config.has(config_prefix + ".id");
-    const auto has_key = config.has(config_prefix + ".key");
+    std::string structure_prefix = config_prefix + ".structure";
+
+    const auto has_id = config.has(structure_prefix + ".id");
+    const auto has_key = config.has(structure_prefix + ".key");
 
     if (has_key && has_id)
         throw Exception{"Only one of 'id' and 'key' should be specified", ErrorCodes::BAD_ARGUMENTS};
 
     if (has_id)
-        id.emplace(config, config_prefix + ".id");
+        id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, config_prefix + ".key", false, false));
+        key.emplace(getAttributes(config, structure_prefix + ".key", false, false));
         if (key->empty())
             throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
     }
@@ -158,11 +160,11 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
         const char * range_default_type = "Date";
-        if (config.has(config_prefix + ".range_min"))
-            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
+        if (config.has(structure_prefix + ".range_min"))
+            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
 
-        if (config.has(config_prefix + ".range_max"))
-            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_max", range_default_type));
+        if (config.has(structure_prefix + ".range_max"))
+            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
 
         if (range_min.has_value() != range_max.has_value())
         {
@@ -194,10 +196,13 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
             has_expressions = true;
     }
 
-    attributes = getAttributes(config, config_prefix);
+    attributes = getAttributes(config, structure_prefix);
 
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
+
+    if (config.getBool(config_prefix + ".layout.ip_trie.access_to_key_from_attributes", false))
+        access_to_key_from_attributes = true;
 }
 
 
@@ -222,14 +227,20 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String & att
 {
     auto find_iter
         = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+    if (find_iter != attributes.end())
+        return *find_iter;
 
-    if (find_iter == attributes.end())
-        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    if (key && access_to_key_from_attributes)
+    {
+        find_iter = std::find_if(key->begin(), key->end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+        if (find_iter != key->end())
+            return *find_iter;
+    }
 
-    return *find_iter;
+    throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name, const DataTypePtr & type) const
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
 {
     const auto & attribute = getAttribute(attribute_name);
 
