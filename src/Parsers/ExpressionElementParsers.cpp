@@ -1304,7 +1304,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     ++pos;
 
     // only used when Collection is map
-    ASTPtr last_literal_node; 
+    ASTPtr last_literal_node;
     size_t count = 0;
     while (pos.isValid())
     {
@@ -1344,9 +1344,9 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
             return false;
 
-        if (std::is_same_v<Collection, Map>) 
+        if (std::is_same_v<Collection, Map>)
         {
-            if (count % 2) 
+            if (count % 2)
             {
                 Tuple t;
                 const auto & last_value = last_literal_node->as<ASTLiteral &>().value;
@@ -1356,7 +1356,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                 arr.push_back(std::move(t));
             }
         }
-        else 
+        else
             arr.push_back(literal_node->as<ASTLiteral &>().value);
 
         last_literal_node = literal_node;

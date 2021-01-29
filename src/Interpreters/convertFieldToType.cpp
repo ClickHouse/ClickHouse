@@ -298,7 +298,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             auto type_arr = typeid_cast<std::shared_ptr<const DataTypeArray>>(type_map->getNestedType());
             const auto & element_type = *(type_arr->getNestedType());
             Map res(src_map_size);
-            for (size_t i = 0; i < src_map_size; ++i) 
+            for (size_t i = 0; i < src_map_size; ++i)
                 res[i] = convertFieldToType(src_map[i], element_type);
 
             return Field(res);
