@@ -51,6 +51,8 @@ public:
     /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
 
+    void initialize(Poco::Util::Application & self, String current_path);
+
     void reloadConfiguration();
 
     /// Process command line parameters
@@ -124,6 +126,16 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
+    void setCurrentDir(String path)
+    {
+        current_dir = path;
+    }
+
+    String getCurrentDir()
+    {
+        return current_dir;
+    }
+
 protected:
     virtual void logRevision() const;
 
@@ -177,6 +189,8 @@ protected:
 
     bool should_setup_watchdog = false;
     char * argv0 = nullptr;
+private:
+    String current_dir;
 };
 
 

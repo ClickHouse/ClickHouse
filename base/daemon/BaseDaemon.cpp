@@ -589,8 +589,8 @@ void BaseDaemon::initialize(Application & self)
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
         std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
-        if (0 != chdir(path.c_str()))
-            throw Poco::Exception("Cannot change directory to " + path);
+        if (0 != chdir(current_dir.c_str()))
+            throw Poco::Exception("Cannot change directory to " + current_dir);
     }
 
     reloadConfiguration();
@@ -635,8 +635,12 @@ void BaseDaemon::initialize(Application & self)
     }
 
     std::string log_path = config().getString("logger.log", "");
+    if (std::filesystem::path(log_path).is_relative())
+        log_path = getCurrentDir() + "/" + log_path;
+
+    std::string log_dir;
     if (!log_path.empty())
-        log_path = Poco::Path(log_path).setFileName("").toString();
+        log_dir = Poco::Path(log_path).setFileName("").toString();
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -644,9 +648,10 @@ void BaseDaemon::initialize(Application & self)
       * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
       * If logger.stderr is specified then stderr will be forcibly redirected to that file.
       */
-    if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
+
+    if ((!log_dir.empty() && is_daemon) || config().has("logger.stderr"))
     {
-        std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
+        std::string stderr_path = config().getString("logger.stderr", log_dir + "/stderr.log");
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
@@ -654,15 +659,15 @@ void BaseDaemon::initialize(Application & self)
         setbuf(stderr, nullptr);
     }
 
-    if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
+    if ((!log_dir.empty() && is_daemon) || config().has("logger.stdout"))
     {
-        std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
+        std::string stdout_path = config().getString("logger.stdout", log_dir + "/stdout.log");
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
     }
 
     /// Change path for logging.
-    if (!log_path.empty())
+    if (!log_dir.empty())
     {
         std::string path = createDirectory(log_path);
         if (is_daemon
@@ -718,6 +723,12 @@ void BaseDaemon::initialize(Application & self)
     {
         graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
     }
+}
+
+void BaseDaemon::initialize(Application & self, String path)
+{
+    setCurrentDir(path);
+    initialize(self);
 }
 
 

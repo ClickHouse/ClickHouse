@@ -114,6 +114,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 
     try
     {
+        app.setCurrentDir(std::filesystem::current_path());
         return app.run(argc, argv);
     }
     catch (...)
@@ -721,6 +722,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
     /// Initialize access storages.
+    if (std::filesystem::path(config_path).is_relative())
+        config_path = getCurrentDir() + "/" + config_path;
     access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
