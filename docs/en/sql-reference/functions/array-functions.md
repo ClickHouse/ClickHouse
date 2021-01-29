@@ -1331,7 +1331,7 @@ Result:
 
 Query:
 
-```
+```sql
 SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res;
 ```
 
