@@ -1268,7 +1268,7 @@ arraySum([func,] arr)
 
 -   Сумма значений функции (или сумма элементов массива).
 
-Тип: для Decimal чисел в исходном массиве — [Decimal128](../../sql-reference/data-types/decimal.md), для чисел с плавающей точкой — [Float64](../../sql-reference/data-types/float.md), для беззнаковых целых чисел — [UInt64](sql-reference/data-types/int-uint.md), для целых чисел со знаком — [Int64](sql-reference/data-types/int-uint.md).
+Тип: для Decimal чисел в исходном массиве — [Decimal128](../../sql-reference/data-types/decimal.md), для чисел с плавающей точкой — [Float64](../../sql-reference/data-types/float.md), для беззнаковых целых чисел — [UInt64](../../sql-reference/data-types/int-uint.md), для целых чисел со знаком — [Int64](../../sql-reference/data-types/int-uint.md).
 
 **Примеры**
 
