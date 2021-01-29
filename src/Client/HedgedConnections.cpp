@@ -59,7 +59,7 @@ void HedgedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "sendScalarsData");
+    LOG_DEBUG(log, "sendScalarsData");
 
     if (!sent_query)
         throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
@@ -78,7 +78,7 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "sendExternalTablesData");
+    LOG_DEBUG(log, "sendExternalTablesData");
 
     if (!sent_query)
         throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
@@ -106,7 +106,7 @@ void HedgedConnections::sendQuery(
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "sendQuery");
+    LOG_DEBUG(log, "sendQuery");
 
     if (sent_query)
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
@@ -159,7 +159,7 @@ void HedgedConnections::disconnect()
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "disconnect");
+    LOG_DEBUG(log, "disconnect");
 
     for (auto & replicas_with_same_offset : replicas)
         for (auto & replica : replicas_with_same_offset)
@@ -178,7 +178,7 @@ std::string HedgedConnections::dumpAddresses() const
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "dumpAddresses");
+    LOG_DEBUG(log, "dumpAddresses");
 
     std::string addresses;
     bool is_first = true;
@@ -202,7 +202,7 @@ void HedgedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
 
-//    LOG_DEBUG(log, "sendCancel");
+    LOG_DEBUG(log, "sendCancel");
 
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
@@ -223,7 +223,7 @@ Packet HedgedConnections::drain()
     if (!cancelled)
         throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
-//    LOG_DEBUG(log, "drain");
+    LOG_DEBUG(log, "drain");
 
     Packet res;
     res.type = Protocol::Server::EndOfStream;
@@ -273,7 +273,7 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 
 Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
 {
-//    LOG_DEBUG(log, "sreceivePacketImpl");
+    LOG_DEBUG(log, "sreceivePacketImpl");
 
     int event_fd;
     ReplicaStatePtr replica = nullptr;
@@ -285,14 +285,14 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
 
         if (fd_to_replica.find(event_fd) != fd_to_replica.end())
         {
-//            LOG_DEBUG(log, "event is replica");
+            LOG_DEBUG(log, "event is replica");
             replica = fd_to_replica[event_fd];
             packet = receivePacketFromReplica(replica, async_callback);
             finish = true;
         }
         else if (timeout_fd_to_replica.find(event_fd) != timeout_fd_to_replica.end())
         {
-//            LOG_DEBUG(log, "event is timeout");
+            LOG_DEBUG(log, "event is timeout");
             replica = timeout_fd_to_replica[event_fd];
             processTimeoutEvent(replica, replica->active_timeouts[event_fd].get());
         }
@@ -316,7 +316,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 
 Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr & replica, AsyncCallback async_callback)
 {
-//    LOG_DEBUG(log, "sreceivePacketFromReplica");
+    LOG_DEBUG(log, "sreceivePacketFromReplica");
     Packet packet = replica->connection->receivePacket(std::move(async_callback));
     switch (packet.type)
     {
@@ -352,7 +352,7 @@ void HedgedConnections::processReceiveData(ReplicaStatePtr & replica)
     /// When we receive first packet of data from any replica, we continue working with this replica
     /// and stop working with other replicas (if there are other replicas).
 
-//    LOG_DEBUG(log, "processReceiveData");
+    LOG_DEBUG(log, "processReceiveData");
 
     offsets_with_received_data.insert(replica->parallel_replica_offset);
 
@@ -397,7 +397,7 @@ void HedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDesc
 
 void HedgedConnections::tryGetNewReplica()
 {
-//    LOG_DEBUG(log, "tryGetNewReplica");
+    LOG_DEBUG(log, "tryGetNewReplica");
 
     ReplicaStatePtr new_replica = get_hedged_connections.getNextConnection(/*non_blocking*/ true);
 
@@ -408,7 +408,7 @@ void HedgedConnections::tryGetNewReplica()
 
     if (new_replica->isReady())
     {
-//        LOG_DEBUG(log, "processNewReadyReplica");
+        LOG_DEBUG(log, "processNewReadyReplica");
         new_replica->parallel_replica_offset = offsets_queue.front();
         offsets_queue.pop();
         replicas[new_replica->parallel_replica_offset].push_back(new_replica);
@@ -432,7 +432,7 @@ void HedgedConnections::tryGetNewReplica()
 
 void HedgedConnections::finishProcessReplica(ReplicaStatePtr & replica, bool disconnect)
 {
-//    LOG_DEBUG(log, "finishProcessReplica");
+    LOG_DEBUG(log, "finishProcessReplica");
 
     removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
     epoll.remove(replica->fd);

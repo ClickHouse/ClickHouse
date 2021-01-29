@@ -86,7 +86,7 @@ std::vector<GetHedgedConnections::ReplicaStatePtr> GetHedgedConnections::getMany
 
 GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bool non_blocking)
 {
-//    LOG_DEBUG(log, "getNextConnection");
+    LOG_DEBUG(log, "getNextConnection");
     ReplicaStatePtr replica = createNewReplica();
 
     int index;
@@ -161,7 +161,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
 
 void GetHedgedConnections::stopChoosingReplicas()
 {
-//    LOG_DEBUG(log, "stopChoosingReplicas");
+    LOG_DEBUG(log, "stopChoosingReplicas");
     for (auto & [fd, replica] : fd_to_replica)
     {
         removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
@@ -195,7 +195,7 @@ int GetHedgedConnections::getNextIndex()
             return -1;
     }
 
-//    LOG_DEBUG(log, "get next index: {}", next_index);
+    LOG_DEBUG(log, "get next index: {}", next_index);
 
     last_used_index = next_index;
     return next_index;
@@ -203,7 +203,7 @@ int GetHedgedConnections::getNextIndex()
 
 GetHedgedConnections::Action GetHedgedConnections::startTryGetConnection(int index, ReplicaStatePtr & replica)
 {
-//    LOG_DEBUG(log, "start try get connection with {} replica", index);
+    LOG_DEBUG(log, "start try get connection with {} replica", index);
     TryGetConnection & try_get_connection = try_get_connections[index];
 
     replica->state = State::NOT_READY;
@@ -240,14 +240,14 @@ GetHedgedConnections::Action GetHedgedConnections::startTryGetConnection(int ind
 GetHedgedConnections::Action
 GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bool remove_from_epoll)
 {
-//    LOG_DEBUG(log, "process get connection stage for {} replica", replica->index);
+    LOG_DEBUG(log, "process get connection stage for {} replica", replica->index);
     TryGetConnection & try_get_connection = try_get_connections[replica->index];
 
     if (try_get_connection.stage == TryGetConnection::Stage::FINISHED)
     {
         indexes_in_process.erase(replica->index);
 
-//        LOG_DEBUG(log, "stage: FINISHED");
+        LOG_DEBUG(log, "stage: FINISHED");
         ++entries_count;
 
         if (remove_from_epoll)
@@ -258,11 +258,11 @@ GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bo
 
         if (try_get_connection.result.is_usable)
         {
-//            LOG_DEBUG(log, "replica is usable");
+            LOG_DEBUG(log, "replica is usable");
             ++usable_count;
             if (try_get_connection.result.is_up_to_date)
             {
-//                LOG_DEBUG(log, "replica is up to date, finish get hedged connections");
+                LOG_DEBUG(log, "replica is up to date, finish get hedged connections");
                 replica->state = State::READY;
                 ready_indexes.insert(replica->index);
                 return Action::FINISH;
@@ -276,12 +276,12 @@ GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bo
     }
     else if (try_get_connection.stage == TryGetConnection::Stage::FAILED)
     {
-//        LOG_DEBUG(log, "stage: FAILED");
+        LOG_DEBUG(log, "stage: FAILED");
         processFailedConnection(replica);
         return Action::TRY_NEXT_REPLICA;
     }
 
-//    LOG_DEBUG(log, "middle stage, process epoll events");
+    LOG_DEBUG(log, "middle stage, process epoll events");
 
     /// Get connection process is not finished
     return Action::PROCESS_EPOLL_EVENTS;
@@ -289,7 +289,7 @@ GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bo
 
 void GetHedgedConnections::processFailedConnection(ReplicaStatePtr & replica)
 {
-//    LOG_DEBUG(log, "failed connection with {} replica", replica->index);
+    LOG_DEBUG(log, "failed connection with {} replica", replica->index);
 
     ShuffledPool & shuffled_pool = shuffled_pools[replica->index];
     LOG_WARNING(
@@ -314,7 +314,7 @@ void GetHedgedConnections::processFailedConnection(ReplicaStatePtr & replica)
 
 void GetHedgedConnections::addTimeouts(ReplicaStatePtr & replica)
 {
-//    LOG_DEBUG(log, "add timeouts for {} replica", replica->index);
+    LOG_DEBUG(log, "add timeouts for {} replica", replica->index);
 
     addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, timeout_fd_to_replica, timeouts);
 
@@ -327,7 +327,7 @@ void GetHedgedConnections::addTimeouts(ReplicaStatePtr & replica)
 
 GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(bool non_blocking)
 {
-//    LOG_DEBUG(log, "process epoll events");
+    LOG_DEBUG(log, "process epoll events");
     int event_fd;
     ReplicaStatePtr replica = nullptr;
     bool finish = false;
@@ -349,7 +349,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(b
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
 
-//    LOG_DEBUG(log, "cancel process epoll events");
+    LOG_DEBUG(log, "cancel process epoll events");
 
     return replica;
 }
@@ -365,7 +365,7 @@ int GetHedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 
 bool GetHedgedConnections::processReplicaEvent(ReplicaStatePtr & replica, bool non_blocking)
 {
-//    LOG_DEBUG(log, "epoll event is {} replica", replica->index);
+    LOG_DEBUG(log, "epoll event is {} replica", replica->index);
     removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
     try_get_connections[replica->index].run();
     Action action = processTryGetConnectionStage(replica, true);
@@ -380,7 +380,7 @@ bool GetHedgedConnections::processReplicaEvent(ReplicaStatePtr & replica, bool n
 
 bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor, bool non_blocking)
 {
-//    LOG_DEBUG(log, "epoll event is timeout for {} replica", replica->index);
+    LOG_DEBUG(log, "epoll event is timeout for {} replica", replica->index);
 
     epoll.remove(timeout_descriptor->getDescriptor());
     replica->active_timeouts.erase(timeout_descriptor->getDescriptor());
@@ -388,7 +388,7 @@ bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerD
 
     if (timeout_descriptor->getType() == TimerTypes::RECEIVE_TIMEOUT)
     {
-//        LOG_DEBUG(log, "process receive timeout for {} replica", replica->index);
+        LOG_DEBUG(log, "process receive timeout for {} replica", replica->index);
         removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
         epoll.remove(replica->fd);
         fd_to_replica.erase(replica->fd);
@@ -415,7 +415,7 @@ bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerD
 
 void GetHedgedConnections::setBestUsableReplica(ReplicaStatePtr & replica)
 {
-//    LOG_DEBUG(log, "set best usable replica");
+    LOG_DEBUG(log, "set best usable replica");
 
     std::vector<int> indexes(try_get_connections.size());
     for (size_t i = 0; i != indexes.size(); ++i)
