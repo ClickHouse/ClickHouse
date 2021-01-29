@@ -7,17 +7,17 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <ext/range.h>
-#include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryStructure.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
@@ -60,91 +60,16 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-        const std::string & attribute_name,
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnString * const def,
-        ColumnString * const out) const;
+        const ColumnPtr default_values_column) const override;
 
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const Columns & key_columns, \
-        const DataTypes & key_types, \
-        const TYPE def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(
-        const std::string & attribute_name,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const String & def,
-        ColumnString * const out) const;
-
-    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -152,9 +77,14 @@ private:
     template <typename Value>
     using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
 
+    using NullableSet = HashSetWithSavedHash<StringRef, StringRefHash>;
+
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        bool is_nullable;
+        std::unique_ptr<NullableSet> nullable_set;
+
         std::variant<
             UInt8,
             UInt16,
@@ -170,7 +100,7 @@ private:
             Decimal128,
             Float32,
             Float64,
-            String>
+            StringRef>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -206,18 +136,21 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttribute(const DictionaryAttribute & attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void
-    getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);
+    static bool setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value);
 
-    bool setAttributeValue(Attribute & attribute, const StringRef key, const Field & value);
+    static bool setAttributeValue(Attribute & attribute, const StringRef key, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 

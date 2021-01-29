@@ -932,6 +932,10 @@ private:
             std::cerr << "Received exception from server (version "
                 << server_version << "):" << std::endl << "Code: "
                 << server_exception->code() << ". " << text << std::endl;
+            if (is_interactive)
+            {
+                std::cerr << std::endl;
+            }
         }
 
         if (client_exception)
@@ -939,6 +943,10 @@ private:
             fmt::print(stderr,
                 "Error on processing query '{}':\n{}\n",
                 full_query, client_exception->message());
+            if (is_interactive)
+            {
+                fmt::print(stderr, "\n");
+            }
         }
 
         // A debug check -- at least some exception must be set, if the error

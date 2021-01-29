@@ -58,6 +58,19 @@ public:
 using SpacePtr = std::shared_ptr<Space>;
 
 /**
+ * A guard, that should synchronize file's or directory's state
+ * with storage device (e.g. fsync in POSIX) in its destructor.
+ */
+class ISyncGuard
+{
+public:
+    ISyncGuard() = default;
+    virtual ~ISyncGuard() = default;
+};
+
+using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
+
+/**
  * A unit of storage persisting data and metadata.
  * Abstract underlying storage technology.
  * Responsible for:
@@ -174,15 +187,6 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
-    /// Wrapper for POSIX open
-    virtual int open(const String & path, int flags) const = 0;
-
-    /// Wrapper for POSIX close
-    virtual void close(int fd) const = 0;
-
-    /// Wrapper for POSIX fsync
-    virtual void sync(int fd) const = 0;
-
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
@@ -194,6 +198,9 @@ public:
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Returns guard, that insures synchronization of directory metadata with storage device.
+    virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
 private:
     std::unique_ptr<Executor> executor;
