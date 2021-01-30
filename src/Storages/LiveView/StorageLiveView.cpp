@@ -388,7 +388,8 @@ bool StorageLiveView::getNewBlocks()
 
             updated = true;
         }
-        else {
+        else
+        {
             new_blocks_metadata->hash = getBlocksHashKey();
             new_blocks_metadata->version = getBlocksVersion();
             new_blocks_metadata->time = std::chrono::system_clock::now();
@@ -449,7 +450,7 @@ void StorageLiveView::scheduleNextPeriodicRefresh()
     Seconds current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
     Seconds blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
 
-    if ( (current_time - periodic_live_view_refresh) >= blocks_time )
+    if ((current_time - periodic_live_view_refresh) >= blocks_time)
     {
         refresh(false);
         blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
@@ -514,7 +515,7 @@ Pipe StorageLiveView::read(
         Seconds current_time = std::chrono::duration_cast<Seconds> (std::chrono::system_clock::now().time_since_epoch());
         Seconds blocks_time = std::chrono::duration_cast<Seconds> (getBlocksTime().time_since_epoch());
 
-        if ( (current_time - periodic_live_view_refresh) >= blocks_time )
+        if ((current_time - periodic_live_view_refresh) >= blocks_time)
             refresh(false);
     }
 

@@ -274,6 +274,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         {
             if (live_view_timeout)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
+            else
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "");
 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
                 << *live_view_periodic_refresh;
