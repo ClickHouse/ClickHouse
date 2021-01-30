@@ -311,7 +311,7 @@ public:
                     std::memcpy(
                         src_ipv4_buf + std::strlen("::ffff:"),
                         reinterpret_cast<const char *>(&vec_src[src_offset]),
-                        std::strlen(reinterpret_cast<const char *>(&vec_src[src_offset])));
+                        std::min(offsets_src[i] - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
                     parseIPv6(src_ipv4_buf, reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
                 }
                 else
