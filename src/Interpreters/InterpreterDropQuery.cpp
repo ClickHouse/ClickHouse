@@ -21,6 +21,9 @@
 #   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #endif
 
+#if USE_LIBPQXX
+#   include <Storages/PostgreSQL/StoragePostgreSQLReplica.h>
+#endif
 
 namespace DB
 {
@@ -161,6 +164,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             table->checkTableCanBeDropped();
 
             table->shutdown();
+
+#if USE_LIBPQXX
+            if (table->getName() == "PostgreSQLReplica")
+                table->as<StoragePostgreSQLReplica>()->shutdownFinal();
+#endif
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)

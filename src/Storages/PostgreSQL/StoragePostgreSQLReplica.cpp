@@ -22,6 +22,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>
 
@@ -44,22 +45,30 @@ static auto nested_storage_suffix = "_ReplacingMergeTree";
 
 StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     const StorageID & table_id_,
-    const String & remote_table_name_,
+    const String & remote_database_name,
+    const String & remote_table_name,
+    const String & connection_str,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & storage_metadata,
     const Context & context_,
-    const PostgreSQLReplicationHandler & replication_handler_,
     std::unique_ptr<PostgreSQLReplicationSettings> replication_settings_)
     : IStorage(table_id_)
-    , remote_table_name(remote_table_name_)
     , relative_data_path(relative_data_path_)
-    , global_context(std::make_shared<Context>(context_))
+    , global_context(std::make_shared<Context>(context_.getGlobalContext()))
     , replication_settings(std::move(replication_settings_))
-    , replication_handler(std::make_unique<PostgreSQLReplicationHandler>(replication_handler_))
 {
     setInMemoryMetadata(storage_metadata);
     relative_data_path.resize(relative_data_path.size() - 1);
     relative_data_path += nested_storage_suffix;
+
+    replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+            remote_database_name,
+            remote_table_name,
+            connection_str,
+            global_context,
+            global_context->getMacros()->expand(replication_settings->postgresql_replication_slot_name.value),
+            global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value)
+    );
 }
 
 
@@ -144,47 +153,6 @@ ASTPtr StoragePostgreSQLReplica::getCreateHelperTableQuery()
 }
 
 
-void StoragePostgreSQLReplica::startup()
-{
-    Context context_copy(*global_context);
-    const auto ast_create = getCreateHelperTableQuery();
-
-    Poco::File path(relative_data_path);
-    if (!path.exists())
-    {
-        LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
-                "Creating helper table {}", getStorageID().table_name + nested_storage_suffix);
-        InterpreterCreateQuery interpreter(ast_create, context_copy);
-        interpreter.execute();
-    }
-
-    nested_storage = createTableFromAST(ast_create->as<const ASTCreateQuery &>(), getStorageID().database_name, relative_data_path, context_copy, false).second;
-    nested_storage->startup();
-
-    replication_handler->startup(nested_storage, global_context);
-}
-
-
-void StoragePostgreSQLReplica::drop()
-{
-    /// TODO: Under lock? Make sure synchronization stopped.
-    replication_handler->checkAndDropReplicationSlot();
-
-    nested_storage->drop();
-
-    relative_data_path.resize(relative_data_path.size() - 1);
-    Poco::File path(relative_data_path);
-    if (path.exists())
-        path.remove(true);
-}
-
-
-void StoragePostgreSQLReplica::shutdown()
-{
-    replication_handler->shutdown();
-}
-
-
 Pipe StoragePostgreSQLReplica::read(
         const Names & column_names,
         const StorageMetadataPtr & /* metadata_snapshot */,
@@ -205,6 +173,62 @@ Pipe StoragePostgreSQLReplica::read(
 
     pipe.addTableLock(lock);
     return pipe;
+}
+
+
+void StoragePostgreSQLReplica::startup()
+{
+    Context context_copy(*global_context);
+    const auto ast_create = getCreateHelperTableQuery();
+
+    Poco::File path(relative_data_path);
+    if (!path.exists())
+    {
+        LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
+                "Creating helper table {}", getStorageID().table_name + nested_storage_suffix);
+        InterpreterCreateQuery interpreter(ast_create, context_copy);
+        interpreter.execute();
+    }
+    else
+        LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
+                "Directory already exists {}", relative_data_path);
+
+    nested_storage = createTableFromAST(ast_create->as<const ASTCreateQuery &>(), getStorageID().database_name, relative_data_path, context_copy, false).second;
+    nested_storage->startup();
+
+    replication_handler->startup(nested_storage);
+}
+
+
+void StoragePostgreSQLReplica::shutdown()
+{
+    replication_handler->shutdown();
+}
+
+
+void StoragePostgreSQLReplica::shutdownFinal()
+{
+    /// TODO: Under lock? Make sure synchronization stopped.
+    replication_handler->checkAndDropReplicationSlot();
+    dropNested();
+}
+
+
+void StoragePostgreSQLReplica::dropNested()
+{
+    auto table_id = nested_storage->getStorageID();
+    auto ast_drop = std::make_shared<ASTDropQuery>();
+
+    ast_drop->kind = ASTDropQuery::Drop;
+    ast_drop->table = table_id.table_name;
+    ast_drop->database = table_id.database_name;
+    ast_drop->if_exists = true;
+
+    auto drop_context(*global_context);
+    drop_context.makeQueryContext();
+
+    auto interpreter = InterpreterDropQuery(ast_drop, drop_context);
+    interpreter.execute();
 }
 
 
@@ -252,22 +276,18 @@ void registerStoragePostgreSQLReplica(StorageFactory & factory)
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String connection_str;
-        connection_str = fmt::format("dbname={} host={} port={} user={} password={}",
-                remote_database,
-                parsed_host_port.first, std::to_string(parsed_host_port.second),
-                engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-                engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
-
-        auto global_context(args.context.getGlobalContext());
-        auto replication_slot_name = global_context.getMacros()->expand(postgresql_replication_settings->postgresql_replication_slot_name.value);
-        auto publication_name = global_context.getMacros()->expand(postgresql_replication_settings->postgresql_publication_name.value);
-
-        PostgreSQLReplicationHandler replication_handler(remote_database, remote_table, connection_str, replication_slot_name, publication_name);
+        /// No connection is made here, see Storages/PostgreSQL/PostgreSQLConnection.cpp
+        PostgreSQLConnection connection(
+            remote_database,
+            parsed_host_port.first,
+            parsed_host_port.second,
+            engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
+            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StoragePostgreSQLReplica::create(
-                args.table_id, remote_table, args.relative_data_path, metadata, global_context,
-                replication_handler, std::move(postgresql_replication_settings));
+                args.table_id, remote_database, remote_table, connection.conn_str(),
+                args.relative_data_path, metadata, args.context,
+                std::move(postgresql_replication_settings));
     };
 
     factory.registerStorage(

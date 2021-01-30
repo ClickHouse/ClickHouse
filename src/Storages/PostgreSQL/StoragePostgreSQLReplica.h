@@ -33,7 +33,6 @@ public:
     String getName() const override { return "PostgreSQLReplica"; }
 
     void startup() override;
-    void drop() override;
     void shutdown() override;
 
     NamesAndTypesList getVirtuals() const override;
@@ -47,15 +46,17 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void shutdownFinal();
 
 protected:
     StoragePostgreSQLReplica(
         const StorageID & table_id_,
-        const String & remote_table_name_,
+        const String & remote_database_name,
+        const String & remote_table_name,
+        const String & connection_str,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & storage_metadata,
         const Context & context_,
-        const PostgreSQLReplicationHandler & replication_handler_,
         std::unique_ptr<PostgreSQLReplicationSettings> replication_settings_);
 
 private:
@@ -64,8 +65,8 @@ private:
     std::shared_ptr<ASTColumns> getColumnsListFromStorage();
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type);
     ASTPtr getCreateHelperTableQuery();
+    void dropNested();
 
-    String remote_table_name;
     String relative_data_path;
     std::shared_ptr<Context> global_context;
 

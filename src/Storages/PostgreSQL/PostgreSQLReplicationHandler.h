@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaConsumer.h"
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include "pqxx/pqxx"
 
@@ -21,16 +22,18 @@ public:
             const std::string & database_name_,
             const std::string & table_name_,
             const std::string & conn_str_,
-            const std::string & replication_slot_name_,
-            const std::string & publication_name_);
+            std::shared_ptr<Context> context_,
+            const std::string & publication_slot_name_,
+            const std::string & replication_slot_name_);
 
-    void startup(StoragePtr storage_, std::shared_ptr<Context> context_);
+    void startup(StoragePtr storage_);
     void shutdown();
     void checkAndDropReplicationSlot();
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
 
+    void waitConnectionAndStart();
     bool isPublicationExist();
     void createPublication();
 
@@ -45,17 +48,18 @@ private:
     void getTableOutput(const Context & query_context);
 
     Poco::Logger * log;
+    std::shared_ptr<Context> context;
     const std::string database_name, table_name;
 
-    std::string replication_slot, publication_name;
+    std::string publication_name, replication_slot;
     std::string temp_replication_slot;
 
     PostgreSQLConnectionPtr connection;
     PostgreSQLConnectionPtr replication_connection;
     std::shared_ptr<pqxx::work> tx;
 
+    BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
-    std::shared_ptr<Context> context;
     StoragePtr helper_table;
     //LSNPosition start_lsn, final_lsn;
 };

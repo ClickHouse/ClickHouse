@@ -20,17 +20,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static const auto reschedule_ms = 500;
+
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
     const std::string & table_name_,
     const std::string & conn_str,
-    const std::string & replication_slot_,
-    const std::string & publication_name_)
+    std::shared_ptr<Context> context_,
+    const std::string & publication_name_,
+    const std::string & replication_slot_name_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
+    , context(context_)
     , database_name(database_name_)
     , table_name(table_name_)
-    , replication_slot(replication_slot_)
     , publication_name(publication_name_)
+    , replication_slot(replication_slot_name_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
 {
     /// Create a replication connection, through which it is possible to execute only commands from streaming replication protocol
@@ -38,39 +42,43 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     /// which will allow the connection to be used for logical replication from that database.
     replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", conn_str));
 
-    /// Used commands require a specific transaction isolation mode.
-    replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
-
     /// Non temporary replication slot. Should be the same at restart.
     if (replication_slot.empty())
         replication_slot = fmt::format("{}_{}_ch_replication_slot", database_name, table_name);
 
     /// Temporary replication slot is used to acquire a snapshot for initial table synchronization and to determine starting lsn position.
     temp_replication_slot = replication_slot + "_temp";
+
+    startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
+    startup_task->deactivate();
 }
 
 
-void PostgreSQLReplicationHandler::startup(StoragePtr storage, std::shared_ptr<Context> context_)
+void PostgreSQLReplicationHandler::startup(StoragePtr storage)
 {
     helper_table = storage;
-    context = context_;
-    tx = std::make_shared<pqxx::work>(*connection->conn());
-    if (publication_name.empty())
-    {
-        publication_name = fmt::format("{}_{}_ch_publication", database_name, table_name);
+    startup_task->activateAndSchedule();
+}
 
-        /// Publication defines what tables are included into replication stream. Should be deleted only if MaterializePostgreSQL
-        /// table is dropped.
-        if (!isPublicationExist())
-            createPublication();
-    }
-    else if (!isPublicationExist())
+
+void PostgreSQLReplicationHandler::waitConnectionAndStart()
+{
+    try
     {
-        throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Publication name '{}' is spesified in table arguments, but it does not exist", publication_name);
+        /// Used commands require a specific transaction isolation mode.
+        replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
     }
-    tx->commit();
+    catch (pqxx::broken_connection const & pqxx_error)
+    {
+        LOG_ERROR(log, "Unable to set up connection for table {}.{}. Reconnection attempt continues. Error message: {}",
+                database_name, table_name, pqxx_error.what());
+        startup_task->scheduleAfter(reschedule_ms);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting up connection for {}.{}", database_name, table_name);
+        throw;
+    }
 
     startReplication();
 }
@@ -119,6 +127,24 @@ void PostgreSQLReplicationHandler::createPublication()
 
 void PostgreSQLReplicationHandler::startReplication()
 {
+    tx = std::make_shared<pqxx::work>(*connection->conn());
+    if (publication_name.empty())
+    {
+        publication_name = fmt::format("{}_{}_ch_publication", database_name, table_name);
+
+        /// Publication defines what tables are included into replication stream. Should be deleted only if MaterializePostgreSQL
+        /// table is dropped.
+        if (!isPublicationExist())
+            createPublication();
+    }
+    else if (!isPublicationExist())
+    {
+        throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Publication name '{}' is spesified in table arguments, but it does not exist", publication_name);
+    }
+    tx->commit();
+
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
     /// Normally temporary replication slot should not exist.
