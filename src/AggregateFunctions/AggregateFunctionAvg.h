@@ -154,6 +154,34 @@ public:
         ++this->data(place).denominator;
     }
 
+    void addBatchSinglePlace(
+            size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+    {
+        AvgFieldType<T> numerator = 0;
+        UInt64 denominator = 0;
+        const auto & data = static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                if (flags[i])
+                    numerator += data[i];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+                numerator += data[i];
+
+            denominator = batch_size;
+        }
+
+        this->data(place).numerator += numerator;
+        this->data(place).denominator += denominator;
+    }
+
     String getName() const final { return "avg"; }
 };
 }
