@@ -157,7 +157,7 @@ public:
     void addBatchSinglePlace(
             size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
     {
-        AvgFieldType<T> numerator = 0;
+        AvgFieldType<T> numerator{0};
         UInt64 denominator = 0;
         const auto & data = static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData();
 
