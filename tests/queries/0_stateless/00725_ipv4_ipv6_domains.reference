@@ -62,3 +62,6 @@ FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv6 string: 	1
 ::ffff:127.0.0.7
 ::ffff:127.0.0.8
 ::ffff:127.0.0.9
+::ffff:127.0.0.10
+::ffff:127.0.0.11
+::ffff:127.0.0.12
