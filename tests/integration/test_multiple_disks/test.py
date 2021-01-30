@@ -287,8 +287,6 @@ def test_query_parser(start_cluster):
                 "ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy='moving_jbod_with_external'")
     finally:
         node1.query("DROP TABLE IF EXISTS table_with_normal_policy SYNC")
-        node1.query("DROP TABLE IF EXISTS table_with_absent_policy SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -330,7 +328,6 @@ def test_alter_policy(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def get_random_string(length):
@@ -400,7 +397,6 @@ def test_round_robin(start_cluster, name, engine):
         assert used_disks[2] == used_disks[0]
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -428,7 +424,6 @@ def test_max_data_part_size(start_cluster, name, engine):
         assert used_disks[0] == 'external'
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -482,8 +477,6 @@ def test_jbod_overflow(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node.query("DROP TABLE IF EXISTS system.part_log SYNC")
-
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -534,7 +527,6 @@ def test_background_move(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -622,7 +614,6 @@ def test_start_stop_moves(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def get_path_for_part_from_part_log(node, table, part_name):
@@ -711,7 +702,7 @@ def test_alter_move(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
+
 
 @pytest.mark.parametrize("volume_or_disk", [
     "DISK",
@@ -760,7 +751,6 @@ def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("volume_or_disk", [
@@ -805,7 +795,6 @@ def test_alter_double_move_partition(start_cluster, volume_or_disk):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def produce_alter_move(node, name):
@@ -890,7 +879,6 @@ def test_concurrent_alter_move(start_cluster, name, engine):
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "500\n"
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -944,7 +932,6 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -976,7 +963,6 @@ def test_detach_attach(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -1023,7 +1009,6 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 @pytest.mark.parametrize("name,engine", [
@@ -1082,7 +1067,6 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_simple_replication_and_moves(start_cluster):
@@ -1150,7 +1134,6 @@ def test_simple_replication_and_moves(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_moves SYNC")
-            node.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_download_appropriate_disk(start_cluster):
@@ -1185,7 +1168,6 @@ def test_download_appropriate_disk(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_download SYNC")
-            node.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_rename(start_cluster):
@@ -1225,7 +1207,6 @@ def test_rename(start_cluster):
         node1.query("DROP TABLE IF EXISTS default.renaming_table SYNC")
         node1.query("DROP TABLE IF EXISTS default.renaming_table1 SYNC")
         node1.query("DROP TABLE IF EXISTS test.renaming_table2 SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_freeze(start_cluster):
@@ -1261,7 +1242,6 @@ def test_freeze(start_cluster):
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table SYNC")
         node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_kill_while_insert(start_cluster):
@@ -1305,7 +1285,6 @@ def test_kill_while_insert(start_cluster):
     finally:
         try:
             node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-            node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
         except:
             """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
@@ -1367,7 +1346,6 @@ def test_move_while_merge(start_cluster):
 
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_move_across_policies_does_not_work(start_cluster):
@@ -1410,7 +1388,6 @@ def test_move_across_policies_does_not_work(start_cluster):
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
         node1.query(f"DROP TABLE IF EXISTS {name}2 SYNC")
-        node1.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def _insert_merge_execute(node, name, policy, parts, cmds, parts_before_cmds, parts_after_cmds):
@@ -1510,7 +1487,6 @@ def test_no_merges_in_configuration_allow_from_query_without_reload(start_cluste
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
-        node.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
@@ -1530,7 +1506,6 @@ def test_no_merges_in_configuration_allow_from_query_with_reload(start_cluster):
 
     finally:
         node1.query("SYSTEM STOP MERGES ON VOLUME {}.external".format(policy))
-        node.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cluster):
@@ -1550,7 +1525,6 @@ def test_yes_merges_in_configuration_disallow_from_query_without_reload(start_cl
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
-        node.query("DROP TABLE IF EXISTS system.part_log SYNC")
 
 
 def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_cluster):
@@ -1571,4 +1545,3 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
-        node.query("DROP TABLE IF EXISTS system.part_log SYNC")
