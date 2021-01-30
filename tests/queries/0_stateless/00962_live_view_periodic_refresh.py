@@ -10,7 +10,7 @@ from client import client, prompt, end_of_block
 
 log = None
 # uncomment the line below for debugging
-log=sys.stdout
+#log=sys.stdout
 
 with client(name='client1>', log=log) as client1, client(name='client2>', log=log) as client2:
     client1.expect(prompt)
