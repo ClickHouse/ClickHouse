@@ -78,8 +78,35 @@ def test_initial_load_from_snapshot(started_cluster):
         ''')
 
     result = instance.query('SELECT * FROM test.postgresql_replica;')
+    cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
 
+
+def test_no_connection_at_startup(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
+
+    started_cluster.pause_container('postgres1')
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
+            ENGINE = PostgreSQLReplica(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key;
+        ''')
+    time.sleep(3)
+    started_cluster.unpause_container('postgres1')
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while int(result) == 0:
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+        time.sleep(1);
+        print(result)
+
+    result = instance.query('SELECT * FROM test.postgresql_replica;')
+    cursor.execute('DROP TABLE postgresql_replica;')
+    postgresql_replica_check_result(result, True)
 
 if __name__ == '__main__':
     cluster.start()
