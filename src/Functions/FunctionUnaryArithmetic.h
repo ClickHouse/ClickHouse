@@ -79,8 +79,9 @@ struct InvalidType;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
-    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs;
+    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
+    static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -117,7 +118,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const Block &) const override { return is_injective; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -137,7 +138,7 @@ public:
             {
                 using T0 = typename DataType::FieldType;
 
-                if constexpr (IsDataTypeDecimal<DataType>)
+                if constexpr (IsDataTypeDecimal<DataType> && !is_sign_function)
                 {
                     if constexpr (!allow_decimal)
                         return false;
@@ -154,9 +155,10 @@ public:
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
+        ColumnPtr result_column;
+        bool valid = castType(arguments[0].type.get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
 
@@ -164,13 +166,13 @@ public:
             {
                 if constexpr (allow_fixed_string)
                 {
-                    if (auto col = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
+                    if (const auto * col = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
                     {
                         auto col_res = ColumnFixedString::create(col->getN());
                         auto & vec_res = col_res->getChars();
                         vec_res.resize(col->size() * col->getN());
                         FixedStringUnaryOperationImpl<Op<UInt8>>::vector(col->getChars(), vec_res);
-                        block.getByPosition(result).column = std::move(col_res);
+                        result_column = std::move(col_res);
                         return true;
                     }
                 }
@@ -180,27 +182,39 @@ public:
                 using T0 = typename DataType::FieldType;
                 if constexpr (allow_decimal)
                 {
-                    if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(block.getByPosition(arguments[0]).column.get()))
+                    if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(arguments[0].column.get()))
                     {
-                        auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
-                        auto & vec_res = col_res->getData();
-                        vec_res.resize(col->getData().size());
-                        UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
-                        block.getByPosition(result).column = std::move(col_res);
-                        return true;
+                        if constexpr (is_sign_function)
+                        {
+                            auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                            auto & vec_res = col_res->getData();
+                            vec_res.resize(col->getData().size());
+                            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
+                        else
+                        {
+                            auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
+                            auto & vec_res = col_res->getData();
+                            vec_res.resize(col->getData().size());
+                            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
                     }
                 }
             }
             else
             {
                 using T0 = typename DataType::FieldType;
-                if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                if (auto col = checkAndGetColumn<ColumnVector<T0>>(arguments[0].column.get()))
                 {
                     auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
                     auto & vec_res = col_res->getData();
                     vec_res.resize(col->getData().size());
                     UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
-                    block.getByPosition(result).column = std::move(col_res);
+                    result_column = std::move(col_res);
                     return true;
                 }
             }
@@ -209,6 +223,8 @@ public:
         });
         if (!valid)
             throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
+
+        return result_column;
     }
 
 #if USE_EMBEDDED_COMPILER

@@ -70,13 +70,28 @@ LazyPipeFDs::~LazyPipeFDs()
 }
 
 
-void LazyPipeFDs::setNonBlocking()
+void LazyPipeFDs::setNonBlockingWrite()
 {
     int flags = fcntl(fds_rw[1], F_GETFL, 0);
     if (-1 == flags)
         throwFromErrno("Cannot get file status flags of pipe", ErrorCodes::CANNOT_FCNTL);
     if (-1 == fcntl(fds_rw[1], F_SETFL, flags | O_NONBLOCK))
         throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+}
+
+void LazyPipeFDs::setNonBlockingRead()
+{
+    int flags = fcntl(fds_rw[0], F_GETFL, 0);
+    if (-1 == flags)
+        throwFromErrno("Cannot get file status flags of pipe", ErrorCodes::CANNOT_FCNTL);
+    if (-1 == fcntl(fds_rw[0], F_SETFL, flags | O_NONBLOCK))
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+}
+
+void LazyPipeFDs::setNonBlockingReadWrite()
+{
+    setNonBlockingRead();
+    setNonBlockingWrite();
 }
 
 void LazyPipeFDs::tryIncreaseSize(int desired_size)

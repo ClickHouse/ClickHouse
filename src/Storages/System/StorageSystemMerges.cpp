@@ -31,6 +31,7 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
         {"merge_type", std::make_shared<DataTypeString>()},
+        {"merge_algorithm", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -67,9 +68,15 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
         res_columns[i++]->insert(merge.memory_usage);
         res_columns[i++]->insert(merge.thread_id);
         if (!merge.is_mutation)
+        {
             res_columns[i++]->insert(merge.merge_type);
+            res_columns[i++]->insert(merge.merge_algorithm);
+        }
         else
+        {
             res_columns[i++]->insertDefault();
+            res_columns[i++]->insertDefault();
+        }
     }
 }
 

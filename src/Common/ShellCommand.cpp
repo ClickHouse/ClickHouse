@@ -8,6 +8,7 @@
 #include <common/logger_useful.h>
 #include <common/errnoToString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <unistd.h>
 #include <csignal>
 
@@ -35,12 +36,14 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_)
+ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, bool terminate_in_destructor_)
     : pid(pid_)
     , terminate_in_destructor(terminate_in_destructor_)
     , in(in_fd_)
     , out(out_fd_)
-    , err(err_fd_) {}
+    , err(err_fd_)
+{
+}
 
 Poco::Logger * ShellCommand::getLogger()
 {
@@ -71,7 +74,7 @@ ShellCommand::~ShellCommand()
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
-    std::stringstream args;
+    WriteBufferFromOwnString args;
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)
@@ -144,12 +147,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
     LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
-
-    /// Now the ownership of the file descriptors is passed to the result.
-    pipe_stdin.fds_rw[1] = -1;
-    pipe_stdout.fds_rw[0] = -1;
-    pipe_stderr.fds_rw[0] = -1;
-
     return res;
 }
 

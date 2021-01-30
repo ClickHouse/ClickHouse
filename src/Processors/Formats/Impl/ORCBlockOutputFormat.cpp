@@ -433,7 +433,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
     factory.registerOutputFormatProcessor("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

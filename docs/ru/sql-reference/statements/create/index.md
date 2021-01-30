@@ -1,7 +1,7 @@
 ---
 toc_folder_title: CREATE
-toc_priority: 35
-toc_title: Обзор
+toc_priority: 34
+toc_title: "\u041e\u0431\u0437\u043e\u0440"
 ---
 
 # Запросы CREATE {#create-queries}

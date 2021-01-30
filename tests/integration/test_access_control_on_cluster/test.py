@@ -1,12 +1,11 @@
-import time
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance('ch1', main_configs=["configs/config.d/clusters.xml"], with_zookeeper=True)
 ch2 = cluster.add_instance('ch2', main_configs=["configs/config.d/clusters.xml"], with_zookeeper=True)
 ch3 = cluster.add_instance('ch3', main_configs=["configs/config.d/clusters.xml"], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():

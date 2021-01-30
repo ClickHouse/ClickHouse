@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/MergeTree/MergeSelector.h>
 #include <Storages/TTLDescription.h>
 
@@ -64,10 +64,7 @@ public:
 
     /// Delete TTL should be checked only by TTL time, there are no other ways
     /// to satisfy it.
-    bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override
-    {
-        return false;
-    }
+    bool isTTLAlreadySatisfied(const IMergeSelector::Part &) const override;
 
 private:
     bool only_drop_parts;
@@ -87,7 +84,7 @@ public:
     time_t getTTLForPart(const IMergeSelector::Part & part) const override;
 
     /// Checks that part's codec is not already equal to required codec
-    /// according to recompression TTL. It doesn't make sence to assign such
+    /// according to recompression TTL. It doesn't make sense to assign such
     /// merge.
     bool isTTLAlreadySatisfied(const IMergeSelector::Part & part) const override;
 private:

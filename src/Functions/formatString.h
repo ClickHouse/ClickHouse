@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>

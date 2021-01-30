@@ -180,6 +180,8 @@ public:
     {
         return nested_function->isState();
     }
+
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 
@@ -209,13 +211,15 @@ public:
         }
     }
 
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
-        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), &nested_column, null_map, arena);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            batch_size, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
 
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, batch_size, 1))

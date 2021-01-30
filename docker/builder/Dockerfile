@@ -1,6 +1,6 @@
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -25,10 +25,10 @@ RUN apt-get update \
         ninja-build \
         perl \
         pkg-config \
-        python \
-        python-lxml \
-        python-requests \
-        python-termcolor \
+        python3 \
+        python3-lxml \
+        python3-requests \
+        python3-termcolor \
         tzdata \
         llvm-${LLVM_VERSION} \
         clang-${LLVM_VERSION} \

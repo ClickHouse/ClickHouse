@@ -1,19 +1,26 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include "PocoHTTPClient.h"
 
 #include <utility>
 #include <IO/HTTPCommon.h>
-#include <IO/S3/PocoHTTPResponseStream.h>
-#include <IO/S3/PocoHTTPResponseStream.cpp>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/Stopwatch.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
-#include <aws/core/http/standard/StandardHttpResponse.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <common/logger_useful.h>
+#include <re2/re2.h>
+
+#include <boost/algorithm/string.hpp>
+
 
 namespace ProfileEvents
 {
@@ -40,11 +47,33 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        const Aws::Client::ClientConfiguration & cfg,
-        const RemoteHostFilter & remote_host_filter_)
-    : Aws::Client::ClientConfiguration(cfg)
-    , remote_host_filter(remote_host_filter_)
+        const RemoteHostFilter & remote_host_filter_,
+        unsigned int s3_max_redirects_)
+    : remote_host_filter(remote_host_filter_)
+    , s3_max_redirects(s3_max_redirects_)
 {
+}
+
+void PocoHTTPClientConfiguration::updateSchemeAndRegion()
+{
+    if (!endpointOverride.empty())
+    {
+        static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+        Poco::URI uri(endpointOverride);
+        if (uri.getScheme() == "http")
+            scheme = Aws::Http::Scheme::HTTP;
+
+        String matched_region;
+        if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+        {
+            boost::algorithm::to_lower(matched_region);
+            region = matched_region;
+        }
+        else
+        {
+            region = Aws::Region::AWS_GLOBAL;
+        }
+    }
 }
 
 
@@ -56,17 +85,9 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
+    , s3_max_redirects(clientConfiguration.s3_max_redirects)
+    , max_connections(clientConfiguration.maxConnections)
 {
-}
-
-std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
-    Aws::Http::HttpRequest & request,
-    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
-    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
-{
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(request, response, readLimiter, writeLimiter);
-    return response;
 }
 
 std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
@@ -74,14 +95,14 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
-    MakeRequestInternal(*request, response, readLimiter, writeLimiter);
+    auto response = Aws::MakeShared<PocoHTTPResponse>("PocoHTTPClient", request);
+    makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
 
-void PocoHTTPClient::MakeRequestInternal(
+void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
-    std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
+    std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
@@ -101,7 +122,7 @@ void PocoHTTPClient::MakeRequestInternal(
         EnumSize,
     };
 
-    auto selectMetric = [&request](S3MetricType type)
+    auto select_metric = [&request](S3MetricType type)
     {
         const ProfileEvents::Event events_map[][2] = {
             {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
@@ -128,31 +149,30 @@ void PocoHTTPClient::MakeRequestInternal(
         throw Exception("Unsupported request method", ErrorCodes::NOT_IMPLEMENTED);
     };
 
-    ProfileEvents::increment(selectMetric(S3MetricType::Count));
+    ProfileEvents::increment(select_metric(S3MetricType::Count));
 
-    const int MAX_REDIRECT_ATTEMPTS = 10;
     try
     {
-        for (int attempt = 0; attempt < MAX_REDIRECT_ATTEMPTS; ++attempt)
+        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
-            Poco::URI poco_uri(uri);
-
-            /// Reverse proxy can replace host header with resolved ip address instead of host name.
-            /// This can lead to request signature difference on S3 side.
-            auto session = makeHTTPSession(poco_uri, timeouts, false);
+            Poco::URI target_uri(uri);
+            Poco::URI proxy_uri;
 
             auto request_configuration = per_request_configuration(request);
             if (!request_configuration.proxyHost.empty())
-                session->setProxy(
-                    request_configuration.proxyHost,
-                    request_configuration.proxyPort,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme),
-                    false /// Disable proxy tunneling by default
-                );
+            {
+                proxy_uri.setScheme(Aws::Http::SchemeMapper::ToString(request_configuration.proxyScheme));
+                proxy_uri.setHost(request_configuration.proxyHost);
+                proxy_uri.setPort(request_configuration.proxyPort);
+            }
+
+            /// Reverse proxy can replace host header with resolved ip address instead of host name.
+            /// This can lead to request signature difference on S3 side.
+            auto session = makePooledHTTPSession(target_uri, proxy_uri, timeouts, max_connections, false);
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setURI(poco_uri.getPathAndQuery());
+            poco_request.setURI(target_uri.getPathAndQuery());
 
             switch (request.GetMethod())
             {
@@ -202,7 +222,7 @@ void PocoHTTPClient::MakeRequestInternal(
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
-            ProfileEvents::increment(selectMetric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
+            ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
             LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
@@ -214,7 +234,7 @@ void PocoHTTPClient::MakeRequestInternal(
                 uri = location;
                 LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 
-                ProfileEvents::increment(selectMetric(S3MetricType::Redirects));
+                ProfileEvents::increment(select_metric(S3MetricType::Redirects));
 
                 continue;
             }
@@ -222,7 +242,7 @@ void PocoHTTPClient::MakeRequestInternal(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            std::stringstream headers_ss;
+            WriteBufferFromOwnString headers_ss;
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);
@@ -240,15 +260,15 @@ void PocoHTTPClient::MakeRequestInternal(
 
                 if (status_code == 429 || status_code == 503)
                 { // API throttling
-                    ProfileEvents::increment(selectMetric(S3MetricType::Throttling));
+                    ProfileEvents::increment(select_metric(S3MetricType::Throttling));
                 }
                 else
                 {
-                    ProfileEvents::increment(selectMetric(S3MetricType::Errors));
+                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
                 }
             }
             else
-                response->GetResponseStream().SetUnderlyingStream(std::make_shared<PocoHTTPResponseStream>(session, response_body_stream));
+                response->SetResponseBody(response_body_stream, session);
 
             return;
         }
@@ -261,7 +281,10 @@ void PocoHTTPClient::MakeRequestInternal(
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
-        ProfileEvents::increment(selectMetric(S3MetricType::Errors));
+        ProfileEvents::increment(select_metric(S3MetricType::Errors));
     }
 }
+
 }
+
+#endif

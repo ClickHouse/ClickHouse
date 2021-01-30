@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -14,8 +15,16 @@ namespace
 {
     bool parseProfileKeyword(IParserBase::Pos & pos, Expected & expected, bool use_inherit_keyword)
     {
-        return ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
-            (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected));
+        if (ParserKeyword{"PROFILE"}.ignore(pos, expected))
+            return true;
+
+        if (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected))
+        {
+            ParserKeyword{"PROFILE"}.ignore(pos, expected);
+            return true;
+        }
+
+        return false;
     }
 
 
@@ -137,6 +146,15 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
+            if (boost::iequals(res_setting_name, "PROFILE") && res_value.isNull() && res_min_value.isNull() && res_max_value.isNull()
+                && res_readonly)
+            {
+                /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or
+                /// as a setting named 'profile' with the readonly constraint.
+                /// So we've decided to treat it as a profile named "readonly".
+                return false;
+            }
+
             setting_name = std::move(res_setting_name);
             value = std::move(res_value);
             min_value = std::move(res_min_value);
@@ -163,15 +181,12 @@ namespace
             Field max_value;
             std::optional<bool> readonly;
 
-            if (parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, readonly))
-            {
-            }
-            else if (parseProfileKeyword(pos, expected, use_inherit_keyword) || previous_element_was_parent_profile)
-            {
-                if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
-                    return false;
-            }
-            else
+            bool ok = parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, readonly);
+
+            if (!ok && (parseProfileKeyword(pos, expected, use_inherit_keyword) || previous_element_was_parent_profile))
+                ok = parseProfileNameOrID(pos, expected, id_mode, parent_profile);
+
+            if (!ok)
                 return false;
 
             result = std::make_shared<ASTSettingsProfileElement>();

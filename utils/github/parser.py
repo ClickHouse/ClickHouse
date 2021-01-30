@@ -57,4 +57,4 @@ class Description:
             if not category:
                 print('Cannot find category in pr description')
             else:
-                print('Unknown category: ' + category)
+                print(('Unknown category: ' + category))

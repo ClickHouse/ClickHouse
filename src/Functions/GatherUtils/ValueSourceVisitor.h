@@ -4,6 +4,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericValueSource;
@@ -23,9 +24,18 @@ using BasicAndNullableValueSources = typename TypeListConcat<BasicValueSources, 
 using ConstValueSources = typename TypeListMap<ConstSource, BasicAndNullableValueSources>::Type;
 using TypeListValueSources = typename TypeListConcat<BasicAndNullableValueSources, ConstValueSources>::Type;
 
-class ValueSourceVisitor : public ApplyTypeListForClass<Visitor, TypeListValueSources>::Type {};
+class ValueSourceVisitor : public ApplyTypeListForClass<Visitor, TypeListValueSources>::Type
+{
+protected:
+    ~ValueSourceVisitor() = default;
+};
 
 template <typename Derived>
-class ValueSourceVisitorImpl : public VisitorImpl<Derived, ValueSourceVisitor> {};
+class ValueSourceVisitorImpl : public VisitorImpl<Derived, ValueSourceVisitor>
+{
+protected:
+    ~ValueSourceVisitorImpl() = default;
+};
 
+#pragma GCC visibility pop
 }

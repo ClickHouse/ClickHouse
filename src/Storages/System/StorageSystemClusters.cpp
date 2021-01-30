@@ -1,4 +1,3 @@
-#include <Common/DNSResolver.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>

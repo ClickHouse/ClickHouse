@@ -1,12 +1,45 @@
 #include <Parsers/ParserDataType.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/CommonParsers.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+
 
 namespace DB
 {
+
+namespace
+{
+
+/// Wrapper to allow mixed lists of nested and normal types.
+/// Parameters are either:
+/// - Nested table elements;
+/// - Enum element in form of 'a' = 1;
+/// - literal;
+/// - another data type (or identifier)
+class ParserDataTypeArgument : public IParserBase
+{
+private:
+    const char * getName() const override { return "data type argument"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ParserNestedTable nested_parser;
+        ParserDataType data_type_parser;
+        ParserLiteral literal_parser;
+
+        const char * operators[] = {"=", "equals", nullptr};
+        ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
+
+        return nested_parser.parse(pos, node, expected)
+            || enum_parser.parse(pos, node, expected)
+            || literal_parser.parse(pos, node, expected)
+            || data_type_parser.parse(pos, node, expected);
+    }
+};
+
+}
 
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -69,6 +102,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = type_name;
+    function_node->no_empty_args = true;
 
     if (pos->type != TokenType::OpeningRoundBracket)
     {
@@ -78,7 +112,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserExpression>(), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))

@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 ADDINCL(
@@ -11,7 +13,6 @@ PEERDIR(
     contrib/libs/zstd
 )
 
-CFLAGS(-g0)
 
 SRCS(
 <? find . -name '*.cpp' | grep -v -F tests | sed 's/^\.\//    /' | sort ?>

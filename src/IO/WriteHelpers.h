@@ -11,11 +11,11 @@
 #include <common/LocalDateTime.h>
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
+#include <common/wide_integer_to_string.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -28,7 +28,15 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <ryu/ryu.h>
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wsign-compare"
+#endif
+#include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include <Formats/FormatSettings.h>
 
@@ -40,6 +48,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+template <typename T>
+inline std::string bigintToString(const T & x)
+{
+    return to_string(x);
 }
 
 /// Helper functions for formatted and binary output.
@@ -104,17 +118,6 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
 {
     writeStringBinary(StringRef{s}, buf);
-}
-
-template <typename T>
-void writeBigIntBinary(const T & x, WriteBuffer & buf)
-{
-    static const constexpr size_t bytesize = BigInt<T>::size;
-    char bytes[bytesize];
-
-    BigInt<T>::serialize(x, bytes);
-
-    buf.write(bytes, bytesize);
 }
 
 template <typename T>
@@ -221,14 +224,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-            result = d2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-            result = f2s_buffered_n(x, buffer);
+            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
 
     if (result <= 0)
@@ -468,6 +471,10 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
     writeEscapedString(ref.data, ref.size, buf);
 }
 
+inline void writeEscapedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeEscapedString(ref.data(), ref.size(), buf);
+}
 
 template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
@@ -497,15 +504,29 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(s, buf);
 }
 
-
 inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
+inline void writeQuotedString(const std::string_view & ref, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
+}
+
+inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s, buf);
+}
+
 inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
+}
+
+inline void writeDoubleQuotedString(const std::string_view & s, WriteBuffer & buf)
+{
+    writeAnyQuotedString<'"'>(s.data(), s.data() + s.size(), buf);
 }
 
 /// Outputs a string in backquotes.
@@ -574,9 +595,65 @@ void writeCSVString(const StringRef & s, WriteBuffer & buf)
     writeCSVString<quote>(s.data, s.data + s.size, buf);
 }
 
+inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
+{
+    const char * pos = begin;
+    while (true)
+    {
+        const char * next_pos = find_first_symbols<'<', '&', '>', '"', '\''>(pos, end);
+
+        if (next_pos == end)
+        {
+            buf.write(pos, end - pos);
+            break;
+        }
+        else if (*next_pos == '<')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&lt;", buf);
+        }
+        else if (*next_pos == '&')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&amp;", buf);
+        }
+        else if (*next_pos == '>')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&gt;", buf);
+        }
+        else if (*next_pos == '"')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&quot;", buf);
+        }
+        else if (*next_pos == '\'')
+        {
+            buf.write(pos, next_pos - pos);
+            ++next_pos;
+            writeCString("&apos;", buf);
+        }
+
+        pos = next_pos;
+    }
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
+}
+
+inline void writeXMLStringForTextElementOrAttributeValue(const StringRef & s, WriteBuffer & buf)
+{
+    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
+}
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
-inline void writeXMLString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
@@ -606,14 +683,14 @@ inline void writeXMLString(const char * begin, const char * end, WriteBuffer & b
     }
 }
 
-inline void writeXMLString(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data(), s.data() + s.size(), buf);
+    writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(const StringRef & s, WriteBuffer & buf)
 {
-    writeXMLString(s.data, s.data + s.size, buf);
+    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -629,6 +706,19 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+template<typename DecimalType>
+inline void writeDecimalTypeFractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DecimalType>();
+
+    char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+    static_assert(sizeof(data) >= MaxScale);
+
+    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+        data[pos] += fractional % DateTime64(10);
+
+    writeString(&data[0], static_cast<size_t>(scale), buf);
+}
 
 static const char digits100[201] =
     "00010203040506070809"
@@ -646,7 +736,7 @@ static const char digits100[201] =
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
-    if (buf.position() + 10 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 10 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[date.year() / 100 * 2], 2);
         buf.position() += 2;
@@ -683,7 +773,7 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
-    if (buf.position() + 19 <= buf.buffer().end())
+    if (reinterpret_cast<intptr_t>(buf.position()) + 19 <= reinterpret_cast<intptr_t>(buf.buffer().end()))
     {
         memcpy(buf.position(), &digits100[datetime.year() / 100 * 2], 2);
         buf.position() += 2;
@@ -753,15 +843,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
-
-        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
-        static_assert(sizeof(data) >= MaxScale);
-
-        auto fractional = c.fractional;
-        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
-            data[pos] += fractional % DateTime64(10);
-
-        writeString(&data[0], static_cast<size_t>(scale), buf);
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
     }
 }
 
@@ -791,6 +873,32 @@ inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const D
     buf.write(" GMT", 4);
 }
 
+inline void writeDateTimeTextISO(time_t datetime, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+{
+    writeDateTimeText<'-', ':', 'T'>(datetime, buf, utc_time_zone);
+    buf.write('Z');
+}
+
+inline void writeDateTimeTextISO(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+{
+    writeDateTimeText<'-', ':', 'T'>(datetime64, scale, buf, utc_time_zone);
+    buf.write('Z');
+}
+
+inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+
+    auto c = DecimalUtils::split(datetime64, scale);
+    writeIntText(c.whole, buf);
+
+    if (scale > 0)
+    {
+        buf.write('.');
+        writeDecimalTypeFractionalText<DateTime64>(c.fractional, scale, buf);
+    }
+}
 
 /// Methods for output in binary format.
 template <typename T>
@@ -799,18 +907,19 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const std::string_view & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const DummyUInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writeBigIntBinary(x.value, buf); }
+inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
-inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Int256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
@@ -821,15 +930,15 @@ template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
+inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
 
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
 /// unlike the method for std::string
 /// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
+inline void writeText(const char * x, WriteBuffer & buf) { writeCString(x, buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeString(x, size, buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
@@ -899,6 +1008,10 @@ writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
+inline void writeQuoted(const std::string_view & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
+inline void writeQuoted(const StringRef & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
+
 inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
@@ -940,6 +1053,10 @@ inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const std::string_view & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+
+inline void writeDoubleQuoted(const StringRef & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
 inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {
@@ -1054,5 +1171,19 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
 
     writePODBinary(x, buf);
 }
+
+struct PcgSerializer
+{
+    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
+    {
+        writeText(rng.multiplier(), buf);
+        writeChar(' ', buf);
+        writeText(rng.increment(), buf);
+        writeChar(' ', buf);
+        writeText(rng.state_, buf);
+    }
+};
+
+void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 }

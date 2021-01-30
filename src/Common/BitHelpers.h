@@ -1,20 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <cassert>
 #include <type_traits>
 #include <common/defines.h>
-
-
-/** Returns log2 of number, rounded down.
-  * Compiles to single 'bsr' instruction on x86.
-  * For zero argument, result is unspecified.
-  */
-inline unsigned int bitScanReverse(unsigned int x)
-{
-    assert(x != 0);
-    return sizeof(unsigned int) * 8 - 1 - __builtin_clz(x);
-}
 
 
 /** For zero argument, result is zero.
@@ -41,10 +31,9 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 
 
 template <typename T>
-inline size_t getLeadingZeroBits(T x)
+inline size_t getLeadingZeroBitsUnsafe(T x)
 {
-    if (!x)
-        return sizeof(x) * 8;
+    assert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
@@ -60,10 +49,32 @@ inline size_t getLeadingZeroBits(T x)
     }
 }
 
+
+template <typename T>
+inline size_t getLeadingZeroBits(T x)
+{
+    if (!x)
+        return sizeof(x) * 8;
+
+    return getLeadingZeroBitsUnsafe(x);
+}
+
+/** Returns log2 of number, rounded down.
+  * Compiles to single 'bsr' instruction on x86.
+  * For zero argument, result is unspecified.
+  */
+template <typename T>
+inline uint32_t bitScanReverse(T x)
+{
+    return (std::max<size_t>(sizeof(T), sizeof(unsigned int))) * 8 - 1 - getLeadingZeroBitsUnsafe(x);
+}
+
 // Unsafe since __builtin_ctz()-family explicitly state that result is undefined on x == 0
 template <typename T>
 inline size_t getTrailingZeroBitsUnsafe(T x)
 {
+    assert(x != 0);
+
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
         return __builtin_ctz(x);
@@ -88,8 +99,8 @@ inline size_t getTrailingZeroBits(T x)
 }
 
 /** Returns a mask that has '1' for `bits` LSB set:
- * maskLowBits<UInt8>(3) => 00000111
- */
+  * maskLowBits<UInt8>(3) => 00000111
+  */
 template <typename T>
 inline T maskLowBits(unsigned char bits)
 {

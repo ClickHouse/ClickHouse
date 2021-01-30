@@ -131,7 +131,10 @@ TEST(Common, RWLockRecursive)
 
             auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
+#ifndef ABORT_ON_LOGICAL_ERROR
+            /// It throws LOGICAL_ERROR
             EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
+#endif
         }
 
         fifo_lock->getLock(RWLockImpl::Write, "q2");

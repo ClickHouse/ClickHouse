@@ -38,38 +38,74 @@ Example of setting the addresses of the ZooKeeper cluster:
 
 ``` xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
+    <node>
         <host>example3</host>
         <port>2181</port>
     </node>
 </zookeeper>
 ```
 
+ClickHouse also supports to store replicas meta information in the auxiliary ZooKeeper cluster by providing ZooKeeper cluster name and path as engine arguments.
+In other word, it supports to store the metadata of differnt tables in different ZooKeeper clusters.
+
+Example of setting the addresses of the auxiliary ZooKeeper cluster:
+
+``` xml
+<auxiliary_zookeepers>
+    <zookeeper2>
+        <node>
+            <host>example_2_1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper2>
+    <zookeeper3>
+        <node>
+            <host>example_3_1</host>
+            <port>2181</port>
+        </node>
+    </zookeeper3>
+</auxiliary_zookeepers>
+```
+
+To store table datameta in a auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
+ReplicatedMergeTree engine as follow:
+
+```
+CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
+```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
 If ZooKeeper isn’t set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max\_replica\_delay\_for\_distributed\_queries](../../../operations/settings/settings.md#settings-max_replica_delay_for_distributed_queries) and [fallback\_to\_stale\_replicas\_for\_distributed\_queries](../../../operations/settings/settings.md#settings-fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](../../../operations/settings/settings.md#settings-max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](../../../operations/settings/settings.md#settings-fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it doesn’t create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, this hasn’t proven necessary on the Yandex.Metrica cluster (approximately 300 servers).
 
-Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size) setting.
+Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size) setting.
 
 By default, an INSERT query waits for confirmation of writing the data from only one replica. If the data was successfully written to only one replica and the server with this replica ceases to exist, the stored data will be lost. To enable getting confirmation of data writes from multiple replicas, use the `insert_quorum` option.
 
 Each block of data is written atomically. The INSERT query is divided into blocks up to `max_insert_block_size = 1048576` rows. In other words, if the `INSERT` query has less than 1048576 rows, it is made atomically.
 
-Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn’t know if the data was written to the DB, so the `INSERT` query can simply be repeated. It doesn’t matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge\_tree](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree) server settings.
+Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn’t know if the data was written to the DB, so the `INSERT` query can simply be repeated. It doesn’t matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree) server settings.
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
@@ -117,7 +153,9 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the ‘macros’ section of the configuration file. Example:
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the «[macros](../../../operations/server-configuration-parameters/settings/#macros) section of the configuration file. 
+
+Example:
 
 ``` xml
 <macros>
@@ -137,11 +175,39 @@ In this case, the path consists of the following parts:
 `table_name` is the name of the node for the table in ZooKeeper. It is a good idea to make it the same as the table name. It is defined explicitly, because in contrast to the table name, it doesn’t change after a RENAME query.
 *HINT*: you could add a database name in front of `table_name` as well. E.g. `db_name.table_name`
 
+The two built-in substitutions `{database}` and `{table}` can be used, they expand into the table name and the database name respectively (unless these macros are defined in the `macros` section). So the zookeeper path can be specified as `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'`.
+Be careful with table renames when using these built-in substitutions. The path in Zookeeper cannot be changed, and when the table is renamed, the macros will expand into a different path, the table will refer to a path that does not exist in Zookeeper, and will go into read-only mode.
+
 The replica name identifies different replicas of the same table. You can use the server name for this, as in the example. The name only needs to be unique within each shard.
 
 You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can’t use distributed DDL queries (`ON CLUSTER`) in this case.
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
+
+You can specify default arguments for `Replicated` table engine in the server configuration file. For instance:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+In this case, you can omit arguments when creating tables:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree 
+ORDER BY x;
+```
+
+It is equivalent to:
+
+``` sql
+CREATE TABLE table_name (
+	x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}') 
+ORDER BY x;
+```
 
 Run the `CREATE TABLE` query on each replica. This query creates a new replicated table, or adds a new replica to an existing one.
 
@@ -215,8 +281,9 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 
-**See also**
+**See Also**
 
--   [background\_schedule\_pool\_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

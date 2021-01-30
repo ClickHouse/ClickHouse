@@ -28,7 +28,7 @@ static void checkSource(const IProcessor & source)
                         ErrorCodes::LOGICAL_ERROR);
 
     if (source.getOutputs().size() > 1)
-        throw Exception("Source for pipe should have single or two outputs, but " + source.getName() + " has " +
+        throw Exception("Source for pipe should have single output, but " + source.getName() + " has " +
                         toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -620,6 +620,24 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
 }
 
+void Pipe::resize(size_t num_streams, bool force, bool strict)
+{
+    if (output_ports.empty())
+        throw Exception("Cannot resize an empty Pipe.", ErrorCodes::LOGICAL_ERROR);
+
+    if (!force && num_streams == numOutputPorts())
+        return;
+
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(getHeader(), numOutputPorts(), num_streams);
+
+    addTransform(std::move(resize));
+}
+
 void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     if (output_ports.empty())
@@ -779,12 +797,21 @@ void Pipe::transform(const Transformer & transformer)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
+void Pipe::setLimits(const StreamLocalLimits & limits)
 {
     for (auto & processor : processors)
     {
         if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source_with_progress->setLimits(limits);
+    }
+}
+
+void Pipe::setLeafLimits(const SizeLimits & leaf_limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLeafLimits(leaf_limits);
     }
 }
 

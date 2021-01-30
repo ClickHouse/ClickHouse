@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Access/LDAPParams.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
+#include <chrono>
 #include <map>
-#include <memory>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace Poco
@@ -26,14 +27,26 @@ class ExternalAuthenticators
 {
 public:
     void reset();
-    void setConfig(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
+    bool checkLDAPCredentials(const String & server, const String & user_name, const String & password,
+        const LDAPSearchParamsList * search_params = nullptr, LDAPSearchResultsList * search_results = nullptr) const;
 
-    void setLDAPServerParams(const String & server, const LDAPServerParams & params);
-    LDAPServerParams getLDAPServerParams(const String & server) const;
+private:
+    struct LDAPCacheEntry
+    {
+        std::size_t last_successful_params_hash = 0;
+        std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
+        LDAPSearchResultsList last_successful_search_results;
+    };
+
+    using LDAPServerCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry
+    using LDAPServerCaches = std::map<String, LDAPServerCache>;         // server name -> cache
+    using LDAPServersParams = std::map<String, LDAPServerParams>;       // server name -> params
 
 private:
     mutable std::recursive_mutex mutex;
-    std::map<String, LDAPServerParams> ldap_server_params;
+    LDAPServersParams ldap_server_params;
+    mutable LDAPServerCaches ldap_server_caches;
 };
 
 }

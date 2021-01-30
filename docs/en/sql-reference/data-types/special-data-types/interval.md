@@ -80,4 +80,4 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 ## See Also {#see-also}
 
 -   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
--   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
+-   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions

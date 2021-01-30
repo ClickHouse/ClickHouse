@@ -9,7 +9,7 @@ right_version=${2}
 
 if [ "$left_version" == "" ] || [ "$right_version" == "" ]
 then
-    >&2 echo Usage: $(basename "$0") left_version right_version
+    >&2 echo "Usage: $(basename "$0") left_version right_version"
     exit 1
 fi
 

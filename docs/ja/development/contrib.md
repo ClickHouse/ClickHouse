@@ -20,7 +20,6 @@ toc_title: "\u30B5\u30FC\u30C9\u30D1\u30FC\u30C6\u30A3\u88FD\u30E9\u30A4\u30D6\u
 | googletest         | [BSD3条項ライセンス](https://github.com/google/googletest/blob/master/LICENSE)                                                              |
 | h3                 | [Apacheライセンス2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                       |
 | hyperscan          | [BSD3条項ライセンス](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                                |
-| libbtrie           | [BSD2条項ライセンス](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                         |
 | libcxxabi          | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                         |
 | libdivide          | [Zlibライセンス](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                        |
 | libgsasl           | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                            |
@@ -29,7 +28,7 @@ toc_title: "\u30B5\u30FC\u30C9\u30D1\u30FC\u30C6\u30A3\u88FD\u30E9\u30A4\u30D6\u
 | libpcg-ランダム    | [Apacheライセンス2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                        |
 | libressl           | [OpenSSLライセンス](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                           |
 | リブドカフカ       | [BSD2条項ライセンス](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                          |
-| libwidechar\_width | [CC0 1.0ユニバーサル](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                  |
+| libwidechar_width | [CC0 1.0ユニバーサル](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                  |
 | llvm               | [BSD3条項ライセンス](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)              |
 | lz4                | [BSD2条項ライセンス](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                      |
 | mariadb-コネクタ-c | [LGPL v2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                                  |

@@ -39,7 +39,7 @@ def test_freeze_table(started_cluster):
         '''))
     assert 11 == len(freeze_result)
     path_col_ix = freeze_result[0].index('part_backup_path')
-    for row in freeze_result[1:]: # skip header
+    for row in freeze_result[1:]:  # skip header
         part_backup_path = row[path_col_ix]
         node.exec_in_container(
             ["bash", "-c", "test -d {}".format(part_backup_path)]
@@ -55,7 +55,7 @@ def test_freeze_table(started_cluster):
         '''))
     assert 2 == len(freeze_result)
     path_col_ix = freeze_result[0].index('part_backup_path')
-    for row in freeze_result[1:]: # skip header
+    for row in freeze_result[1:]:  # skip header
         part_backup_path = row[path_col_ix]
         assert 'test_01417_single_part' in part_backup_path
         node.exec_in_container(

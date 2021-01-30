@@ -95,8 +95,6 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    ASTPtr getCodecDesc() const override;
-
     void updateHash(SipHash & hash) const override;
 
 protected:

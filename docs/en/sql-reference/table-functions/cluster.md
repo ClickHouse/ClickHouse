@@ -14,13 +14,15 @@ Allows to access all shards in an existing cluster which configured in `remote_s
 Signatures:
 
 ``` sql
-cluster('cluster_name', db.table)
-cluster('cluster_name', db, table)
-clusterAllReplicas('cluster_name', db.table)
-clusterAllReplicas('cluster_name', db, table)
+cluster('cluster_name', db.table[, sharding_key])
+cluster('cluster_name', db, table[, sharding_key])
+clusterAllReplicas('cluster_name', db.table[, sharding_key])
+clusterAllReplicas('cluster_name', db, table[, sharding_key])
 ```
 
 `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+
+`sharding_key` - When insert into cluster function with more than one shard, sharding_key need to be provided.
 
 Using the `cluster` and `clusterAllReplicas` table functions are less efficient than creating a `Distributed` table because in this case, the server connection is re-established for every request. When processing a large number of queries, please always create the `Distributed` table ahead of time, and don’t use the `cluster` and `clusterAllReplicas` table functions.
 
@@ -34,5 +36,5 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 **See Also**
 
--   [skip\_unavailable\_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
--   [load\_balancing](../../operations/settings/settings.md#settings-load_balancing)
+-   [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+-   [load_balancing](../../operations/settings/settings.md#settings-load_balancing)

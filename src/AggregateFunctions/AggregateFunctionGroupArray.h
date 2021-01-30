@@ -2,6 +2,9 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -109,7 +112,6 @@ class GroupArrayNumericImpl final
 {
     using Data = GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>;
     static constexpr bool limit_num_elems = Trait::has_limit;
-    DataTypePtr & data_type;
     UInt64 max_elems;
     UInt64 seed;
 
@@ -118,7 +120,6 @@ public:
         const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
         : IAggregateFunctionDataHelper<GroupArrayNumericData<T, Trait::sampler != Sampler::NONE>, GroupArrayNumericImpl<T, Trait>>(
             {data_type_}, {})
-        , data_type(this->argument_types[0])
         , max_elems(max_elems_)
         , seed(seed_)
     {
@@ -126,7 +127,7 @@ public:
 
     String getName() const override { return getNameByTrait<Trait>(); }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(this->argument_types[0]); }
 
     void insert(Data & a, const T & v, Arena * arena) const
     {
@@ -185,13 +186,13 @@ public:
             if (!limit_num_elems)
             {
                 if (rhs_elems.value.size())
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
             }
             else
             {
                 UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
                 if (elems_to_insert)
-                    cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+                    cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
             }
         }
 
@@ -244,9 +245,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
-            std::ostringstream rng_stream;
-            rng_stream << this->data(place).rng;
-            DB::writeStringBinary(rng_stream.str(), buf);
+            WriteBufferFromOwnString rng_buf;
+            rng_buf << this->data(place).rng;
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
 
         // TODO
@@ -274,8 +275,8 @@ public:
             DB::readIntBinary<size_t>(this->data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            std::istringstream rng_stream(rng_string);
-            rng_stream >> this->data(place).rng;
+            ReadBufferFromString rng_buf(rng_string);
+            rng_buf >> this->data(place).rng;
         }
 
         // TODO
@@ -296,7 +297,7 @@ public:
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             if constexpr (is_big_int_v<T>)
-                // is data_to empty? we should probaly use std::vector::insert then
+                // is data_to empty? we should probably use std::vector::insert then
                 for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
                     data_to.push_back(*it);
             else
@@ -563,9 +564,9 @@ public:
         if constexpr (Trait::sampler == Sampler::RNG)
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
-            std::ostringstream rng_stream;
-            rng_stream << data(place).rng;
-            DB::writeStringBinary(rng_stream.str(), buf);
+            WriteBufferFromOwnString rng_buf;
+            rng_buf << data(place).rng;
+            DB::writeStringBinary(rng_buf.str(), buf);
         }
 
         // TODO
@@ -597,8 +598,8 @@ public:
             DB::readIntBinary<size_t>(data(place).total_values, buf);
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
-            std::istringstream rng_stream(rng_string);
-            rng_stream >> data(place).rng;
+            ReadBufferFromString rng_buf(rng_string);
+            rng_buf >> data(place).rng;
         }
 
         // TODO

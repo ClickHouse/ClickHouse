@@ -13,10 +13,10 @@ Dans un “normal” SGBD orienté ligne, les données sont stockées dans cet o
 
 | Rangée | WatchID     | JavaEnable | Intitulé                         | GoodEvent | EventTime           |
 |--------|-------------|------------|----------------------------------|-----------|---------------------|
-| \#0    | 89354350662 | 1          | Relations Avec Les Investisseurs | 1         | 2016-05-18 05:19:20 |
-| \#1    | 90329509958 | 0          | Contacter                        | 1         | 2016-05-18 08:10:20 |
-| \#2    | 89953706054 | 1          | Mission                          | 1         | 2016-05-18 07:38:00 |
-| \#N    | …           | …          | …                                | …         | …                   |
+| #0    | 89354350662 | 1          | Relations Avec Les Investisseurs | 1         | 2016-05-18 05:19:20 |
+| #1    | 90329509958 | 0          | Contacter                        | 1         | 2016-05-18 08:10:20 |
+| #2    | 89953706054 | 1          | Mission                          | 1         | 2016-05-18 07:38:00 |
+| #N    | …           | …          | …                                | …         | …                   |
 
 En d'autres termes, toutes les valeurs liées à une ligne sont physiquement stockées l'une à côté de l'autre.
 
@@ -24,7 +24,7 @@ Des exemples d'un SGBD orienté ligne sont MySQL, Postgres et MS SQL Server.
 
 Dans un SGBD orienté colonne, les données sont stockées comme ceci:
 
-| Rangée:     | \#0                              | \#1                 | \#2                 | \#N |
+| Rangée:     | #0                              | #1                 | #2                 | #N |
 |-------------|----------------------------------|---------------------|---------------------|-----|
 | WatchID:    | 89354350662                      | 90329509958         | 89953706054         | …   |
 | JavaEnable: | 1                                | 0                   | 1                   | …   |

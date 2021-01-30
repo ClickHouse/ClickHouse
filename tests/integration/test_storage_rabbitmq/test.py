@@ -1,29 +1,23 @@
+import json
 import os.path as p
 import random
+import subprocess
 import threading
 import time
-import pytest
-
 from random import randrange
-import pika
-from sys import getdefaultencoding
 
+import pika
+import pytest
+from google.protobuf.internal.encoder import _VarintBytes
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
 
-import json
-import subprocess
-
-from confluent.schemaregistry.serializers.MessageSerializer import MessageSerializer
-from google.protobuf.internal.encoder import _VarintBytes
-
-import rabbitmq_pb2
+from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/rabbitmq.xml','configs/log_conf.xml'],
+                                main_configs=['configs/rabbitmq.xml', 'configs/log_conf.xml'],
                                 with_rabbitmq=True)
 #                                clickhouse_path_dir='clickhouse_path')
 rabbitmq_id = ''
@@ -109,7 +103,7 @@ def rabbitmq_cluster():
         global rabbitmq_id
         cluster.start()
         rabbitmq_id = instance.cluster.rabbitmq_docker_id
-        print("rabbitmq_id is {}".format(rabbitmq_id))
+        print(("rabbitmq_id is {}".format(rabbitmq_id)))
         instance.query('CREATE DATABASE test')
 
         yield cluster
@@ -129,7 +123,7 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_select(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -165,7 +159,7 @@ def test_rabbitmq_select(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -179,7 +173,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
     assert int(instance.query('SELECT count() FROM test.rabbitmq')) == 0
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -221,7 +215,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -256,7 +250,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -291,7 +285,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -334,7 +328,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -377,7 +371,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view1;
@@ -432,7 +426,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
 
 
 @pytest.mark.skip(reason="clichouse_path with rabbitmq.proto fails to be exported")
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_rabbitmq_protobuf(rabbitmq_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -542,16 +536,15 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 
 @pytest.mark.timeout(420)
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
-
     NUM_CONSUMERS = 10
-    NUM_QUEUES = 2
+    NUM_QUEUES = 10
 
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'test_sharding',
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_num_consumers = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -570,6 +563,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
@@ -582,7 +576,8 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         for message in messages:
             current += 1
             mes_id = str(current)
-            channel.basic_publish(exchange='test_sharding', routing_key='', properties=pika.BasicProperties(message_id=mes_id), body=message)
+            channel.basic_publish(exchange='test_sharding', routing_key='',
+                                  properties=pika.BasicProperties(message_id=mes_id), body=message)
         connection.close()
 
     threads = []
@@ -612,7 +607,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
 @pytest.mark.timeout(420)
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
-
     NUM_MV = 5
     NUM_CONSUMERS = 4
 
@@ -623,7 +617,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'combo',
                      rabbitmq_queue_base = 'combo',
                      rabbitmq_num_consumers = 2,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 5,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -646,6 +640,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
@@ -656,7 +651,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             i[0] += 1
         for msg_id in range(messages_num):
             channel.basic_publish(exchange='combo', routing_key='',
-                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
+                                  properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -684,7 +679,6 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
             DROP TABLE test.combo_{0}_mv;
             DROP TABLE test.combo_{0};
         '''.format(mv_id))
-
 
     assert int(result) == messages_num * threads_num * NUM_MV, 'ClickHouse lost some messages: {}'.format(result)
 
@@ -727,6 +721,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
                 raise
 
     insert_messages = []
+
     def onReceived(channel, method, properties, body):
         i = 0
         insert_messages.append(body.decode())
@@ -762,7 +757,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     result = consumer.queue_declare(queue='')
     queue_name = result.method.queue
     consumer.queue_bind(exchange='insert_headers', queue=queue_name, routing_key="",
-            arguments={'x-match':'all', 'test':'insert', 'topic':'headers'})
+                        arguments={'x-match': 'all', 'test': 'insert', 'topic': 'headers'})
 
     values = []
     for i in range(50):
@@ -780,6 +775,7 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
                 raise
 
     insert_messages = []
+
     def onReceived(channel, method, properties, body):
         i = 0
         insert_messages.append(body.decode())
@@ -826,6 +822,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     ''')
 
     messages_num = 1000
+
     def insert():
         values = []
         for i in range(messages_num):
@@ -882,7 +879,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 5,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_max_block_size = 10000,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
@@ -904,6 +901,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     ''')
 
     messages_num = 100000
+
     def insert():
         values = []
         for i in range(messages_num):
@@ -959,7 +957,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.direct_exchange_{0};
             DROP TABLE IF EXISTS test.direct_exchange_{0}_mv;
@@ -997,8 +995,8 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
         for message in messages:
             mes_id = str(randrange(10))
             channel.basic_publish(
-                    exchange='direct_exchange_testing', routing_key=key,
-                    properties=pika.BasicProperties(message_id=mes_id), body=message)
+                exchange='direct_exchange_testing', routing_key=key,
+                properties=pika.BasicProperties(message_id=mes_id), body=message)
 
     connection.close()
 
@@ -1032,7 +1030,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.fanout_exchange_{0};
             DROP TABLE IF EXISTS test.fanout_exchange_{0}_mv;
@@ -1065,7 +1063,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     for msg_id in range(messages_num):
         channel.basic_publish(exchange='fanout_exchange_testing', routing_key='',
-                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
+                              properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
 
     connection.close()
 
@@ -1099,7 +1097,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1118,7 +1116,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         '''.format(consumer_id))
 
     for consumer_id in range(num_tables):
-        print("Setting up table {}".format(num_tables + consumer_id))
+        print(("Setting up table {}".format(num_tables + consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.topic_exchange_{0};
             DROP TABLE IF EXISTS test.topic_exchange_{0}_mv;
@@ -1160,7 +1158,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
     current = 0
     for msg_id in range(messages_num):
         channel.basic_publish(exchange='topic_exchange_testing', routing_key=key,
-                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
+                              properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
 
     connection.close()
 
@@ -1180,7 +1178,9 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         DROP TABLE test.destination;
     ''')
 
-    assert int(result) == messages_num * num_tables + messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(result)
+    assert int(
+        result) == messages_num * num_tables + messages_num * num_tables, 'ClickHouse lost some messages: {}'.format(
+        result)
 
 
 @pytest.mark.timeout(420)
@@ -1195,7 +1195,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     num_tables = 4
     for consumer_id in range(num_tables):
         table_name = 'rabbitmq_consumer{}'.format(consumer_id)
-        print("Setting up {}".format(table_name))
+        print(("Setting up {}".format(table_name)))
         instance.query('''
             DROP TABLE IF EXISTS test.{0};
             DROP TABLE IF EXISTS test.{0}_mv;
@@ -1228,7 +1228,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
             i[0] += 1
         for msg_id in range(messages_num):
             channel.basic_publish(exchange='hash_exchange_testing', routing_key=str(msg_id),
-                properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
+                                  properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -1265,7 +1265,6 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
 
     assert int(result1) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
     assert int(result2) == 4 * num_tables
-
 
 
 @pytest.mark.timeout(420)
@@ -1354,7 +1353,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_receive = 2
     for consumer_id in range(num_tables_to_receive):
-        print("Setting up table {}".format(consumer_id))
+        print(("Setting up table {}".format(consumer_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1373,7 +1372,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_ignore = 2
     for consumer_id in range(num_tables_to_ignore):
-        print("Setting up table {}".format(consumer_id + num_tables_to_receive))
+        print(("Setting up table {}".format(consumer_id + num_tables_to_receive)))
         instance.query('''
             DROP TABLE IF EXISTS test.headers_exchange_{0};
             DROP TABLE IF EXISTS test.headers_exchange_{0}_mv;
@@ -1402,14 +1401,15 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
         messages.append(json.dumps({'key': i[0], 'value': i[0]}))
         i[0] += 1
 
-    fields={}
-    fields['format']='logs'
-    fields['type']='report'
-    fields['year']='2020'
+    fields = {}
+    fields['format'] = 'logs'
+    fields['type'] = 'report'
+    fields['year'] = '2020'
 
     for msg_id in range(messages_num):
         channel.basic_publish(exchange='headers_exchange_testing', routing_key='',
-                properties=pika.BasicProperties(headers=fields, message_id=str(msg_id)), body=messages[msg_id])
+                              properties=pika.BasicProperties(headers=fields, message_id=str(msg_id)),
+                              body=messages[msg_id])
 
     connection.close()
 
@@ -1535,7 +1535,8 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster):
 
     connection.close()
 
-    result = instance.query("SELECT key, value, exchange_name, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM test.view ORDER BY delivery_tag")
+    result = instance.query(
+        "SELECT key, value, exchange_name, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM test.view ORDER BY delivery_tag")
     expected = '''\
 0	0	virtuals_mv	1_0	1	0
 1	1	virtuals_mv	1_0	2	0
@@ -1569,7 +1570,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        print("Setting up table {}".format(table_id))
+        print(("Setting up table {}".format(table_id)))
         instance.query('''
             DROP TABLE IF EXISTS test.many_consumers_{0};
             DROP TABLE IF EXISTS test.many_consumers_{0}_mv;
@@ -1591,6 +1592,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
@@ -1601,7 +1603,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
             i[0] += 1
         for msg_id in range(messages_num):
             channel.basic_publish(exchange='many_consumers', routing_key='',
-                    properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
+                                  properties=pika.BasicProperties(message_id=str(msg_id)), body=messages[msg_id])
         connection.close()
 
     threads = []
@@ -1720,7 +1722,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'consumer_reconnect',
                      rabbitmq_num_consumers = 10,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_queues = 10,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -1739,7 +1741,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         i += 1
     for msg_id in range(messages_num):
         channel.basic_publish(exchange='consumer_reconnect', routing_key='', body=messages[msg_id],
-                properties=pika.BasicProperties(delivery_mode = 2, message_id=str(msg_id)))
+                              properties=pika.BasicProperties(delivery_mode=2, message_id=str(msg_id)))
     connection.close()
 
     instance.query('''
@@ -1759,12 +1761,12 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     time.sleep(8)
     revive_rabbitmq()
 
-    #while int(instance.query('SELECT count() FROM test.view')) == 0:
+    # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)
 
-    #kill_rabbitmq()
-    #time.sleep(2)
-    #revive_rabbitmq()
+    # kill_rabbitmq()
+    # time.sleep(2)
+    # revive_rabbitmq()
 
     while True:
         result = instance.query('SELECT count(DISTINCT key) FROM test.view')
@@ -1808,6 +1810,7 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     cancel = threading.Event()
 
     i = [0]
+
     def produce():
         while not cancel.is_set():
             messages = []
@@ -1859,7 +1862,57 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     assert result == 1, 'Messages from RabbitMQ get duplicated!'
 
 
+@pytest.mark.timeout(420)
+def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
+    # no connection when table is initialized
+    rabbitmq_cluster.pause_container('rabbitmq1')
+    instance.query('''
+        CREATE TABLE test.cs (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'cs',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_num_consumers = '5',
+                     rabbitmq_row_delimiter = '\\n';
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.cs;
+    ''')
+    time.sleep(5)
+    rabbitmq_cluster.unpause_container('rabbitmq1')
+    # need to make sure rabbit table made all rabbit setup
+    time.sleep(10)
+
+    messages_num = 1000
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    for i in range(messages_num):
+        message = json.dumps({'key': i, 'value': i})
+        channel.basic_publish(exchange='cs', routing_key='', body=message,
+                properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)))
+    connection.close()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == messages_num:
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.cs;
+    ''')
+
+    assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
 if __name__ == '__main__':
     cluster.start()
-    raw_input("Cluster created, press any key to destroy...")
+    input("Cluster created, press any key to destroy...")
     cluster.shutdown()

@@ -12,50 +12,79 @@ SELECT CAST('2020-01-01 00:00:00', 'DateTime') AS a, toTypeName(a), CAST('2020-0
 
 SELECT toDateTime32('2020-01-01 00:00:00') AS a, toTypeName(a);
 
-SELECT parseDateTimeBestEffort('<Empty>', 3) AS a, toTypeName(a); -- {serverError 6}
+SELECT 'parseDateTimeBestEffort';
+SELECT parseDateTimeBestEffort('<Empty>', 3) AS a, toTypeName(a); -- {serverError 41}
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort('2020-05-14 03:37:03', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffort('2020-05-14 11:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffort('2020-05-14 11:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffort('2020-05-14 12:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffort('2020-05-14 12:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffort(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
 
+SELECT 'parseDateTimeBestEffortOrNull';
 SELECT parseDateTimeBestEffortOrNull('<Empty>', 3) AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14 03:37:03', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrNull('2020-05-14 11:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrNull('2020-05-14 11:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrNull('2020-05-14 12:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrNull('2020-05-14 12:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrNull(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
 
-SELECT parseDateTimeBestEffortOrZero('<Empty>', 3) AS a, toTypeName(a);
+SELECT 'parseDateTimeBestEffortOrZero';
+SELECT parseDateTimeBestEffortOrZero('<Empty>', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14 03:37:03', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrZero('2020-05-14 11:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrZero('2020-05-14 11:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrZero('2020-05-14 12:37:03 AM', 3, 'UTC') AS a, toTypeName(a);
+SELECT parseDateTimeBestEffortOrZero('2020-05-14 12:37:03 PM', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184Z', 3, 'UTC') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero('2020-05-14T03:37:03.253184Z', 3, 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTimeBestEffortOrZero(materialize('2020-05-14T03:37:03.253184Z'), 3, 'UTC') AS a, toTypeName(a);
 
-
-SELECT parseDateTime32BestEffort('<Empty>') AS a, toTypeName(a); -- {serverError 6}
+SELECT 'parseDateTime32BestEffort';
+SELECT parseDateTime32BestEffort('<Empty>') AS a, toTypeName(a); -- {serverError 41}
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort('2020-05-14 03:37:03', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffort('2020-05-14 11:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffort('2020-05-14 11:37:03 PM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffort('2020-05-14 12:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffort('2020-05-14 12:37:03 PM', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffort(materialize('2020-05-14T03:37:03.253184Z'), 'UTC') AS a, toTypeName(a);
 
+SELECT 'parseDateTime32BestEffortOrNull';
 SELECT parseDateTime32BestEffortOrNull('<Empty>') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14 03:37:03', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrNull('2020-05-14 11:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrNull('2020-05-14 11:37:03 PM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrNull('2020-05-14 12:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrNull('2020-05-14 12:37:03 PM', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrNull(materialize('2020-05-14T03:37:03.253184Z'), 'UTC') AS a, toTypeName(a);
 
-SELECT parseDateTime32BestEffortOrZero('<Empty>') AS a, toTypeName(a);
+SELECT 'parseDateTime32BestEffortOrZero';
+SELECT parseDateTime32BestEffortOrZero('<Empty>', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14 03:37:03', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrZero('2020-05-14 11:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrZero('2020-05-14 11:37:03 PM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrZero('2020-05-14 12:37:03 AM', 'UTC') AS a, toTypeName(a);
+SELECT parseDateTime32BestEffortOrZero('2020-05-14 12:37:03 PM', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184Z', 'UTC') AS a, toTypeName(a);
 SELECT parseDateTime32BestEffortOrZero('2020-05-14T03:37:03.253184Z', 'Europe/Minsk') AS a, toTypeName(a);

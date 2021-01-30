@@ -149,4 +149,35 @@ public:
 };
 
 
+/** Buffer that could write data to external memory which came from outside
+  * Template parameter: ReadBuffer or WriteBuffer
+  */
+template <typename Base>
+class BufferWithOutsideMemory : public Base
+{
+protected:
+    Memory<> & memory;
+public:
+
+    explicit BufferWithOutsideMemory(Memory<> & memory_)
+        : Base(memory_.data(), memory_.size()), memory(memory_)
+    {
+        Base::set(memory.data(), memory.size(), 0);
+        Base::padded = false;
+    }
+
+    size_t getActualSize()
+    {
+        return Base::count();
+    }
+
+private:
+    void nextImpl() override final
+    {
+        const size_t prev_size = Base::position() - memory.data();
+        memory.resize(2 * prev_size + 1);
+        Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
+    }
+};
+
 }

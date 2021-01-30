@@ -295,7 +295,7 @@ void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, co
 
 void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -384,7 +384,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("String data type family mustn't have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
-        if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
+        if (!argument || argument->value.getType() != Field::Types::UInt64)
             throw Exception("String data type family may have only a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
     }
 

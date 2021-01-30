@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 // Contains types declarations and wrappers for GCC vector extension.
 
 namespace DB::VectorExtension

@@ -5,6 +5,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -152,10 +153,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
         if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
+        if (which_type.isUInt128()) return convertNumericType<UInt128>(src, type);
+        if (which_type.isUInt256()) return convertNumericType<UInt256>(src, type);
         if (which_type.isInt8()) return convertNumericType<Int8>(src, type);
         if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
         if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
         if (which_type.isInt64()) return convertNumericType<Int64>(src, type);
+        if (which_type.isInt128()) return convertNumericType<Int128>(src, type);
+        if (which_type.isInt256()) return convertNumericType<Int256>(src, type);
         if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
         if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
@@ -191,7 +196,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (which_type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
+        {
+            if (which_type.isFixedString())
+            {
+                size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
+                const auto & src_str = src.get<String>();
+                if (src_str.size() < n)
+                {
+                    String src_str_extended = src_str;
+                    src_str_extended.resize(n);
+                    return src_str_extended;
+                }
+            }
             return src;
+        }
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {

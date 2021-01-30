@@ -21,3 +21,7 @@ SELECT toStartOfHour(toDateTime('2017-12-31 01:59:00', 'UTC'), 'UTC'); -- succes
 
 SELECT toStartOfMinute(toDateTime('2017-12-31 00:00:00', 'UTC'), ''); -- {serverError 43}
 SELECT toStartOfMinute(toDateTime('2017-12-31 00:01:30', 'UTC'), 'UTC'); -- success
+
+-- special case - allow empty time_zone when using functions like today(), yesterday() etc.
+SELECT toStartOfDay(today()) FORMAT Null; -- success
+SELECT toStartOfDay(yesterday()) FORMAT Null; -- success

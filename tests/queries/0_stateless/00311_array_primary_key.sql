@@ -11,7 +11,7 @@ INSERT INTO array_pk VALUES ([5, 6], 'ghi', 6);
 SELECT * FROM array_pk ORDER BY n;
 
 DETACH TABLE array_pk;
-ATTACH TABLE array_pk (key Array(UInt8), s String, n UInt64, d Date MATERIALIZED '2000-01-01') ENGINE = MergeTree(d, (key, s, n), 1);
+ATTACH TABLE array_pk;
 
 SELECT * FROM array_pk ORDER BY n;
 

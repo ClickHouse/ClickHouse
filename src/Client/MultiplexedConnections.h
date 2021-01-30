@@ -69,7 +69,7 @@ public:
 
 private:
     /// Internal version of `receivePacket` function without locking.
-    Packet receivePacketUnlocked();
+    Packet receivePacketUnlocked(std::function<void(Poco::Net::Socket &)> async_callback = {});
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -105,6 +105,8 @@ private:
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.
     mutable std::mutex cancel_mutex;
+
+    friend struct RemoteQueryExecutorRoutine;
 };
 
 }

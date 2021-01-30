@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
 
             try
             {
-                std::stringstream ss(line);
+                std::stringstream ss(line);     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 
                 std::string cmd;
                 ss >> cmd;

@@ -1,5 +1,10 @@
 <?xml version="1.0"?>
 <yandex>
+    <profiles>
+        <default>
+            <optimize_on_insert>0</optimize_on_insert>
+        </default>
+    </profiles>
     <users>
         <another>
             <password/>

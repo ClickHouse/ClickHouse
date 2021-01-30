@@ -8,7 +8,7 @@
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>

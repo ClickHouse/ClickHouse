@@ -8,6 +8,7 @@
 #include <Core/MultiEnum.h>
 #include <Common/ThreadPool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <atomic>
@@ -36,9 +37,16 @@ public:
 
     DatabaseConnectionMySQL(
         const Context & context, const String & database_name, const String & metadata_path,
-        const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
+        const ASTStorage * database_engine_define, const String & database_name_in_mysql, std::unique_ptr<ConnectionMySQLSettings> settings_,
+        mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
+
+    bool canContainMergeTreeTables() const override { return false; }
+
+    bool canContainDistributedTables() const override { return false; }
+
+    bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
 
@@ -64,6 +72,8 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
+    void detachTablePermanently(const String & table_name) override;
+
     void dropTable(const Context &, const String & table_name, bool no_delay) override;
 
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
@@ -76,9 +86,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
-    // Cache setting for later from query context upon creation,
-    // so column types depend on the settings set at query-level.
-    MultiEnum<MySQLDataTypesSupport> mysql_datatypes_support_level;
+    std::unique_ptr<ConnectionMySQLSettings> database_settings;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;

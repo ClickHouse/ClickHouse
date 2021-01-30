@@ -1,4 +1,4 @@
-#include "KafkaBlockOutputStream.h"
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
@@ -32,7 +32,16 @@ void KafkaBlockOutputStream::writePrefix()
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), *context, [this](const Columns & columns, size_t row){ buffer->countRow(columns, row); });
+    auto format_settings = getFormatSettings(*context);
+    format_settings.protobuf.allow_many_rows_no_delimiters = true;
+
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+        getHeader(), *context,
+        [this](const Columns & columns, size_t row)
+        {
+            buffer->countRow(columns, row);
+        },
+        format_settings);
 }
 
 void KafkaBlockOutputStream::write(const Block & block)

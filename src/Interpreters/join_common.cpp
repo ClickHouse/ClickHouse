@@ -185,13 +185,24 @@ void removeLowCardinalityInplace(Block & block)
     }
 }
 
-void removeLowCardinalityInplace(Block & block, const Names & names)
+void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type)
 {
     for (const String & column_name : names)
     {
         auto & col = block.getByName(column_name);
         col.column = recursiveRemoveLowCardinality(col.column);
-        col.type = recursiveRemoveLowCardinality(col.type);
+        if (change_type)
+            col.type = recursiveRemoveLowCardinality(col.type);
+    }
+}
+
+void restoreLowCardinalityInplace(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto & col = block.getByPosition(i);
+        if (col.type->lowCardinality() && col.column && !col.column->lowCardinality())
+            col.column = changeLowCardinality(col.column, col.type->createColumn());
     }
 }
 
@@ -263,6 +274,13 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
                 col.name});
         }
     }
+}
+
+void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
+{
+    column.reserve(column.size() + count);
+    for (size_t i = 0; i < count; ++i)
+        type->insertDefaultInto(column);
 }
 
 }
@@ -376,9 +394,14 @@ void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 
 void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 {
-    /// @note it's possible to make ColumnConst here and materialize it later
     for (size_t pos : column_indices_left)
-        block.getByPosition(pos).column = block.getByPosition(pos).column->cloneResized(rows_added);
+    {
+        auto & col = block.getByPosition(pos);
+
+        auto mut_col = col.column->cloneEmpty();
+        JoinCommon::addDefaultValues(*mut_col, col.type, rows_added);
+        col.column = std::move(mut_col);
+    }
 }
 
 void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 TMP_DIR="/tmp"
@@ -8,7 +9,7 @@ TMP_DIR="/tmp"
 $CLICKHOUSE_CLIENT -n --query="
 DROP DATABASE IF EXISTS test_01037;
 
-CREATE DATABASE test_01037 Engine = Ordinary;
+CREATE DATABASE test_01037;
 
 DROP TABLE IF EXISTS test_01037.polygons_array;
 
@@ -64,7 +65,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
     LIFETIME(0)
     LAYOUT($type());
 
@@ -77,7 +78,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_tuple' PASSWORD '' DB 'test_01037'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'polygons_tuple' PASSWORD '' DB 'test_01037'))
     LIFETIME(0)
     LAYOUT($type());
 

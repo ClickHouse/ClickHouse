@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
-    IRowInputFormat(header_, in_, std::move(params_)), buf(in)
+    IRowInputFormat(header_, in_, std::move(params_))
 {
     if (header_.columns() > 1 || header_.getDataTypes()[0]->getTypeId() != TypeIndex::String)
     {
@@ -23,51 +23,42 @@ LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, Re
 void LineAsStringRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
 }
 
 void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
-    bool newline = true;
-    bool over = false;
+    DB::Memory<> object;
 
-    char * pos;
+    char * pos = in.position();
+    bool need_more_data = true;
 
-    while (newline)
+    while (loadAtPosition(in, object, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
-        buf.position() = pos;
-        if (buf.position() == buf.buffer().end())
-        {
-            over = true;
-            break;
-        }
-        else if (*buf.position() == '\n')
-        {
-            newline = false;
-        }
-        else if (*buf.position() == '\\')
-        {
-            ++buf.position();
-            if (!buf.eof())
-                ++buf.position();
-        }
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
+        if (pos == in.buffer().end())
+            continue;
+
+        if (*pos == '\n')
+            need_more_data = false;
+
+        ++pos;
     }
 
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    char * end = over ? buf.position(): ++buf.position();
-    buf.rollbackToCheckpoint();
-    column.insertData(buf.position(), end - (over ? 0 : 1) - buf.position());
-    buf.position() = end;
+    saveUpToPosition(in, object, pos);
+    loadAtPosition(in, object, pos);
+
+    /// Last character is always \n.
+    column.insertData(object.data(), object.size() - 1);
 }
 
 bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (!buf.eof())
-        readLineObject(*columns[0]);
+    if (in.eof())
+        return false;
 
-    return !buf.eof();
+    readLineObject(*columns[0]);
+
+    return true;
 }
 
 void registerInputFormatProcessorLineAsString(FormatFactory & factory)
@@ -81,5 +72,4 @@ void registerInputFormatProcessorLineAsString(FormatFactory & factory)
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
 }
-
 }

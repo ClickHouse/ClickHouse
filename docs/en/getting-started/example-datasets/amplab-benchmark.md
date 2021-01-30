@@ -1,5 +1,5 @@
 ---
-toc_priority: 17
+toc_priority: 19
 toc_title: AMPLab Big Data Benchmark
 ---
 
@@ -7,7 +7,7 @@ toc_title: AMPLab Big Data Benchmark
 
 See https://amplab.cs.berkeley.edu/benchmark/
 
-Sign up for a free account at https://aws.amazon.com. It requires a credit card, email, and phone number. Get a new access key at https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Sign up for a free account at https://aws.amazon.com. It requires a credit card, email, and phone number. Get a new access key at https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential
 
 Run the following in the console:
 

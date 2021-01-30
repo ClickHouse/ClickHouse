@@ -11,6 +11,7 @@ class TableFunctionFactory;
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
@@ -36,6 +37,9 @@ void registerTableFunctionView(TableFunctionFactory & factory);
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
 #endif
 
+#if USE_LIBPQXX
+void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
+#endif
 
 void registerTableFunctions();
 

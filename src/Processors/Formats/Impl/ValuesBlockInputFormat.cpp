@@ -54,8 +54,6 @@ Chunk ValuesBlockInputFormat::generate()
             if (buf.eof() || *buf.position() == ';')
                 break;
             readRow(columns, rows_in_block);
-            if (params.callback)
-                params.callback();
         }
         catch (Exception & e)
         {

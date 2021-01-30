@@ -42,11 +42,16 @@ void RabbitMQBlockOutputStream::writePrefix()
 
     buffer->activateWriting();
 
-    child = FormatFactory::instance().getOutput(
-            storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & /* columns */, size_t /* rows */)
-            {
-                buffer->countRow();
-            });
+    auto format_settings = getFormatSettings(context);
+    format_settings.protobuf.allow_many_rows_no_delimiters = true;
+
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+        getHeader(), context,
+        [this](const Columns & /* columns */, size_t /* rows */)
+        {
+            buffer->countRow();
+        },
+        format_settings);
 }
 
 

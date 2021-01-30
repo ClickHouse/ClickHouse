@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Logger.h>
 
@@ -25,8 +25,8 @@ using Ring = IPolygonDictionary::Ring;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
 /** SlabsPolygonIndex builds index based on shooting ray down from point.
-  * When this ray crosses odd number of edges in single polygon, point is considered inside. 
-  * 
+  * When this ray crosses odd number of edges in single polygon, point is considered inside.
+  *
   * SlabsPolygonIndex divides plane into vertical slabs, separated by vertical lines going through all points.
   * For each slab, all edges falling in that slab are effectively stored.
   * For each find query, required slab is found with binary search, and result is computed

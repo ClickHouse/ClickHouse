@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -56,6 +56,19 @@ public:
 };
 
 using SpacePtr = std::shared_ptr<Space>;
+
+/**
+ * A guard, that should synchronize file's or directory's state
+ * with storage device (e.g. fsync in POSIX) in its destructor.
+ */
+class ISyncGuard
+{
+public:
+    ISyncGuard() = default;
+    virtual ~ISyncGuard() = default;
+};
+
+using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 /**
  * A unit of storage persisting data and metadata.
@@ -148,22 +161,19 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        size_t estimated_size = 0,
-        size_t aio_threshold = 0) = 0;
+        WriteMode mode = WriteMode::Rewrite) = 0;
 
-    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
-    virtual void remove(const String & path) = 0;
+    /// Remove file. Throws exception if file doesn't exists or it's a directory.
+    virtual void removeFile(const String & path) = 0;
+
+    /// Remove file if it exists.
+    virtual void removeFileIfExists(const String & path) = 0;
+
+    /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
+    virtual void removeDirectory(const String & path) = 0;
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
-
-    /// Remove file or directory if it exists.
-    void removeIfExists(const String & path)
-    {
-        if (exists(path))
-            remove(path);
-    }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -186,10 +196,13 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
-private:
     /// Returns executor to perform asynchronous operations.
-    Executor & getExecutor() { return *executor; }
+    virtual Executor & getExecutor() { return *executor; }
 
+    /// Returns guard, that insures synchronization of directory metadata with storage device.
+    virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
+
+private:
     std::unique_ptr<Executor> executor;
 };
 

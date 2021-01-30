@@ -37,6 +37,7 @@ public:
 
     const AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
+    static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 
 }

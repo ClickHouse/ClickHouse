@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 CFLAGS(
@@ -31,10 +33,9 @@ PEERDIR(
 )
 
 # "Arcadia" build is slightly deficient. It lacks many libraries that we need.
-CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|sumbur|abtesting' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -i -v -P 'tests|Bitmap|abtesting' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

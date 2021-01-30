@@ -1028,7 +1028,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 
 ## アレイオーク {#arrayauc}
 
-計算AUC（機械学習の概念である曲線の下の面積、詳細を参照してください：https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve）。
+計算AUC（機械学習の概念である曲線の下の面積、詳細を参照してください：https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve）。
 
 **構文**
 

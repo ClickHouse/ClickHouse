@@ -8,6 +8,15 @@
 namespace DB
 {
 
+class AggregatedArenasChunkInfo : public ChunkInfo
+{
+public:
+    Arenas arenas;
+    AggregatedArenasChunkInfo(Arenas arenas_)
+        : arenas(std::move(arenas_))
+    {}
+};
+
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:
@@ -94,6 +103,12 @@ private:
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
+
+    /** Used if there is a limit on the maximum number of rows in the aggregation,
+     *   and if group_by_overflow_mode == ANY.
+     *  In this case, new keys are not added to the set, but aggregation is performed only by
+     *   keys that have already managed to get into the set.
+     */
     bool no_more_keys = false;
 
     ManyAggregatedDataPtr many_data;

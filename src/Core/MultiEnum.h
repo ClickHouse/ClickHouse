@@ -13,12 +13,12 @@ struct MultiEnum
     MultiEnum() = default;
 
     template <typename ... EnumValues, typename = std::enable_if_t<std::conjunction_v<std::is_same<EnumTypeT, EnumValues>...>>>
-    explicit MultiEnum(EnumValues ... v)
+    constexpr explicit MultiEnum(EnumValues ... v)
         : MultiEnum((toBitFlag(v) | ... | 0u))
     {}
 
     template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
-    explicit MultiEnum(ValueType v)
+    constexpr explicit MultiEnum(ValueType v)
         : bitset(v)
     {
         static_assert(std::is_unsigned_v<ValueType>);
@@ -83,17 +83,17 @@ struct MultiEnum
     template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
     friend bool operator==(ValueType left, MultiEnum right)
     {
-        return right == left;
+        return right.operator==(left);
     }
 
-    template <typename L>
+    template <typename L, typename = typename std::enable_if<!std::is_same_v<L, MultiEnum>>::type>
     friend bool operator!=(L left, MultiEnum right)
     {
-        return !(right == left);
+        return !(right.operator==(left));
     }
 
 private:
     StorageType bitset = 0;
 
-    static StorageType toBitFlag(EnumType v) { return StorageType{1} << static_cast<StorageType>(v); }
+    static constexpr StorageType toBitFlag(EnumType v) { return StorageType{1} << static_cast<StorageType>(v); }
 };

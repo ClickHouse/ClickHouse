@@ -7,6 +7,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromOStream.h>
 
 #include <boost/program_options.hpp>
 
@@ -260,6 +261,17 @@ int main(int argc, char ** argv)
              "10662d71-9d91-11ea-bbc2-0242ac110003:6-7",
              "20662d71-9d91-11ea-bbc2-0242ac110003:9",
              "10662d71-9d91-11ea-bbc2-0242ac110003:6-7,20662d71-9d91-11ea-bbc2-0242ac110003:9"},
+
+            {"shrink-sequence",
+              "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-7"},
+
+            {"shrink-sequence",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:10",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:8",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-5:8:10"
+            }
         };
 
         for (auto & tc : cases)
@@ -292,7 +304,8 @@ int main(int argc, char ** argv)
                 "user", boost::program_options::value<std::string>()->default_value("root"), "master user")(
                 "password", boost::program_options::value<std::string>()->required(), "master password")(
                 "gtid", boost::program_options::value<std::string>()->default_value(""), "executed GTID sets")(
-                "db", boost::program_options::value<std::string>()->required(), "replicate do db");
+                "db", boost::program_options::value<std::string>()->required(), "replicate do db")(
+                "binlog_checksum", boost::program_options::value<std::string>()->default_value("CRC32"), "master binlog_checksum");
 
             boost::program_options::variables_map options;
             boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -307,6 +320,7 @@ int main(int argc, char ** argv)
             auto master_password = options.at("password").as<DB::String>();
             auto gtid_sets = options.at("gtid").as<DB::String>();
             auto replicate_db = options.at("db").as<DB::String>();
+            auto binlog_checksum = options.at("binlog_checksum").as<String>();
 
             std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password
                       << ", Replicate DB: " << replicate_db << ", GTID: " << gtid_sets << std::endl;
@@ -316,7 +330,9 @@ int main(int argc, char ** argv)
 
             /// Connect to the master.
             slave.connect();
-            slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
+            slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets, binlog_checksum);
+
+            WriteBufferFromOStream cerr(std::cerr);
 
             /// Read one binlog event on by one.
             while (true)
@@ -326,40 +342,40 @@ int main(int argc, char ** argv)
                 {
                     case MYSQL_QUERY_EVENT: {
                         auto binlog_event = std::static_pointer_cast<QueryEvent>(event);
-                        binlog_event->dump(std::cerr);
+                        binlog_event->dump(cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(std::cerr);
+                        pos.dump(cerr);
                         break;
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<WriteRowsEvent>(event);
-                        binlog_event->dump(std::cerr);
+                        binlog_event->dump(cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(std::cerr);
+                        pos.dump(cerr);
                         break;
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<UpdateRowsEvent>(event);
-                        binlog_event->dump(std::cerr);
+                        binlog_event->dump(cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(std::cerr);
+                        pos.dump(cerr);
                         break;
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
                         auto binlog_event = std::static_pointer_cast<DeleteRowsEvent>(event);
-                        binlog_event->dump(std::cerr);
+                        binlog_event->dump(cerr);
 
                         Position pos = slave.getPosition();
-                        pos.dump(std::cerr);
+                        pos.dump(cerr);
                         break;
                     }
                     default:
                         if (event->header.type != MySQLReplication::EventType::HEARTBEAT_EVENT)
                         {
-                            event->dump(std::cerr);
+                            event->dump(cerr);
                         }
                         break;
                 }

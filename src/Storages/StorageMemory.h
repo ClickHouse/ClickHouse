@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <optional>
 #include <mutex>
 
 #include <ext/shared_ptr_helper.h>
@@ -8,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -19,19 +22,18 @@ namespace DB
   */
 class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
 
-    size_t getSize() const { return data.size(); }
+    size_t getSize() const { return data.get()->size(); }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        const SelectQueryInfo & query_info,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -39,14 +41,18 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
+    bool supportsSubcolumns() const override { return true; }
+
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
 
     void drop() override;
 
+    void mutate(const MutationCommands & commands, const Context & context) override;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows() const override;
-    std::optional<UInt64> totalBytes() const override;
+    std::optional<UInt64> totalRows(const Settings &) const override;
+    std::optional<UInt64> totalBytes(const Settings &) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -86,12 +92,15 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
-    BlocksList data;
+    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+    MultiVersion<Blocks> data;
 
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+
+    std::atomic<size_t> total_size_bytes = 0;
+    std::atomic<size_t> total_size_rows = 0;
 
 protected:
     StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);

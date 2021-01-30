@@ -1,7 +1,7 @@
-# ﾂ环板Utilityｮﾂ嘉ｯ {#clickhouse-utility}
+# 实用工具 {#clickhouse-utility}
 
--   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](clickhouse-local.md) — Allows running SQL queries on data without stopping the ClickHouse server, similar to how `awk` 做到这一点。
--   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](clickhouse-copier.md) — Copies (and reshards) data from one cluster to another cluster.
--   [ﾂ暗ｪﾂ氾环催ﾂ団](clickhouse-benchmark.md) — Loads server with the custom queries and settings.
+-   [本地查询](clickhouse-local.md) —  在不停止ClickHouse服务的情况下，对数据执行查询操作(类似于 `awk` 命令)。
+-   [跨集群复制](clickhouse-copier.md) —  在不同集群间复制数据。
+-   [性能测试](clickhouse-benchmark.md) — 连接到Clickhouse服务器，执行性能测试。
 
 [原始文章](https://clickhouse.tech/docs/en/operations/utils/) <!--hide-->

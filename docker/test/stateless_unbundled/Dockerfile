@@ -8,6 +8,7 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             alien \
             brotli \
+            zstd \
             cmake \
             devscripts \
             expect \
@@ -43,6 +44,8 @@ RUN apt-get --allow-unauthenticated update -y \
             libreadline-dev \
             libsasl2-dev \
             libzstd-dev \
+            librocksdb-dev \
+            libgflags-dev \
             lsof \
             moreutils \
             ncdu \
@@ -54,10 +57,11 @@ RUN apt-get --allow-unauthenticated update -y \
             perl \
             pigz \
             pkg-config \
-            python \
-            python-lxml \
-            python-requests \
-            python-termcolor \
+            python3 \
+            python3-lxml \
+            python3-requests \
+            python3-termcolor \
+            python3-pip \
             qemu-user-static \
             sudo \
             telnet \
@@ -66,9 +70,9 @@ RUN apt-get --allow-unauthenticated update -y \
             unixodbc \
             unixodbc-dev \
             wget \
-            zlib1g-dev \
-            zookeeper \
-            zookeeperd
+            zlib1g-dev
+
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -82,3 +86,4 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
+

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 export CURR_DATABASE="test_lazy_01014_concurrent_${CLICKHOUSE_DATABASE}"
@@ -107,3 +108,5 @@ ${CLICKHOUSE_CLIENT} -n -q "
 #    DROP DATABASE $CURR_DATABASE; -- This fails for some reason
 
 echo "Test OK"
+
+# TODO: it doesn't work! $CLICKHOUSE_CLIENT -q "DROP DATABASE $CURR_DATABASE"

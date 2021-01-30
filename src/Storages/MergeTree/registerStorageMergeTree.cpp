@@ -8,6 +8,7 @@
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -392,26 +393,31 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
+    bool allow_renaming = true;
 
     if (replicated)
     {
         bool has_arguments = arg_num + 2 <= arg_cnt;
         bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
 
+        ASTLiteral * ast_zk_path;
+        ASTLiteral * ast_replica_name;
+
         if (has_valid_arguments)
         {
-            const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-                zookeeper_path = safeGet<String>(ast->value);
+            /// Get path and name from engine arguments
+            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
+                zookeeper_path = safeGet<String>(ast_zk_path->value);
             else
                 throw Exception(
                     "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
             ++arg_num;
 
-            ast = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::String)
-                replica_name = safeGet<String>(ast->value);
+            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
+                replica_name = safeGet<String>(ast_replica_name->value);
             else
                 throw Exception(
                     "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
@@ -421,12 +427,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
             ++arg_num;
         }
-        else if (is_extended_storage_def && !has_arguments)
+        else if (is_extended_storage_def && arg_cnt == 0)
         {
             /// Try use default values if arguments are not specified.
-            /// It works for ON CLUSTER queries when database engine is Atomic and there are {shard} and {replica} in config.
-            zookeeper_path = "/clickhouse/tables/{uuid}/{shard}";
-            replica_name = "{replica}"; /// TODO maybe use hostname if {replica} is not defined?
+            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
+            zookeeper_path = args.context.getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+            /// TODO maybe use hostname if {replica} is not defined?
+            replica_name = args.context.getConfigRef().getString("default_replica_name", "{replica}");
+
+            /// Modify query, so default values will be written to metadata
+            assert(arg_num == 0);
+            ASTs old_args;
+            std::swap(engine_args, old_args);
+            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
+            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
+            ast_zk_path = path_arg.get();
+            ast_replica_name = name_arg.get();
+            engine_args.emplace_back(std::move(path_arg));
+            engine_args.emplace_back(std::move(name_arg));
+            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
+            arg_num = 2;
+            arg_cnt += 2;
         }
         else
             throw Exception("Expected two string literal arguments: zookeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
@@ -434,8 +455,44 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         bool is_on_cluster = args.local_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool allow_uuid_macro = is_on_cluster || args.query.attach;
-        zookeeper_path = args.context.getMacros()->expand(zookeeper_path, args.table_id, allow_uuid_macro);
-        replica_name = args.context.getMacros()->expand(replica_name, args.table_id, false);
+
+        /// Unfold {database} and {table} macro on table creation, so table can be renamed.
+        /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
+        if (!args.attach)
+        {
+            Macros::MacroExpansionInfo info;
+            /// NOTE: it's not recursive
+            info.expand_special_macros_only = true;
+            info.table_id = args.table_id;
+            if (!allow_uuid_macro)
+                info.table_id.uuid = UUIDHelpers::Nil;
+            zookeeper_path = args.context.getMacros()->expand(zookeeper_path, info);
+
+            info.level = 0;
+            info.table_id.uuid = UUIDHelpers::Nil;
+            replica_name = args.context.getMacros()->expand(replica_name, info);
+        }
+
+        ast_zk_path->value = zookeeper_path;
+        ast_replica_name->value = replica_name;
+
+        /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
+        /// to make possible copying metadata files between replicas.
+        Macros::MacroExpansionInfo info;
+        info.table_id = args.table_id;
+        if (!allow_uuid_macro)
+            info.table_id.uuid = UUIDHelpers::Nil;
+        zookeeper_path = args.context.getMacros()->expand(zookeeper_path, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        replica_name = args.context.getMacros()->expand(replica_name, info);
+
+        /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
+        /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
+        /// or if one of these macros is recursively expanded from some other macro.
+        if (info.expanded_database || info.expanded_table)
+            allow_renaming = false;
     }
 
     /// This merging param maybe used as part of sorting key
@@ -515,7 +572,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.columns = args.columns;
 
-    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
+    std::unique_ptr<MergeTreeSettings> storage_settings;
+    if (replicated)
+        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getReplicatedMergeTreeSettings());
+    else
+        storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -528,10 +589,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.context);
 
+        /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
+        if (!args.storage_def->order_by && args.storage_def->primary_key)
+            args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
+
         if (!args.storage_def->order_by)
             throw Exception(
-                "You must provide an ORDER BY expression in the table definition. "
-                "If you don't want this table to be sorted, use ORDER BY tuple()",
+                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
 
         /// Get sorting key from engine arguments.
@@ -547,7 +612,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
         }
-        else /// Otherwise we copy it from primary key definition
+        else /// Otherwise we don't have explicit primary key and copy it from order by
         {
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
@@ -653,6 +718,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
+    DataTypes data_types = metadata.partition_key.data_types;
+    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    {
+        for (size_t i = 0; i < data_types.size(); ++i)
+            if (isFloat(data_types[i]))
+                throw Exception(
+                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+    }
+
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -668,7 +742,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag);
+            args.has_force_restore_data_flag,
+            allow_renaming);
     else
         return StorageMergeTree::create(
             args.table_id,
@@ -690,6 +765,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_skipping_indices = true,
         .supports_sort_order = true,
         .supports_ttl = true,
+        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

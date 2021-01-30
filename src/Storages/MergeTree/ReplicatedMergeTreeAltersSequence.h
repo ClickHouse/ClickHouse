@@ -38,9 +38,8 @@ public:
     /// Add mutation for alter (alter data stage).
     void addMutationForAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
 
-    /// Add metadata for alter (alter metadata stage). If have_mutation=true, than we expect, that
-    /// corresponding mutation will be added.
-    void addMetadataAlter(int alter_version, bool have_mutation, std::lock_guard<std::mutex> & /*state_lock*/);
+    /// Add metadata for alter (alter metadata stage).
+    void addMetadataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
 
     /// Finish metadata alter. If corresponding data alter finished, than we can remove
     /// alter from sequence.

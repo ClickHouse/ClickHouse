@@ -59,7 +59,8 @@ class Row(object):
 
 
 class Field(object):
-    def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False, range_hash_type=None, default_value_for_get=None):
+    def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False,
+                 range_hash_type=None, default_value_for_get=None):
         self.name = name
         self.field_type = field_type
         self.is_key = is_key
@@ -123,7 +124,8 @@ class DictionaryStructure(object):
                 self.range_key = field
 
         if not self.layout.is_complex and len(self.keys) > 1:
-            raise Exception("More than one key {} field in non complex layout {}".format(len(self.keys), self.layout.name))
+            raise Exception(
+                "More than one key {} field in non complex layout {}".format(len(self.keys), self.layout.name))
 
         if self.layout.is_ranged and (not self.range_key or len(self.range_fields) != 2):
             raise Exception("Inconsistent configuration of ranged dictionary")
@@ -213,7 +215,8 @@ class DictionaryStructure(object):
         if or_default:
             or_default_expr = 'OrDefault'
             if field.default_value_for_get is None:
-                raise Exception("Can create 'dictGetOrDefault' query for field {} without default_value_for_get".format(field.name))
+                raise Exception(
+                    "Can create 'dictGetOrDefault' query for field {} without default_value_for_get".format(field.name))
 
             val = field.default_value_for_get
             if isinstance(val, str):
@@ -259,15 +262,16 @@ class DictionaryStructure(object):
     def get_get_or_default_expressions(self, dict_name, field, row):
         if not self.layout.is_ranged:
             return [
-                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=False, has=False),
+                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=False,
+                                                     has=False),
                 self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=True, has=False),
             ]
         return []
 
-
     def get_has_expressions(self, dict_name, field, row):
         if not self.layout.is_ranged:
-            return [self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False, has=True)]
+            return [self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False,
+                                                         has=True)]
         return []
 
     def get_hierarchical_expressions(self, dict_name, row):
@@ -290,7 +294,7 @@ class DictionaryStructure(object):
                 "dictIsIn('{dict_name}', {child_key}, {parent_key})".format(
                     dict_name=dict_name,
                     child_key=child_key_expr,
-                    parent_key=parent_key_expr,)
+                    parent_key=parent_key_expr, )
             ]
 
         return []
@@ -364,7 +368,8 @@ class Dictionary(object):
         return ['select {}'.format(expr) for expr in self.structure.get_get_expressions(self.name, field, row)]
 
     def get_select_get_or_default_queries(self, field, row):
-        return ['select {}'.format(expr) for expr in self.structure.get_get_or_default_expressions(self.name, field, row)]
+        return ['select {}'.format(expr) for expr in
+                self.structure.get_get_or_default_expressions(self.name, field, row)]
 
     def get_select_has_queries(self, field, row):
         return ['select {}'.format(expr) for expr in self.structure.get_has_expressions(self.name, field, row)]

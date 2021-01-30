@@ -1,20 +1,20 @@
 #include <Columns/ColumnFixedString.h>
+
 #include <Columns/ColumnsCommon.h>
-
-#include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/memcpySmall.h>
-#include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-
 #include <DataStreams/ColumnGathererStream.h>
-
 #include <IO/WriteHelpers.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/memcmpSmall.h>
+#include <Common/memcpySmall.h>
+#include <common/sort.h>
+#include <ext/scope_guard.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
+#if defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 
@@ -155,9 +155,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     if (limit)
     {
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
+            partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this));
     }
     else
     {
@@ -168,24 +168,29 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     }
 }
 
-void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const
+void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (limit >= size() || limit >= equal_range.back().second)
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_ranges.back().second)
         limit = 0;
 
-    size_t k = equal_range.size();
+    size_t number_of_ranges = equal_ranges.size();
     if (limit)
-        --k;
+        --number_of_ranges;
 
     EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
 
-    for (size_t i = 0; i < k; ++i)
+    for (size_t i = 0; i < number_of_ranges; ++i)
     {
-        const auto& [first, last] = equal_range[i];
+        const auto& [first, last] = equal_ranges[i];
         if (reverse)
             std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
         else
             std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
+
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
@@ -202,11 +207,18 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
     }
     if (limit)
     {
-        const auto& [first, last] = equal_range.back();
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<false>(*this));
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less<true>(*this));
+
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
@@ -230,7 +242,6 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
         if (new_last - new_first > 1)
             new_ranges.emplace_back(new_first, new_last);
     }
-    equal_range = std::move(new_ranges);
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -278,7 +289,8 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_sse)
     {
-        int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        mask = ~mask;
 
         if (0 == mask)
         {
