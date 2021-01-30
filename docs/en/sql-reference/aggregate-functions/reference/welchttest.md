@@ -14,19 +14,18 @@ This is a test for the null hypothesis that two independent samples have identic
 welchTTest(sample_data, sample_index)
 ```
 
-Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the first sample. Otherwise it belongs to the second sample.
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
+The null hypothesis is that means of populations are equal. Normal distribution is assumed. Population variances may not be equal.
 
 **Parameters**
 
--   `sample_data` — sample data. [Float64](../../../sql-reference/data-types/float.md).
--   `sample_index` — sample index. [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   `t_statistic` - calculated statistic;
--   `p_value` - calculated p-value.
-
-Type: [Float64](../../../sql-reference/data-types/float.md).
+-   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
+-   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**

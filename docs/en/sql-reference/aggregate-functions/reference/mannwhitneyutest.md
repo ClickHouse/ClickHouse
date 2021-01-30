@@ -14,8 +14,7 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 ```
 
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
-The null hypothesis is that the probability of value X (sampled from the first population) being greater than Y (sampled from the second population) is equal to the probability of Y being greater than X. Also one-sided hypothesis can be tested.
-  
+The null hypothesis is that the medians of distributions of populations are equal. Also one-sided hypothesises can be tested. 
 
 **Parameters**
 
@@ -23,16 +22,15 @@ The null hypothesis is that the probability of value X (sampled from the first p
     -   `"two-sided"` (by default);
     -   `"greater"`;
     -   `"less"`.
--   `continuity_correction` - whether to apply continuity correction in the normal approximation for the p-value. (Correction is applied by default.) [UInt64](../../../sql-reference/data-types/int-uint.md)
--   `sample_data` — sample data. [Float64](../../../sql-reference/data-types/float.md).
--   `sample_index` — sample index. [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   `continuity_correction` - if not 0 then continuity correction in the normal approximation for the p-value is applied. (Default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md)
+-   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+
 
 **Returned values**
 
--   `u_statistic` - calculated statistic;
--   `p_value` - calculated p-value.
-
-Type: [Float64](../../../sql-reference/data-types/float.md).
+-   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
+-   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**
