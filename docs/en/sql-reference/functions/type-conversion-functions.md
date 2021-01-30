@@ -303,9 +303,31 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
+## reinterpretAs(x, T) {#type_conversion_function-cast}
 
-## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}
+Performs byte reinterpretation of ‘x’ as ‘t’ data type.
+
+Following reinterpretations are allowed:
+1. Any type that has fixed size and value of that type can be represented continuously into FixedString. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+2. Any type that if value of that type can be represented continuously into String. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
+String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
+
+``` sql
+SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
+    reinterpretAs(toInt8(1), 'Float32') as int_to_float,
+    reinterpretAs('1', 'UInt32') as string_to_int;
+```
+
+``` text
+┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
+│         255 │        1e-45 │            49 │
+└─────────────┴──────────────┴───────────────┘
+```
+
+## reinterpretAsUInt(8\|16\|32\|64\|256) {#reinterpretasuint8163264256}
+
+## reinterpretAsInt(8\|16\|32\|64\|128\|256) {#reinterpretasint8163264128256}
 
 ## reinterpretAsFloat(32\|64) {#reinterpretasfloat3264}
 
@@ -313,71 +335,13 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 ## reinterpretAsDateTime {#reinterpretasdatetime}
 
-These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
-
 ## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
-
-This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
 ## reinterpretAsFixedString {#reinterpretasfixedstring}
 
-This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
-
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
-
-**Syntax**
-
-``` sql
-reinterpretAsUUID(fixed_string)
-```
-
-**Parameters**
-
--   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
-
-**Returned value**
-
--   The UUID type value. [UUID](../../sql-reference/data-types/uuid.md#uuid-data-type).
-
-**Examples**
-
-String to UUID.
-
-Query:
-
-``` sql
-SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
-```
-
-Result:
-
-``` text
-┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-Going back and forth from String to UUID.
-
-Query:
-
-``` sql
-WITH
-    generateUUIDv4() AS uuid,
-    identity(lower(hex(reverse(reinterpretAsString(uuid))))) AS str,
-    reinterpretAsUUID(reverse(unhex(str))) AS uuid2
-SELECT uuid = uuid2;
-```
-
-Result:
-
-``` text
-┌─equals(uuid, uuid2)─┐
-│                   1 │
-└─────────────────────┘
-```
+These functions are aliases for `reinterpretAs`function.
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
