@@ -31,7 +31,7 @@ static void *volatile vdso_func = (void *)getcpu_init;
 int sched_getcpu(void)
 {
 	int r;
-	unsigned cpu;
+	unsigned cpu = 0;
 
 #ifdef VDSO_GETCPU_SYM
 	getcpu_f f = (getcpu_f)vdso_func;
