@@ -1,7 +1,8 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
 
-#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/WindowDescription.h>
+
+#include <Processors/IProcessor.h>
 
 #include <Common/AlignedBuffer.h>
 
@@ -103,6 +104,7 @@ private:
     void advanceFrameStart();
     void advanceFrameEnd();
     void advanceFrameEndCurrentRow();
+    void advanceFrameEndUnbounded();
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
     void writeOutCurrentRow();
 
