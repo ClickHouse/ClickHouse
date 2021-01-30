@@ -74,7 +74,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     , context(context_)
 {
     /// Remove keys from sample_block for implicit_key dictionary because
-    /// this columns will not be provided by client
+    /// these columns will not be provided by client
     if (implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
