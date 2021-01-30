@@ -602,7 +602,7 @@ This is necessary for searching for pageviews in the corresponding session.
 
 ## formatDateTime {#formatdatetime}
 
-Function formats a Time according to the given Format string. N.B.: Format is a constant expression, e.g. you cannot have multiple formats for a single result column.
+Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
 **Syntax**
 
