@@ -329,7 +329,7 @@ Pipe StorageS3::read(
             context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            chooseCompressionMethod(uri.endpoint, compression_method),
+            chooseCompressionMethod(uri.key, compression_method),
             client,
             uri.bucket,
             key));
@@ -347,7 +347,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         format_name,
         metadata_snapshot->getSampleBlock(),
         global_context,
-        chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.key, compression_method),
         client,
         uri.bucket,
         uri.key,
