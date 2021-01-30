@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
-#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Core/MySQL/IMySQLWritePacket.h>

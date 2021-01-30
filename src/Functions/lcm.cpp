@@ -54,7 +54,7 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
     }
 };
 
-using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false>;
+using FunctionLCM = BinaryArithmeticOverloadResolver<LCMImpl, NameLCM, false, false>;
 
 }
 
