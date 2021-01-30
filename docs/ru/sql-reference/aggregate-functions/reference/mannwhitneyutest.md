@@ -67,4 +67,4 @@ Result:
 
 -   [U-критерий Манна — Уитни](https://ru.wikipedia.org/wiki/U-%D0%BA%D1%80%D0%B8%D1%82%D0%B5%D1%80%D0%B8%D0%B9_%D0%9C%D0%B0%D0%BD%D0%BD%D0%B0_%E2%80%94_%D0%A3%D0%B8%D1%82%D0%BD%D0%B8)
 
-[Original article](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->
