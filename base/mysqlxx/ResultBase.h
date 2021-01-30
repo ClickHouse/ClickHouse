@@ -31,6 +31,8 @@ public:
     MYSQL_RES * getRes() { return res; }
     const Query * getQuery() const { return query; }
 
+    std::string getFieldName(size_t n) const;
+
     virtual ~ResultBase();
 
 protected:

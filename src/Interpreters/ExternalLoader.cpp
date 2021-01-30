@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
 
@@ -1404,7 +1405,29 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.status == ExternalLoader::Status::LOADING)
         throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
     if (result.exception)
-        std::rethrow_exception(result.exception);
+    {
+        // Exception is shared for multiple threads.
+        // Don't just rethrow it, because sharing the same exception object
+        // between multiple threads can lead to weird effects if they decide to
+        // modify it, for example, by adding some error context.
+        try
+        {
+            std::rethrow_exception(result.exception);
+        }
+        catch (const Poco::Exception & e)
+        {
+            /// This will create a copy for Poco::Exception and DB::Exception
+            e.rethrow();
+        }
+        catch (...)
+        {
+            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
+                                "Failed to load dictionary '{}': {}",
+                                result.name,
+                                getCurrentExceptionMessage(true /*with stack trace*/,
+                                                           true /*check embedded stack trace*/));
+        }
+    }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
         throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
     if (result.status == ExternalLoader::Status::NOT_LOADED)

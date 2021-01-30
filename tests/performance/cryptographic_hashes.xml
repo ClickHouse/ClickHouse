@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="1.0">
+<test>
     <substitutions>
         <substitution>
            <name>hash_slow</name>

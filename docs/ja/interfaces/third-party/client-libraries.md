@@ -11,10 +11,11 @@ toc_title: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
     Yandexのは **ない** 以下のライブラリを維持し、その品質を保証するための広範なテストを行っていません。
 
 -   Python
-    -   [インフィclickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [インフィclickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-ドライバ](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-クライアント](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-クライアント](https://packagist.org/packages/8bitov/clickhouse-php-client)
@@ -47,7 +48,7 @@ toc_title: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
     -   [clickhouse-scala-クライアント](https://github.com/crobox/clickhouse-scala-client)
 -   コトリン
     -   [AORM](https://github.com/TanVD/AORM)
--   C\#
+-   C#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [クリックハウスAdo](https://github.com/killwort/ClickHouse-Net)
     -   [クリックハウスクライアン](https://github.com/DarkWanderer/ClickHouse.Client)

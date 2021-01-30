@@ -30,6 +30,10 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// We should never return LowCardinality result, cause we declare that result is always constant zero.
+    /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     String getName() const override
     {
         return name;
@@ -40,12 +44,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block &, const ColumnNumbers &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
     {
         return DataTypeUInt8().createColumnConst(1, 0u);
     }

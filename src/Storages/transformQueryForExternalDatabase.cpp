@@ -1,4 +1,3 @@
-#include <sstream>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -139,6 +138,12 @@ bool isCompatible(const IAST & node)
         if (name == "tuple" && function->arguments->children.size() <= 1)
             return false;
 
+        /// If the right hand side of IN is an identifier (example: x IN table), then it's not compatible.
+        if ((name == "in" || name == "notIn")
+            && (function->arguments->children.size() != 2
+                || function->arguments->children[1]->as<ASTIdentifier>()))
+            return false;
+
         for (const auto & expr : function->arguments->children)
             if (!isCompatible(*expr))
                 return false;
@@ -220,7 +225,7 @@ String transformQueryForExternalDatabase(
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
 
-    std::stringstream out;
+    WriteBufferFromOwnString out;
     IAST::FormatSettings settings(out, true);
     settings.identifier_quoting_style = identifier_quoting_style;
     settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;

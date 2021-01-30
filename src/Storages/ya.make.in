@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -6,10 +8,9 @@ PEERDIR(
     contrib/libs/poco/MongoDB
 )
 
-CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'Kafka|RabbitMQ|S3|HDFS|Licenses|TimeZones' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -P 'Kafka|RabbitMQ|S3|HDFS|Licenses|TimeZones|RocksDB|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

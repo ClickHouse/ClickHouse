@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct StreamLocalLimits;
+
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
@@ -69,8 +71,8 @@ public:
     enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
-        Totals,  /// Stream for totals. No more then one.
-        Extremes, /// Stream for extremes. No more then one.
+        Totals,  /// Stream for totals. No more than one.
+        Extremes, /// Stream for extremes. No more than one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -79,6 +81,9 @@ public:
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
+
+    /// Changes the number of output ports if needed. Adds ResizeTransform.
+    void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
@@ -94,11 +99,12 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const SourceWithProgress::LocalLimits & limits);
+    void setLimits(const StreamLocalLimits & limits);
+    void setLeafLimits(const SizeLimits & leaf_limits);
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(const TableLockHolder & lock) { holder.table_locks.push_back(lock); }
+    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }

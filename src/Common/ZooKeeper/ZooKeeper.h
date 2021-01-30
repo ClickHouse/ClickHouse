@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <unistd.h>
 
 
@@ -27,9 +28,6 @@ namespace CurrentMetrics
 
 namespace zkutil
 {
-
-const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
-const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -53,10 +51,10 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
-              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
-              const std::string & implementation = "zookeeper");
+              const std::string & implementation_ = "zookeeper");
 
     /** Config of the form:
         <zookeeper>
@@ -86,6 +84,8 @@ public:
     /// after the session has expired.
     /// This object remains unchanged, and the new session is returned.
     Ptr startNewSession() const;
+
+    bool configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const;
 
     /// Returns true, if the session has expired.
     bool expired();

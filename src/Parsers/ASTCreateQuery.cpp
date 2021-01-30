@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -124,6 +125,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->indices, indices->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
+    if (primary_key)
+        res->set(res->primary_key, primary_key->clone());
 
     return res;
 }
@@ -227,19 +230,28 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (!is_dictionary)
     {
-        std::string what = "TABLE";
-        if (is_view)
+        String action = "CREATE";
+        if (attach)
+            action = "ATTACH";
+        else if (replace_view)
+            action = "CREATE OR REPLACE";
+        else if (replace_table && create_or_replace)
+            action = "CREATE OR REPLACE";
+        else if (replace_table)
+            action = "REPLACE";
+
+        String what = "TABLE";
+        if (is_ordinary_view)
             what = "VIEW";
-        if (is_materialized_view)
+        else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        if (is_live_view)
+        else if (is_live_view)
             what = "LIVE VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
-                << (attach ? "ATTACH " : "CREATE ")
+                << action << " "
                 << (temporary ? "TEMPORARY " : "")
-                << (replace_view ? "OR REPLACE " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
@@ -249,21 +261,22 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
 
-        if (live_view_timeout || live_view_periodic_refresh)
+        assert(attach || !attach_from_path);
+        if (attach_from_path)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
+                          << quoteString(*attach_from_path);
+
+        if (live_view_timeout)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
+                          << *live_view_timeout;
+
+        if (live_view_periodic_refresh)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH";
-
             if (live_view_timeout)
-                settings.ostr << " TIMEOUT " << (settings.hilite ? hilite_none : "") << *live_view_timeout;
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
 
-            if (live_view_periodic_refresh)
-            {
-                if (live_view_timeout)
-                    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
-
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
-                    << *live_view_periodic_refresh;
-            }
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                << *live_view_periodic_refresh;
         }
 
         formatOnCluster(settings);
@@ -297,13 +310,23 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
+        if (columns_list)
+        {
+            frame.expression_list_always_start_on_new_line = true;
+            settings.ostr << (settings.one_line ? " (" : "\n(");
+            FormatStateStacked frame_nested = frame;
+            columns_list->formatImpl(settings, state, frame_nested);
+            settings.ostr << (settings.one_line ? ")" : "\n)");
+            frame.expression_list_always_start_on_new_line = false;
+        }
+
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
         as_table_function->formatImpl(settings, state, frame);
     }
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list)
+    if (columns_list && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;

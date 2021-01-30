@@ -65,6 +65,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
         Coordination::ZooKeeper::Nodes nodes;
         nodes.reserve(hosts_strings.size());
 
+        bool dns_error = false;
         for (auto & host_string : hosts_strings)
         {
             try
@@ -76,14 +77,27 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
 
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
+            catch (const Poco::Net::HostNotFoundException & e)
+            {
+                /// Most likely it's misconfiguration and wrong hostname was specified
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+            }
             catch (const Poco::Net::DNSException & e)
             {
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+                /// Most likely DNS is not available now
+                dns_error = true;
+                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
             }
         }
 
         if (nodes.empty())
-            throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
+        {
+            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
+            if (dns_error)
+                throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
+            else
+                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
+        }
 
         impl = std::make_unique<Coordination::ZooKeeper>(
                 nodes,
@@ -129,8 +143,8 @@ struct ZooKeeperArgs
 
         std::vector<std::string> hosts_strings;
 
-        session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
-        operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT;
+        session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
+        operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
         implementation = "zookeeper";
         for (const auto & key : keys)
         {
@@ -198,6 +212,18 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     ZooKeeperArgs args(config, config_name);
     init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
+}
+
+bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
+{
+    ZooKeeperArgs args(config, config_name);
+
+    // skip reload testkeeper cause it's for test and data in memory
+    if (args.implementation == implementation && implementation == "testkeeper")
+        return false;
+
+    return std::tie(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot)
+        != std::tie(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 
@@ -651,7 +677,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
-    auto callback = [state](const Coordination::ExistsResponse & response)
+    auto callback = [state](const Coordination::GetResponse & response)
     {
         state->code = int32_t(response.error);
         if (state->code)
@@ -671,8 +697,9 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
     while (!condition || !condition())
     {
-        /// NOTE: if the node doesn't exist, the watch will leak.
-        impl->exists(path, callback, watch);
+        /// Use getData insteand of exists to avoid watch leak.
+        impl->get(path, callback, watch);
+
         if (!condition)
             state->event.wait();
         else if (!state->event.tryWait(1000))

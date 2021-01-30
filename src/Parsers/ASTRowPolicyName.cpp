@@ -1,4 +1,5 @@
 #include <Parsers/ASTRowPolicyName.h>
+#include <IO/Operators.h>
 
 
 namespace DB

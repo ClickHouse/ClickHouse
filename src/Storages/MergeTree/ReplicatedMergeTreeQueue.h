@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -22,6 +21,7 @@ class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
+class ReplicatedMergeTreeMergeStrategyPicker;
 
 
 class ReplicatedMergeTreeQueue
@@ -57,6 +57,7 @@ private:
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
     StorageReplicatedMergeTree & storage;
+    ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -205,6 +206,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
+        const String & log_entry_name,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -259,8 +261,22 @@ private:
         ~CurrentlyExecuting();
     };
 
+    using CurrentlyExecutingPtr = std::unique_ptr<CurrentlyExecuting>;
+    /// ZK contains a limit on the number or total size of operations in a multi-request.
+    /// If the limit is exceeded, the connection is simply closed.
+    /// The constant is selected with a margin. The default limit in ZK is 1 MB of data in total.
+    /// The average size of the node value in this case is less than 10 kilobytes.
+    static constexpr size_t MAX_MULTI_OPS = 100;
+
+    /// Very large queue entries may appear occasionally.
+    /// We cannot process MAX_MULTI_OPS at once because it will fail.
+    /// But we have to process more than one entry at once because otherwise lagged replicas keep up slowly.
+    /// Let's start with one entry per transaction and icrease it exponentially towards MAX_MULTI_OPS.
+    /// It will allow to make some progress before failing and remain operational even in extreme cases.
+    size_t current_multi_batch_size = 1;
+
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
     ~ReplicatedMergeTreeQueue();
 
 
@@ -319,8 +335,19 @@ public:
     /** Select the next action to process.
       * merger_mutator is used only to check if the merges are not suspended.
       */
-    using SelectedEntry = std::pair<ReplicatedMergeTreeQueue::LogEntryPtr, std::unique_ptr<CurrentlyExecuting>>;
-    SelectedEntry selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
+    struct SelectedEntry
+    {
+        ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
+        CurrentlyExecutingPtr currently_executing_holder;
+
+        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
+            : log_entry(log_entry_)
+            , currently_executing_holder(std::move(currently_executing_holder_))
+        {}
+    };
+
+    using SelectedEntryPtr = std::shared_ptr<SelectedEntry>;
+    SelectedEntryPtr selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data);
 
     /** Execute `func` function to handle the action.
       * In this case, at runtime, mark the queue element as running

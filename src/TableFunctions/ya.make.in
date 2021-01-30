@@ -1,13 +1,14 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
 )
 
-CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -P 'S3|HDFS' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -P 'S3|HDFS|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

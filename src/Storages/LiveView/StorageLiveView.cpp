@@ -16,7 +16,6 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlocksSource.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
@@ -37,6 +36,7 @@ limitations under the License. */
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Access/AccessFlags.h>
@@ -316,6 +316,11 @@ Block StorageLiveView::getHeader() const
     return sample_block;
 }
 
+StoragePtr StorageLiveView::getParentStorage() const
+{
+    return DatabaseCatalog::instance().getTable(select_table_id, global_context);
+}
+
 ASTPtr StorageLiveView::getInnerBlocksQuery()
 {
     std::lock_guard lock(sample_block_lock);
@@ -493,7 +498,7 @@ void StorageLiveView::refresh(bool grab_lock)
 Pipe StorageLiveView::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    const SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,

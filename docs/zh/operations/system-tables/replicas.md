@@ -68,7 +68,7 @@ active_replicas:            2
 -   `parts_to_check` (`UInt32`)-队列中用于验证的数据部分的数量。 如果怀疑零件可能已损坏，则将其放入验证队列。
 -   `zookeeper_path` (`String`)-在ZooKeeper中的表数据路径。
 -   `replica_name` (`String`)-在动物园管理员副本名称. 同一表的不同副本具有不同的名称。
--   `replica_path` (`String`)-在ZooKeeper中的副本数据的路径。 与连接相同 ‘zookeeper\_path/replicas/replica\_path’.
+-   `replica_path` (`String`)-在ZooKeeper中的副本数据的路径。 与连接相同 ‘zookeeper_path/replicas/replica_path’.
 -   `columns_version` (`Int32`)-表结构的版本号。 指示执行ALTER的次数。 如果副本有不同的版本，这意味着一些副本还没有做出所有的改变。
 -   `queue_size` (`UInt32`)-等待执行的操作的队列大小。 操作包括插入数据块、合并和某些其他操作。 它通常与 `future_parts`.
 -   `inserts_in_queue` (`UInt32`)-需要插入数据块的数量。 插入通常复制得相当快。 如果这个数字很大，这意味着有什么不对劲。
@@ -89,7 +89,7 @@ active_replicas:            2
 -   `active_replicas` (`UInt8`)-在ZooKeeper中具有会话的此表的副本的数量（即正常运行的副本的数量）。
 
 如果您请求所有列，表可能会工作得有点慢，因为每行都会从ZooKeeper进行几次读取。
-如果您没有请求最后4列（log\_max\_index，log\_pointer，total\_replicas，active\_replicas），表工作得很快。
+如果您没有请求最后4列（log_max_index，log_pointer，total_replicas，active_replicas），表工作得很快。
 
 例如，您可以检查一切是否正常工作，如下所示:
 

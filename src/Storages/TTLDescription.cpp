@@ -30,7 +30,7 @@ TTLAggregateDescription::TTLAggregateDescription(const TTLAggregateDescription &
     , expression_result_column_name(other.expression_result_column_name)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 }
 
 TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateDescription & other)
@@ -41,7 +41,7 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
     column_name = other.column_name;
     expression_result_column_name = other.expression_result_column_name;
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
     return *this;
@@ -54,9 +54,9 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 {
     for (const auto & action : ttl_expression->getActions())
     {
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            IFunctionBase & func = *action.function_base;
+            IFunctionBase & func = *action.node->function_base;
             if (!func.isDeterministic())
                 throw Exception(
                     "TTL expression cannot contain non-deterministic functions, "
@@ -92,10 +92,10 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , recompression_codec(other.recompression_codec)
 {
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
 
     if (other.where_expression)
-        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+        where_expression = other.where_expression->clone();
 }
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
@@ -110,13 +110,13 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         expression_ast.reset();
 
     if (other.expression)
-        expression = std::make_shared<ExpressionActions>(*other.expression);
+        expression = other.expression->clone();
     else
         expression.reset();
 
     result_column = other.result_column;
     if (other.where_expression)
-        where_expression = std::make_shared<ExpressionActions>(*other.where_expression);
+        where_expression = other.where_expression->clone();
     else
         where_expression.reset();
 

@@ -1,15 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & context)
-{
-    return createImpl(context.getSettingsRef().cast_keep_nullable);
-}
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
@@ -35,6 +29,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256>();
 
     factory.registerFunction<FunctionToDate>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
+
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
@@ -44,7 +41,10 @@ void registerFunctionsConversion(FunctionFactory & factory)
     registerFunctionFixedString(factory);
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
+
+    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
+    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -68,6 +68,8 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrZero>();
     factory.registerFunction<FunctionToDecimal256OrZero>();
 
+    factory.registerFunction<FunctionToUUIDOrZero>();
+
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
     factory.registerFunction<FunctionToUInt32OrNull>();
@@ -90,10 +92,14 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal128OrNull>();
     factory.registerFunction<FunctionToDecimal256OrNull>();
 
+    factory.registerFunction<FunctionToUUIDOrNull>();
+
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
-    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUS>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrZero>();
+    factory.registerFunction<FunctionParseDateTimeBestEffortUSOrNull>();
     factory.registerFunction<FunctionParseDateTime32BestEffort>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime32BestEffortOrNull>();

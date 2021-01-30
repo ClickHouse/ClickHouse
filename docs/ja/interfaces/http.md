@@ -11,7 +11,7 @@ HTTPイトのご利用ClickHouseにプラットフォームからゆるプログ
 
 デフォルトでは、clickhouse-serverはポート8123でHTTPをリッスンします（これは設定で変更できます）。
 
-パラメータなしでGET/requestを行うと、200の応答コードとで定義された文字列が返されます [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後に改行があります)
+パラメータなしでGET/requestを行うと、200の応答コードとで定義された文字列が返されます [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後に改行があります)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -147,12 +147,12 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 データテーブルを返さない正常な要求の場合、空の応答本文が返されます。
 
-データを送信するときは、内部ClickHouse圧縮形式を使用できます。 圧縮されたデータは非標準形式であり、特別な形式を使用する必要があります `clickhouse-compressor` それで動作するようにプログラム（それは `clickhouse-client` パッケージ）。 データ挿入の効率を高めるために、以下を使用してサーバー側のチェックサム検証を無効にできます [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) 設定。
+データを送信するときは、内部ClickHouse圧縮形式を使用できます。 圧縮されたデータは非標準形式であり、特別な形式を使用する必要があります `clickhouse-compressor` それで動作するようにプログラム（それは `clickhouse-client` パッケージ）。 データ挿入の効率を高めるために、以下を使用してサーバー側のチェックサム検証を無効にできます [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) 設定。
 
 指定した場合 `compress=1` URLでは、サーバーが送信するデータを圧縮します。
 指定した場合 `decompress=1` このURLでは、サーバーは渡すデータと同じデータを解凍します。 `POST` 方法。
 
-また、使用することもできます [HTTP圧縮](https://en.wikipedia.org/wiki/HTTP_compression). 圧縮を送信するには `POST` リクエストヘッダーを追加します `Content-Encoding: compression_method`. ClickHouseが応答を圧縮するには、次のように追加する必要があります `Accept-Encoding: compression_method`. ClickHouseサポート `gzip`, `br`,and `deflate` [圧縮方法](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP圧縮を有効にするには、ClickHouseを使用する必要があります [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) 設定。 データ圧縮レベルは、 [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) すべての圧縮方法の設定。
+また、使用することもできます [HTTP圧縮](https://en.wikipedia.org/wiki/HTTP_compression). 圧縮を送信するには `POST` リクエストヘッダーを追加します `Content-Encoding: compression_method`. ClickHouseが応答を圧縮するには、次のように追加する必要があります `Accept-Encoding: compression_method`. ClickHouseサポート `gzip`, `br`,and `deflate` [圧縮方法](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP圧縮を有効にするには、ClickHouseを使用する必要があります [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) 設定。 データ圧縮レベルは、 [http_zlib_compression_level](#settings-http_zlib_compression_level) すべての圧縮方法の設定。
 
 利用することができ削減ネットワーク通信の送受信には大量のデータをダンプすると直ちに圧縮されます。
 
@@ -214,7 +214,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 ```
 
 ユーザ名が指定されていない場合、 `default` 名前が使用されます。 パスワードを指定しない場合は、空のパスワードが使用されます。
-にお使いいただけますURLパラメータで指定した設定処理の単一クエリーまたは全体をプロファイルを設定します。 例:http://localhost:8123/?profile=web&max\_rows\_to\_read=1000000000&query=SELECT+1
+にお使いいただけますURLパラメータで指定した設定処理の単一クエリーまたは全体をプロファイルを設定します。 例:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 詳細については、を参照してください [設定](../operations/settings/index.md) セクション
 
@@ -236,7 +236,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 同様に、HttpプロトコルでClickHouseセッションを使用できます。 これを行うには、 `session_id` 要求のパラメータを取得します。 セッションIDとして任意の文字列を使用できます。 既定では、セッションは非アクティブの60秒後に終了します。 このタイムアウトを変更するには、 `default_session_timeout` サーバー構成で設定するか、または `session_timeout` 要求のパラメータを取得します。 セッションステータスを確認するには、 `session_check=1` パラメータ。 単一のセッション内で一度に一つのクエリだけを実行できます。
 
-クエリの進行状況に関する情報を受け取ることができます `X-ClickHouse-Progress` 応答ヘッダー。 これを行うには、有効にします [send\_progress\_in\_http\_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). ヘッダシーケンスの例:
+クエリの進行状況に関する情報を受け取ることができます `X-ClickHouse-Progress` 応答ヘッダー。 これを行うには、有効にします [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). ヘッダシーケンスの例:
 
 ``` text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -253,9 +253,9 @@ X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_ro
 -   `written_bytes` — Volume of data written in bytes.
 
 HTTP接続が失われても、要求の実行は自動的に停止しません。 解析とデータの書式設定はサーバー側で実行され、ネットワークを使用すると無効になる可能性があります。
-任意 ‘query\_id’ パラメータは、クエリID(任意の文字列)として渡すことができます。 詳細については “Settings, replace\_running\_query”.
+任意 ‘query_id’ パラメータは、クエリID(任意の文字列)として渡すことができます。 詳細については “Settings, replace_running_query”.
 
-任意 ‘quota\_key’ パラメータとして渡すことができ、クォーターキー(切文字列). 詳細については “Quotas”.
+任意 ‘quota_key’ パラメータとして渡すことができ、クォーターキー(切文字列). 詳細については “Quotas”.
 
 HTTPイ 詳細については “External data for query processing”.
 
@@ -377,11 +377,11 @@ $ curl -v 'http://localhost:8123/predefined_query'
 > `<headers>` HTTPリクエストのヘッダー部分の照合を担当します。 RE2の正規表現と互換性があります。 これはオプションの構成です。 構成ファイルで定義されていない場合、HTTP要求のヘッダー部分と一致しません。
 >
 > `<handler>` 主要な処理の部品を含んでいます。 さて `<handler>` 構成できます `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
-> \> `<type>` 現在サポート: **predefined\_query\_handler**, **dynamic\_query\_handler**, **静的**.
+> \> `<type>` 現在サポート: **predefined_query_handler**, **dynamic_query_handler**, **静的**.
 > \>
-> \> `<query>` -predefined\_query\_handler型で使用し、ハンドラが呼び出されたときにクエリを実行します。
+> \> `<query>` -predefined_query_handler型で使用し、ハンドラが呼び出されたときにクエリを実行します。
 > \>
-> \> `<query_param_name>` -dynamic\_query\_handler型で使用すると、それに対応する値を抽出して実行します。 `<query_param_name>` HTTP要求パラメータの値。
+> \> `<query_param_name>` -dynamic_query_handler型で使用すると、それに対応する値を抽出して実行します。 `<query_param_name>` HTTP要求パラメータの値。
 > \>
 > \> `<status>` -静的タイプ、応答ステータスコードで使用します。
 > \>
@@ -391,9 +391,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 次に、異なる設定方法を示します `<type>`.
 
-## predefined\_query\_handler {#predefined_query_handler}
+## predefined_query_handler {#predefined_query_handler}
 
-`<predefined_query_handler>` 設定とquery\_params値の設定をサポートします。 設定できます `<query>` のタイプで `<predefined_query_handler>`.
+`<predefined_query_handler>` 設定とquery_params値の設定をサポートします。 設定できます `<query>` のタイプで `<predefined_query_handler>`.
 
 `<query>` 値は以下の定義済みクエリです `<predefined_query_handler>` これは、Http要求が一致し、クエリの結果が返されたときにClickHouseによって実行されます。 これは必須構成です。
 
@@ -428,13 +428,13 @@ max_alter_threads   2
 !!! note "注意"
     一つで `<predefined_query_handler>` 一つだけをサポート `<query>` 挿入タイプ。
 
-## dynamic\_query\_handler {#dynamic_query_handler}
+## dynamic_query_handler {#dynamic_query_handler}
 
 で `<dynamic_query_handler>`、クエリは、HTTP要求のparamの形式で書かれています。 違いは、 `<predefined_query_handler>`、クエリは設定ファイルに書き込まれます。 設定できます `<query_param_name>` で `<dynamic_query_handler>`.
 
 クリックハウスは、 `<query_param_name>` HTTP要求のurlの値。 のデフォルト値 `<query_param_name>` は `/query` . これはオプションの構成です。 設定ファイルに定義がない場合、paramは渡されません。
 
-この機能を試すために、この例ではmax\_threadsとmax\_alter\_threadsの値を定義し、設定が正常に設定されたかどうかを照会します。
+この機能を試すために、この例ではmax_threadsとmax_alter_threadsの値を定義し、設定が正常に設定されたかどうかを照会します。
 
 例:
 
@@ -459,7 +459,7 @@ max_alter_threads   2
 
 ## 静的 {#static}
 
-`<static>` 戻れる [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [状態](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) そしてresponse\_content。 response\_contentは、指定された内容を返すことができます
+`<static>` 戻れる [content_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [状態](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) そしてresponse_content。 response_contentは、指定された内容を返すことができます
 
 例:
 

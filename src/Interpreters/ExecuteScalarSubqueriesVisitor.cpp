@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -19,6 +20,8 @@
 #include <Columns/ColumnTuple.h>
 
 #include <IO/WriteHelpers.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -38,6 +41,10 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
     /// Don't descend into subqueries in FROM section
     if (node->as<ASTTableExpression>())
+        return false;
+
+    /// Do not go to subqueries defined in with statement
+    if (node->as<ASTWithElement>())
         return false;
 
     if (node->as<ASTSelectQuery>())
@@ -111,13 +118,12 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            auto stream = interpreter.execute().getInputStream();
+            auto io = interpreter.execute();
 
             try
             {
-                block = stream->read();
-
-                if (!block)
+                PullingPipelineExecutor executor(io.pipeline);
+                if (!executor.pull(block))
                 {
                     /// Interpret subquery with empty result as Null literal
                     auto ast_new = std::make_unique<ASTLiteral>(Null());
@@ -126,7 +132,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                     return;
                 }
 
-                if (block.rows() != 1 || stream->read())
+                if (block.rows() != 1 || executor.pull(block))
                     throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
             catch (const Exception & e)
@@ -162,6 +168,16 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+
+        /// If only analyze was requested the expression is not suitable for constant folding, disable it.
+        if (data.only_analyze)
+        {
+            ast->as<ASTFunction>()->alias.clear();
+            auto func = makeASTFunction("identity", std::move(ast));
+            func->alias = subquery.alias;
+            func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+            ast = std::move(func);
+        }
     }
     else
     {

@@ -27,6 +27,7 @@ void copyFile(IDisk & from_disk, const String & from_path, IDisk & to_disk, cons
     auto in = from_disk.readFile(from_path);
     auto out = to_disk.writeFile(to_path);
     copyData(*in, *out);
+    out->finalize();
 }
 
 
@@ -73,6 +74,11 @@ void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_dis
 void IDisk::truncateFile(const String &, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getType());
+}
+
+SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
+{
+    return nullptr;
 }
 
 }

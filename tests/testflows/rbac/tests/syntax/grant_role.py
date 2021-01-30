@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 from testflows.core import *
 
+import rbac.helper.errors as errors
 from rbac.requirements import *
-import rbac.tests.errors as errors
 
 @TestFeature
 @Name("grant role")
@@ -98,14 +98,14 @@ def feature(self, node="clickhouse1"):
             RQ_SRS_006_RBAC_Grant_Role_OnCluster("1.0")]):
         try:
             with Given("I have a user and a role on a cluster"):
-                node.query("CREATE USER user0 ON CLUSTER sharded_cluster")
-                node.query("CREATE ROLE role0 ON CLUSTER sharded_cluster")
+                node.query("CREATE USER OR REPLACE user0 ON CLUSTER sharded_cluster")
+                node.query("CREATE ROLE OR REPLACE role0 ON CLUSTER sharded_cluster")
             with When("I grant the role to the user"):
                 node.query("GRANT ON CLUSTER sharded_cluster role0 TO user0")
         finally:
             with Finally("I drop the user and role"):
-                node.query("DROP USER user0 ON CLUSTER sharded_cluster")
-                node.query("DROP ROLE role0 ON CLUSTER sharded_cluster")
+                node.query("DROP USER IF EXISTS user0 ON CLUSTER sharded_cluster")
+                node.query("DROP ROLE IF EXISTS role0 ON CLUSTER sharded_cluster")
 
     with Scenario("I grant role to user on fake cluster, throws exception", flags=TE, requirements=[
             RQ_SRS_006_RBAC_Grant_Role_OnCluster("1.0")]):

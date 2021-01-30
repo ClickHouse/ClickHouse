@@ -85,6 +85,9 @@ void GTIDSets::update(const GTID & other)
                         ErrorCodes::LOGICAL_ERROR);
                 }
 
+                /// Try to shrink Sequence interval.
+                GTIDSet::tryShrink(set, i, current);
+
                 /// Sequence, extend the interval.
                 if (other.seq_no == current.end)
                 {
@@ -114,6 +117,16 @@ void GTIDSets::update(const GTID & other)
     set.uuid = other.uuid;
     set.intervals.emplace_back(interval);
     sets.emplace_back(set);
+}
+
+void GTIDSet::tryShrink(GTIDSet & set, unsigned int i, GTIDSet::Interval & current)
+{
+    if (i != set.intervals.size() -1)
+    {
+        auto & next = set.intervals[i+1];
+        if (current.end == next.start)
+            set.tryMerge(i);
+    }
 }
 
 String GTIDSets::toString() const

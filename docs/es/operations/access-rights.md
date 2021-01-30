@@ -134,10 +134,10 @@ Consultas de gestión:
 
 -   Configure un directorio para el almacenamiento de configuraciones.
 
-    ClickHouse almacena las configuraciones de entidades de acceso en la carpeta [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) parámetro de configuración del servidor.
+    ClickHouse almacena las configuraciones de entidades de acceso en la carpeta [access_control_path](server-configuration-parameters/settings.md#access_control_path) parámetro de configuración del servidor.
 
 -   Habilite el control de acceso controlado por SQL y la administración de cuentas para al menos una cuenta de usuario.
 
-    De forma predeterminada, el control de acceso controlado por SQL y la administración de cuentas se activan para todos los usuarios. Debe configurar al menos un usuario en el `users.xml` archivo de configuración y asigne 1 al [access\_management](settings/settings-users.md#access_management-user-setting) configuración.
+    De forma predeterminada, el control de acceso controlado por SQL y la administración de cuentas se activan para todos los usuarios. Debe configurar al menos un usuario en el `users.xml` archivo de configuración y asigne 1 al [access_management](settings/settings-users.md#access_management-user-setting) configuración.
 
 [Artículo Original](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

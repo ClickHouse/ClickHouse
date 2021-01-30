@@ -5,6 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', with_zookeeper=True)
 
+
 @pytest.fixture(scope='module', autouse=True)
 def started_cluster():
     try:
@@ -13,17 +14,18 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_replicated_engine_parse_metadata_on_attach():
     node.query(
-    '''
-    CREATE TABLE data (
-        key Int,
-        INDEX key_idx0 key+0 TYPE minmax GRANULARITY 1,
-        INDEX key_idx1 key+1 TYPE minmax GRANULARITY 1
-    )
-    ENGINE = ReplicatedMergeTree('/ch/tables/default/data', 'node')
-    ORDER BY key;
-    ''')
+        '''
+        CREATE TABLE data (
+            key Int,
+            INDEX key_idx0 key+0 TYPE minmax GRANULARITY 1,
+            INDEX key_idx1 key+1 TYPE minmax GRANULARITY 1
+        )
+        ENGINE = ReplicatedMergeTree('/ch/tables/default/data', 'node')
+        ORDER BY key;
+        ''')
     node.query('DETACH TABLE data')
 
     zk = cluster.get_kazoo_client('zoo1')
@@ -31,7 +33,7 @@ def test_replicated_engine_parse_metadata_on_attach():
     # and successfully accepted by the server.
     #
     # This metadata was obtain from the server without #11325
-    zk.set('/ch/tables/default/data/replicas/node/metadata', """
+    zk.set('/ch/tables/default/data/replicas/node/metadata', b"""
 metadata format version: 1
 date column: 
 sampling expression: 

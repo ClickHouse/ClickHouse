@@ -19,7 +19,12 @@ namespace DB
 class DiskS3 : public IDisk
 {
 public:
+    using ObjectMetadata = std::map<std::string, std::string>;
+
     friend class DiskS3Reservation;
+
+    class AwsS3KeyKeeper;
+    struct Metadata;
 
     DiskS3(
         String name_,
@@ -29,8 +34,9 @@ public:
         String s3_root_path_,
         String metadata_path_,
         size_t min_upload_part_size_,
-        size_t min_multi_part_upload_size_,
-        size_t min_bytes_for_seek_);
+        size_t max_single_part_upload_size_,
+        size_t min_bytes_for_seek_,
+        bool send_metadata_);
 
     const String & getName() const override { return name; }
 
@@ -82,12 +88,11 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        size_t estimated_size,
-        size_t aio_threshold) override;
+        WriteMode mode) override;
 
-    void remove(const String & path) override;
-
+    void removeFile(const String & path) override;
+    void removeFileIfExists(const String & path) override;
+    void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
@@ -107,6 +112,14 @@ public:
 private:
     bool tryReserve(UInt64 bytes);
 
+    void removeMeta(const String & path, AwsS3KeyKeeper & keys);
+    void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
+    void removeAws(const AwsS3KeyKeeper & keys);
+    std::optional<ObjectMetadata> createObjectMetadata(const String & path) const;
+
+    Metadata readMeta(const String & path) const;
+    Metadata createMeta(const String & path) const;
+
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
@@ -115,8 +128,9 @@ private:
     const String s3_root_path;
     const String metadata_path;
     size_t min_upload_part_size;
-    size_t min_multi_part_upload_size;
+    size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
+    bool send_metadata;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;

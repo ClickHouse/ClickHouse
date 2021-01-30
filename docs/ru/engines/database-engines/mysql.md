@@ -1,3 +1,8 @@
+---
+toc_priority: 30
+toc_title: MySQL
+---
+
 # MySQL {#mysql}
 
 Позволяет подключаться к базам данных на удалённом MySQL сервере и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и MySQL.
@@ -45,6 +50,23 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 Все прочие типы данных преобразуются в [String](../../engines/database-engines/mysql.md).
 
 [Nullable](../../engines/database-engines/mysql.md) поддержан.
+
+## Использование глобальных переменных {#global-variables-support}
+
+Для лучшей совместимости к глобальным переменным можно обращаться в формате MySQL, как `@@identifier`. 
+
+Поддерживаются следующие переменные:
+- `version`
+- `max_allowed_packet`
+
+!!! warning "Предупреждение"
+    В настоящее время эти переменные реализованы только как "заглушки" и не содержат актуальных данных.
+
+Пример:
+
+``` sql
+SELECT @@version;
+```
 
 ## Примеры использования {#primery-ispolzovaniia}
 

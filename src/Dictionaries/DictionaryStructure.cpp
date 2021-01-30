@@ -2,15 +2,17 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/FunctionHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 #include <ext/range.h>
-
 
 namespace DB
 {
@@ -40,54 +42,46 @@ namespace
 }
 
 
-AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
+AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 {
-    static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary
+    auto type_index = type->getTypeId();
+
+    switch (type_index)
     {
-        {"UInt8", AttributeUnderlyingType::utUInt8},
-        {"UInt16", AttributeUnderlyingType::utUInt16},
-        {"UInt32", AttributeUnderlyingType::utUInt32},
-        {"UInt64", AttributeUnderlyingType::utUInt64},
-        {"UUID", AttributeUnderlyingType::utUInt128},
-        {"Int8", AttributeUnderlyingType::utInt8},
-        {"Int16", AttributeUnderlyingType::utInt16},
-        {"Int32", AttributeUnderlyingType::utInt32},
-        {"Int64", AttributeUnderlyingType::utInt64},
-        {"Float32", AttributeUnderlyingType::utFloat32},
-        {"Float64", AttributeUnderlyingType::utFloat64},
-        {"String", AttributeUnderlyingType::utString},
-        {"Date", AttributeUnderlyingType::utUInt16},
-    };
+        case TypeIndex::UInt8:          return AttributeUnderlyingType::utUInt8;
+        case TypeIndex::UInt16:         return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::UInt32:         return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::UInt64:         return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::UInt128:        return AttributeUnderlyingType::utUInt128;
 
-    const auto it = dictionary.find(type);
-    if (it != std::end(dictionary))
-        return it->second;
+        case TypeIndex::Int8:           return AttributeUnderlyingType::utInt8;
+        case TypeIndex::Int16:          return AttributeUnderlyingType::utInt16;
+        case TypeIndex::Int32:          return AttributeUnderlyingType::utInt32;
+        case TypeIndex::Int64:          return AttributeUnderlyingType::utInt64;
 
-    /// Can contain arbitrary scale and timezone parameters.
-    if (type.find("DateTime64") == 0)
-        return AttributeUnderlyingType::utUInt64;
+        case TypeIndex::Float32:        return AttributeUnderlyingType::utFloat32;
+        case TypeIndex::Float64:        return AttributeUnderlyingType::utFloat64;
 
-    /// Can contain arbitrary timezone as parameter.
-    if (type.find("DateTime") == 0)
-        return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
+        case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
+        case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
 
-    if (type.find("Decimal") == 0)
-    {
-        size_t start = strlen("Decimal");
-        if (type.find("32", start) == start)
-            return AttributeUnderlyingType::utDecimal32;
-        if (type.find("64", start) == start)
-            return AttributeUnderlyingType::utDecimal64;
-        if (type.find("128", start) == start)
-            return AttributeUnderlyingType::utDecimal128;
+        case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
+        case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
+        case TypeIndex::DateTime64:     return AttributeUnderlyingType::utUInt64;
+
+        case TypeIndex::UUID:           return AttributeUnderlyingType::utUInt128;
+
+        case TypeIndex::String:         return AttributeUnderlyingType::utString;
+
+        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+        // TODO: This should be fixed by fully supporting arrays in dictionaries.
+        case TypeIndex::Array:          return AttributeUnderlyingType::utString;
+
+        default: break;
     }
 
-    // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
-    // TODO: This should be fixed by fully supporting arrays in dictionaries.
-    if (type.find("Array") == 0)
-        return AttributeUnderlyingType::utString;
-
-    throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
+    throw Exception{"Unknown type for dictionary" + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 }
 
 
@@ -214,23 +208,39 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 
     for (const auto i : ext::range(0, key_types.size()))
     {
-        const auto & expected_type = (*key)[i].type->getName();
-        const auto & actual_type = key_types[i]->getName();
+        const auto & expected_type = (*key)[i].type;
+        const auto & actual_type = key_types[i];
 
-        if (expected_type != actual_type)
-            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type + ", found "
-                                + actual_type,
-                            ErrorCodes::TYPE_MISMATCH};
+        if (!areTypesEqual(expected_type, actual_type))
+            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type->getName() + ", found "
+                    + actual_type->getName(),
+                ErrorCodes::TYPE_MISMATCH};
     }
 }
 
+const DictionaryAttribute & DictionaryStructure::getAttribute(const String& attribute_name, const DataTypePtr & type) const
+{
+    auto find_iter
+        = std::find_if(attributes.begin(), attributes.end(), [&](const auto & attribute) { return attribute.name == attribute_name; });
+
+    if (find_iter == attributes.end())
+        throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+
+    const auto & attribute = *find_iter;
+
+    if (!areTypesEqual(attribute.type, type))
+        throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
+            ErrorCodes::TYPE_MISMATCH};
+
+    return *find_iter;
+}
 
 std::string DictionaryStructure::getKeyDescription() const
 {
     if (id)
         return "UInt64";
 
-    std::ostringstream out;
+    WriteBufferFromOwnString out;
 
     out << '(';
 
@@ -317,9 +327,20 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if ((range_min && name == range_min->name) || (range_max && name == range_max->name))
             continue;
 
+
         const auto type_string = config.getString(prefix + "type");
-        const auto type = DataTypeFactory::instance().get(type_string);
-        const auto underlying_type = getAttributeUnderlyingType(type_string);
+        const auto initial_type = DataTypeFactory::instance().get(type_string);
+        auto type = initial_type;
+        bool is_array = false;
+        bool is_nullable = false;
+
+        if (type->isNullable())
+        {
+            is_nullable = true;
+            type = removeNullable(type);
+        }
+
+        const auto underlying_type = getAttributeUnderlyingType(type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -332,7 +353,9 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             try
             {
                 if (null_value_string.empty())
+                {
                     null_value = type->getDefault();
+                }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
@@ -343,7 +366,9 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             }
             catch (Exception & e)
             {
-                e.addMessage("error parsing null_value");
+                String dictionary_name = config.getString(".dictionary.name", "");
+                e.addMessage("While parsing null_value for attribute with name " + name
+                    + " in dictionary " + dictionary_name);
                 throw;
             }
         }
@@ -362,8 +387,18 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(
-            DictionaryAttribute{name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id});
+        res_attributes.emplace_back(DictionaryAttribute{
+            name,
+            underlying_type,
+            initial_type,
+            type,
+            expression,
+            null_value,
+            hierarchical,
+            injective,
+            is_object_id,
+            is_nullable,
+            is_array});
     }
 
     return res_attributes;

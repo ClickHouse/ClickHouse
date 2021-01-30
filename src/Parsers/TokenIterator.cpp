@@ -4,12 +4,13 @@
 namespace DB
 {
 
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token * last)
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token last)
 {
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
-    for (TokenIterator it = begin; it.isValid() && &it.get() <= last; ++it)
+    for (TokenIterator it = begin;
+        it.isValid() && it->begin <= last.begin; ++it)
     {
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
         {

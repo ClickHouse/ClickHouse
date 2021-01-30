@@ -1,20 +1,24 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/Data
-    contrib/libs/poco/Data/ODBC
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
 )
 
+IF (USE_ODBC)
+    PEERDIR(contrib/libs/poco/Data/ODBC)
+ENDIF ()
+
 NO_COMPILER_WARNINGS()
 
-CFLAGS(-g0)
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -F tests | grep -v -F Trie | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

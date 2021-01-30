@@ -3,7 +3,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
+#include <new>
 #include <variant>
+
 
 using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
@@ -106,8 +108,8 @@ public:
             zeroValue()->~Cell();
     }
 
-    Cell * zeroValue() { return reinterpret_cast<Cell *>(&zero_value_storage); }
-    const Cell * zeroValue() const { return reinterpret_cast<const Cell *>(&zero_value_storage); }
+    Cell * zeroValue() { return std::launder(reinterpret_cast<Cell *>(&zero_value_storage)); }
+    const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell *>(&zero_value_storage)); }
 
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -210,7 +212,7 @@ public:
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
 
-    StringHashTable() {}
+    StringHashTable() = default;
 
     StringHashTable(size_t reserve_for_num_elements)
         : m1{reserve_for_num_elements / 4}
@@ -220,8 +222,15 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) { *this = std::move(rhs); }
-    ~StringHashTable() {}
+    StringHashTable(StringHashTable && rhs)
+        : m1(std::move(rhs.m1))
+        , m2(std::move(rhs.m2))
+        , m3(std::move(rhs.m3))
+        , ms(std::move(rhs.ms))
+    {
+    }
+
+    ~StringHashTable() = default;
 
 public:
     // Dispatch is written in a way that maximizes the performance:

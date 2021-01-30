@@ -6,7 +6,7 @@ CREATE TABLE table_from_remote AS remote('localhost', 'system', 'numbers');
 
 SHOW CREATE TABLE table_from_remote;
 
-ALTER TABLE table_from_remote ADD COLUMN col UInt8; --{serverError 48}
+ALTER TABLE table_from_remote ADD COLUMN col UInt8;
 
 SHOW CREATE TABLE table_from_remote;
 
@@ -25,8 +25,6 @@ SHOW CREATE TABLE table_from_select;
 ALTER TABLE table_from_select ADD COLUMN col UInt8;
 
 SHOW CREATE TABLE table_from_select;
-
-SELECT 1;
 
 DROP TABLE IF EXISTS table_from_remote;
 DROP TABLE IF EXISTS table_from_select;

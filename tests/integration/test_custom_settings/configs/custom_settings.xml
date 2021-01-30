@@ -1,0 +1,10 @@
+<yandex>
+    <profiles>
+        <default>
+            <custom_a>Int64_-5</custom_a>
+            <custom_b>UInt64_10000000000</custom_b>
+            <custom_c>Float64_-43.25e-1</custom_c>
+            <custom_d>'some text'</custom_d>
+        </default>
+    </profiles>
+</yandex>

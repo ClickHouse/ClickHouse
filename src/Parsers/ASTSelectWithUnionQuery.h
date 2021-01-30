@@ -5,9 +5,8 @@
 
 namespace DB
 {
-
-/** Single SELECT query or multiple SELECT queries with UNION ALL.
-  * Only UNION ALL is possible. No UNION DISTINCT or plain UNION.
+/** Single SELECT query or multiple SELECT queries with UNION
+ * or UNION or UNION DISTINCT
   */
 class ASTSelectWithUnionQuery : public ASTQueryWithOutput
 {
@@ -16,6 +15,21 @@ public:
 
     ASTPtr clone() const override;
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    enum class Mode
+    {
+        Unspecified,
+        ALL,
+        DISTINCT
+    };
+
+    using UnionModes = std::vector<Mode>;
+
+    Mode union_mode;
+
+    UnionModes list_of_modes;
+
+    bool is_normalized = false;
 
     ASTPtr list_of_selects;
 };

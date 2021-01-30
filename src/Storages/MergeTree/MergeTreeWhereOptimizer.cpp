@@ -147,9 +147,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
-            && cond.identifiers.size() < queried_columns.size()
-            /// Columns size of compact parts can't be counted. If all parts are compact do not move any condition.
-            && cond.columns_size > 0;
+            && cond.identifiers.size() < queried_columns.size();
 
         if (cond.viable)
             cond.good = isConditionGood(node);
@@ -197,12 +195,14 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;
+    UInt64 total_number_of_moved_columns = 0;
 
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
         prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
+        total_number_of_moved_columns += cond_it->identifiers.size();
 
         /// Move all other viable conditions that depend on the same set of columns.
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
@@ -225,7 +225,15 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
             break;
 
         /// 10% ratio is just a guess.
-        if (total_size_of_moved_conditions > 0 && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns)
+        /// If sizes of compressed columns cannot be calculated, e.g. for compact parts,
+        /// use number of moved columns as a fallback.
+        bool moved_enough =
+            (total_size_of_queried_columns > 0 && total_size_of_moved_conditions > 0
+            && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns)
+                || (total_number_of_moved_columns > 0
+                    && (total_number_of_moved_columns + it->identifiers.size()) * 10 > queried_columns.size());
+
+        if (moved_enough)
             break;
 
         move_condition(it);

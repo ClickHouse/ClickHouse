@@ -33,7 +33,6 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void replaceEmptyDatabaseWithCurrent(const String & current_database);
     void replaceCurrentUserTagWithName(const String & current_user_name) const;
-    void removeNonGrantableFlags();
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
 };
 }

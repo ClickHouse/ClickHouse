@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -7,16 +5,20 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'],
+                             user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'],
+                             user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'],
+                             user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml'],
+                             user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-
 
         for node in [node1, node2]:
             node.query('''
@@ -30,18 +32,18 @@ def started_cluster():
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/someothertable', '{replica}', date, id, 8192);
                 '''.format(replica=node.name), user='good')
 
-
         yield cluster
 
     finally:
         cluster.shutdown()
 
+
 @pytest.mark.parametrize("table,query,expected,n1,n2", [
-    ("sometable","ALTER TABLE sometable DROP PARTITION 201706", '1', node1, node2),
-    ("sometable","TRUNCATE TABLE sometable", '0', node1, node2),
+    ("sometable", "ALTER TABLE sometable DROP PARTITION 201706", '1', node1, node2),
+    ("sometable", "TRUNCATE TABLE sometable", '0', node1, node2),
     ("sometable", "OPTIMIZE TABLE sometable", '4', node1, node2),
-    ("someothertable","ALTER TABLE someothertable DROP PARTITION 201706", '1', node3, node4),
-    ("someothertable","TRUNCATE TABLE someothertable", '0', node3, node4),
+    ("someothertable", "ALTER TABLE someothertable DROP PARTITION 201706", '1', node3, node4),
+    ("someothertable", "TRUNCATE TABLE someothertable", '0', node3, node4),
     ("someothertable", "OPTIMIZE TABLE someothertable", '4', node3, node4),
 ])
 def test_alter_table_drop_partition(started_cluster, table, query, expected, n1, n2):

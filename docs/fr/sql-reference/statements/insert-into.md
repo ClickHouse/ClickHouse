@@ -20,7 +20,7 @@ La requête peut spécifier une liste de colonnes à insérer `[(c1, c2, c3)]`. 
 -   Les valeurs calculées à partir `DEFAULT` expressions spécifiées dans la définition de la table.
 -   Zéros et chaînes vides, si `DEFAULT` les expressions ne sont pas définies.
 
-Si [strict\_insert\_defaults=1](../../operations/settings/settings.md), les colonnes qui n'ont pas `DEFAULT` défini doit être répertorié dans la requête.
+Si [strict_insert_defaults=1](../../operations/settings/settings.md), les colonnes qui n'ont pas `DEFAULT` défini doit être répertorié dans la requête.
 
 Les données peuvent être transmises à L'INSERT dans n'importe quel [format](../../interfaces/formats.md#formats) soutenu par ClickHouse. Le format doit être spécifié explicitement dans la requête:
 

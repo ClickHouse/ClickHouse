@@ -5,7 +5,7 @@
 #endif
 
 #include <Access/LDAPParams.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>
@@ -30,10 +30,10 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    MAYBE_NORETURN void diag(const int rc);
+    MAYBE_NORETURN void diag(const int rc, String text = "");
     MAYBE_NORETURN void openConnection();
-    int openConnection(const bool graceful_bind_failure = false);
     void closeConnection() noexcept;
+    LDAPSearchResults search(const LDAPSearchParams & search_params);
 
 protected:
     const LDAPServerParams params;
@@ -47,7 +47,7 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
-    bool check();
+    bool authenticate(const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results);
 };
 
 }

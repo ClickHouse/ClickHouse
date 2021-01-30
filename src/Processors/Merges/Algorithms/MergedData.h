@@ -82,7 +82,7 @@ public:
         if (need_flush)
             return true;
 
-        /// Never return more then max_block_size.
+        /// Never return more than max_block_size.
         if (merged_rows >= max_block_size)
             return true;
 

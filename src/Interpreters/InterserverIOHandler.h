@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <map>
 #include <atomic>
 #include <utility>

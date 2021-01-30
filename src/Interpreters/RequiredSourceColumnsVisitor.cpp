@@ -34,7 +34,7 @@ std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const A
         if (!identifier)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-        names.push_back(identifier->name);
+        names.push_back(identifier->name());
     }
 
     return names;
@@ -123,8 +123,12 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
     std::vector<ASTPtr *> out;
     for (const auto & node : select.children)
-        if (node != select.select())
+    {
+        // We should not go into WITH statement because all needed aliases are already expanded to
+        // the right place after normalization. And it might contain unused unknown columns.
+        if (node != select.select() && node != select.with())
             Visitor(data).visit(node);
+    }
 
     /// revisit select_expression_list (with children) when all the aliases are set
     Visitor(data).visit(select.select());
@@ -132,10 +136,11 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
 {
-    if (node.name.empty())
+    // FIXME(ilezhankin): shouldn't ever encounter
+    if (node.name().empty())
         throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (!data.private_aliases.count(node.name))
+    if (!data.private_aliases.count(node.name()))
         data.addColumnIdentifier(node);
 }
 

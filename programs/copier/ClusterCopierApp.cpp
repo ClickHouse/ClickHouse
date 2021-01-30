@@ -1,6 +1,8 @@
 #include "ClusterCopierApp.h"
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
+#include <IO/ConnectionTimeoutsContext.h>
+#include <Formats/registerFormats.h>
 #include <unistd.h>
 
 
@@ -105,7 +107,7 @@ void ClusterCopierApp::mainImpl()
     ThreadStatus thread_status;
 
     auto * log = &logger();
-    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::get());
+    LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
     auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
@@ -122,6 +124,7 @@ void ClusterCopierApp::mainImpl()
     registerStorages();
     registerDictionaries();
     registerDisks();
+    registerFormats();
 
     static const std::string default_database = "_local";
     DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));

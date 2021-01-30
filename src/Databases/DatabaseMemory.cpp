@@ -53,6 +53,9 @@ void DatabaseMemory::dropTable(
     }
     table->is_dropped = true;
     create_queries.erase(table_name);
+    UUID table_uuid = table->getStorageID().uuid;
+    if (table_uuid != UUIDHelpers::Nil)
+        DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
@@ -75,7 +78,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const 
         else
             return {};
     }
-    return it->second;
+    return it->second->clone();
 }
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const

@@ -6,6 +6,9 @@
 
 #include <Core/Defines.h>
 
+#include <ext/map.h>
+#include <boost/algorithm/string/join.hpp>
+
 
 namespace DB
 {
@@ -48,7 +51,7 @@ struct TaskTable
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
 
-    bool isReplicatedTable() const { return engine_push_zk_path != ""; }
+    bool isReplicatedTable() const { return is_replicated_table; }
 
     /// Partitions will be split into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
@@ -78,6 +81,7 @@ struct TaskTable
 
     /// First argument of Replicated...MergeTree()
     String engine_push_zk_path;
+    bool is_replicated_table;
 
     ASTPtr rewriteReplicatedCreateQueryToPlain();
 
@@ -268,8 +272,8 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
-        primary_key_comma_separated = Nested::createCommaSeparatedStringFrom(extractPrimaryKeyColumnNames(engine_push_ast));
-        engine_push_zk_path = extractReplicatedTableZookeeperPath(engine_push_ast);
+        primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");
+        is_replicated_table = isReplicatedTableEngine(engine_push_ast);
     }
 
     sharding_key_str = config.getString(table_prefix + "sharding_key");
@@ -372,14 +376,17 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
     auto & new_storage_ast = prev_engine_push_ast->as<ASTStorage &>();
     auto & new_engine_ast = new_storage_ast.engine->as<ASTFunction &>();
 
-    auto & replicated_table_arguments = new_engine_ast.arguments->children;
-
-    /// Delete first two arguments of Replicated...MergeTree() table.
-    replicated_table_arguments.erase(replicated_table_arguments.begin());
-    replicated_table_arguments.erase(replicated_table_arguments.begin());
-
-    /// Remove replicated from name
+    /// Remove "Replicated" from name
     new_engine_ast.name = new_engine_ast.name.substr(10);
+
+    if (new_engine_ast.arguments)
+    {
+        auto & replicated_table_arguments = new_engine_ast.arguments->children;
+
+        /// Delete first two arguments of Replicated...MergeTree() table.
+        replicated_table_arguments.erase(replicated_table_arguments.begin());
+        replicated_table_arguments.erase(replicated_table_arguments.begin());
+    }
 
     return new_storage_ast.clone();
 }
@@ -387,12 +394,8 @@ inline ASTPtr TaskTable::rewriteReplicatedCreateQueryToPlain()
 
 inline String DB::TaskShard::getDescription() const
 {
-    std::stringstream ss;
-    ss << "N" << numberInCluster()
-       << " (having a replica " << getHostNameExample()
-       << ", pull table " + getQuotedTable(task_table.table_pull)
-       << " of cluster " + task_table.cluster_pull_name << ")";
-    return ss.str();
+    return fmt::format("N{} (having a replica {}, pull table {} of cluster {}",
+                       numberInCluster(), getHostNameExample(), getQuotedTable(task_table.table_pull), task_table.cluster_pull_name);
 }
 
 inline String DB::TaskShard::getHostNameExample() const

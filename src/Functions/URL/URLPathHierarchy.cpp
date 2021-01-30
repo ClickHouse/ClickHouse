@@ -28,7 +28,7 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
 
     /// Returns the position of the argument that is the column of rows
     static size_t getStringsArgumentPosition()

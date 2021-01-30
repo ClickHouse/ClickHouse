@@ -93,6 +93,8 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 
+When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
+
 ## Executable File {#dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
@@ -108,16 +110,12 @@ Example of settings:
 </source>
 ```
 
-or
-
-``` sql
-SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
-```
-
 Setting fields:
 
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -162,12 +160,14 @@ Setting fields:
 -   `url` – The source URL.
 -   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
 -   `credentials` – Basic HTTP authentication. Optional parameter.
-    -   `user` – Username required for the authentication.
-    -   `password` – Password required for the authentication.
+-   `user` – Username required for the authentication.
+-   `password` – Password required for the authentication.
 -   `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-    -   `header` – Single HTTP header entry.
-    -   `name` – Identifiant name used for the header send on the request.
-    -   `value` – Value set for a specific identifiant name.
+-   `header` – Single HTTP header entry.
+-   `name` – Identifiant name used for the header send on the request.
+-   `value` – Value set for a specific identifiant name.
+
+When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -246,7 +246,7 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
-Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
+Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
 
 ``` text
     [DEFAULT]
@@ -321,7 +321,7 @@ You may need to edit `odbc.ini` to specify the full path to the library with the
 
 Ubuntu OS.
 
-Installing the driver: :
+Installing the ODBC driver for connecting to MS SQL:
 
 ``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
@@ -329,7 +329,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 
 Configuring the driver:
 
-``` bash
+```bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -339,8 +339,11 @@ Configuring the driver:
     tds version = 7.0
     client charset = UTF-8
 
+    # test TDS connection
+    $ sqsh -S MSSQL -D database -U user -P password
+
+
     $ cat /etc/odbcinst.ini
-    ...
 
     [FreeTDS]
     Description     = FreeTDS
@@ -349,8 +352,8 @@ Configuring the driver:
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini
-    ...
+    $ cat /etc/odbc.ini
+    # $ cat ~/.odbc.ini # if you signed in under a user that runs ClickHouse
 
     [MSSQL]
     Description     = FreeTDS
@@ -360,7 +363,14 @@ Configuring the driver:
     UID             = test
     PWD             = test
     Port            = 1433
+
+
+    # (optional) test ODBC connection (to use isql-tool install the [unixodbc](https://packages.debian.org/sid/unixodbc)-package)
+    $ isql -v MSSQL "user" "password"
 ```
+
+Remarks:
+- to determine the earliest TDS version that is supported by a particular SQL Server version, refer to the product documentation or look at [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
 
 Configuring the dictionary in ClickHouse:
 
@@ -573,7 +583,7 @@ Example of settings:
 or
 
 ``` sql
-SOURCE(MONGO(
+SOURCE(MONGODB(
     host 'localhost'
     port 27017
     user ''

@@ -33,8 +33,6 @@ std::string IProcessor::statusToName(Status status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::Wait:
-            return "Wait";
         case Status::ExpandPipeline:
             return "ExpandPipeline";
     }

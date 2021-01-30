@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_table_2;
+SET input_format_null_as_default = 0;
 SELECT 1;
 /* Check JSONCompactStringsEachRow Output */
 CREATE TABLE test_table (value UInt8, name String) ENGINE = MergeTree() ORDER BY value;

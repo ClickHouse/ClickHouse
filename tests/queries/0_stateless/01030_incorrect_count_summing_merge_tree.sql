@@ -1,3 +1,5 @@
+SET optimize_on_insert = 0;
+
 select '-- SummingMergeTree with Nullable column without duplicates.';  
 
 drop table if exists tst;

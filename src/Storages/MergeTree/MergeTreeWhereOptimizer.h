@@ -25,6 +25,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  *
  *  If there are "good" conditions present in WHERE, the one with minimal summary column size is transferred to PREWHERE.
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
+ *  If column sizes are unknown (in compact parts), the number of columns, participating in condition is used instead.
  */
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
@@ -45,12 +46,16 @@ private:
         ASTPtr node;
         UInt64 columns_size = 0;
         NameSet identifiers;
+
+        /// Can condition be moved to prewhere?
         bool viable = false;
+
+        /// Does the condition presumably have good selectivity?
         bool good = false;
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, columns_size);
+            return std::make_tuple(!viable, !good, columns_size, identifiers.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
