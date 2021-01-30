@@ -53,10 +53,12 @@ function run_tests()
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
+        ADDITIONAL_OPTIONS+=('--jobs')
+        ADDITIONAL_OPTIONS+=('4')
     fi
 
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
-            --test-runs "$NUM_TRIES" --jobs 4 \
+            --test-runs "$NUM_TRIES" \
             "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
