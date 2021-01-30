@@ -566,6 +566,7 @@
         "01602_show_create_view",
         "01603_rename_overwrite_bug",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
+        "01676_dictget_in_default_expression",
         "attach",
         "ddl_dictionaries",
         "dictionary",
