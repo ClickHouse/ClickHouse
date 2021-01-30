@@ -5,8 +5,7 @@ toc_title: welchTTest
 
 # welchTTest {#welchttest}
 
-Applies Welch's t-test to samples. 
-This is a test for the null hypothesis that two independent samples have identical average values. Samples may have unequal variances.
+Applies Welch's t-test to data samples. 
 
 **Syntax**
 
@@ -14,8 +13,8 @@ This is a test for the null hypothesis that two independent samples have identic
 welchTTest(sample_data, sample_index)
 ```
 
-Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
-The null hypothesis is that means of populations are equal. Normal distribution is assumed. Population variances may not be equal.
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
+The null hypothesis is that means of populations are equal. Normal distribution is assumed. Populations may have unequal variance.
 
 **Parameters**
 

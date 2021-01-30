@@ -5,7 +5,7 @@ toc_title: mannWhitneyUTest
 
 # mannWhitneyUTest {#mannwhitneyutest}
 
-Applies the Mann-Whitney rank test to independent samples from distinct distributions.
+Applies the Mann-Whitney rank test.
 
 **Syntax**
 
@@ -14,7 +14,7 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 ```
 
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
-The null hypothesis is that the medians of distributions of populations are equal. Also one-sided hypothesises can be tested. 
+The null hypothesis is that the medians of populations are equal. Also one-sided hypothesises can be tested. This test does not assume that data have normal distribution.
 
 **Parameters**
 

@@ -5,7 +5,7 @@ toc_title: studentTTest
 
 # studentTTest {#studentttest}
 
-Applies Student's t-test to samples from two populations. 
+Applies Student's t-test to data samples. 
 
 **Syntax**
 
@@ -13,8 +13,8 @@ Applies Student's t-test to samples from two populations.
 studentTTest(sample_data, sample_index)
 ```
 
-Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
-The null hypothesis is that means of populations are equal. Normal distribution with equal variances are assumed.
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
+The null hypothesis is that means of populations are equal. Normal distribution with equal variances is assumed.
 
 **Parameters**
 
