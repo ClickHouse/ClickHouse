@@ -74,7 +74,9 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     , context(context_)
 {
     /// Remove keys from sample_block for implicit_key dictionary because
-    /// these columns will not be provided by client
+    /// these columns will not be returned from source
+    /// Implicit key means that the source script will return only values,
+    /// and the correspondence to keys is determined implicitly - by the order of rows in the result.
     if (implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
