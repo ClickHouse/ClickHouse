@@ -18,11 +18,11 @@ The null hypothesis is that the medians of populations are equal. Also one-sided
 
 **Parameters**
 
--   `alternative` — alternative hypothesis. [String](../../../sql-reference/data-types/string.md)
-    -   `"two-sided"` (by default);
-    -   `"greater"`;
-    -   `"less"`.
--   `continuity_correction` - if not 0 then continuity correction in the normal approximation for the p-value is applied. (Default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md)
+-   `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
+    -   `'two-sided'`;
+    -   `'greater'`;
+    -   `'less'`.
+-   `continuity_correction` - if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 -   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 -   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
