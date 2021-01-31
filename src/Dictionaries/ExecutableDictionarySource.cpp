@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace
@@ -236,8 +237,9 @@ namespace
                 auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
 
                 if (cut_block.rows() != block_rows)
-                    throw Exception("Rows in block to add after cut must equal to rows in readed block",
-                        ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(
+                        "Number of rows in block to add after cut must equal to number of rows in block from inner stream",
+                        ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
                 for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
                     block.insert(0, cut_block.getByPosition(i));
