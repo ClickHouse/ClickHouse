@@ -329,6 +329,12 @@ public:
         if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
         {
             const auto & type = argument.type;
+
+            if (!type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                throw Exception("Cannot reinterpret " + type->getName() +
+                    " as FixedString because it is not fixed size and contiguous in memory",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
             size_t type_value_size_in_memory = type->getSizeOfValueInMemory();
             data_type = std::make_shared<DataTypeFixedString>(type_value_size_in_memory);
         }
