@@ -175,7 +175,7 @@ namespace VolnitskyTraits
                     else
                     {
                         /// where is the given ngram in respect to the start of UTF-8 sequence?
-                        const auto seq_ngram_offset = pos - seq_pos;
+                        size_t seq_ngram_offset = pos - seq_pos;
 
                         Seq seq;
 
@@ -202,7 +202,7 @@ namespace VolnitskyTraits
                 auto first_seq_pos = pos;
                 UTF8::syncBackward(first_seq_pos, begin);
                 /// where is the given ngram in respect to the start of first UTF-8 sequence?
-                const auto seq_ngram_offset = pos - first_seq_pos;
+                size_t seq_ngram_offset = pos - first_seq_pos;
 
                 auto first_u32 = UTF8::convertUTF8ToCodePoint(first_seq_pos, end - first_seq_pos);
                 int first_l_u32 = 0;
