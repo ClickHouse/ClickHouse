@@ -28,13 +28,15 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & conn_str,
     std::shared_ptr<Context> context_,
     const std::string & publication_name_,
-    const std::string & replication_slot_name_)
+    const std::string & replication_slot_name_,
+    const size_t max_block_size_)
     : log(&Poco::Logger::get("PostgreSQLReplicaHandler"))
     , context(context_)
     , database_name(database_name_)
     , table_name(table_name_)
     , publication_name(publication_name_)
     , replication_slot(replication_slot_name_)
+    , max_block_size(max_block_size_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
 {
     /// Create a replication connection, through which it is possible to execute only commands from streaming replication protocol
@@ -56,7 +58,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
 void PostgreSQLReplicationHandler::startup(StoragePtr storage)
 {
-    helper_table = storage;
+    nested_storage = storage;
     startup_task->activateAndSchedule();
 }
 
@@ -98,6 +100,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist()
     assert(!result.empty());
     bool publication_exists = (result[0][0].as<std::string>() == "t");
 
+    /// TODO: check if publication is still valid?
     if (publication_exists)
         LOG_TRACE(log, "Publication {} already exists. Using existing version", publication_name);
 
@@ -121,7 +124,7 @@ void PostgreSQLReplicationHandler::createPublication()
 
     /// TODO: check replica identity
     /// Requires changed replica identity for included table to be able to receive old values of updated rows.
-    /// (ALTER TABLE table_name REPLICA IDENTITY FULL)
+    /// (ALTER TABLE table_name REPLICA IDENTITY FULL ?)
 }
 
 
@@ -173,7 +176,9 @@ void PostgreSQLReplicationHandler::startReplication()
             connection->conn_str(),
             replication_slot,
             publication_name,
-            start_lsn);
+            start_lsn,
+            max_block_size,
+            nested_storage);
 
     LOG_DEBUG(log, "Commiting replication transaction");
     ntx->commit();
@@ -203,12 +208,12 @@ void PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name)
         insert_context.makeQueryContext();
 
         auto insert = std::make_shared<ASTInsertQuery>();
-        insert->table_id = helper_table->getStorageID();
+        insert->table_id = nested_storage->getStorageID();
 
         InterpreterInsertQuery interpreter(insert, insert_context);
         auto block_io = interpreter.execute();
 
-        const StorageInMemoryMetadata & storage_metadata = helper_table->getInMemoryMetadata();
+        const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
         auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
 
         PostgreSQLBlockInputStream input(std::move(stx), query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -296,10 +301,18 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, st
 }
 
 
+void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr ntx)
+{
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
+    ntx->exec(query_str);
+}
+
+
 /// Only used when MaterializePostgreSQL table is dropped.
-void PostgreSQLReplicationHandler::checkAndDropReplicationSlot()
+void PostgreSQLReplicationHandler::removeSlotAndPublication()
 {
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+    dropPublication(ntx);
     if (isReplicationSlotExist(ntx, replication_slot))
         dropReplicationSlot(ntx, replication_slot, false);
     ntx->commit();

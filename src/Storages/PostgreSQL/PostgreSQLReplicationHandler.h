@@ -24,11 +24,12 @@ public:
             const std::string & conn_str_,
             std::shared_ptr<Context> context_,
             const std::string & publication_slot_name_,
-            const std::string & replication_slot_name_);
+            const std::string & replication_slot_name_,
+            const size_t max_block_size_);
 
     void startup(StoragePtr storage_);
     void shutdown();
-    void checkAndDropReplicationSlot();
+    void removeSlotAndPublication();
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
@@ -41,6 +42,7 @@ private:
     void createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name);
     void createReplicationSlot(NontransactionPtr ntx);
     void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name, bool use_replication_api);
+    void dropPublication(NontransactionPtr ntx);
 
     void startReplication();
     void loadFromSnapshot(std::string & snapshot_name);
@@ -53,6 +55,7 @@ private:
 
     std::string publication_name, replication_slot;
     std::string temp_replication_slot;
+    const size_t max_block_size;
 
     PostgreSQLConnectionPtr connection;
     PostgreSQLConnectionPtr replication_connection;
@@ -60,7 +63,7 @@ private:
 
     BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
-    StoragePtr helper_table;
+    StoragePtr nested_storage;
     //LSNPosition start_lsn, final_lsn;
 };
 

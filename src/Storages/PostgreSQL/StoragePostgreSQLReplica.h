@@ -19,7 +19,6 @@
 #include <Interpreters/Context.h>
 #include "PostgreSQLReplicationHandler.h"
 #include "PostgreSQLReplicationSettings.h"
-#include "buffer_fwd.h"
 #include "pqxx/pqxx"
 
 namespace DB
@@ -46,6 +45,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    /// Called right after shutdown() in case of drop query
     void shutdownFinal();
 
 protected:

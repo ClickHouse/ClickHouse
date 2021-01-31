@@ -3,7 +3,10 @@
 #include "PostgreSQLConnection.h"
 #include <Core/BackgroundSchedulePool.h>
 #include <common/logger_useful.h>
+#include <Storages/IStorage.h>
+#include <Core/ExternalResultDescription.h>
 #include "pqxx/pqxx"
+#include <Storages/PostgreSQL/insertPostgreSQLValue.h>
 
 namespace DB
 {
@@ -11,8 +14,9 @@ namespace DB
 struct LSNPosition
 {
     std::string lsn;
+    int64_t lsn_value;
 
-    uint64_t getValue()
+    int64_t getValue()
     {
         uint64_t upper_half, lower_half, result;
         std::sscanf(lsn.data(), "%lX/%lX", &upper_half, &lower_half);
@@ -21,6 +25,15 @@ struct LSNPosition
         //        "Created replication slot. upper half: {}, lower_half: {}, start lsn: {}",
         //        upper_half, lower_half, result);
         return result;
+    }
+
+    std::string getString()
+    {
+        char result[16];
+        std::snprintf(result, sizeof(result), "%lX/%lX", (lsn_value >> 32), lsn_value & 0xFFFFFFFF);
+        //assert(lsn_value == result.getValue());
+        std::string ans = result;
+        return ans;
     }
 };
 
@@ -34,19 +47,27 @@ public:
             const std::string & conn_str_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
-            const LSNPosition & start_lsn);
+            const LSNPosition & start_lsn,
+            const size_t max_block_size_,
+            StoragePtr nested_storage_);
 
     /// Start reading WAL from current_lsn position. Initial data sync from created snapshot already done.
     void startSynchronization();
     void stopSynchronization();
 
 private:
-    /// Executed by wal_reader_task. A separate thread reads wal and advances lsn when rows were written via copyData.
-    void WALReaderFunc();
+    /// Executed by wal_reader_task. A separate thread reads wal and advances lsn to last commited position
+    /// after rows were written via copyData.
+    void replicationStream();
+    void stopReplicationStream();
 
     /// Start changes stream from WAL via copy command (up to max_block_size changes).
     bool readFromReplicationSlot();
     void decodeReplicationMessage(const char * replication_message, size_t size);
+
+    void insertValue(std::string & value, size_t column_idx);
+    void syncIntoTable(Block & block);
+    void advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     /// Methods to parse replication message data.
     void readTupleData(const char * message, size_t & pos, size_t size);
@@ -64,9 +85,18 @@ private:
     const std::string table_name;
     PostgreSQLConnectionPtr connection, replication_connection;
 
-    LSNPosition current_lsn;
+    LSNPosition current_lsn, final_lsn;
     BackgroundSchedulePool::TaskHolder wal_reader_task;
+    //BackgroundSchedulePool::TaskHolder table_sync_task;
     std::atomic<bool> stop_synchronization = false;
+
+    const size_t max_block_size;
+    StoragePtr nested_storage;
+    Block sample_block;
+    ExternalResultDescription description;
+    MutableColumns columns;
+    /// Needed for insertPostgreSQLValue() method to parse array
+    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 };
 
 }
