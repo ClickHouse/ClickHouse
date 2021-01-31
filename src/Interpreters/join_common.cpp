@@ -1,9 +1,11 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteHelpers.h>
 
@@ -281,6 +283,82 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
     column.reserve(column.size() + count);
     for (size_t i = 0; i < count; ++i)
         type->insertDefaultInto(column);
+}
+
+bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
+{
+    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    return left_type_strict->equals(*right_type_strict);
+}
+
+JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & left_keys,
+                                      const Block & right_block, const Names & right_keys,
+                                      bool has_using)
+{
+    assert(left_keys.size() == right_keys.size());
+
+    /// only JOIN USING supported
+    if (!has_using)
+        return {};
+
+    Block left_block_dst = left_block;
+    Block right_block_dst = right_block;
+
+    std::unordered_set<std::string_view> visited_left;
+    std::unordered_set<std::string_view> visited_right;
+    bool any_need_cast = false;
+    for (size_t i = 0; i < left_keys.size(); ++i)
+    {
+        if (visited_left.contains(left_keys[i]) || visited_right.contains(right_keys[i]))
+        {
+            /// if one column joined with multiple different others do not perform conversion
+            /// e.g. `JOIN ... ON t1.a == t2.a AND t1.a == t2.b`
+            return {};
+        }
+        visited_left.insert(left_keys[i]);
+        visited_right.insert(right_keys[i]);
+
+        DataTypePtr ltype = left_block.getByName(left_keys[i]).type;
+        DataTypePtr rtype = right_block.getByName(right_keys[i]).type;
+
+        if (typesEqualUpToNullability(ltype, rtype))
+            continue;
+
+        any_need_cast = true;
+        DataTypePtr supertype;
+        try
+        {
+             supertype = DB::getLeastSupertype({ltype, rtype});
+        }
+        catch (DB::Exception &)
+        {
+            throw Exception("Type mismatch of columns to JOIN by: "
+                            + left_keys[i] + ": " + ltype->getName() + " at left, "
+                            + right_keys[i] + ": " + rtype->getName() + " at right",
+                            ErrorCodes::TYPE_MISMATCH);
+        }
+        auto & lcol_dst = left_block_dst.getByName(left_keys[i]);
+        auto & rcol_dst = right_block_dst.getByName(right_keys[i]);
+        lcol_dst.column = rcol_dst.column = nullptr;
+        lcol_dst.type = rcol_dst.type = supertype;
+    }
+
+    if (!any_need_cast)
+        return {};
+
+    auto convert_left_actions_dag = ActionsDAG::makeConvertingActions(
+        left_block.getColumnsWithTypeAndName(),
+        left_block_dst.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+    auto convert_right_actions_dag = ActionsDAG::makeConvertingActions(
+        right_block.getColumnsWithTypeAndName(),
+        right_block_dst.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+
+    return std::make_pair(convert_left_actions_dag, convert_right_actions_dag);
 }
 
 }

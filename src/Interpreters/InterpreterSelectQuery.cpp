@@ -994,11 +994,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.hasJoin())
             {
-                Block join_result_sample;
                 JoinPtr join = expressions.join;
-
-                join_result_sample = JoiningTransform::transformHeader(
-                    query_plan.getCurrentDataStream().header, expressions.join);
 
                 QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
@@ -1009,6 +1005,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
                 if (expressions.join_has_delayed_stream)
                 {
+                    const Block & join_result_sample = query_plan.getCurrentDataStream().header;
                     auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
                     auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                     auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
