@@ -1,15 +1,17 @@
 #pragma once
 
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/WindowDescription.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -313,7 +315,8 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element, const Block & left_sample_block,
+                          JoinCommon::JoinConvertActions & converting_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -333,8 +336,8 @@ private:
 
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
-    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, const Block & sample_block, ActionsDAGPtr & before_join_dag);
     /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
     void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();

@@ -39,10 +39,20 @@ void SubqueryForSet::renameColumns(Block & block)
     }
 }
 
-void SubqueryForSet::setJoinActions(ExpressionActionsPtr actions)
+void SubqueryForSet::addJoinActions(ExpressionActionsPtr actions)
 {
     actions->execute(sample_block);
-    joined_block_actions = actions;
+    if (joined_block_actions == nullptr)
+    {
+        joined_block_actions = actions;
+    }
+    else
+    {
+        auto new_dag = ActionsDAG::merge(
+            std::move(*joined_block_actions->getActionsDAG().clone()),
+            std::move(*actions->getActionsDAG().clone()));
+        joined_block_actions = std::make_shared<ExpressionActions>(new_dag);
+    }
 }
 
 bool SubqueryForSet::insertJoinedBlock(Block & block)

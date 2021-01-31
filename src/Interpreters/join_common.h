@@ -2,6 +2,8 @@
 
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -13,6 +15,8 @@ using ColumnRawPtrs = std::vector<const IColumn *>;
 
 namespace JoinCommon
 {
+
+using JoinConvertActions = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability = false);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
@@ -36,6 +40,9 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const Names 
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
+JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & left_keys,
+                        const Block & right_block, const Names & right_keys,
+                        bool has_using);
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.

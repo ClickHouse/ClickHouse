@@ -42,14 +42,13 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
-
-#include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GlobalSubqueriesVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/join_common.h>
+#include <Interpreters/misc.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -714,23 +713,32 @@ ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActi
     return array_join;
 }
 
-bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types, Block & block)
 {
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions());
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(step.actions());
+    actions->execute(block);
     return true;
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain)
+JoinPtr
+SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, const Block & sample_block, ActionsDAGPtr & before_join_dag)
 {
-    JoinPtr table_join = makeTableJoin(*syntax->ast_join);
+    JoinCommon::JoinConvertActions converting_actions;
+    JoinPtr table_join = makeTableJoin(*syntax->ast_join, sample_block, converting_actions);
+
+    if (converting_actions.first)
+    {
+        before_join_dag = ActionsDAG::merge(std::move(*before_join_dag->clone()), std::move(*converting_actions.first->clone()));
+
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_actions.first));
+        chain.addStep();
+    }
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_array_join);
-
-    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(
-            syntax->analyzed_join, table_join, step.getResultColumns()));
-
+    chain.steps.push_back(std::make_unique<ExpressionActionsChain::JoinStep>(syntax->analyzed_join, table_join, step.getResultColumns()));
     chain.addStep();
     return table_join;
 }
@@ -795,7 +803,9 @@ static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join,
     return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
 }
 
-JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element,
+                                                     const Block & left_sample_block,
+                                                     JoinCommon::JoinConvertActions & converting_actions)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -831,7 +841,17 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+        subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+
+        const Block & right_sample_block = subquery_for_join.sample_block;
+        bool has_using = syntax->analyzed_join->hasUsing();
+        converting_actions = JoinCommon::columnsNeedConvert(
+            left_sample_block, syntax->analyzed_join->keyNamesLeft(),
+            right_sample_block, syntax->analyzed_join->keyNamesRight(),
+            has_using);
+        if (converting_actions.second)
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(converting_actions.second));
+
         subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
         /// Do not make subquery for join over dictionary.
@@ -1425,10 +1445,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (query_analyzer.hasTableJoin())
         {
-            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage);
-
+            Block left_block_sample = source_header;
+            query_analyzer.appendJoinLeftKeys(chain, only_types || !first_stage, left_block_sample);
             before_join = chain.getLastActions();
-            join = query_analyzer.appendJoin(chain);
+            join = query_analyzer.appendJoin(chain, left_block_sample, before_join);
             chain.addStep();
         }
 
