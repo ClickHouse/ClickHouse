@@ -42,3 +42,22 @@ SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
     AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+
+SELECT '====map====';
+SET allow_experimental_map_type = 1;
+DROP TABLE IF EXISTS t_map;
+CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));
+
+--- will read 4 files: keys.bin, keys.mrk2, size0.bin, size0.mrk2
+SYSTEM DROP MARK CACHE;
+SELECT m.keys FROM t_map;
+
+SYSTEM DROP MARK CACHE;
+SELECT m.values FROM t_map;
+
+SYSTEM FLUSH LOGS;
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
+FROM system.query_log
+WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();

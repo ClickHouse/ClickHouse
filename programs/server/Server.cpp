@@ -109,8 +109,20 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
-    if (argc > 0 && !isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
-        app.shouldSetupWatchdog(argv[0]);
+    /// Can be overridden by environment variable (cannot use server config at this moment).
+    if (argc > 0)
+    {
+        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE");
+        if (env_watchdog)
+        {
+            if (0 == strcmp(env_watchdog, "1"))
+                app.shouldSetupWatchdog(argv[0]);
+
+            /// Other values disable watchdog explicitly.
+        }
+        else if (!isatty(STDIN_FILENO) && !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO))
+            app.shouldSetupWatchdog(argv[0]);
+    }
 
     try
     {

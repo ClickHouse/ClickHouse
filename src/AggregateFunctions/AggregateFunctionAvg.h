@@ -12,10 +12,10 @@
 
 namespace DB
 {
-template <class T>
+template <typename T>
 using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
-template <class T> constexpr bool DecimalOrExtendedInt =
+template <typename T> constexpr bool DecimalOrExtendedInt =
     IsDecimalNumber<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
@@ -25,7 +25,7 @@ template <class T> constexpr bool DecimalOrExtendedInt =
 /**
  * Helper class to encapsulate values conversion for avg and avgWeighted.
  */
-template <class Numerator, class Denominator>
+template <typename Numerator, typename Denominator>
 struct AvgFraction
 {
     Numerator numerator{0};
@@ -84,7 +84,7 @@ struct AvgFraction
  * @tparam Derived When deriving from this class, use the child class name as in CRTP, e.g.
  *         class Self : Agg<char, bool, bool, Self>.
  */
-template <class Numerator, class Denominator, class Derived>
+template <typename Numerator, typename Denominator, typename Derived>
 class AggregateFunctionAvgBase : public
         IAggregateFunctionDataHelper<AvgFraction<Numerator, Denominator>, Derived>
 {
@@ -98,7 +98,7 @@ public:
 
     DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).numerator += this->data(rhs).numerator;
         this->data(place).denominator += this->data(rhs).denominator;
@@ -137,18 +137,18 @@ private:
     UInt32 denom_scale;
 };
 
-template <class T>
+template <typename T>
 using AvgFieldType = std::conditional_t<IsDecimalNumber<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     NearestFieldType<T>>;
 
-template <class T>
+template <typename T>
 class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
     using AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>::AggregateFunctionAvgBase;
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         this->data(place).numerator += static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
