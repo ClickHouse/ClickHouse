@@ -93,8 +93,6 @@ private:
     template <typename T>
     using Ptr = std::unique_ptr<Collection<T>>;
 
-    using NullableSet = HashSet<Key, DefaultHash<Key>>;
-
     struct Attribute final
     {
     public:
@@ -187,7 +185,7 @@ private:
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
