@@ -20,8 +20,9 @@ import psycopg2
 import pymongo
 import pymysql
 import requests
-from dict2xml import dict2xml
+import xml.dom.minidom
 from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
+from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
@@ -44,25 +45,17 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
-def run_and_check(args, env=None, shell=False):
-    res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
-    if res.returncode != 0:
-        # check_call(...) from subprocess does not print stderr, so we do it manually
-        print('Stderr:\n{}\n'.format(res.stderr))
-        print('Stdout:\n{}\n'.format(res.stdout))
-        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr))
-
-
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
-    run_and_check(args)
+    subprocess.check_call(args)
 
 
 def subprocess_call(args):
     # Uncomment for debugging..;
     # print('run:', ' ' . join(args))
     subprocess.call(args)
+
 
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
@@ -113,9 +106,9 @@ class ClickHouseCluster:
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
             HELPERS_DIR, 'zookeeper_config.xml')
 
-        project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
+        self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
-        self.project_name = re.sub(r'[^a-z0-9]', '', project_name.lower())
+        self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
 
@@ -126,8 +119,8 @@ class ClickHouseCluster:
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
             self.base_cmd += ['--host', custom_dockerd_host]
-        self.base_cmd += ['--project-name', self.project_name]
 
+        self.base_cmd += ['--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
@@ -144,7 +137,6 @@ class ClickHouseCluster:
         self.with_rabbitmq = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
-        self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
@@ -180,7 +172,7 @@ class ClickHouseCluster:
                      macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
-                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
+                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
@@ -202,12 +194,6 @@ class ClickHouseCluster:
 
         if tag is None:
             tag = self.docker_base_tag
-        if not env_variables:
-            env_variables = {}
-
-        # Code coverage files will be placed in database directory
-        # (affect only WITH_COVERAGE=1 build)
-        env_variables['LLVM_PROFILE_FILE'] = '/var/lib/clickhouse/server_%h_%p_%m.profraw'
 
         instance = ClickHouseInstance(
             cluster=self,
@@ -224,7 +210,6 @@ class ClickHouseCluster:
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
-            with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,
@@ -234,7 +219,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             hostname=hostname,
-            env_variables=env_variables,
+            env_variables=env_variables or {},
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -260,23 +245,25 @@ class ClickHouseCluster:
             self.with_zookeeper = True
             self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
             self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
-            self.base_zookeeper_cmd = ['docker-compose', '--project-name', self.project_name,
-                                       '--file', zookeeper_docker_compose_path]
+            self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', zookeeper_docker_compose_path]
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-            self.base_mysql_cmd = ['docker-compose', '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+            self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-            self.base_postgres_cmd = ['docker-compose', '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+            self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                      self.project_name, '--file',
+                                      p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
@@ -284,57 +271,56 @@ class ClickHouseCluster:
             if not self.with_mysql:
                 self.with_mysql = True
                 self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')])
-                self.base_mysql_cmd = ['docker-compose', '--project-name', self.project_name,
-                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
+                self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file',
+                                       p.join(docker_compose_yml_dir, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
                 self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
-                self.base_postgres_cmd = ['docker-compose', '--project-name', self.project_name,
-                                          '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
+                self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                          self.project_name, '--file',
+                                          p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')])
-            self.base_kafka_cmd = ['docker-compose', '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
+            self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_kerberized_kafka and not self.with_kerberized_kafka:
             self.with_kerberized_kafka = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')])
-            self.base_kerberized_kafka_cmd = ['docker-compose','--project-name', self.project_name,
-                                              '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
+            self.base_kerberized_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_kafka.yml')]
             cmds.append(self.base_kerberized_kafka_cmd)
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
-            self.base_rabbitmq_cmd = ['docker-compose', '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
+            self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                      self.project_name, '--file',
+                                      p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
             cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')])
-            self.base_hdfs_cmd = ['docker-compose', '--project-name', self.project_name,
-                                  '--file', p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
+            self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                  self.project_name, '--file',
+                                  p.join(docker_compose_yml_dir, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
-
-        if with_kerberized_hdfs and not self.with_kerberized_hdfs:
-            self.with_kerberized_hdfs = True
-            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')])
-            self.base_kerberized_hdfs_cmd = ['docker-compose', '--project-name', self.project_name,
-                                             '--file', p.join(docker_compose_yml_dir, 'docker_compose_kerberized_hdfs.yml')]
-            cmds.append(self.base_kerberized_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
-            self.base_mongo_cmd = ['docker-compose', '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
+            self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
@@ -344,25 +330,26 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             self.with_redis = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')])
-            self.base_redis_cmd = ['docker-compose', '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
+            self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
             self.minio_certs_dir = minio_certs_dir
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
-            self.base_minio_cmd = ['docker-compose', '--project-name', self.project_name,
-                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
+            self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file',
+                                   p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
-            self.base_cassandra_cmd = ['docker-compose', '--project-name', self.project_name,
-                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
+            self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file',
+                                       p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
 
-        print("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
-            self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
         return instance
 
     def get_instance_docker_id(self, instance_name):
@@ -387,9 +374,9 @@ class ClickHouseCluster:
                 raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
-        run_and_check(self.base_cmd + ["stop", node.name])
-        run_and_check(self.base_cmd + ["rm", "--force", "--stop", node.name])
-        run_and_check(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
+        subprocess.check_call(self.base_cmd + ["stop", node.name])
+        subprocess.check_call(self.base_cmd + ["rm", "--force", "--stop", node.name])
+        subprocess.check_call(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
         start_deadline = time.time() + 20.0  # seconds
@@ -397,10 +384,7 @@ class ClickHouseCluster:
         return node
 
     def get_instance_ip(self, instance_name):
-        print("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
-        # for cont in self.docker_client.containers.list():
-        #     print("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs['NetworkSettings']['Networks'].values())[0]['IPAddress']
 
@@ -492,35 +476,12 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
-    def make_hdfs_api(self, timeout=60, kerberized=False):
-        if kerberized:
-            keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
-            krb_conf = p.abspath(p.join(self.instances['node1'].path, "secrets/krb_long.conf"))
-            hdfs_ip = self.get_instance_ip('kerberizedhdfs1')
-            # print("kerberizedhdfs1 ip ", hdfs_ip)
-            kdc_ip = self.get_instance_ip('hdfskerberos')
-            # print("kdc_ip ", kdc_ip)
-            self.hdfs_api = HDFSApi(user="root",
-                               timeout=timeout,
-                               kerberized=True,
-                               principal="root@TEST.CLICKHOUSE.TECH",
-                               keytab=keytab,
-                               krb_conf=krb_conf,
-                               host="kerberizedhdfs1",
-                               protocol="http",
-                               proxy_port=50070,
-                               data_port=1006,
-                               hdfs_ip=hdfs_ip,
-                               kdc_ip=kdc_ip)
-        else:
-            self.hdfs_api = HDFSApi(user="root", host="hdfs1")
-
-
     def wait_hdfs_to_start(self, timeout=60):
+        hdfs_api = HDFSApi("root")
         start = time.time()
         while time.time() - start < timeout:
             try:
-                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
+                hdfs_api.write_data("/somefilewithrandomname222", "1")
                 print("Connected to HDFS and SafeMode disabled! ")
                 return
             except Exception as ex:
@@ -637,7 +598,7 @@ class ClickHouseCluster:
                             os.mkdir(zk_log_data_path)
                         env['ZK_DATA' + str(i)] = zk_data_path
                         env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
-                run_and_check(self.base_zookeeper_cmd + common_opts, env=env)
+                subprocess.check_call(self.base_zookeeper_cmd + common_opts, env=env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start(120)
@@ -659,10 +620,9 @@ class ClickHouseCluster:
                 self.wait_schema_registry_to_start(120)
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
-                print('Setup kerberized kafka')
                 env = os.environ.copy()
                 env['KERBERIZED_KAFKA_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
+                subprocess.check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], env=env)
                 self.kerberized_kafka_docker_id = self.get_instance_docker_id('kerberized_kafka1')
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -671,20 +631,11 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 print('Setup HDFS')
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
-                self.make_hdfs_api()
                 self.wait_hdfs_to_start(120)
-
-            if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
-                print('Setup kerberized HDFS')
-                env = os.environ.copy()
-                env['KERBERIZED_HDFS_DIR'] = instance.path + '/'
-                run_and_check(self.base_kerberized_hdfs_cmd + common_opts, env=env)
-                self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(timeout=300)
 
             if self.with_mongo and self.base_mongo_cmd:
                 print('Setup Mongo')
-                run_and_check(self.base_mongo_cmd + common_opts)
+                subprocess_check_call(self.base_mongo_cmd + common_opts)
                 self.wait_mongo_to_start(30)
 
             if self.with_redis and self.base_redis_cmd:
@@ -709,7 +660,7 @@ class ClickHouseCluster:
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                run_and_check(minio_start_cmd, env=env)
+                subprocess.check_call(minio_start_cmd, env=env)
 
                 try:
                     logging.info("Trying to connect to Minio...")
@@ -728,7 +679,7 @@ class ClickHouseCluster:
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             print(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
-            subprocess.check_output(clickhouse_start_cmd)
+            subprocess_check_call(clickhouse_start_cmd)
             print("ClickHouse instance created")
 
             start_deadline = time.time() + 20.0  # seconds
@@ -754,7 +705,7 @@ class ClickHouseCluster:
         sanitizer_assert_instance = None
         with open(self.docker_logs_path, "w+") as f:
             try:
-                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
             except Exception as e:
                 print("Unable to get logs from docker.")
             f.seek(0)
@@ -765,11 +716,9 @@ class ClickHouseCluster:
 
         if kill:
             try:
-                subprocess_check_call(self.base_cmd + ['stop', '--timeout', '20'])
-            except Exception as e:
-                print("Kill command failed during shutdown. {}".format(repr(e)))
-                print("Trying to kill forcefully")
                 subprocess_check_call(self.base_cmd + ['kill'])
+            except Exception as e:
+                print("Kill command failed durung shutdown. {}".format(repr(e)))
 
         try:
             subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
@@ -865,7 +814,6 @@ services:
         tmpfs: {tmpfs}
         cap_add:
             - SYS_PTRACE
-            - NET_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -891,8 +839,8 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
-            with_mongo, with_redis, with_minio,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_mongo,
+            with_redis, with_minio,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
@@ -922,14 +870,13 @@ class ClickHouseInstance:
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
-        self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_cassandra = with_cassandra
 
         self.path = p.join(self.cluster.instances_dir, name)
-        self.docker_compose_path = p.join(self.path, 'docker-compose.yml')
+        self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
         self.env_variables = env_variables or {}
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
@@ -937,7 +884,7 @@ class ClickHouseInstance:
         else:
             self.odbc_ini_path = ""
 
-        if with_kerberized_kafka or with_kerberized_hdfs:
+        if with_kerberized_kafka:
             self.keytab_path = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets:/tmp/keytab"
             self.krb5_conf = '- ' + os.path.dirname(self.docker_compose_path) + "/secrets/krb.conf:/etc/krb5.conf:ro"
         else:
@@ -958,10 +905,6 @@ class ClickHouseInstance:
     def is_built_with_thread_sanitizer(self):
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize=thread" in build_opts
-
-    def is_built_with_address_sanitizer(self):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=address" in build_opts
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
@@ -1084,10 +1027,6 @@ class ClickHouseInstance:
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
-    def file_exists(self, path):
-        return self.exec_in_container(
-            ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
-
     def copy_file_to_container(self, local_path, dest_path):
         container_id = self.get_docker_handle().id
         return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
@@ -1156,14 +1095,14 @@ class ClickHouseInstance:
             if status == 'exited':
                 raise Exception(
                     "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
-                                                                                           handle.logs().decode('utf-8')))
+                                                                                           handle.logs()))
 
             current_time = time.time()
             time_left = deadline - current_time
             if deadline is not None and current_time >= deadline:
                 raise Exception("Timed out while waiting for instance `{}' with ip address {} to start. "
                                 "Container status: {}, logs: {}".format(self.name, self.ip_address, status,
-                                                                        handle.logs().decode('utf-8')))
+                                                                        handle.logs()))
 
             # Repeatedly poll the instance address until there is something that listens there.
             # Usually it means that ClickHouse is ready to accept queries.
@@ -1184,8 +1123,8 @@ class ClickHouseInstance:
 
     @staticmethod
     def dict_to_xml(dictionary):
-        xml_str = dict2xml(dictionary, wrap="yandex", indent="  ", newlines=True)
-        return xml_str
+        xml_str = dicttoxml(dictionary, custom_root="yandex", attr_type=False)
+        return xml.dom.minidom.parseString(xml_str).toprettyxml()
 
     @property
     def odbc_drivers(self):
@@ -1283,7 +1222,7 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if self.with_kerberized_kafka or self.with_kerberized_hdfs:
+        if self.with_kerberized_kafka:
             shutil.copytree(self.kerberos_secrets_dir, p.abspath(p.join(self.path, 'secrets')))
 
         # Copy config.d configs
@@ -1323,9 +1262,6 @@ class ClickHouseInstance:
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")
-
-        if self.with_kerberized_hdfs:
-            depends_on.append("kerberizedhdfs1")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")

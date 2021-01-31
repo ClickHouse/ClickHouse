@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
+toc_title: COLUMN
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -12,19 +12,18 @@ toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u
 -   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
--   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
 
 Подробное описание для каждого действия приведено ниже.
 
 ## ADD COLUMN {#alter_add-column}
 
 ``` sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
 Добавляет в таблицу новый столбец с именем `name`, типом `type`, [кодеком](../create/table.md#codecs) `codec` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](../create/index.md#create-default-values)).
 
-Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Если вы хотите добавить столбец в начало таблицы, используйте `FIRST`. Иначе столбец добавляется в конец таблицы. Для цепочки действий `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
+Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Обратите внимание, ClickHouse не позволяет добавлять столбцы в начало таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
 
 Добавление столбца всего лишь меняет структуру таблицы, и не производит никаких действий с данными - соответствующие данные не появляются на диске после ALTER-а. При чтении из таблицы, если для какого-либо столбца отсутствуют данные, то он заполняется значениями по умолчанию (выполняя выражение по умолчанию, если такое есть, или нулями, пустыми строками). Также, столбец появляется на диске при слиянии кусков данных (см. [MergeTree](../../../sql-reference/statements/alter/index.md)).
 
@@ -33,23 +32,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after 
 Пример:
 
 ``` sql
-ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
-ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
-ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
-DESC alter_test FORMAT TSV;
-```
-
-``` text
-Added1  UInt32
-CounterID       UInt32
-StartDate       Date
-UserID  UInt32
-VisitID UInt32
-NestedColumn.A  Array(UInt8)
-NestedColumn.S  Array(String)
-Added2  UInt32
-ToDrop  UInt32
-Added3  UInt32
+ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
 ## DROP COLUMN {#alter_drop-column}
@@ -105,7 +88,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:
@@ -120,8 +103,6 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | F
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
-Запрос также может изменять порядок столбцов при помощи `FIRST | AFTER`, смотрите описание [ADD COLUMN](#alter_add-column).
-
 При изменении типа, значения преобразуются так, как если бы к ним была применена функция [toType](../../../sql-reference/statements/alter/index.md). Если изменяется только выражение для умолчания, запрос не делает никакой сложной работы и выполняется мгновенно.
 
 Пример запроса:
@@ -132,31 +113,17 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Изменение типа столбца - это единственное действие, которое выполняет сложную работу - меняет содержимое файлов с данными. Для больших таблиц, выполнение может занять длительное время.
 
-Выполнение запроса ALTER атомарно.
+Выполнение производится в несколько стадий:
+
+-   подготовка временных (новых) файлов с изменёнными данными;
+-   переименование старых файлов;
+-   переименование временных (новых) файлов в старые;
+-   удаление старых файлов.
+
+Из них, длительной является только первая стадия. Если на этой стадии возникнет сбой, то данные не поменяются.
+Если на одной из следующих стадий возникнет сбой, то данные будет можно восстановить вручную. За исключением случаев, когда старые файлы удалены из файловой системы, а данные для новых файлов не доехали на диск и потеряны.
 
 Запрос `ALTER` на изменение столбцов реплицируется. Соответствующие инструкции сохраняются в ZooKeeper, и затем каждая реплика их применяет. Все запросы `ALTER` выполняются в одном и том же порядке. Запрос ждёт выполнения соответствующих действий на всех репликах. Но при этом, запрос на изменение столбцов в реплицируемой таблице можно прервать, и все действия будут осуществлены асинхронно.
-
-## MODIFY COLUMN REMOVE {#modify-remove}
-
-Удаляет какое-либо из свойств столбца: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
-
-Синтаксис:
-
-```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
-```
-
-**Пример**
-
-Удаление свойства TTL:
-
-```sql
-ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
-```
-
-## Смотрите также
-
-- [REMOVE TTL](ttl.md).
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 

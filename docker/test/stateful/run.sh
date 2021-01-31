@@ -37,15 +37,7 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
-
-service clickhouse-server restart
-
-# Wait for server to start accepting connections
-for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && break
-    sleep 1
-done
-
+service clickhouse-server restart && sleep 5
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
@@ -56,8 +48,4 @@ if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test ; then
     SKIP_LIST_OPT="--use-skip-list"
 fi
 
-# We can have several additional options so we path them as array because it's
-# more idiologically correct.
-read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
-
-clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+clickhouse-test --testname --shard --zookeeper --no-stateless "$SKIP_LIST_OPT" "$ADDITIONAL_OPTIONS" "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

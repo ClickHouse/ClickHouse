@@ -57,21 +57,9 @@ std::string DataTypeDateTime64::doGetName() const
     return out.str();
 }
 
-void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
 {
-    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    switch (settings.date_time_output_format)
-    {
-        case FormatSettings::DateTimeOutputFormat::Simple:
-            writeDateTimeText(value, scale, ostr, time_zone);
-            return;
-        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-            writeDateTimeUnixTimestamp(value, scale, ostr);
-            return;
-        case FormatSettings::DateTimeOutputFormat::ISO:
-            writeDateTimeTextISO(value, scale, ostr, utc_time_zone);
-            return;
-    }
+    writeDateTimeText(assert_cast<const ColumnType &>(column).getData()[row_num], scale, ostr, time_zone);
 }
 
 void DataTypeDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const

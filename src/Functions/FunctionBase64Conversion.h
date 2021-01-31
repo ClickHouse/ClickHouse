@@ -1,4 +1,3 @@
-#pragma once
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
 #endif
@@ -91,14 +90,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr column_string = arguments[0].column;
+        const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -111,9 +110,9 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        const auto * source = input->getChars().data();
-        auto * dst = dst_data.data();
-        auto * dst_pos = dst;
+        auto source = input->getChars().data();
+        auto dst = dst_data.data();
+        auto dst_pos = dst;
 
         size_t src_offset_prev = 0;
 
@@ -141,7 +140,7 @@ public:
                 {
                     // during decoding character array can be partially polluted
                     // if fail, revert back and clean
-                    auto * savepoint = dst_pos;
+                    auto savepoint = dst_pos;
                     outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                     {
@@ -158,9 +157,7 @@ public:
             __msan_unpoison(dst_pos, outlen);
 
             source += srclen + 1;
-            dst_pos += outlen;
-            *dst_pos = '\0';
-            dst_pos += 1;
+            dst_pos += outlen + 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -168,7 +165,7 @@ public:
 
         dst_data.resize(dst_pos - dst);
 
-        return dst_column;
+        block.getByPosition(result).column = std::move(dst_column);
     }
 };
 }

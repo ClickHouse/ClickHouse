@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cassert>
-#include <stdexcept> // for std::logic_error
 #include <string>
 #include <vector>
 #include <functional>
@@ -52,7 +51,7 @@ struct StringRef
 };
 
 /// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
-/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
+/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetics
 /// and the UBSan thinks that something like nullptr + 8 is UB.
 constexpr const inline char empty_string_ref_addr{};
 constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};
@@ -313,5 +312,14 @@ namespace ZeroTraits
     inline void set(StringRef & x) { x.size = 0; }
 }
 
+
+inline bool operator==(StringRef lhs, const char * rhs)
+{
+    for (size_t pos = 0; pos < lhs.size; ++pos)
+        if (!rhs[pos] || lhs.data[pos] != rhs[pos])
+            return false;
+
+    return true;
+}
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);

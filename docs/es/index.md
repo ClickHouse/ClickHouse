@@ -13,10 +13,10 @@ En un DBMS “normal”, orientado a filas, los datos se almacenan en este orden
 
 | Fila | Argumento   | JavaEnable | Titular                   | GoodEvent | EventTime           |
 |------|-------------|------------|---------------------------|-----------|---------------------|
-| #0  | 89354350662 | 1          | Relaciones con inversores | 1         | 2016-05-18 05:19:20 |
-| #1  | 90329509958 | 0          | Contáctenos               | 1         | 2016-05-18 08:10:20 |
-| #2  | 89953706054 | 1          | Mision                    | 1         | 2016-05-18 07:38:00 |
-| #N  | …           | …          | …                         | …         | …                   |
+| \#0  | 89354350662 | 1          | Relaciones con inversores | 1         | 2016-05-18 05:19:20 |
+| \#1  | 90329509958 | 0          | Contáctenos               | 1         | 2016-05-18 08:10:20 |
+| \#2  | 89953706054 | 1          | Mision                    | 1         | 2016-05-18 07:38:00 |
+| \#N  | …           | …          | …                         | …         | …                   |
 
 En otras palabras, todos los valores relacionados con una fila se almacenan físicamente uno junto al otro.
 
@@ -24,7 +24,7 @@ Ejemplos de un DBMS orientado a filas son MySQL, Postgres y MS SQL Server.
 
 En un DBMS orientado a columnas, los datos se almacenan así:
 
-| Fila:       | #0                       | #1                 | #2                 | #N |
+| Fila:       | \#0                       | \#1                 | \#2                 | \#N |
 |-------------|---------------------------|---------------------|---------------------|-----|
 | Argumento:  | 89354350662               | 90329509958         | 89953706054         | …   |
 | JavaEnable: | 1                         | 0                   | 1                   | …   |

@@ -51,14 +51,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const ColumnPtr & column_string = arguments[0].column;
+        const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -104,7 +104,7 @@ public:
             dst_offsets[row_idx] = dst_data.size();
         }
 
-        return dst_column;
+        block.getByPosition(result).column = std::move(dst_column);
     }
 };
 

@@ -87,7 +87,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 void MySQLHandler::run()
 {
     connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -185,7 +184,6 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
                 packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
@@ -264,7 +262,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)

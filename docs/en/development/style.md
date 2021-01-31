@@ -354,7 +354,7 @@ In all other cases, use a name that describes the meaning.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Names of `define`s and global constants use ALL_CAPS with underscores.
+**9.** Names of `define`s and global constants use ALL\_CAPS with underscores.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -394,7 +394,7 @@ The underscore suffix can be omitted if the argument is not used in the construc
 timer (not m_timer)
 ```
 
-**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
+**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL\_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -577,7 +577,7 @@ If a function captures ownership of an object created in the heap, make the argu
 
 **14.** Return values.
 
-In most cases, just use `return`. Do not write `return std::move(res)`.
+In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
@@ -671,7 +671,7 @@ Always use `#pragma once` instead of include guards.
 **24.** Do not use `trailing return type` for functions unless necessary.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Declaration and initialization of variables.
@@ -707,7 +707,7 @@ The standard library is used (`libc++`).
 
 **4.**OS: Linux Ubuntu, not older than Precise.
 
-**5.**Code is written for x86_64 CPU architecture.
+**5.**Code is written for x86\_64 CPU architecture.
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 

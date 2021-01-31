@@ -140,15 +140,6 @@ size_t ColumnFunction::byteSize() const
     return total_size;
 }
 
-size_t ColumnFunction::byteSizeAt(size_t n) const
-{
-    size_t total_size = 0;
-    for (const auto & column : captured_columns)
-        total_size += column.column->byteSizeAt(n);
-
-    return total_size;
-}
-
 size_t ColumnFunction::allocatedBytes() const
 {
     size_t total_size = 0;
@@ -197,10 +188,15 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
     auto columns = captured_columns;
-    ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
+    columns.emplace_back(ColumnWithTypeAndName {nullptr, function->getReturnType(), ""});
 
-    res.column = function->execute(columns, res.type, size_);
-    return res;
+    ColumnNumbers arguments(captured_columns.size());
+    for (size_t i = 0; i < captured_columns.size(); ++i)
+        arguments[i] = i;
+
+    function->execute(columns, arguments, captured_columns.size(), size_);
+
+    return columns[captured_columns.size()];
 }
 
 }

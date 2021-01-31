@@ -232,7 +232,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
+            FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;
@@ -270,7 +270,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
+            FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);

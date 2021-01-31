@@ -1,4 +1,3 @@
-#pragma once
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB
@@ -18,26 +17,20 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumn::Permutation * permutation,
+        const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
-private:
-    /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
-
+protected:
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
-    /// Write block of rows into .bin file and marks in .mrk files
-    void writeDataBlock(const Block & block, const Granules & granules);
-
-    /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
-    /// and skip indices in their corresponding files.
-    void writeDataBlockPrimaryIndexAndSkipIndices(const Block & block, const Granules & granules);
+private:
+    void writeBlock(const Block & block);
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
+    void addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc);
 
     Block header;
 
@@ -84,6 +77,13 @@ private:
     /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
     HashingWriteBuffer marks;
+
+    /// Write single granule of one column (rows between 2 marks)
+    static void writeColumnSingleGranule(
+        const ColumnWithTypeAndName & column,
+        IDataType::OutputStreamGetter stream_getter,
+        size_t from_row,
+        size_t number_of_rows);
 };
 
 }

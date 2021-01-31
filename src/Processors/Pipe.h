@@ -71,8 +71,8 @@ public:
     enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
-        Totals,  /// Stream for totals. No more than one.
-        Extremes, /// Stream for extremes. No more than one.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -81,9 +81,6 @@ public:
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
-
-    /// Changes the number of output ports if needed. Adds ResizeTransform.
-    void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 

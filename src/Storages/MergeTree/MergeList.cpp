@@ -5,6 +5,12 @@
 #include <Common/CurrentThread.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTrackingForMerges;
+}
+
+
 namespace DB
 {
 
@@ -40,18 +46,7 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
-        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
-        /// which does not have any limits and sampling settings configured.
-        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
-        /// that has limits and sampling configured.
-        MemoryTracker * parent;
-        if (background_thread_memory_tracker->level == VariableContext::Thread &&
-            (parent = background_thread_memory_tracker->getParent()) &&
-            parent != &total_memory_tracker)
-        {
-            background_thread_memory_tracker = parent;
-        }
-
+        memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
         background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
         background_thread_memory_tracker->setParent(&memory_tracker);
     }
@@ -80,7 +75,7 @@ MergeInfo MergeListElement::getInfo() const
     res.memory_usage = memory_tracker.get();
     res.thread_id = thread_id;
     res.merge_type = toString(merge_type);
-    res.merge_algorithm = toString(merge_algorithm.load(std::memory_order_relaxed));
+    res.merge_algorithm = toString(merge_algorithm);
 
     for (const auto & source_part_name : source_part_names)
         res.source_part_names.emplace_back(source_part_name);

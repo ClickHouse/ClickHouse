@@ -75,6 +75,13 @@ inline TUInt safeDiff(TUInt prev, TUInt curr)
 }
 
 
+inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
+{
+    struct timespec ts;
+    clock_gettime(clock_type, &ts);
+    return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
 struct RUsageCounters
 {
     /// In nanoseconds
@@ -101,13 +108,13 @@ struct RUsageCounters
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
     }
 
-    static RUsageCounters current()
+    static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
         ::getrusage(RUSAGE_THREAD, &rusage);
 #endif
-        return RUsageCounters(rusage, getClockMonotonic());
+        return RUsageCounters(rusage, real_time_);
     }
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
@@ -125,14 +132,6 @@ struct RUsageCounters
         auto current_counters = current();
         incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
-    }
-
-private:
-    static inline UInt64 getClockMonotonic()
-    {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
     }
 };
 

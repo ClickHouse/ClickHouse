@@ -52,7 +52,6 @@ RUN apt-get update \
 RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
   echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
   echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
-  echo "LSAN_OPTIONS='suppressions=/usr/share/clickhouse-test/config/lsan_suppressions.txt'" >> /etc/environment; \
   ln -s /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
 # Sanitizer options for current shell (not current, but the one that will be spawned on "docker run")
 # (but w/o verbosity for TSAN, otherwise test.reference will not match)

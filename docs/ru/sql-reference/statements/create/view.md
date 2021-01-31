@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: "\u041f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435"
+toc_priority: 3
+toc_title: Представление
 ---
 
 # CREATE VIEW {#create-view}
@@ -13,7 +13,7 @@ toc_title: "\u041f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] AS SELECT ...
 ```
 
-Обычные представления не хранят никаких данных, они выполняют чтение данных из другой таблицы при каждом доступе. Другими словами, обычное представление - это не что иное, как сохраненный запрос. При чтении данных из представления этот сохраненный запрос используется как подзапрос в секции [FROM](../../../sql-reference/statements/select/from.md).
+Normal views don’t store any data, they just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
 Для примера, пусть вы создали представление:
 

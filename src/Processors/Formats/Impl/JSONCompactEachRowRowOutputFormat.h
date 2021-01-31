@@ -18,14 +18,14 @@ public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings_,
         bool with_names_,
         bool yield_strings_);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
-    void doWritePrefix() override;
+    void writePrefix() override;
 
     void writeBeforeTotals() override {}
     void writeTotals(const Columns & columns, size_t row_num) override;

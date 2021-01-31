@@ -13,6 +13,7 @@
 #include <Common/ThreadStatus.h>
 #include <ext/scope_guard.h>
 
+
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -164,8 +165,7 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            auto event = std::move(state);
-            SCOPE_EXIT(event->set());
+            SCOPE_EXIT(state->set());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -187,7 +187,7 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            abort();
+            std::terminate();
         state = std::move(rhs.state);
         return *this;
     }
@@ -195,13 +195,13 @@ public:
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-            abort();
+            std::terminate();
     }
 
     void join()
     {
         if (!joinable())
-            abort();
+            std::terminate();
 
         state->wait();
         state.reset();
@@ -210,7 +210,7 @@ public:
     void detach()
     {
         if (!joinable())
-            abort();
+            std::terminate();
         state.reset();
     }
 

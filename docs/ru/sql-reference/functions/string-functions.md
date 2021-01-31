@@ -1,8 +1,3 @@
----
-toc_priority: 40
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
----
-
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
 
 ## empty {#empty}
@@ -29,12 +24,12 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, то возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## char_length, CHAR_LENGTH {#char-length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
 
-## character_length, CHARACTER_LENGTH {#character-length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
@@ -75,7 +70,7 @@ toValidUTF8( input_string )
 
 Параметры:
 
--   input_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   input\_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
@@ -553,48 +548,6 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 ┌─res─┐
 │   1 │
 └─────┘
-```
-
-## encodeXMLComponent {#encode-xml-component}
-
-Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
-
-Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
-
-**Синтаксис** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Параметры** 
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, в которой зарезервированные символы экранированы.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Результат:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

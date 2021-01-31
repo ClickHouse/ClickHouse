@@ -92,7 +92,7 @@ struct ToStartOfWeekImpl
 template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-    explicit Transformer(Transform transform_)
+    Transformer(Transform transform_)
         : transform(std::move(transform_))
     {}
 
@@ -116,29 +116,29 @@ template <typename FromDataType, typename ToDataType>
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
+    static void execute(FunctionArguments & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, Transform transform = {})
     {
         const auto op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
         UInt8 week_mode = DEFAULT_WEEK_MODE;
         if (arguments.size() > 1)
         {
-            if (const auto * week_mode_column = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()))
+            if (const auto week_mode_column = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get()))
                 week_mode = week_mode_column->getValue<UInt8>();
         }
 
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        const ColumnPtr source_col = arguments[0].column;
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block.data, arguments, 2, 0);
+        const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
             auto col_to = ToDataType::ColumnType::create();
             op.vector(sources->getData(), col_to->getData(), week_mode, time_zone);
-            return col_to;
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
                     + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }

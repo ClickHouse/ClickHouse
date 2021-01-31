@@ -44,7 +44,7 @@ Spécificités de chaque clause facultative, sont couverts dans des sections dis
 -   [Clause HAVING](having.md)
 -   [Clause SELECT](#select-clause)
 -   [Clause LIMIT](limit.md)
--   [Clause UNION ALL](union.md)
+-   [Clause UNION ALL](union-all.md)
 
 ## Clause SELECT {#select-clause}
 

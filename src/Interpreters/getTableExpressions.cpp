@@ -73,12 +73,8 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
-static NamesAndTypesList getColumnsFromTableExpression(
-    const ASTTableExpression & table_expression,
-    const Context & context,
-    NamesAndTypesList & materialized,
-    NamesAndTypesList & aliases,
-    NamesAndTypesList & virtuals)
+static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context,
+                                                NamesAndTypesList & materialized, NamesAndTypesList & aliases, NamesAndTypesList & virtuals)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
@@ -128,8 +124,6 @@ TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTab
     if (!table_expressions.empty())
     {
         String current_database = context.getCurrentDatabase();
-        bool include_alias_cols = context.getSettingsRef().asterisk_include_alias_columns;
-        bool include_materialized_cols = context.getSettingsRef().asterisk_include_materialized_columns;
 
         for (const ASTTableExpression * table_expression : table_expressions)
         {
@@ -147,16 +141,6 @@ TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTab
             table.addHiddenColumns(materialized);
             table.addHiddenColumns(aliases);
             table.addHiddenColumns(virtuals);
-
-            if (include_alias_cols)
-            {
-                table.addAliasColumns(aliases);
-            }
-
-            if (include_materialized_cols)
-            {
-                table.addMaterializedColumns(materialized);
-            }
         }
     }
 

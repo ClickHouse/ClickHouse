@@ -12,6 +12,7 @@ namespace DB
 class Context;
 class ASTFunction;
 
+struct ExpressionAction;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
@@ -64,7 +65,7 @@ struct ScopeStack
 {
     struct Level
     {
-        ActionsDAGPtr actions_dag;
+        ActionsDAGPtr actions;
         NameSet inputs;
     };
 
@@ -74,7 +75,7 @@ struct ScopeStack
 
     const Context & context;
 
-    ScopeStack(ActionsDAGPtr actions_dag, const Context & context_);
+    ScopeStack(ActionsDAGPtr actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -82,11 +83,12 @@ struct ScopeStack
 
     void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
-    void addArrayJoin(const std::string & source_name, std::string result_name);
+    void addArrayJoin(const std::string & source_name, std::string result_name, std::string unique_column_name);
     void addFunction(
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
-            std::string result_name);
+            std::string result_name,
+            bool compile_expressions);
 
     ActionsDAGPtr popLevel();
 
@@ -127,7 +129,7 @@ public:
         int next_unique_suffix;
 
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
+                const NamesAndTypesList & source_columns_, ActionsDAGPtr actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                 bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_);
 
@@ -145,14 +147,15 @@ public:
 
         void addArrayJoin(const std::string & source_name, std::string result_name)
         {
-            actions_stack.addArrayJoin(source_name, std::move(result_name));
+            actions_stack.addArrayJoin(source_name, std::move(result_name), getUniqueName("_array_join_" + source_name));
         }
 
         void addFunction(const FunctionOverloadResolverPtr & function,
                          const Names & argument_names,
                          std::string result_name)
         {
-            actions_stack.addFunction(function, argument_names, std::move(result_name));
+            actions_stack.addFunction(function, argument_names, std::move(result_name),
+                                      context.getSettingsRef().compile_expressions);
         }
 
         ActionsDAGPtr getActions()
@@ -188,11 +191,8 @@ private:
     static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
-    static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
-    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
-    static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;

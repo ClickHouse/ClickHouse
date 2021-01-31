@@ -11,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
-#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
 
 
@@ -36,7 +35,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
       * when QueryProfiler is invoked under locks and TraceCollector cannot pull data from pipe.
       */
-    pipe.setNonBlockingWrite();
+    pipe.setNonBlocking();
     pipe.tryIncreaseSize(1 << 20);
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
@@ -67,20 +66,10 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
-    StringRef query_id;
-    UInt64 thread_id;
+    StringRef query_id = CurrentThread::getQueryId();
+    query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
-    if (CurrentThread::isInitialized())
-    {
-        query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
-
-        thread_id = CurrentThread::get().thread_id;
-    }
-    else
-    {
-        thread_id = MainThreadStatus::get()->thread_id;
-    }
+    auto thread_id = CurrentThread::get().thread_id;
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
     writeStringBinary(query_id, out);
@@ -116,8 +105,6 @@ void TraceCollector::stop()
 
 void TraceCollector::run()
 {
-    setThreadName("TraceCollector");
-
     ReadBufferFromFileDescriptor in(pipe.fds_rw[0]);
 
     while (true)
@@ -155,7 +142,7 @@ void TraceCollector::run()
         if (trace_log)
         {
             // time and time_in_microseconds are both being constructed from the same timespec so that the
-            // times will be equal up to the precision of a second.
+            // times will be equal upto the precision of a second.
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
 

@@ -1,8 +1,3 @@
----
-toc_priority: 66
-toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
----
-
 # Прочие функции {#other-functions}
 
 ## hostName() {#hostname}
@@ -415,7 +410,7 @@ ORDER BY h ASC
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
+### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
 
 `x` - что преобразовывать.
 
@@ -435,7 +430,7 @@ ORDER BY h ASC
 При этом, где обозначена одна и та же буква (T или U), могут быть, в случае числовых типов, не совпадающие типы, а типы, для которых есть общий тип.
 Например, первый аргумент может иметь тип Int64, а второй - Array(UInt16).
 
-Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array_from, то возвращает какой-нибудь из соответствующих.
+Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает default. Если имеется несколько совпадающих элементов в array\_from, то возвращает какой-нибудь из соответствующих.
 
 Пример:
 
@@ -457,10 +452,10 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to) {#transformx-array-from-array-to}
+### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Отличается от первого варианта отсутствующим аргументом default.
-Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
+Если значение x равно одному из элементов массива array\_from, то возвращает соответствующий (такой же по номеру) элемент массива array\_to; иначе возвращает x.
 
 Типы:
 
@@ -742,7 +737,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+То же, что и \[runningDifference\] (./other\_functions.md \# other\_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -927,48 +922,6 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfTypeName {#defaultvalueoftypename}
-
-Выводит значение по умолчанию для указанного типа данных.
-
-Не включает значения по умолчанию для настраиваемых столбцов, установленных пользователем.
-
-``` sql
-defaultValueOfTypeName(type)
-```
-
-**Параметры:**
-
--   `type` — тип данных.
-
-**Возвращаемое значение**
-
--   `0` для чисел;
--   Пустая строка для строк;
--   `ᴺᵁᴸᴸ` для [Nullable](../../sql-reference/data-types/nullable.md).
-
-**Пример**
-
-``` sql
-SELECT defaultValueOfTypeName('Int8')
-```
-
-``` text
-┌─defaultValueOfTypeName('Int8')─┐
-│                              0 │
-└────────────────────────────────┘
-```
-
-``` sql
-SELECT defaultValueOfTypeName('Nullable(Int8)')
-```
-
-``` text
-┌─defaultValueOfTypeName('Nullable(Int8)')─┐
-│                                     ᴺᵁᴸᴸ │
-└──────────────────────────────────────────┘
-```
-
 ## replicate {#other-functions-replicate}
 
 Создает массив, заполненный одним значением.
@@ -1104,104 +1057,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Принимает состояние агрегатной функции. Возвращает результат агрегирования (или конечное состояние при использовании комбинатора [-State](../../sql-reference/aggregate-functions/combinators.md#state)).
-
-**Синтаксис** 
-
-``` sql
-finalizeAggregation(state)
-```
-
-**Параметры**
-
--   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
-
-**Возвращаемые значения**
-
--   Значения, которые были агрегированы.
-
-Тип: соответствует типу агрегируемых значений.
-
-**Примеры**
-
-Запрос:
-
-```sql
-SELECT finalizeAggregation(( SELECT countState(number) FROM numbers(10)));
-```
-
-Результат:
-
-```text
-┌─finalizeAggregation(_subquery16)─┐
-│                               10 │
-└──────────────────────────────────┘
-```
-
-Запрос:
-
-```sql
-SELECT finalizeAggregation(( SELECT sumState(number) FROM numbers(10)));
-```
-
-Результат:
-
-```text
-┌─finalizeAggregation(_subquery20)─┐
-│                               45 │
-└──────────────────────────────────┘
-```
-
-Обратите внимание, что значения `NULL` игнорируются. 
-
-Запрос:
-
-```sql
-SELECT finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]));
-```
-
-Результат:
-
-```text
-┌─finalizeAggregation(arrayReduce('anyState', [NULL, 2, 3]))─┐
-│                                                          2 │
-└────────────────────────────────────────────────────────────┘
-```
-
-Комбинированный пример:
-
-Запрос:
-
-```sql
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(10);
-```
-
-Результат:
-
-```text
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-│      5 │           5 │             15 │
-│      6 │           6 │             21 │
-│      7 │           7 │             28 │
-│      8 │           8 │             36 │
-│      9 │           9 │             45 │
-└────────┴─────────────┴────────────────┘
-```
-
-**Смотрите также**
-
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+Принимает состояние агрегатной функции. Возвращает результат агрегирования.
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1332,7 +1188,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls).
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
 
 Подробнее о настройке `join_use_nulls` в [операциях Join](../../sql-reference/functions/other-functions.md).
 
@@ -1371,16 +1227,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## modelEvaluate(model_name, …) {#function-modelevaluate}
+## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Оценивает внешнюю модель.
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
+## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+custom\_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1575,44 +1431,9 @@ SELECT randomStringUTF8(13)
 
 ```
 
-## getSetting {#getSetting}
-
-Возвращает текущее значение [пользовательской настройки](../../operations/settings/index.md#custom_settings).
-
-**Синтаксис** 
-
-```sql
-getSetting('custom_setting');    
-```
-
-**Параметр** 
-
--   `custom_setting` — название настройки. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Текущее значение пользовательской настройки.
-
-**Пример**
-
-```sql
-SET custom_a = 123;
-SELECT getSetting('custom_a');    
-```
-
-**Результат**
-
-```
-123
-```
-
-**См. также** 
-
--   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
-
 ## isDecimalOverflow {#is-decimal-overflow}
 
-Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md) вне собственной (или заданной) области значений.
+Проверяет, находится ли число [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) вне собственной (или заданной) области значений.
 
 **Синтаксис**
 
@@ -1622,7 +1443,7 @@ isDecimalOverflow(d, [p])
 
 **Параметры** 
 
--   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
+-   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s).
 -   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
 
 **Возвращаемое значение**
@@ -1659,7 +1480,7 @@ countDigits(x)
 
 **Параметры** 
 
--   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md) число.
+-   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md#decimalp-s-decimal32s-decimal64s-decimal128s) число.
 
 **Возвращаемое значение**
 
@@ -1685,65 +1506,5 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 ``` text
 10	10	19	19	39	39
 ```
-
-## errorCodeToName {#error-code-to-name}
-
-**Возвращаемое значение**
-
--   Название переменной для кода ошибки.
-
-Тип: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
-
-**Синтаксис**
-
-``` sql
-errorCodeToName(1)
-```
-
-Результат:
-
-``` text
-UNSUPPORTED_METHOD
-```
-
-## tcpPort {#tcpPort}
-
-Вовращает номер TCP порта, который использует сервер для [нативного протокола](../../interfaces/tcp.md).
-
-**Синтаксис**
-
-``` sql
-tcpPort()
-```
-
-**Параметры**
-
--   Нет.
-
-**Возвращаемое значение**
-
--   Номер TCP порта.
-
-Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT tcpPort();
-```
-
-Результат:
-
-``` text
-┌─tcpPort()─┐
-│      9000 │
-└───────────┘
-```
-
-**Смотрите также**
-
--   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

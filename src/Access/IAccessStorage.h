@@ -144,7 +144,7 @@ public:
 
     /// Finds an user, check its password and returns the ID of the user.
     /// Throws an exception if no such user or password is incorrect.
-    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
 
     /// Returns the ID of an user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
@@ -182,8 +182,6 @@ protected:
     [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
-    [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidPassword();
     [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;

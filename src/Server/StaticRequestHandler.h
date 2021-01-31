@@ -1,14 +1,15 @@
 #pragma once
 
+#include "IServer.h"
+
 #include <Poco/Net/HTTPRequestHandler.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <common/types.h>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB
 {
-
-class IServer;
-class WriteBuffer;
 
 /// Response with custom string. Can be used for browser.
 class StaticRequestHandler : public Poco::Net::HTTPRequestHandler
@@ -21,11 +22,7 @@ private:
     String response_expression;
 
 public:
-    StaticRequestHandler(
-        IServer & server,
-        const String & expression,
-        int status_ = 200,
-        const String & content_type_ = "text/html; charset=UTF-8");
+    StaticRequestHandler(IServer & server, const String & expression, int status_ = 200, const String & content_type_ = "text/html; charset=UTF-8");
 
     void writeResponse(WriteBuffer & out);
 

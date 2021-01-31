@@ -1,14 +1,11 @@
 #include <Interpreters/TextLog.h>
-
-#include <Common/ClickHouseRevision.h>
-#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-
+#include <Common/ClickHouseRevision.h>
 #include <array>
 
 namespace DB

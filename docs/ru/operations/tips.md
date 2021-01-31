@@ -1,8 +1,3 @@
----
-toc_priority: 58
-toc_title: "\u0421\u043e\u0432\u0435\u0442\u044b\u0020\u043f\u043e\u0020\u044d\u043a\u0441\u043f\u043b\u0443\u0430\u0442\u0430\u0446\u0438\u0438"
----
-
 # Советы по эксплуатации {#sovety-po-ekspluatatsii}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
@@ -57,7 +52,7 @@ $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Если бюджет позволяет, лучше выбрать RAID-10.
 
 На более чем 4 дисках вместо RAID-5 нужно использовать RAID-6 (предпочтительнее) или RAID-50.
-При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe_cache_size, так как значение по умолчанию выбрано не самым удачным образом.
+При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe\_cache\_size, так как значение по умолчанию выбрано не самым удачным образом.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size

@@ -117,7 +117,7 @@ private:
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
                 ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
 
-                data.addTableColumns(identifier.name());
+                data.addTableColumns(identifier.name);
             }
             else
                 data.new_select_expression_list->children.push_back(child);
@@ -228,7 +228,7 @@ struct CollectColumnIdentifiersMatcher
         void addIdentirier(const ASTIdentifier & ident)
         {
             for (const auto & aliases : ignored)
-                if (aliases.count(ident.name()))
+                if (aliases.count(ident.name))
                     return;
             identifiers.push_back(const_cast<ASTIdentifier *>(&ident));
         }
@@ -293,7 +293,7 @@ struct CheckAliasDependencyVisitorData
 
     void visit(ASTIdentifier & ident, ASTPtr &)
     {
-        if (!dependency && aliases.count(ident.name()))
+        if (!dependency && aliases.count(ident.name))
             dependency = &ident;
     }
 };
@@ -467,8 +467,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
-
-        bool got_alias = aliases.count(ident->name());
+        bool got_alias = aliases.count(ident->name);
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
         if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
@@ -476,23 +475,12 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             if (!ident->isShort())
             {
                 if (got_alias)
-                {
-                    auto alias = aliases.find(ident->name())->second;
-                    auto alias_table = IdentifierSemantic::getTableName(alias->ptr());
-                    bool alias_equals_column_name = false;
-                    if ((!ident->isShort() && alias->ptr()->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias())
-                        || (alias_table == IdentifierSemantic::getTableName(ident->ptr())
-                            && ident->shortName() == alias->as<ASTIdentifier>()->shortName()))
-                    {
-                        alias_equals_column_name = true;
-                    }
-                    if (!alias_equals_column_name)
-                        throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                }
+                    throw Exception("Alias clashes with qualified column '" + ident->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
                 String short_name = ident->shortName();
                 String original_long_name;
                 if (public_identifiers.count(ident))
-                    original_long_name = ident->name();
+                    original_long_name = ident->name;
 
                 size_t count = countTablesWithColumn(tables, short_name);
 
@@ -500,7 +488,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 {
                     const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    const auto & unique_long_name = ident->name();
+                    auto & unique_long_name = ident->name;
 
                     /// For tables moved into subselects we need unique short names for clashed names
                     if (*table_pos != last_table_pos)
@@ -524,7 +512,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
         else if (!got_alias)
-            throw Exception("Unknown column name '" + ident->name() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+            throw Exception("Unknown column name '" + ident->name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     return needed_columns;
@@ -625,12 +613,12 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
                 {
                     for (auto * ident : on_identifiers)
                     {
-                        auto it = data.aliases.find(ident->name());
-                        if (!on_aliases.count(ident->name()) && it != data.aliases.end())
+                        auto it = data.aliases.find(ident->name);
+                        if (!on_aliases.count(ident->name) && it != data.aliases.end())
                         {
                             auto alias_expression = it->second;
                             alias_pushdown[table_pos].push_back(alias_expression);
-                            on_aliases[ident->name()] = alias_expression;
+                            on_aliases[ident->name] = alias_expression;
                         }
                     }
                 }
@@ -650,14 +638,14 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         CheckAliasDependencyVisitor(check).visit(expr.second);
         if (check.dependency)
             throw Exception("Cannot rewrite JOINs. Alias '" + expr.first +
-                            "' used in ON section depends on another alias '" + check.dependency->name() + "'",
+                            "' used in ON section depends on another alias '" + check.dependency->name + "'",
                             ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Check same name in aliases, USING and ON sections. Cannot push down alias to ON through USING cause of name masquerading.
     for (auto * ident : using_identifiers)
-        if (on_aliases.count(ident->name()))
-            throw Exception("Cannot rewrite JOINs. Alias '" + ident->name() + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
+        if (on_aliases.count(ident->name))
+            throw Exception("Cannot rewrite JOINs. Alias '" + ident->name + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
     using_identifiers.clear();
 
     /// Replace pushdowned expressions with aliases names in original expression lists.
