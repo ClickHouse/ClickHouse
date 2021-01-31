@@ -27,8 +27,8 @@ struct HxCoarseParseImpl
 private:
     struct SpanInfo
     {
-        SpanInfo(): id(0), match_space(std::pair<unsigned long long, unsigned long long>(0, 0)) {}
-        SpanInfo(unsigned int matchId, std::pair<unsigned long long, unsigned long long> matchSpan): id(matchId), match_space(matchSpan){}
+        SpanInfo(): id(0), match_space(std::pair<unsigned long long, unsigned long long>(0, 0)) {}  // NOLINT
+        SpanInfo(unsigned int matchId, std::pair<unsigned long long, unsigned long long> matchSpan): id(matchId), match_space(matchSpan){} // NOLINT
         SpanInfo(const SpanInfo& obj)
         {
             id = obj.id;
@@ -46,7 +46,7 @@ private:
         // }
 
         unsigned int id;
-        std::pair<unsigned long long, unsigned long long> match_space;
+        std::pair<unsigned long long, unsigned long long> match_space;  // NOLINT
     };
     using SpanElement = std::vector<SpanInfo>;
     struct Span
@@ -108,7 +108,7 @@ private:
         }
         // return;
     }
-    static inline void popArea(SpanElement& stack, unsigned long long from, unsigned long long to)
+    static inline void popArea(SpanElement& stack, unsigned long long from, unsigned long long to)  //NOLINT
     {
         while (!stack.empty())
         {
@@ -134,8 +134,8 @@ private:
         {
             matches->copy_stack.pop_back();
         }
-        unsigned long long from;
-        unsigned long long to;
+        unsigned long long from;    // NOLINT
+        unsigned long long to;      // NOLINT
         unsigned id;
         for (auto begin = matches->tag_stack.begin(); begin != matches->tag_stack.end(); ++begin)
         {
@@ -250,8 +250,8 @@ private:
         // return;
     }
     static int spanCollect(unsigned int id,
-                          unsigned long long from,
-                          unsigned long long to,
+                          unsigned long long from,  // NOLINT
+                          unsigned long long to,    // NOLINT
                           unsigned int , void * ctx)
     {
         Span* matches = static_cast<Span*>(ctx);
@@ -407,8 +407,8 @@ private:
     }
     #if USE_HYPERSCAN
     static hs_database_t* buildDatabase(const std::vector<const char* > &expressions,
-                                        const std::vector<const unsigned> &flags,
-                                        const std::vector<const unsigned> &id,
+                                        const std::vector<unsigned> &flags,
+                                        const std::vector<unsigned> &id,
                                         unsigned int mode)
     {
         hs_database_t *db;
@@ -426,9 +426,9 @@ private:
     }
     #endif
     static std::vector<const char*> patterns;
-    static std::vector<const std::size_t> patterns_length;
-    static std::vector<const unsigned> patterns_flag;
-    static std::vector<const unsigned> ids;
+    static std::vector<std::size_t> patterns_length;
+    static std::vector<unsigned> patterns_flag;
+    static std::vector<unsigned> ids;
 
 public:
     static void executeInternal(
@@ -540,17 +540,17 @@ std::vector<const char*> HxCoarseParseImpl::patterns =
         "\\s{2,}",         // 12 "   ", continuous blanks
         "[^\\S ]"          // 13 "\n", "\t" and other white space, it does not include single ' '.
     };
-std::vector<const std::size_t> HxCoarseParseImpl::patterns_length =
+std::vector<std::size_t> HxCoarseParseImpl::patterns_length =
     {
         2, 1, 8, 7, 9, 8, 7, 6, 8, 7, 9, 3, 0, 1
     };
 #if USE_HYPERSCAN
-std::vector<const unsigned> HxCoarseParseImpl::patterns_flag =
+std::vector<unsigned> HxCoarseParseImpl::patterns_flag =
     {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, HS_FLAG_SOM_LEFTMOST, 0
     };
 #endif
-std::vector<const unsigned> HxCoarseParseImpl::ids =
+std::vector<unsigned> HxCoarseParseImpl::ids =
     {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
     };
