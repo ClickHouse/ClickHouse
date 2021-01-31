@@ -1,3 +1,4 @@
+DROP DATABASE IF EXISTS 01681_bloom_filter_nullable_column;
 CREATE DATABASE 01681_bloom_filter_nullable_column;
 
 DROP TABLE IF EXISTS 01681_bloom_filter_nullable_column.bloom_filter_nullable_index;
