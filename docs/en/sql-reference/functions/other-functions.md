@@ -186,10 +186,6 @@ In ClickHouse, queries are always run on blocks (sets of column parts). This fun
 
 Returns estimation of uncompressed byte size of its arguments in memory.
 
-E.g. for [UInt32](../../sql-reference/data-types/int-uint.md) argument it will return constant 4, for [String](../../sql-reference/data-types/string.md) arguments — the string length + 9 (terminating zero + length).
-
-The function can take multiple arguments. The typical application is byteSize(*).
-
 Use case: suppose you have a service that stores data for multiple clients in one table. Users will pay per data volume. So, you need to implement accounting of users data volume. The function will allow to calculate the data size on per-row basis.
 
 **Syntax**
@@ -208,7 +204,9 @@ byteSize(argument [, ...])
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Example**
+**Examples**
+
+For [String](../../sql-reference/data-types/string.md) arguments the funtion returns the string length + 9 (terminating zero + length).
 
 Query:
 
@@ -218,11 +216,11 @@ SELECT byteSize('string');
 
 Result:
 
+```text
 ┌─byteSize('string')─┐
 │                 15 │
 └────────────────────┘
-
-For this table:
+```
 
 Query:
 
@@ -243,43 +241,43 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY key;
-```
 
-Insert this values:
+INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
 
-Query:
+SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)` FROM test ORDER BY key ASC FORMAT Vertical;
 
-```sql
-insert into test values(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
-```
+SELECT key, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)` FROM test ORDER BY key ASC FORMAT Vertical;
 
-Query:
-
-```sql
-SELECT key, toTypeName(u8), byteSize(u8), toTypeName(u16), byteSize(u16), toTypeName(u32), byteSize(u32), toTypeName(u64), byteSize(u64) FROM test ORDER BY key ASC;
-
-SELECT key, toTypeName(i8), byteSize(i8), toTypeName(i16), byteSize(i16), toTypeName(i32), byteSize(i32), toTypeName(i64), byteSize(i64), FROM test ORDER BY key ASC;
-
-SELECT key, toTypeName(f32), byteSize(f32), toTypeName(f64), byteSize(f64) FROM test ORDER BY key ASC;
+SELECT key, byteSize(f32) AS `byteSize(Float32)`,  byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
 ```
 
 Result:
 
 ``` text
-┌─key─┬─toTypeName(u8)─┬─byteSize(u8)─┬─toTypeName(u16)─┬─byteSize(u16)─┬─toTypeName(u32)─┬─byteSize(u32)─┬─toTypeName(u64)─┬─byteSize(u64)─┐
-│   1 │ UInt8          │            1 │ UInt16          │             2 │ UInt32          │             4 │ UInt64          │             8 │
-└─────┴────────────────┴──────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+Row 1:
+──────
+key:              1
+byteSize(UInt8):  1
+byteSize(UInt16): 2
+byteSize(UInt32): 4
+byteSize(UInt64): 8
 
-┌─key─┬─toTypeName(i8)─┬─byteSize(i8)─┬─toTypeName(i16)─┬─byteSize(i16)─┬─toTypeName(i32)─┬─byteSize(i32)─┬─toTypeName(i64)─┬─byteSize(i64)─┐
-│   1 │ Int8           │            1 │ Int16           │             2 │ Int32           │             4 │ Int64           │             8 │
-└─────┴────────────────┴──────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+Row 1:
+──────
+key:             1
+byteSize(Int8):  1
+byteSize(Int16): 2
+byteSize(Int32): 4
+byteSize(Int64): 8
 
-┌─key─┬─toTypeName(f32)─┬─byteSize(f32)─┬─toTypeName(f64)─┬─byteSize(f64)─┐
-│   1 │ Float32         │             4 │ Float64         │             8 │
-└─────┴─────────────────┴───────────────┴─────────────────┴───────────────┘
+Row 1:
+──────
+key:               1
+byteSize(Float32): 4
+byteSize(Float64): 8
 ```
 
-With multiple arguments:
+The function can take multiple arguments and will return their combined byte size.
 
 Query:
 
