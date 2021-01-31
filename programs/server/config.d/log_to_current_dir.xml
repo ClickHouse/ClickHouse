@@ -1,0 +1,7 @@
+<yandex>
+    <logger>
+        <console>false</console>
+        <log>clickhouse-server.log</log>
+        <errorlog>clickhouse-server.err.log</errorlog>
+    </logger>
+</yandex>
