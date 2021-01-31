@@ -1510,7 +1510,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
         shared->schedule_pool.emplace(
-            settings.background_schedule_pool_size,
+            1,
             CurrentMetrics::BackgroundSchedulePoolTask,
             "BgSchPool");
     return *shared->schedule_pool;

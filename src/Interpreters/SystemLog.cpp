@@ -88,9 +88,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config)
+SystemLogs::SystemLogs(Context &, const Poco::Util::AbstractConfiguration & config)
 {
-    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
+/*    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
     query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
     part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
     trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
@@ -102,7 +102,7 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         "asynchronous_metric_log");
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
-        "opentelemetry_span_log");
+        "opentelemetry_span_log");*/
 
     if (query_log)
         logs.emplace_back(query_log.get());

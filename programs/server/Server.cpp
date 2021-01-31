@@ -430,7 +430,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
-    bool has_zookeeper = config().has("zookeeper");
+    bool has_zookeeper = false; //config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -769,8 +769,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
-        main_config_reloader->reload();
-        access_control.reloadUsersConfigs();
+        //main_config_reloader->reload();
+        //access_control.reloadUsersConfigs();
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -842,7 +842,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    for (const auto & listen_host : listen_hosts)
+/*    for (const auto & listen_host : listen_hosts)
     {
         /// TCP TestKeeper
         const char * port_name = "test_keeper_server.tcp_port";
@@ -859,7 +859,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
         });
-    }
+    }*/
 
     for (auto & server : *servers_to_start_before_tables)
         server.start();
@@ -919,15 +919,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         loadMetadataSystem(*global_context);
         /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs();
+//        global_context->initializeSystemLogs();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
-        loadMetadata(*global_context, default_database);
-        database_catalog.loadDatabases();
+//        loadMetadata(*global_context, default_database);
+//        database_catalog.loadDatabases();
         /// After loading validate that default database exists
-        database_catalog.assertDatabaseExists(default_database);
+//        database_catalog.assertDatabaseExists(default_database);
     }
     catch (...)
     {
@@ -1010,7 +1010,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
+        //dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
 #if defined(OS_LINUX)
@@ -1041,12 +1041,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
     {
         /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(
+        /*AsynchronousMetrics async_metrics(
             *global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
-        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
+        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);*/
 
         for (const auto & listen_host : listen_hosts)
         {
+#if 0
             /// HTTP
             const char * port_name = "http_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
@@ -1081,9 +1082,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
             });
+#endif
 
             /// TCP
-            port_name = "tcp_port";
+            const char * port_name = "tcp_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
@@ -1099,7 +1101,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
             });
 
-            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+#if 0            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
             port_name = "tcp_with_proxy_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
@@ -1226,6 +1228,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
             });
+#endif
         }
 
         if (servers->empty())
@@ -1233,8 +1236,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics.start();
-        global_context->enableNamedSessions();
+        //async_metrics.start();
+        //global_context->enableNamedSessions();
 
         for (auto & server : *servers)
             server.start();
@@ -1247,8 +1250,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         buildLoggers(config(), logger());
 
-        main_config_reloader->start();
-        access_control.startPeriodicReloadingUsersConfigs();
+//        main_config_reloader->start();
+//        access_control.startPeriodicReloadingUsersConfigs();
         if (dns_cache_updater)
             dns_cache_updater->start();
 
@@ -1309,7 +1312,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         });
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
+/*        ext::scope_guard dictionaries_xmls, models_xmls;
         try
         {
             if (!config().getBool("dictionaries_lazy_load", true))
@@ -1326,14 +1329,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
             throw;
-        }
+        }*/
 
-        std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
+/*        std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
                 global_context->getConfigRef(), graphite_key, async_metrics));
-        }
+        }*/
 
         waitForTerminationRequest();
     }
