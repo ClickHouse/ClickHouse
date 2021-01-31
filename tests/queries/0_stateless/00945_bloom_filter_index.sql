@@ -348,6 +348,16 @@ SELECT id FROM test_bf_indexOf WHERE 1 <= indexOf(ary, 'value1') ORDER BY id FOR
 SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') >= 2 ORDER BY id FORMAT TSV;
 SELECT id FROM test_bf_indexOf WHERE 2 <= indexOf(ary, 'value1') ORDER BY id FORMAT TSV;
 
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') = toDecimal32(0, 2) ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE toDecimal128(0, 2) = indexOf(ary, 'value1') ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') = '0' ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE '0' = indexOf(ary, 'value1') ORDER BY id FORMAT TSV;
+
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') > toDecimal32(0, 2) ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') < toDecimal128(1, 2) ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') > '0' ORDER BY id FORMAT TSV;
+SELECT id FROM test_bf_indexOf WHERE indexOf(ary, 'value1') < '1' ORDER BY id FORMAT TSV;
+
 SELECT id, ary[indexOf(ary, 'value1')] FROM test_bf_indexOf WHERE ary[indexOf(ary, 'value1')] = 'value1' ORDER BY id FORMAT TSV;
 SELECT id, ary[indexOf(ary, 'value2')] FROM test_bf_indexOf WHERE ary[indexOf(ary, 'value2')] = 'value2' ORDER BY id FORMAT TSV;
 SELECT id, ary[indexOf(ary, 'value3')] FROM test_bf_indexOf WHERE ary[indexOf(ary, 'value3')] = 'value3' ORDER BY id FORMAT TSV;
