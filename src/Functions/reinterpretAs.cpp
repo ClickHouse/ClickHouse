@@ -314,8 +314,6 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsTyped>(); }
 
-    explicit FunctionReinterpretAsTyped() {}
-
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -324,13 +322,13 @@ public:
 
     static ColumnsWithTypeAndName addTypeColumnToArguments(const ColumnsWithTypeAndName & arguments)
     {
-        auto & argument = arguments[0];
+        const auto & argument = arguments[0];
 
         DataTypePtr data_type;
 
         if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
         {
-            auto & type = argument.type;
+            const auto & type = argument.type;
             size_t type_value_size_in_memory = type->getSizeOfValueInMemory();
             data_type = std::make_shared<DataTypeFixedString>(type_value_size_in_memory);
         }
@@ -361,7 +359,7 @@ public:
         return impl.executeImpl(arguments_with_type, return_type, input_rows_count);
     }
 
-    const FunctionReinterpretAs impl;
+    FunctionReinterpretAs impl;
 };
 
 struct NameReinterpretAsUInt8       { static constexpr auto name = "reinterpretAsUInt8"; };

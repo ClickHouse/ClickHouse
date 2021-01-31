@@ -308,10 +308,9 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 Performs byte reinterpretation of ‘x’ as ‘t’ data type.
 
 Following reinterpretations are allowed:
-1. Any type that has fixed size and value of that type can be represented continuously into FixedString. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
+1. Any type that has fixed size and value of that type can be represented continuously into FixedString.
 2. Any type that if value of that type can be represented continuously into String. Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
-3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
-String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
+3. FixedString, String, types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
 
 ``` sql
 SELECT reinterpretAs(toInt8(-1), 'UInt8') as int_to_uint,
