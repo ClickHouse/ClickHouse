@@ -13,7 +13,7 @@
 namespace DB
 {
 
-void formatWithBlock(BlockOutputStreamPtr & out, const Block & block)
+void formatBlock(BlockOutputStreamPtr & out, const Block & block)
 {
     out->writePrefix();
     out->write(block);

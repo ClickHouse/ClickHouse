@@ -20,7 +20,7 @@ class Context;
 
 /// Write keys to block output stream.
 
-void formatWithBlock(BlockOutputStreamPtr & out, const Block & block);
+void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 
