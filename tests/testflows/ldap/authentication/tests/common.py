@@ -248,7 +248,7 @@ def add_users_identified_with_ldap(*users):
     try:
         with Given("I create users"):
             for user in users:
-                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH ldap_server BY '{user['server']}'")
+                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH ldap SERVER '{user['server']}'")
         yield
     finally:
         with Finally("I remove users"):
