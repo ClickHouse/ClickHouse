@@ -29,7 +29,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -623,11 +622,11 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
     auto make_directory_sync_guard = [&](const std::string & current_path)
     {
-        std::unique_ptr<DirectorySyncGuard> guard;
+        SyncGuardPtr guard;
         if (dir_fsync)
         {
             const std::string relative_path(data_path + current_path);
-            guard = std::make_unique<DirectorySyncGuard>(disk, relative_path);
+            guard = disk->getDirectorySyncGuard(relative_path);
         }
         return guard;
     };
