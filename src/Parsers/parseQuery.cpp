@@ -290,7 +290,7 @@ ASTPtr tryParseQuery(
     }
 
     /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token);
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
