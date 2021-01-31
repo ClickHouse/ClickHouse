@@ -7,8 +7,10 @@
 #include <atomic>
 #include <Poco/Net/StreamSocket.h>
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
+#include <Common/ShellCommand.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/copyData.h>
 
 
 /** In a loop it connects to the server and immediately breaks the connection.
@@ -18,22 +20,26 @@
 int main(int argc, char ** argv)
 try
 {
+    using namespace DB;
+
     size_t num_iterations = 1;
     size_t num_threads = 1;
     std::string host = "localhost";
     uint16_t port = 9000;
 
     if (argc >= 2)
-        num_iterations = DB::parse<size_t>(argv[1]);
+        num_iterations = parse<size_t>(argv[1]);
 
     if (argc >= 3)
-        num_threads = DB::parse<size_t>(argv[2]);
+        num_threads = parse<size_t>(argv[2]);
 
     if (argc >= 4)
         host = argv[3];
 
     if (argc >= 5)
-        port = DB::parse<uint16_t>(argv[4]);
+        port = parse<uint16_t>(argv[4]);
+
+    WriteBufferFromFileDescriptor out(STDERR_FILENO);
 
     std::atomic_bool cancel{false};
     std::vector<std::thread> threads(num_threads);
@@ -45,44 +51,32 @@ try
             {
                 std::cerr << ".";
 
-                Poco::Net::SocketAddress address(host, port);
-
-                int fd = socket(PF_INET, SOCK_STREAM, IPPROTO_IP);
-
-                if (fd < 0)
-                    DB::throwFromErrno("Cannot create socket", 0);
-
-                linger linger_value;
-                linger_value.l_onoff = 1;
-                linger_value.l_linger = 0;
-
-                if (0 != setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger_value, sizeof(linger_value)))
-                    DB::throwFromErrno("Cannot set linger", 0);
-
                 try
                 {
-                    Stopwatch watch;
+                    Poco::Net::SocketAddress address(host, port);
+                    Poco::Net::StreamSocket socket;
+                    //socket.setLinger(1, 0);
 
-                    int res = connect(fd, address.addr(), address.length());
-
-                    if (res != 0 && errno != EINPROGRESS && errno != EWOULDBLOCK)
+                    socket.connectNB(address);
+                    if (!socket.poll(Poco::Timespan(1000000),
+                        Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
                     {
-                        close(fd);
-                        DB::throwFromErrno("Cannot connect", 0);
-                    }
+                        /// Allow to debug the server.
+/*                        auto command = ShellCommand::execute("kill -STOP $(pidof clickhouse-server)");
+                        copyData(command->err, out);
+                        copyData(command->out, out);
+                        command->wait();*/
 
-                    close(fd);
-
-                    if (watch.elapsedSeconds() > 0.1)
-                    {
-                        std::cerr << watch.elapsedSeconds() << "\n";
-                        cancel = true;
-                        break;
+                        std::cerr << "Timeout\n";
+/*                        cancel = true;
+                        break;*/
                     }
                 }
                 catch (const Poco::Exception & e)
                 {
                     std::cerr << e.displayText() << "\n";
+                    cancel = true;
+                    break;
                 }
             }
         });
