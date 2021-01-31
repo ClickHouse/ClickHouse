@@ -711,7 +711,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                auto length = static_cast<size_t>(-size);
+                auto length = -static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -760,7 +760,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            auto length = static_cast<size_t>(-size);
+            auto length = -static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);
