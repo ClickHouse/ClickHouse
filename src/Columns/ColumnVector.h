@@ -165,11 +165,6 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t byteSizeAt(size_t) const override
-    {
-        return sizeof(data[0]);
-    }
-
     size_t allocatedBytes() const override
     {
         return data.allocated_bytes();

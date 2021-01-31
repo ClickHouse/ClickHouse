@@ -28,7 +28,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -68,7 +68,7 @@ private:
     size_t max_compress_block_size;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    mutable std::shared_mutex rwlock;
 
     Poco::Logger * log;
 };
