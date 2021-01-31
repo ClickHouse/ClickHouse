@@ -137,7 +137,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
     {
         WriteBufferFromOStream out_buffer(ostr);
         auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
-        formatWithBlock(output_stream, block);
+        formatBlock(output_stream, block);
     };
 
     Poco::URI uri(url);
@@ -158,7 +158,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
     {
         WriteBufferFromOStream out_buffer(ostr);
         auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
-        formatWithBlock(output_stream, block);
+        formatBlock(output_stream, block);
     };
 
     Poco::URI uri(url);

@@ -218,7 +218,7 @@ namespace
 
             if (header)
             {
-                for (int64_t i = static_cast<uint64_t>(block_to_add.columns() - 1); i >= 0; --i)
+                for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
                     header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
             }
 
@@ -235,7 +235,11 @@ namespace
 
                 auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
 
-                for (int64_t i = static_cast<uint64_t>(cut_block.columns() - 1); i >= 0; --i)
+                if (cut_block.rows() != block_rows)
+                    throw Exception("Rows in block to add after cut must equal to rows in readed block",
+                        ErrorCodes::LOGICAL_ERROR);
+
+                for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
                     block.insert(0, cut_block.getByPosition(i));
 
                 current_range_index += block_rows;
@@ -276,7 +280,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
         [block, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
-            formatWithBlock(output_stream, block);
+            formatBlock(output_stream, block);
             out.close();
         });
 
@@ -299,7 +303,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
         [block, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
-            formatWithBlock(output_stream, block);
+            formatBlock(output_stream, block);
             out.close();
         });
 
