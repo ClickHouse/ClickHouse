@@ -27,7 +27,6 @@
 #include <Storages/StorageFactory.h>
 
 #include "PostgreSQLReplicationSettings.h"
-#include "PostgreSQLReplicaBlockInputStream.h"
 #include <Databases/DatabaseOnDisk.h>
 
 #include <common/logger_useful.h>
@@ -61,13 +60,15 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     relative_data_path.resize(relative_data_path.size() - 1);
     relative_data_path += nested_storage_suffix;
 
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
             remote_table_name,
             connection_str,
             global_context,
             global_context->getMacros()->expand(replication_settings->postgresql_replication_slot_name.value),
-            global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value)
+            global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value),
+            global_context->getSettingsRef().postgresql_replica_max_rows_to_insert.value
     );
 }
 
@@ -180,12 +181,13 @@ void StoragePostgreSQLReplica::startup()
 {
     Context context_copy(*global_context);
     const auto ast_create = getCreateHelperTableQuery();
+    auto table_id = getStorageID();
 
     Poco::File path(relative_data_path);
     if (!path.exists())
     {
         LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
-                "Creating helper table {}", getStorageID().table_name + nested_storage_suffix);
+                "Creating helper table {}", table_id.table_name + nested_storage_suffix);
         InterpreterCreateQuery interpreter(ast_create, context_copy);
         interpreter.execute();
     }
@@ -193,8 +195,13 @@ void StoragePostgreSQLReplica::startup()
         LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
                 "Directory already exists {}", relative_data_path);
 
-    nested_storage = createTableFromAST(ast_create->as<const ASTCreateQuery &>(), getStorageID().database_name, relative_data_path, context_copy, false).second;
-    nested_storage->startup();
+    nested_storage = DatabaseCatalog::instance().getTable(
+            StorageID(table_id.database_name, table_id.table_name + nested_storage_suffix),
+            *global_context);
+
+    //nested_storage = createTableFromAST(
+    //        ast_create->as<const ASTCreateQuery &>(), getStorageID().database_name, relative_data_path, context_copy, false).second;
+    //nested_storage->startup();
 
     replication_handler->startup(nested_storage);
 }
@@ -208,8 +215,7 @@ void StoragePostgreSQLReplica::shutdown()
 
 void StoragePostgreSQLReplica::shutdownFinal()
 {
-    /// TODO: Under lock? Make sure synchronization stopped.
-    replication_handler->checkAndDropReplicationSlot();
+    replication_handler->removeSlotAndPublication();
     dropNested();
 }
 

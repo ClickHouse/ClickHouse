@@ -2,13 +2,30 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+
 #include <ext/range.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
 #include <Common/FieldVisitors.h>
 #include <Common/hex.h>
+
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+
+#include <DataStreams/copyData.h>
+#include <DataStreams/OneBlockInputStream.h>
+
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -17,9 +34,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const auto wal_reader_reschedule_ms = 500;
+static const auto reschedule_ms = 500;
 static const auto max_thread_work_duration_ms = 60000;
-static const auto max_empty_slot_reads = 20;
+static const auto max_empty_slot_reads = 2;
 
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     std::shared_ptr<Context> context_,
@@ -27,7 +44,9 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     const std::string & conn_str,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
-    const LSNPosition & start_lsn)
+    const LSNPosition & start_lsn,
+    const size_t max_block_size_,
+    StoragePtr nested_storage_)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
@@ -35,40 +54,49 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     , table_name(table_name_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
     , current_lsn(start_lsn)
+    , max_block_size(max_block_size_)
+    , nested_storage(nested_storage_)
+    , sample_block(nested_storage->getInMemoryMetadata().getSampleBlock())
 {
     replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", conn_str));
 
-    wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ WALReaderFunc(); });
+    description.init(sample_block);
+    for (const auto idx : ext::range(0, description.sample_block.columns()))
+        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
+            preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+
+    columns = description.sample_block.cloneEmptyColumns();
+
+    wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ replicationStream(); });
     wal_reader_task->deactivate();
 }
 
 
 void PostgreSQLReplicaConsumer::startSynchronization()
 {
-    //wal_reader_task->activateAndSchedule();
+    wal_reader_task->activateAndSchedule();
 }
 
 
 void PostgreSQLReplicaConsumer::stopSynchronization()
 {
     stop_synchronization.store(true);
-    if (wal_reader_task)
-        wal_reader_task->deactivate();
+    wal_reader_task->deactivate();
 }
 
 
-void PostgreSQLReplicaConsumer::WALReaderFunc()
+void PostgreSQLReplicaConsumer::replicationStream()
 {
     size_t count_empty_slot_reads = 0;
     auto start_time = std::chrono::steady_clock::now();
 
-    LOG_TRACE(log, "Starting synchronization thread");
+    LOG_TRACE(log, "Starting replication stream");
 
     while (!stop_synchronization)
     {
         if (!readFromReplicationSlot() && ++count_empty_slot_reads == max_empty_slot_reads)
         {
-            LOG_TRACE(log, "Reschedule synchronization. Replication slot is empty.");
+            LOG_TRACE(log, "Reschedule replication stream. Replication slot is empty.");
             break;
         }
         else
@@ -78,13 +106,38 @@ void PostgreSQLReplicaConsumer::WALReaderFunc()
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         if (duration.count() > max_thread_work_duration_ms)
         {
-            LOG_TRACE(log, "Reschedule synchronization. Thread work duration limit exceeded.");
+            LOG_TRACE(log, "Reschedule replication_stream. Thread work duration limit exceeded.");
             break;
         }
     }
 
     if (!stop_synchronization)
-        wal_reader_task->scheduleAfter(wal_reader_reschedule_ms);
+        wal_reader_task->scheduleAfter(reschedule_ms);
+}
+
+
+void PostgreSQLReplicaConsumer::insertValue(std::string & value, size_t column_idx)
+{
+    const auto & sample = description.sample_block.getByPosition(column_idx);
+    bool is_nullable = description.types[column_idx].second;
+
+    LOG_TRACE(log, "INSERTING VALUE {}", value);
+    if (is_nullable)
+    {
+        ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[column_idx]);
+        const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+
+        insertPostgreSQLValue(
+                column_nullable.getNestedColumn(), value,
+                description.types[column_idx].first, data_type.getNestedType(), array_info, column_idx);
+
+        column_nullable.getNullMapData().emplace_back(0);
+    }
+    else
+    {
+        insertPostgreSQLValue(
+                *columns[column_idx], value, description.types[column_idx].first, sample.type, array_info, column_idx);
+    }
 }
 
 
@@ -150,17 +203,24 @@ void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos
     Int16 num_columns = readInt16(message, pos);
     /// 'n' means nullable, 'u' means TOASTed value, 't' means text formatted data
     LOG_DEBUG(log, "num_columns {}", num_columns);
-    for (int k = 0; k < num_columns; ++k)
+    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         char identifier = readInt8(message, pos);
         Int32 col_len = readInt32(message, pos);
-        String result;
+        String value;
         for (int i = 0; i < col_len; ++i)
         {
-            result += readInt8(message, pos);
+            value += readInt8(message, pos);
         }
-        LOG_DEBUG(log, "identifier {}, col_len {}, result {}", identifier, col_len, result);
+
+        insertValue(value, column_idx);
+
+        LOG_DEBUG(log, "identifier {}, col_len {}, value {}", identifier, col_len, value);
     }
+
+    String val = "1";
+    insertValue(val, num_columns);
+    insertValue(val, num_columns + 1);
     //readString(message, pos, size, result);
 }
 
@@ -171,6 +231,7 @@ void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replicatio
     size_t pos = 2;
     char type = readInt8(replication_message, pos);
 
+
     LOG_TRACE(log, "TYPE: {}", type);
     switch (type)
     {
@@ -180,6 +241,7 @@ void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replicatio
             Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
             LOG_DEBUG(log, "transaction lsn {}, transaction commit timespamp {}",
                     transaction_end_lsn, transaction_commit_timestamp);
+            //current_lsn.lsn_value = transaction_end_lsn;
             break;
         }
         case 'C': // Commit
@@ -191,6 +253,7 @@ void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replicatio
             Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
             LOG_DEBUG(log, "commit lsn {}, transaction lsn {}, transaction commit timestamp {}",
                     commit_lsn, transaction_end_lsn, transaction_commit_timestamp);
+            final_lsn.lsn = current_lsn.lsn;
             break;
         }
         case 'O': // Origin
@@ -245,16 +308,49 @@ void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replicatio
 }
 
 
+void PostgreSQLReplicaConsumer::syncIntoTable(Block & block)
+{
+    Context insert_context(*context);
+    insert_context.makeQueryContext();
+
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = nested_storage->getStorageID();
+
+    InterpreterInsertQuery interpreter(insert, insert_context);
+    auto block_io = interpreter.execute();
+    OneBlockInputStream input(block);
+
+    copyData(input, *block_io.out);
+    LOG_TRACE(log, "TABLE SYNC END");
+}
+
+
+void PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx)
+{
+    LOG_TRACE(log, "CURRENT LSN FROM TO {}", final_lsn.lsn);
+    std::string query_str = fmt::format("SELECT pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn.lsn);
+    pqxx::result result{ntx->exec(query_str)};
+    if (!result.empty())
+    {
+        std::string s1 = result[0].size() > 0 && !result[0][0].is_null() ? result[0][0].as<std::string>() : "NULL";
+        std::string s2 = result[0].size() > 1 && !result[0][1].is_null() ? result[0][1].as<std::string>() : "NULL";
+        LOG_TRACE(log, "ADVANCE LSN: {} and {}", s1, s2);
+
+    }
+}
+
+
 /// Read binary changes from replication slot via copy command.
 bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 {
+    columns = description.sample_block.cloneEmptyColumns();
     bool slot_empty = true;
     try
     {
-        auto tx = std::make_unique<pqxx::nontransaction>(*replication_connection->conn());
+        auto tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
         /// up_to_lsn is set to NULL, up_to_n_changes is set to max_block_size.
         std::string query_str = fmt::format(
-                "select data FROM pg_logical_slot_peek_binary_changes("
+                "select lsn, data FROM pg_logical_slot_peek_binary_changes("
                 "'{}', NULL, NULL, 'publication_names', '{}', 'proto_version', '1')",
                 replication_slot_name, publication_name);
         pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query_str));
@@ -267,17 +363,23 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
             {
                 LOG_TRACE(log, "STREAM REPLICATION END");
                 stream.complete();
+
+                Block result_rows = description.sample_block.cloneWithColumns(std::move(columns));
+                if (result_rows.rows())
+                {
+                    syncIntoTable(result_rows);
+                    advanceLSN(tx);
+                }
+
                 tx->commit();
                 break;
             }
 
             slot_empty = false;
 
-            for (const auto idx : ext::range(0, row->size()))
-            {
-                LOG_TRACE(log, "Replication message: {}", (*row)[idx]);
-                decodeReplicationMessage((*row)[idx].c_str(), (*row)[idx].size());
-            }
+            current_lsn.lsn = (*row)[0];
+            LOG_TRACE(log, "Replication message: {}", (*row)[1]);
+            decodeReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
     }
     catch (...)

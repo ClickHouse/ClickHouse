@@ -10,6 +10,7 @@
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <pqxx/pqxx>
+#include <Storages/PostgreSQL/insertPostgreSQLValue.h>
 
 
 namespace DB
@@ -29,19 +30,14 @@ public:
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
-    using ValueType = ExternalResultDescription::ValueType;
-
     void readPrefix() override;
     Block readImpl() override;
     void readSuffix() override;
 
-    void insertValue(IColumn & column, std::string_view value,
-        const ExternalResultDescription::ValueType type, const DataTypePtr data_type, size_t idx);
     void insertDefaultValue(IColumn & column, const IColumn & sample_column)
     {
         column.insertFrom(sample_column, 0);
     }
-    void prepareArrayInfo(size_t column_idx, const DataTypePtr data_type);
 
     String query_str;
     const UInt64 max_block_size;
@@ -51,13 +47,7 @@ private:
     std::unique_ptr<pqxx::work> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 
-    struct ArrayInfo
-    {
-        size_t num_dimensions;
-        Field default_value;
-        std::function<Field(std::string & field)> pqxx_parser;
-    };
-    std::unordered_map<size_t, ArrayInfo> array_info;
+    std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
 };
 
 }
