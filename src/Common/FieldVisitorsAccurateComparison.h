@@ -53,7 +53,7 @@ public:
                 if constexpr (std::is_arithmetic_v<U>)
                 {
                     ReadBufferFromString in(l);
-                    T parsed;
+                    U parsed;
                     readText(parsed, in);
                     return operator()(parsed, r);
                 }
@@ -113,7 +113,7 @@ public:
                 if constexpr (std::is_arithmetic_v<U>)
                 {
                     ReadBufferFromString in(l);
-                    T parsed;
+                    U parsed;
                     readText(parsed, in);
                     return operator()(parsed, r);
                 }
