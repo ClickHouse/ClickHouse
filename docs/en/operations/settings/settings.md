@@ -1944,6 +1944,21 @@ Possible values:
 
 Default value: 16.
 
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**See Also**
+
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
+
 ## validate_polygons {#validate_polygons}
 
 Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
