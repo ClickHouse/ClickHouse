@@ -109,17 +109,6 @@ def test_cannot_trick_row_policy_with_keyword_with():
     assert node.query("WITH 0 AS a SELECT b FROM mydb.filtered_table1") == TSV([[0], [1]])
 
 
-def test_prewhere_not_supported():
-    expected_error = "PREWHERE is not supported if the table is filtered by row-level security"
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table1 PREWHERE 1")
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE 1")
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.filtered_table3 PREWHERE 1")
-
-    # However PREWHERE should still work for user without filtering.
-    assert node.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == TSV(
-        [[0, 0], [0, 1], [1, 0], [1, 1]])
-
-
 def test_policy_from_users_xml_affects_only_user_assigned():
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
     assert node.query("SELECT * FROM mydb.filtered_table1", user="another") == TSV([[0, 0], [0, 1], [1, 0], [1, 1]])
