@@ -339,7 +339,10 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const
 {
-//  std::scoped_lock lock(mutex);
+    std::scoped_lock lock(mutex);
+
+    if (!credentials.isReady())
+        return false;
 
     if (credentials.isFailed())
         return false;
