@@ -313,7 +313,7 @@ public:
     /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
-    /// Creates GSSAcceptorContext instance based on external authenicator params.
+    /// Creates GSSAcceptorContext instance based on external authenticator params.
     std::unique_ptr<GSSAcceptorContext> makeGSSAcceptorContext() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.

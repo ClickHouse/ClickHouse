@@ -396,21 +396,21 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         if (major_status == GSS_S_COMPLETE)
         {
             if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, mech_type))
-                throw Exception("gss_accept_sec_context() succeded, but: the authentication mechanism is not what was expected", ErrorCodes::KERBEROS_ERROR);
+                throw Exception("gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected", ErrorCodes::KERBEROS_ERROR);
 
             if (flags & GSS_C_ANON_FLAG)
-                throw Exception("gss_accept_sec_context() succeded, but: the initiator does not wish to be authenticated", ErrorCodes::KERBEROS_ERROR);
+                throw Exception("gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated", ErrorCodes::KERBEROS_ERROR);
 
             std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
 
             if (user_name.empty())
-                throw Exception("gss_accept_sec_context() succeded, but: the initiator name cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception("gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted", ErrorCodes::KERBEROS_ERROR);
 
             if (realm.empty())
-                throw Exception("gss_accept_sec_context() succeded, but: the initiator realm cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted", ErrorCodes::KERBEROS_ERROR);
 
             if (!params.realm.empty() && params.realm != realm)
-                throw Exception("gss_accept_sec_context() succeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")", ErrorCodes::KERBEROS_ERROR);
+                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")", ErrorCodes::KERBEROS_ERROR);
 
             output_token = bufferToString(output_token_buf);
 
