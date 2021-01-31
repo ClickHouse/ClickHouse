@@ -515,7 +515,9 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const
+    PaddedPODArray<Key> & ids,
+    PaddedPODArray<RangeType> & start_dates,
+    PaddedPODArray<RangeType> & end_dates) const
 {
     const auto & attribute = attributes.front();
 
@@ -523,11 +525,9 @@ void RangeHashedDictionary::getIdsAndDates(
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
 
-        if constexpr (std::is_same_v<AttributeType, String>)
-            getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates);
-        else
-            getIdsAndDates<AttributeType>(attribute, ids, start_dates, end_dates);
+        getIdsAndDates<ValueType>(attribute, ids, start_dates, end_dates);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -571,13 +571,20 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names &
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, RangeType, Key>;
-    auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
-    return std::make_shared<BlockInputStreamType>(
-        dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeType>;
+
+    auto stream = std::make_shared<BlockInputStreamType>(
+        shared_from_this(),
+        max_block_size,
+        column_names,
+        std::move(ids),
+        std::move(start_dates),
+        std::move(end_dates));
+
+    return stream;
 }
 
-struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+struct RangeHashedDictionaryCallGetBlockInputStreamImpl
 {
     BlockInputStreamPtr stream;
     const RangeHashedDictionary * dict;
@@ -597,7 +604,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
-    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    RangeHashedDictionaryCallGetBlockInputStreamImpl callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
