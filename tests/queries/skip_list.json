@@ -559,6 +559,8 @@
         "01541_max_memory_usage_for_user",
         "01542_dictionary_load_exception_race",
         "01575_disable_detach_table_of_dictionary",
+        "01593_concurrent_alter_mutations_kill",
+        "01593_concurrent_alter_mutations_kill_many_replicas",
         "01600_count_of_parts_metrics", // tests global system metrics
         "01600_detach_permanently",
         "01600_log_queries_with_extensive_info",
