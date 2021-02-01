@@ -328,6 +328,7 @@ void TestKeeperTCPHandler::runImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
+            sendHandshake(false);
             return;
 
         }
@@ -336,6 +337,7 @@ void TestKeeperTCPHandler::runImpl()
     }
     else
     {
+        LOG_WARNING(log, "Ignoring user request, because no alive leader exist");
         sendHandshake(false);
         return;
     }

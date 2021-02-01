@@ -33,7 +33,11 @@ void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, 
 {
     nuraft::srv_config config(server_id_, 0, server_uri_, "", /* follower= */ !can_become_leader_, priority);
     auto ret1 = raft_instance->add_srv(config);
-    if (ret1->get_result_code() != nuraft::cmd_result_code::OK)
+    auto code = ret1->get_result_code();
+    if (code == nuraft::cmd_result_code::TIMEOUT
+        || code == nuraft::cmd_result_code::BAD_REQUEST
+        || code == nuraft::cmd_result_code::NOT_LEADER
+        || code == nuraft::cmd_result_code::FAILED)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot add server to RAFT quorum with code {}, message '{}'", ret1->get_result_code(), ret1->get_result_str());
 }
 
@@ -41,9 +45,9 @@ void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, 
 void NuKeeperServer::startup()
 {
     nuraft::raft_params params;
-    params.heart_beat_interval_ = 100;
-    params.election_timeout_lower_bound_ = 200;
-    params.election_timeout_upper_bound_ = 400;
+    params.heart_beat_interval_ = 1000;
+    params.election_timeout_lower_bound_ = 3000;
+    params.election_timeout_upper_bound_ = 6000;
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = 10000;
@@ -59,7 +63,7 @@ void NuKeeperServer::startup()
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 
-    static constexpr auto MAX_RETRY = 30;
+    static constexpr auto MAX_RETRY = 100;
     for (size_t i = 0; i < MAX_RETRY; ++i)
     {
         if (raft_instance->is_initialized())
@@ -169,6 +173,8 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
             entries.push_back(getZooKeeperLogEntry(session_id, request));
         }
 
+        std::lock_guard lock(append_entries_mutex);
+
         auto result = raft_instance->append_entries(entries);
         if (!result->get_accepted())
         {
@@ -214,6 +220,8 @@ int64_t NuKeeperServer::getSessionID()
     /// Just special session request
     nuraft::buffer_serializer bs(entry);
     bs.put_i64(0);
+
+    std::lock_guard lock(append_entries_mutex);
 
     auto result = raft_instance->append_entries({entry});
     if (!result->get_accepted())
