@@ -462,6 +462,7 @@ void DDLWorker::scheduleTasks()
         else
         {
             LOG_DEBUG(log, "Task {} ({}) has been already processed", entry_name, task->entry.query);
+            updateMaxDDLEntryID(task);
         }
 
         saveTask(entry_name);
@@ -680,6 +681,26 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
         }
     }
 }
+
+
+void DDLWorker::updateMaxDDLEntryID(DDLTask & task)
+{
+    DB::ReadBufferFromString in(task.entry_name);
+    DB::assertString("query-", in);
+    UInt64 id;
+    readText(id, in);
+    auto prev_id = max_id.load(std::memory_order_relaxed);
+    while (prev_id < id)
+    {
+        if (max_id.compare_exchange_weak(prev_id, id))
+        {
+            CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
+            break;
+        }
+    }
+}
+
+
 void DDLWorker::processTask(DDLTask & task)
 {
     auto zookeeper = tryGetZooKeeper();
@@ -754,21 +775,7 @@ void DDLWorker::processTask(DDLTask & task)
         task.was_executed = true;
     }
 
-    {
-        DB::ReadBufferFromString in(task.entry_name);
-        DB::assertString("query-", in);
-        UInt64 id;
-        readText(id, in);
-        auto prev_id = max_id.load(std::memory_order_relaxed);
-        while (prev_id < id)
-        {
-            if (max_id.compare_exchange_weak(prev_id, id))
-            {
-                CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
-                break;
-            }
-        }
-    }
+    updateMaxDDLEntryID(task);
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
