@@ -52,6 +52,11 @@ public:
         return server->isLeader();
     }
 
+    bool hasLeader() const
+    {
+        return server->isLeaderAlive();
+    }
+
     int64_t getSessionID()
     {
         std::lock_guard lock(session_id_mutex);

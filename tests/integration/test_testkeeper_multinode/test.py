@@ -62,9 +62,14 @@ def test_blocade_leader(started_cluster):
 
         for i in range(100):
             try:
+                node2.query("SYSTEM RESTART REPLICA t1")
                 node2.query("INSERT INTO t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
+                try:
+                    node2.query("ATTACH TABLE t1")
+                except Exception as attach_ex:
+                    print("Got exception node2", smaller_exception(attach_ex))
                 print("Got exception node2", smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -72,9 +77,14 @@ def test_blocade_leader(started_cluster):
 
         for i in range(100):
             try:
+                node3.query("SYSTEM RESTART REPLICA t1")
                 node3.query("INSERT INTO t1 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
+                try:
+                    node3.query("ATTACH TABLE t1")
+                except Exception as attach_ex:
+                    print("Got exception node3", smaller_exception(attach_ex))
                 print("Got exception node3", smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -86,6 +96,11 @@ def test_blocade_leader(started_cluster):
                 node.query("SYSTEM RESTART REPLICA t1")
                 break
             except Exception as ex:
+                try:
+                    node.query("ATTACH TABLE t1")
+                except Exception as attach_ex:
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
+
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -136,9 +151,14 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
+                node2.query("SYSTEM RESTART REPLICA t2")
                 node2.query("INSERT INTO t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
+                try:
+                    node2.query("ATTACH TABLE t2")
+                except Exception as attach_ex:
+                    print("Got exception node2", smaller_exception(attach_ex))
                 print("Got exception node2", smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -146,9 +166,14 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(100):
             try:
+                node3.query("SYSTEM RESTART REPLICA t2")
                 node3.query("INSERT INTO t2 SELECT rand() FROM numbers(100)")
                 break
             except Exception as ex:
+                try:
+                    node3.query("ATTACH TABLE t2")
+                except Exception as attach_ex:
+                    print("Got exception node3", smaller_exception(attach_ex))
                 print("Got exception node3", smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -179,6 +204,11 @@ def test_blocade_leader_twice(started_cluster):
                 node.query("SYSTEM RESTART REPLICA t2")
                 break
             except Exception as ex:
+                try:
+                    node.query("ATTACH TABLE t2")
+                except Exception as attach_ex:
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
+
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:

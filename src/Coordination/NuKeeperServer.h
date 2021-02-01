@@ -50,6 +50,8 @@ public:
 
     bool isLeader() const;
 
+    bool isLeaderAlive() const;
+
     bool waitForServer(int32_t server_id) const;
     void waitForServers(const std::vector<int32_t> & ids) const;
     void waitForCatchUp() const;

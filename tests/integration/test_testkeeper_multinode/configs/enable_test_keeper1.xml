@@ -15,14 +15,14 @@
             <server>
                 <id>2</id>
                 <hostname>node2</hostname>
-                <port>44445</port>
+                <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>2</priority>
             </server>
             <server>
                 <id>3</id>
                 <hostname>node3</hostname>
-                <port>44446</port>
+                <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>1</priority>
             </server>
