@@ -3,13 +3,11 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
+#include <sstream>
 #include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
@@ -192,8 +190,8 @@ public:
 
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
-        DB::ReadBufferFromString rng_buf(rng_string);
-        rng_buf >> rng;
+        std::istringstream rng_stream(rng_string);
+        rng_stream >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
             DB::readBinary(samples[i], buf);
@@ -206,9 +204,9 @@ public:
         DB::writeIntBinary<size_t>(sample_count, buf);
         DB::writeIntBinary<size_t>(total_values, buf);
 
-        DB::WriteBufferFromOwnString rng_buf;
-        rng_buf << rng;
-        DB::writeStringBinary(rng_buf.str(), buf);
+        std::ostringstream rng_stream;
+        rng_stream << rng;
+        DB::writeStringBinary(rng_stream.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
             DB::writeBinary(samples[i], buf);

@@ -1,5 +1,6 @@
 #include <Access/Authentication.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 
@@ -48,7 +49,7 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 }
 
 
-bool Authentication::isCorrectPassword(const String & user_, const String & password_, const ExternalAuthenticators & external_authenticators) const
+bool Authentication::isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const
 {
     switch (type)
     {
@@ -80,7 +81,14 @@ bool Authentication::isCorrectPassword(const String & user_, const String & pass
         }
 
         case LDAP_SERVER:
-            return external_authenticators.checkLDAPCredentials(server_name, user_, password_);
+        {
+            auto ldap_server_params = external_authenticators.getLDAPServerParams(server_name);
+            ldap_server_params.user = user_;
+            ldap_server_params.password = password_;
+
+            LDAPSimpleAuthClient ldap_client(ldap_server_params);
+            return ldap_client.check();
+        }
 
         case MAX_TYPE:
             break;

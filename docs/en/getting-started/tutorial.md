@@ -11,7 +11,7 @@ By going through this tutorial, you’ll learn how to set up a simple ClickHouse
 
 ## Single Node Setup {#single-node-setup}
 
-To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) packages, but there are [alternatives](../getting-started/install.md#from-docker-image) for the operating systems that do not support them.
+To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](../getting-started/install.md#install-from-deb-packages) or [rpm](../getting-started/install.md#from-rpm-packages) packages, but there are [alternatives](../getting-started/install.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 
@@ -85,8 +85,8 @@ Now it’s time to fill our ClickHouse server with some sample data. In this tut
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.

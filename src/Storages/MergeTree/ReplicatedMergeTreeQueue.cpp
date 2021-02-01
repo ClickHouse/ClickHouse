@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -21,9 +20,8 @@ namespace ErrorCodes
 }
 
 
-ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_)
+ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , merge_strategy_picker(merge_strategy_picker_)
     , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
@@ -56,8 +54,7 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
 {
     std::lock_guard lock(state_mutex);
-    auto virtual_part_name = virtual_parts.getContainingPart(data_part->info);
-    return !virtual_part_name.empty() && virtual_part_name != data_part->name;
+    return virtual_parts.getContainingPart(data_part->info) != data_part->name;
 }
 
 
@@ -121,8 +118,6 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
     }
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
-
-    merge_strategy_picker.refreshState();
 
     LOG_TRACE(log, "Loaded queue");
     return updated;
@@ -591,13 +586,11 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
             }
 
             if (!copied_entries.empty())
-            {
                 LOG_DEBUG(log, "Pulled {} entries to queue.", copied_entries.size());
-                merge_strategy_picker.refreshState();
-            }
         }
 
-        storage.background_executor.triggerTask();
+        if (storage.queue_task_handle)
+            storage.queue_task_handle->signalReadyToRun();
     }
 
     return stat.version;
@@ -685,8 +678,8 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         }
     }
 
-    if (some_active_mutations_were_killed)
-        storage.background_executor.triggerTask();
+    if (some_active_mutations_were_killed && storage.queue_task_handle)
+        storage.queue_task_handle->signalReadyToRun();
 
     if (!entries_to_load.empty())
     {
@@ -809,8 +802,8 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
-    if (mutation_was_active)
-        storage.background_executor.triggerTask();
+    if (mutation_was_active && storage.queue_task_handle)
+        storage.queue_task_handle->signalReadyToRun();
 
     return entry;
 }
@@ -954,7 +947,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 
     if (out_description)
     {
-        WriteBufferFromOwnString ss;
+        std::stringstream ss;
         ss << "Can't execute command for range " << range.getPartName() << " (entry " << entry.znode_name << "). ";
         ss << "There are " << conflicts.size() << " currently executing entries blocking it: ";
         for (const auto & conflict : conflicts)
@@ -1052,14 +1045,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    /// Check that fetches pool is not overloaded
-    if (entry.type == LogEntry::GET_PART && !storage.canExecuteFetch(entry, out_postpone_reason))
-    {
-        /// Don't print log message about this, because we can have a lot of fetches,
-        /// for example during replica recovery.
-        return false;
-    }
-
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /** If any of the required parts are now fetched or in merge process, wait for the end of this operation.
@@ -1096,19 +1081,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             LOG_DEBUG(log, format_str, entry.znode_name, entry.typeToString(), entry.new_part_name);
             out_postpone_reason = fmt::format(format_str, entry.znode_name, entry.typeToString(), entry.new_part_name);
             return false;
-        }
-
-        if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
-        {
-            auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
-
-            if (replica_to_execute_merge && !merge_strategy_picker.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
-            {
-                String reason = "Not executing merge for the part " + entry.new_part_name
-                    +  ", waiting for " + replica_to_execute_merge.value() + " to execute merge.";
-                out_postpone_reason = reason;
-                return false;
-            }
         }
 
         UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()
@@ -1315,7 +1287,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
 }
 
 
-ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
+ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToProcess(MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data)
 {
     LogEntryPtr entry;
 
@@ -1342,7 +1314,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
     }
 
     if (entry)
-        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) });
+        return { entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) } };
     else
         return {};
 }
@@ -1727,12 +1699,12 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
         for (const MutationCommand & command : entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
+            std::stringstream ss;
+            formatAST(*command.ast, ss, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
-                buf.str(),
+                ss.str(),
                 entry.create_time,
                 entry.block_numbers,
                 parts_to_mutate,

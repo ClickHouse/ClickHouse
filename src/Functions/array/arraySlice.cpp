@@ -69,12 +69,12 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto array_column = arguments[0].column;
+        auto & array_column = arguments[0].column;
         const auto & offset_column = arguments[1].column;
         const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
 

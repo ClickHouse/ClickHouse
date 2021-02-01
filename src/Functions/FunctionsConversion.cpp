@@ -1,9 +1,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+FunctionOverloadResolverImplPtr CastOverloadResolver::create(const Context & context)
+{
+    return createImpl(context.getSettingsRef().cast_keep_nullable);
+}
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
@@ -38,10 +44,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     registerFunctionFixedString(factory);
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-
-    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
-    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
+    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();

@@ -94,7 +94,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = type_name;
-    function_node->no_empty_args = true;
 
     if (pos->type != TokenType::OpeningRoundBracket)
     {

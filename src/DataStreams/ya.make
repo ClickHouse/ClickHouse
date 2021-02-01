@@ -1,12 +1,9 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/MongoDB
-    contrib/restricted/boost/libs
 )
 
 NO_COMPILER_WARNINGS()
@@ -35,11 +32,11 @@ SRCS(
     MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
+    ParallelParsingBlockInputStream.cpp
     PushingToViewsBlockOutputStream.cpp
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
-    RemoteQueryExecutorReadContext.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
