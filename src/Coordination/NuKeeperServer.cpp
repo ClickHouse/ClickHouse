@@ -50,9 +50,11 @@ void NuKeeperServer::startup()
     params.auto_forwarding_ = true;
     params.return_method_ = nuraft::raft_params::blocking;
 
+    nuraft::asio_service::options asio_opts{};
+
     raft_instance = launcher.init(
         state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance"), port,
-        nuraft::asio_service::options{}, params);
+        asio_opts, params);
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
@@ -127,10 +129,17 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
             response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
         else
         {
-            response = ops_mapping[session_id][xid];
-            ops_mapping[session_id].erase(xid);
+            auto session_xids = ops_mapping.find(session_id);
+            if (session_xids == ops_mapping.end())
+                throw Exception(ErrorCodes::RAFT_ERROR, "Unknown session id {}", session_id);
+            auto response_it = session_xids->second.find(xid);
+            if (response_it == session_xids->second.end())
+                throw Exception(ErrorCodes::RAFT_ERROR, "Unknown xid {} for session id {}", xid, session_id);
+
+            response = response_it->second;
+            ops_mapping[session_id].erase(response_it);
             if (ops_mapping[session_id].empty())
-                ops_mapping.erase(session_id);
+                ops_mapping.erase(session_xids);
         }
 
         if (err == Coordination::Error::ZOK && (xid == Coordination::WATCH_XID || response->getOpNum() != Coordination::OpNum::Close))
@@ -147,7 +156,7 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
 
 TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
 {
-    if (raft_instance->is_leader_alive() && requests.size() == 1 && requests[0].request->isReadRequest())
+    if (isLeaderAlive() && requests.size() == 1 && requests[0].request->isReadRequest())
     {
         return state_machine->processReadRequest(requests[0]);
     }
@@ -191,7 +200,11 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
         else if (result->get_result_code() != nuraft::cmd_result_code::OK)
             throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
 
-        return readZooKeeperResponses(result->get());
+        auto result_buf = result->get();
+        if (result_buf == nullptr)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Received nullptr from RAFT leader");
+
+        return readZooKeeperResponses(result_buf);
     }
 }
 
@@ -210,6 +223,9 @@ int64_t NuKeeperServer::getSessionID()
         throw Exception(ErrorCodes::RAFT_ERROR, "session_id request failed to RAFT");
 
     auto resp = result->get();
+    if (resp == nullptr)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Received nullptr as session_id");
+
     nuraft::buffer_serializer bs_resp(resp);
     return bs_resp.get_i64();
 }
@@ -217,6 +233,11 @@ int64_t NuKeeperServer::getSessionID()
 bool NuKeeperServer::isLeader() const
 {
     return raft_instance->is_leader();
+}
+
+bool NuKeeperServer::isLeaderAlive() const
+{
+    return raft_instance->is_leader_alive();
 }
 
 bool NuKeeperServer::waitForServer(int32_t id) const
