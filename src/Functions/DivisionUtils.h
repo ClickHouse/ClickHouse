@@ -91,12 +91,12 @@ struct DivideIntegralImpl
         else
         {
             if constexpr (std::is_floating_point_v<A>)
-                if (!isNaN(a) || a > std::numeric_limits<CastA>::max() || a < std::numeric_limits<CastA>::lowest())
+                if (isNaN(a) || a > std::numeric_limits<CastA>::max() || a < std::numeric_limits<CastA>::lowest())
                     throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
                         ErrorCodes::ILLEGAL_DIVISION);
 
             if constexpr (std::is_floating_point_v<B>)
-                if (!isNaN(b) || b > std::numeric_limits<CastB>::max() || b < std::numeric_limits<CastB>::lowest())
+                if (isNaN(b) || b > std::numeric_limits<CastB>::max() || b < std::numeric_limits<CastB>::lowest())
                     throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
                         ErrorCodes::ILLEGAL_DIVISION);
 
@@ -129,12 +129,12 @@ struct ModuloImpl
         else
         {
             if constexpr (std::is_floating_point_v<A>)
-                if (!isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
                     throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
                         ErrorCodes::ILLEGAL_DIVISION);
 
             if constexpr (std::is_floating_point_v<B>)
-                if (!isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
                     throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
                         ErrorCodes::ILLEGAL_DIVISION);
 
