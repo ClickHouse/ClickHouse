@@ -681,7 +681,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md#int-ranges) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
