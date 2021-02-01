@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    const extern int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 WindowTransform::WindowTransform(const Block & input_header_,
