@@ -728,12 +728,13 @@ SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, const 
 {
     JoinCommon::JoinConvertActions converting_actions;
     JoinPtr table_join = makeTableJoin(*syntax->ast_join, sample_block, converting_actions);
-
-    if (converting_actions.first)
+    if (converting_actions.needConvert())
     {
-        before_join_dag = ActionsDAG::merge(std::move(*before_join_dag->clone()), std::move(*converting_actions.first->clone()));
+        syntax->analyzed_join->setConvertedRightType(converting_actions.right_target_types);
 
-        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_actions.first));
+        before_join_dag = ActionsDAG::merge(std::move(*before_join_dag->clone()), std::move(*converting_actions.left_actions->clone()));
+
+        chain.steps.push_back(std::make_unique<ExpressionActionsChain::ExpressionActionsStep>(converting_actions.left_actions));
         chain.addStep();
     }
 
@@ -849,8 +850,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
             left_sample_block, syntax->analyzed_join->keyNamesLeft(),
             right_sample_block, syntax->analyzed_join->keyNamesRight(),
             has_using);
-        if (converting_actions.second)
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(converting_actions.second));
+        if (converting_actions.needConvert())
+            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(converting_actions.right_actions));
 
         subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
