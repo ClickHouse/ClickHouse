@@ -27,7 +27,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -61,13 +60,13 @@ public:
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
-            const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
+            const String & query_id_, bool continue_on_errors_,
             bool print_stacktrace_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
-        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_),
+        continue_on_errors(continue_on_errors_),
         print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
@@ -96,7 +95,6 @@ public:
         }
 
         global_context.makeGlobalContext();
-        global_context.setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -152,8 +150,7 @@ private:
     double max_time;
     String json_path;
     size_t confidence;
-    String query_id;
-    String query_to_execute;
+    std::string query_id;
     bool continue_on_errors;
     bool print_stacktrace;
     const Settings & settings;
@@ -216,28 +213,20 @@ private:
 
     void readQueries()
     {
-        if (query_to_execute.empty())
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+
+        while (!in.eof())
         {
-            ReadBufferFromFileDescriptor in(STDIN_FILENO);
+            std::string query;
+            readText(query, in);
+            assertChar('\n', in);
 
-            while (!in.eof())
-            {
-                String query;
-                readText(query, in);
-                assertChar('\n', in);
-
-                if (!query.empty())
-                    queries.emplace_back(std::move(query));
-            }
-
-            if (queries.empty())
-                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
-        }
-        else
-        {
-            queries.emplace_back(query_to_execute);
+            if (!query.empty())
+                queries.emplace_back(query);
         }
 
+        if (queries.empty())
+            throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
 
         std::cerr << "Loaded " << queries.size() << " queries.\n";
     }
@@ -406,7 +395,7 @@ private:
         Stopwatch watch;
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
-            query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 
@@ -570,7 +559,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
-            ("query",      value<std::string>()->default_value(""),             "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
@@ -637,7 +625,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
-            options["query"].as<std::string>(),
             options.count("continue_on_errors") > 0,
             print_stacktrace,
             settings);

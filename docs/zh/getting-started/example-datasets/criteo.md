@@ -1,11 +1,6 @@
----
-toc_priority: 18
-toc_title: Terabyte Click Logs from Criteo
----
+# Criteo TB级别点击日志 {#criteo-tbji-bie-dian-ji-ri-zhi}
 
-# Terabyte of Click Logs from Criteo {#criteo-tbji-bie-dian-ji-ri-zhi}
-
-可以从 http://labs.criteo.com/downloads/download-terabyte-click-logs/ 上下载数据
+可以从http://labs.criteo.com/downloads/download-terabyte-click-logs/上下载数据
 
 创建原始数据对应的表结构：
 
