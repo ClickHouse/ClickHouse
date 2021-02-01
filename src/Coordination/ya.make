@@ -14,10 +14,10 @@ SRCS(
     InMemoryStateManager.cpp
     NuKeeperServer.cpp
     NuKeeperStateMachine.cpp
+    NuKeeperStorage.cpp
+    NuKeeperStorageDispatcher.cpp
+    NuKeeperStorageSerializer.cpp
     SummingStateMachine.cpp
-    TestKeeperStorage.cpp
-    TestKeeperStorageDispatcher.cpp
-    TestKeeperStorageSerializer.cpp
     WriteBufferFromNuraftBuffer.cpp
 
 )

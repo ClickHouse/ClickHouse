@@ -13,7 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Coordination/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
@@ -26,16 +26,16 @@ using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePol
 class ThreadSafeResponseQueue;
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class TestKeeperTCPHandler : public Poco::Net::TCPServerConnection
+class NuKeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
+    NuKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 private:
     IServer & server;
     Poco::Logger * log;
     Context global_context;
-    std::shared_ptr<TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+    std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id;

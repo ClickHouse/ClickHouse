@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -305,8 +305,8 @@ struct ContextShared
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex test_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -1582,42 +1582,42 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 }
 
 
-void Context::initializeTestKeeperStorageDispatcher() const
+void Context::initializeNuKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
 
-    if (shared->test_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize TestKeeper multiple times");
+    if (shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
 
     const auto & config = getConfigRef();
-    if (config.has("test_keeper_server"))
+    if (config.has("nu_keeper_server"))
     {
-        shared->test_keeper_storage_dispatcher = std::make_shared<TestKeeperStorageDispatcher>();
-        shared->test_keeper_storage_dispatcher->initialize(config);
+        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher->initialize(config);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
+std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
 {
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (!shared->test_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TestKeeper must be initialized before requests");
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (!shared->nu_keeper_storage_dispatcher)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
 
-    return shared->test_keeper_storage_dispatcher;
+    return shared->nu_keeper_storage_dispatcher;
 }
 #endif
 
-void Context::shutdownTestKeeperStorageDispatcher() const
+void Context::shutdownNuKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
-    if (shared->test_keeper_storage_dispatcher)
+    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    if (shared->nu_keeper_storage_dispatcher)
     {
-        shared->test_keeper_storage_dispatcher->shutdown();
-        shared->test_keeper_storage_dispatcher.reset();
+        shared->nu_keeper_storage_dispatcher->shutdown();
+        shared->nu_keeper_storage_dispatcher.reset();
     }
 #endif
 }

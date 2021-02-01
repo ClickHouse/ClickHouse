@@ -21,7 +21,7 @@ namespace DB
 
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
-class TestKeeperStorageDispatcher
+class NuKeeperStorageDispatcher
 {
 
 private:
@@ -30,7 +30,7 @@ private:
 
     std::mutex push_request_mutex;
 
-    using RequestsQueue = ConcurrentBoundedQueue<TestKeeperStorage::RequestForSession>;
+    using RequestsQueue = ConcurrentBoundedQueue<NuKeeperStorage::RequestForSession>;
     RequestsQueue requests_queue{1};
     std::atomic<bool> shutdown_called{false};
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
@@ -49,13 +49,13 @@ private:
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
-    TestKeeperStorageDispatcher();
+    NuKeeperStorageDispatcher();
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
     void shutdown();
 
-    ~TestKeeperStorageDispatcher();
+    ~NuKeeperStorageDispatcher();
 
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 

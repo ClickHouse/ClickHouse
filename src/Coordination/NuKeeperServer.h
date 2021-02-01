@@ -4,7 +4,7 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/NuKeeperStateMachine.h>
-#include <Coordination/TestKeeperStorage.h>
+#include <Coordination/NuKeeperStorage.h>
 #include <unordered_map>
 
 namespace DB
@@ -35,7 +35,7 @@ private:
 
     SessionIDOps ops_mapping;
 
-    TestKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
+    NuKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
 
     std::mutex append_entries_mutex;
 
@@ -44,7 +44,7 @@ public:
 
     void startup();
 
-    TestKeeperStorage::ResponsesForSessions putRequests(const TestKeeperStorage::RequestsForSessions & requests);
+    NuKeeperStorage::ResponsesForSessions putRequests(const NuKeeperStorage::RequestsForSessions & requests);
 
     int64_t getSessionID();
 
@@ -58,7 +58,7 @@ public:
     void waitForServers(const std::vector<int32_t> & ids) const;
     void waitForCatchUp() const;
 
-    TestKeeperStorage::ResponsesForSessions shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests);
+    NuKeeperStorage::ResponsesForSessions shutdown(const NuKeeperStorage::RequestsForSessions & expired_requests);
 };
 
 }

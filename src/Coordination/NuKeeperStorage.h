@@ -12,11 +12,11 @@ namespace DB
 {
 
 using namespace DB;
-struct TestKeeperStorageRequest;
-using TestKeeperStorageRequestPtr = std::shared_ptr<TestKeeperStorageRequest>;
+struct NuKeeperStorageRequest;
+using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 
-class TestKeeperStorage
+class NuKeeperStorage
 {
 public:
     int64_t session_id_counter{0};
@@ -72,7 +72,7 @@ public:
     }
 
 public:
-    TestKeeperStorage();
+    NuKeeperStorage();
 
     int64_t getSessionID()
     {

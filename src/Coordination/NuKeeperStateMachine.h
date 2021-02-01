@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Coordination/TestKeeperStorage.h>
+#include <Coordination/NuKeeperStorage.h>
 #include <libnuraft/nuraft.hxx>
 #include <common/logger_useful.h>
 
@@ -42,23 +42,23 @@ public:
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
-    TestKeeperStorage & getStorage()
+    NuKeeperStorage & getStorage()
     {
         return storage;
     }
 
-    TestKeeperStorage::ResponsesForSessions processReadRequest(const TestKeeperStorage::RequestForSession & request_for_session);
+    NuKeeperStorage::ResponsesForSessions processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
 
 private:
     struct StorageSnapshot
     {
-        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const TestKeeperStorage & storage_)
+        StorageSnapshot(const nuraft::ptr<nuraft::snapshot> & s, const NuKeeperStorage & storage_)
             : snapshot(s)
             , storage(storage_)
         {}
 
         nuraft::ptr<nuraft::snapshot> snapshot;
-        TestKeeperStorage storage;
+        NuKeeperStorage storage;
     };
 
     using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
@@ -69,7 +69,7 @@ private:
 
     static void writeSnapshot(const StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out);
 
-    TestKeeperStorage storage;
+    NuKeeperStorage storage;
     /// Mutex for snapshots
     std::mutex snapshots_lock;
 

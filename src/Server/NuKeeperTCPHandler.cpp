@@ -1,4 +1,4 @@
-#include <Server/TestKeeperTCPHandler.h>
+#include <Server/NuKeeperTCPHandler.h>
 
 #if USE_NURAFT
 
@@ -224,20 +224,20 @@ struct SocketInterruptablePollWrapper
 #endif
 };
 
-TestKeeperTCPHandler::TestKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+NuKeeperTCPHandler::NuKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , log(&Poco::Logger::get("TestKeeperTCPHandler"))
+    , log(&Poco::Logger::get("NuKeeperTCPHandler"))
     , global_context(server.context())
-    , test_keeper_storage_dispatcher(global_context.getTestKeeperStorageDispatcher())
-    , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , nu_keeper_storage_dispatcher(global_context.getNuKeeperStorageDispatcher())
+    , operation_timeout(0, global_context.getConfigRef().getUInt("nu_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context.getConfigRef().getUInt("nu_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
 }
 
-void TestKeeperTCPHandler::sendHandshake(bool has_leader)
+void NuKeeperTCPHandler::sendHandshake(bool has_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
@@ -252,12 +252,12 @@ void TestKeeperTCPHandler::sendHandshake(bool has_leader)
     out->next();
 }
 
-void TestKeeperTCPHandler::run()
+void NuKeeperTCPHandler::run()
 {
     runImpl();
 }
 
-void TestKeeperTCPHandler::receiveHandshake()
+void NuKeeperTCPHandler::receiveHandshake()
 {
     int32_t handshake_length;
     int32_t protocol_version;
@@ -294,7 +294,7 @@ void TestKeeperTCPHandler::receiveHandshake()
 }
 
 
-void TestKeeperTCPHandler::runImpl()
+void NuKeeperTCPHandler::runImpl()
 {
     setThreadName("TstKprHandler");
     ThreadStatus thread_status;
@@ -324,11 +324,11 @@ void TestKeeperTCPHandler::runImpl()
         return;
     }
 
-    if (test_keeper_storage_dispatcher->hasLeader())
+    if (nu_keeper_storage_dispatcher->hasLeader())
     {
         try
         {
-            session_id = test_keeper_storage_dispatcher->getSessionID();
+            session_id = nu_keeper_storage_dispatcher->getSessionID();
         }
         catch (const Exception & e)
         {
@@ -354,7 +354,7 @@ void TestKeeperTCPHandler::runImpl()
         UInt8 single_byte = 1;
         [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };
-    test_keeper_storage_dispatcher->registerSession(session_id, response_callback);
+    nu_keeper_storage_dispatcher->registerSession(session_id, response_callback);
 
     session_stopwatch.start();
     bool close_received = false;
@@ -428,18 +428,18 @@ void TestKeeperTCPHandler::runImpl()
     }
 }
 
-void TestKeeperTCPHandler::finish()
+void NuKeeperTCPHandler::finish()
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
     request->xid = close_xid;
     /// Put close request (so storage will remove all info about session)
-    test_keeper_storage_dispatcher->putRequest(request, session_id);
+    nu_keeper_storage_dispatcher->putRequest(request, session_id);
     /// We don't need any callbacks because session can be already dead and
     /// nobody wait for response
-    test_keeper_storage_dispatcher->finishSession(session_id);
+    nu_keeper_storage_dispatcher->finishSession(session_id);
 }
 
-std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveRequest()
+std::pair<Coordination::OpNum, Coordination::XID> NuKeeperTCPHandler::receiveRequest()
 {
     int32_t length;
     Coordination::read(length, *in);
@@ -453,7 +453,7 @@ std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveR
     request->xid = xid;
     request->readImpl(*in);
 
-    if (!test_keeper_storage_dispatcher->putRequest(request, session_id))
+    if (!nu_keeper_storage_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
 }

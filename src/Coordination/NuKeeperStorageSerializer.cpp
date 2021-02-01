@@ -1,4 +1,4 @@
-#include <Coordination/TestKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperStorageSerializer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -8,7 +8,7 @@ namespace DB
 
 namespace
 {
-    void writeNode(const TestKeeperStorage::Node & node, WriteBuffer & out)
+    void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
     {
         Coordination::write(node.data, out);
         Coordination::write(node.acls, out);
@@ -18,7 +18,7 @@ namespace
         Coordination::write(node.seq_num, out);
     }
 
-    void readNode(TestKeeperStorage::Node & node, ReadBuffer & in)
+    void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
     {
         Coordination::read(node.data, in);
         Coordination::read(node.acls, in);
@@ -29,7 +29,7 @@ namespace
     }
 }
 
-void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, WriteBuffer & out)
+void NuKeeperStorageSerializer::serialize(const NuKeeperStorage & storage, WriteBuffer & out)
 {
     Coordination::write(storage.zxid, out);
     Coordination::write(storage.session_id_counter, out);
@@ -49,7 +49,7 @@ void TestKeeperStorageSerializer::serialize(const TestKeeperStorage & storage, W
     }
 }
 
-void TestKeeperStorageSerializer::deserialize(TestKeeperStorage & storage, ReadBuffer & in)
+void NuKeeperStorageSerializer::deserialize(NuKeeperStorage & storage, ReadBuffer & in)
 {
     int64_t session_id_counter, zxid;
     Coordination::read(zxid, in);
@@ -63,7 +63,7 @@ void TestKeeperStorageSerializer::deserialize(TestKeeperStorage & storage, ReadB
     {
         std::string path;
         Coordination::read(path, in);
-        TestKeeperStorage::Node node;
+        NuKeeperStorage::Node node;
         readNode(node, in);
         storage.container[path] = node;
     }
