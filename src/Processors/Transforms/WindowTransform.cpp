@@ -165,7 +165,7 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-void WindowTransform::advanceFrameStart()
+void WindowTransform::advanceFrameStart() const
 {
     // Frame start is always UNBOUNDED PRECEDING for now, so we don't have to
     // move it. It is initialized when the new partition starts.
