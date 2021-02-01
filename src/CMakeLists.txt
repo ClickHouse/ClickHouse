@@ -191,6 +191,7 @@ add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_coordination Coordination)
 
 set (DBMS_COMMON_LIBRARIES)
