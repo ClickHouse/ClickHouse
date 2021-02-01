@@ -92,8 +92,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-     LOG_DEBUG(log_wrapper.get(), "disconnect");
-    
+    LOG_DEBUG(log_wrapper.get(), "disconnect");
+
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
