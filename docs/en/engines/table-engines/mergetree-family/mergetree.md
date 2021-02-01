@@ -83,7 +83,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
@@ -468,15 +468,14 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 
 -   `DELETE` - delete expired rows (default action);
 -   `TO DISK 'aaa'` - move part to the disk `aaa`;
--   `TO VOLUME 'bbb'` - move part to the disk `bbb`.
+-   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+-   `GROUP BY` - aggregate expired rows.
 
-With `WHERE` clause you may specify which of the expired rows to delete or move.
+With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves).
 
-With `GROUP BY` clause you may [aggregate](../../../sql-reference/aggregate-functions/index.md) expired rows. `GROUP BY` key expression must be a prefix of the table primary key. 
+`GROUP BY` expression must be a prefix of the table primary key. 
 
-If a column is part of primary key, but not present in `GROUP BY` key expression, in result rows it contains aggregated value across grouped rows. 
-
-If a column is not present neither in primary key, nor in `SET` clause, in result row it contains any occasional value from grouped rows.
+If a column is not part of the `GROUP BY` expression and is not set explicitely in the `SET` clause, in result row it contains an occasional value from the grouped rows (as if aggregate function `any` is applied to it).
 
 **Examples**
 
