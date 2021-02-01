@@ -1,23 +1,5 @@
 #pragma once
 
-// ASTLiteral.h
-#include <Core/Field.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Parsers/TokenIterator.h>
-#include <Common/FieldVisitors.h>
-
-#include <optional>
-
-// ASTLiteral.cpp
-#include <Common/SipHash.h>
-#include <Common/FieldVisitors.h>
-#include <Parsers/ASTLiteral.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
-
-// The really needed includes follow
 #include <Common/FieldVisitors.h>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
@@ -94,6 +76,10 @@ struct WindowFrame
             case FrameType::Range:
                 return "RANGE";
         }
+
+        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
+        assert(false);
+        return "<unknown frame>";
     }
 
     static std::string toString(BoundaryType type)
@@ -107,6 +93,10 @@ struct WindowFrame
             case BoundaryType::Current:
                 return "CURRENT ROW";
         }
+
+        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
+        assert(false);
+        return "<unknown frame boundary>";
     }
 };
 
