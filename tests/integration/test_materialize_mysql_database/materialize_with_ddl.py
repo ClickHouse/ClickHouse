@@ -79,9 +79,9 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
 
     check_query(clickhouse_node, """
         SELECT key, unsigned_tiny_int, tiny_int, unsigned_small_int,
-         small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer, 
+         small_int, unsigned_medium_int, medium_int, unsigned_int, _int, unsigned_integer, _integer,
          unsigned_bigint, _bigint, unsigned_float, _float, unsigned_double, _double, _varchar, _char, binary_col,
-         _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */ 
+         _date, _datetime, /* exclude it, because ON UPDATE CURRENT_TIMESTAMP _timestamp, */
          _bool FROM test_database.test_table_1 ORDER BY key FORMAT TSV
         """,
         "1\t2\t-1\t2\t-2\t3\t-3\t4\t-4\t5\t-5\t6\t-6\t3.2\t-3.2\t3.4\t-3.4\tvarchar\tchar\tbinary\\0\\0\t2020-01-01\t"
@@ -720,7 +720,7 @@ def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
     t = threading.Thread(target=insert, args=(1000,))
     t.start()
-    
+
     # TODO: add clickhouse_node.restart_clickhouse(20, kill=False) test
     clickhouse_node.restart_clickhouse(20, kill=True)
     t.join()
@@ -732,3 +732,14 @@ def clickhouse_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
     mysql_node.query("DROP DATABASE kill_clickhouse_while_insert")
     clickhouse_node.query("DROP DATABASE kill_clickhouse_while_insert")
+
+
+def utf8mb4_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS utf8mb4_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS utf8mb4_test")
+    mysql_node.query("CREATE DATABASE utf8mb4_test")
+    mysql_node.query("CREATE TABLE utf8mb4_test.test (id INT(11) NOT NULL PRIMARY KEY, name VARCHAR(255)) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4")
+    mysql_node.query("INSERT INTO utf8mb4_test.test VALUES(1, '🦄'),(2, '\u2601')")
+    clickhouse_node.query("CREATE DATABASE utf8mb4_test ENGINE = MaterializeMySQL('{}:3306', 'utf8mb4_test', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT id, name FROM utf8mb4_test.test ORDER BY id", "1\t\U0001F984\n2\t\u2601\n")
+
