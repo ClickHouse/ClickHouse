@@ -6,7 +6,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -44,7 +43,6 @@ ASTPtr ASTSelectQuery::clone() const
     CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::HAVING);
-    CLONE(Expression::WINDOW);
     CLONE(Expression::ORDER_BY);
     CLONE(Expression::LIMIT_BY_OFFSET);
     CLONE(Expression::LIMIT_BY_LENGTH);
@@ -132,13 +130,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "HAVING " << (s.hilite ? hilite_none : "");
         having()->formatImpl(s, state, frame);
-    }
-
-    if (window())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
-            "WINDOW " << (s.hilite ? hilite_none : "");
-        window()->formatImpl(s, state, frame);
     }
 
     if (orderBy())

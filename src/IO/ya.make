@@ -1,20 +1,11 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
-OWNER(g:clickhouse)
-
 LIBRARY()
-
-ADDINCL(
-    contrib/libs/zstd
-    contrib/restricted/fast_float
-)
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/brotli/dec
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
-    contrib/libs/zstd
-    contrib/restricted/fast_float
 )
 
 
@@ -29,8 +20,6 @@ SRCS(
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
-    LZMADeflatingWriteBuffer.cpp
-    LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
@@ -49,8 +38,10 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
+    ReadWriteBufferFromHTTP.cpp
     SeekAvoidingReadBuffer.cpp
     UseSSL.cpp
+    WriteBufferAIO.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
@@ -64,10 +55,9 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
-    ZstdDeflatingWriteBuffer.cpp
-    ZstdInflatingReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
+    createWriteBufferFromFileBase.cpp
     parseDateTimeBestEffort.cpp
     readFloatText.cpp
 

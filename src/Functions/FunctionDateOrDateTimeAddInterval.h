@@ -87,7 +87,7 @@ struct AddMinutesImpl : public AddOnDateTime64DefaultImpl<AddMinutesImpl>
 
     static constexpr auto name = "addMinutes";
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 60;
     }
@@ -106,7 +106,7 @@ struct AddHoursImpl : public AddOnDateTime64DefaultImpl<AddHoursImpl>
 
     static constexpr auto name = "addHours";
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta * 3600;
     }
@@ -150,7 +150,7 @@ struct AddWeeksImpl : public AddOnDateTime64DefaultImpl<AddWeeksImpl>
 
     static constexpr auto name = "addWeeks";
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addWeeks(t, delta);
     }
@@ -224,9 +224,8 @@ struct SubtractIntervalImpl : public Transform
     using Transform::Transform;
 
     template <typename T>
-    inline NO_SANITIZE_UNDEFINED auto execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
+    inline auto execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
     {
-        /// Signed integer overflow is Ok.
         return Transform::execute(t, -delta, time_zone);
     }
 };
@@ -288,14 +287,14 @@ struct Adder
 
 private:
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
-    NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
-    NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
@@ -306,7 +305,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr execute(Transform transform, ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -464,7 +463,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);

@@ -38,7 +38,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnWithTypeAndName & elem = arguments[0];
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
@@ -59,7 +59,7 @@ public:
 
 void registerFunctionIsNull(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIsNull>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIsNull>();
 }
 
 }

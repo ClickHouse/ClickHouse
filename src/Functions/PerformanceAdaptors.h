@@ -204,7 +204,7 @@ public:
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
      * and "execute" otherwise.
      */
-    ColumnPtr selectAndExecute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr selectAndExecute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (implementations.empty())
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",

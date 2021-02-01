@@ -17,8 +17,9 @@ def started_cluster():
 
 
 def test_url_without_redirect(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = HDFSApi("root")
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access datanode port directly
     node1.query(
@@ -27,8 +28,9 @@ def test_url_without_redirect(started_cluster):
 
 
 def test_url_with_redirect_not_allowed(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = HDFSApi("root")
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access proxy port without allowing redirects
     node1.query(
@@ -38,8 +40,9 @@ def test_url_with_redirect_not_allowed(started_cluster):
 
 
 def test_url_with_redirect_allowed(started_cluster):
-    started_cluster.hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
-    assert started_cluster.hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
+    hdfs_api = HDFSApi("root")
+    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
 
     # access proxy port with allowing redirects
     # http://localhost:50070/webhdfs/v1/b?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0
