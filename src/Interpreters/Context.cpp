@@ -304,8 +304,10 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
+#if USE_NURAFT
     mutable std::mutex test_keeper_storage_dispatcher_mutex;
     mutable std::shared_ptr<TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
+#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -1579,8 +1581,10 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+
 void Context::initializeTestKeeperStorageDispatcher() const
 {
+#if USE_NURAFT
     std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
 
     if (shared->test_keeper_storage_dispatcher)
@@ -1592,8 +1596,10 @@ void Context::initializeTestKeeperStorageDispatcher() const
         shared->test_keeper_storage_dispatcher = std::make_shared<TestKeeperStorageDispatcher>();
         shared->test_keeper_storage_dispatcher->initialize(config);
     }
+#endif
 }
 
+#if USE_NURAFT
 std::shared_ptr<TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
     std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
@@ -1602,16 +1608,20 @@ std::shared_ptr<TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDisp
 
     return shared->test_keeper_storage_dispatcher;
 }
+#endif
 
 void Context::shutdownTestKeeperStorageDispatcher() const
 {
+#if USE_NURAFT
     std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
     if (shared->test_keeper_storage_dispatcher)
     {
         shared->test_keeper_storage_dispatcher->shutdown();
         shared->test_keeper_storage_dispatcher.reset();
     }
+#endif
 }
+
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {

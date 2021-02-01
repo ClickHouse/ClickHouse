@@ -1,4 +1,7 @@
 #include <Server/TestKeeperTCPHandler.h>
+
+#if USE_NURAFT
+
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Core/Types.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -22,8 +25,10 @@
     #include <poll.h>
 #endif
 
+
 namespace DB
 {
+
 
 namespace ErrorCodes
 {
@@ -454,3 +459,5 @@ std::pair<Coordination::OpNum, Coordination::XID> TestKeeperTCPHandler::receiveR
 }
 
 }
+
+#endif
