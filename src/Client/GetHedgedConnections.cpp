@@ -343,7 +343,7 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(b
         else if (timeout_fd_to_replica.find(event_fd) != timeout_fd_to_replica.end())
         {
             replica = timeout_fd_to_replica[event_fd];
-            finish = processTimeoutEvent(replica, replica->active_timeouts[event_fd].get(), non_blocking);
+            finish = processTimeoutEvent(replica, replica->active_timeouts[event_fd], non_blocking);
         }
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
@@ -476,7 +476,7 @@ void addTimeoutToReplica(
             throw Exception("Unknown timeout type", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    std::unique_ptr<TimerDescriptor> timeout_descriptor = std::make_unique<TimerDescriptor>();
+    TimerDescriptorPtr timeout_descriptor = std::make_shared<TimerDescriptor>();
     timeout_descriptor->setType(type);
     timeout_descriptor->setRelative(timeout);
     epoll.add(timeout_descriptor->getDescriptor());

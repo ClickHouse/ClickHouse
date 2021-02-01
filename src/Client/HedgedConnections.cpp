@@ -294,7 +294,7 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
         {
             LOG_DEBUG(log, "event is timeout");
             replica = timeout_fd_to_replica[event_fd];
-            processTimeoutEvent(replica, replica->active_timeouts[event_fd].get());
+            processTimeoutEvent(replica, replica->active_timeouts[event_fd]);
         }
         else if (event_fd == get_hedged_connections.getFileDescriptor())
             tryGetNewReplica();
@@ -375,12 +375,14 @@ void HedgedConnections::processReceiveData(ReplicaStatePtr & replica)
 
 void HedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor)
 {
+    LOG_DEBUG(log, "processTimeoutEvent");
     epoll.remove(timeout_descriptor->getDescriptor());
     replica->active_timeouts.erase(timeout_descriptor->getDescriptor());
     timeout_fd_to_replica.erase(timeout_descriptor->getDescriptor());
 
     if (timeout_descriptor->getType() == TimerTypes::RECEIVE_TIMEOUT)
     {
+        LOG_DEBUG(log, "process RECEIVE_TIMEOUT");
         size_t offset = replica->parallel_replica_offset;
         finishProcessReplica(replica, true);
 
@@ -390,6 +392,7 @@ void HedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDesc
     }
     else if (timeout_descriptor->getType() == TimerTypes::RECEIVE_DATA_TIMEOUT)
     {
+        LOG_DEBUG(log, "process RECEIVE_DATA_TIMEOUT");
         offsets_queue.push(replica->parallel_replica_offset);
         tryGetNewReplica();
     }

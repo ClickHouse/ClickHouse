@@ -34,7 +34,7 @@ public:
         int index = -1;
         int fd = -1;
         size_t parallel_replica_offset = 0;
-        std::unordered_map<int, std::unique_ptr<TimerDescriptor>> active_timeouts;
+        std::unordered_map<int, std::shared_ptr<TimerDescriptor>> active_timeouts;
 
         void reset()
         {
