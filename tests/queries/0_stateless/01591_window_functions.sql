@@ -168,6 +168,8 @@ select number, p,
     count(*) over (partition by p order by number
         rows between 1 preceding and unbounded following),
     count(*) over (partition by p order by number
+        rows between current row and unbounded following),
+    count(*) over (partition by p order by number
         rows between 1 following and unbounded following)
 from (select number, intDiv(number, 5) p from numbers(31))
 order by p, number

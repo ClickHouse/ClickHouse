@@ -285,6 +285,19 @@ void WindowTransform::advanceFrameStartChoose()
             // the new partition starts.
             frame_started = true;
             return;
+        case WindowFrame::BoundaryType::Current:
+            switch (window_description.frame.type)
+            {
+                case WindowFrame::FrameType::Rows:
+                    // CURRENT ROW
+                    frame_start = current_row;
+                    frame_started = true;
+                    return;
+                default:
+                    // Fallthrough to the "not implemented" error.
+                    break;
+            }
+            break;
         case WindowFrame::BoundaryType::Offset:
             switch (window_description.frame.type)
             {
@@ -295,9 +308,6 @@ void WindowTransform::advanceFrameStartChoose()
                     // Fallthrough to the "not implemented" error.
                     break;
             }
-            break;
-        default:
-            // Fallthrough to the "not implemented" error.
             break;
     }
 
