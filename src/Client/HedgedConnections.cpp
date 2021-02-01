@@ -317,6 +317,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 Packet HedgedConnections::receivePacketFromReplica(ReplicaStatePtr & replica, AsyncCallback async_callback)
 {
     LOG_DEBUG(log, "sreceivePacketFromReplica");
+
     Packet packet = replica->connection->receivePacket(std::move(async_callback));
     switch (packet.type)
     {
