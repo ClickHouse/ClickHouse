@@ -516,7 +516,7 @@ settings max_block_size = 2;
 27	27	29	29
 27	27	29	29
 30	30	30	30
--- ROWS offset frame start
+-- CURRENT ROW and offset for ROWS frame start
 select number, p,
     count(*) over (partition by p order by number
         rows between 1 preceding and unbounded following),
