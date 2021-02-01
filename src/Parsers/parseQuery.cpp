@@ -269,14 +269,6 @@ ASTPtr tryParseQuery(
     // most of the checks.
     if (insert && insert->data)
     {
-        if (!parse_res)
-        {
-            // Generic parse error.
-            out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
-                last_token, expected, hilite, query_description);
-            return nullptr;
-        }
-
         return res;
     }
 
