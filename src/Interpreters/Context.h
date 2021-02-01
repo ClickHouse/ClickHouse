@@ -611,6 +611,7 @@ public:
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.

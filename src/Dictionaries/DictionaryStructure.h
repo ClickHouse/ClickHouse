@@ -158,6 +158,8 @@ struct DictionaryStructure final
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
     size_t getKeySize() const;
+    Strings getKeysNames() const;
+
 private:
     /// range_min and range_max have to be parsed before this function call
     std::vector<DictionaryAttribute> getAttributes(
