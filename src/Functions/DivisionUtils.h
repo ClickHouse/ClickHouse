@@ -90,8 +90,15 @@ struct DivideIntegralImpl
         }
         else
         {
-            if (!isFinite(a) || !isFinite(b))
-                throw Exception("Cannot perform integer division on infinite floating point numbers", ErrorCodes::ILLEGAL_DIVISION);
+            if constexpr (std::is_floating_point_v<A>)
+                if (!isNaN(a) || a > std::numeric_limits<CastA>::max() || a < std::numeric_limits<CastA>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (!isNaN(b) || b > std::numeric_limits<CastB>::max() || b < std::numeric_limits<CastB>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
 
             return static_cast<Result>(checkedDivision(CastA(a), CastB(b)));
         }
@@ -121,8 +128,15 @@ struct ModuloImpl
         }
         else
         {
-            if (!isFinite(a) || !isFinite(b))
-                throw Exception("Cannot perform integer division on infinite floating point numbers", ErrorCodes::ILLEGAL_DIVISION);
+            if constexpr (std::is_floating_point_v<A>)
+                if (!isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (!isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
