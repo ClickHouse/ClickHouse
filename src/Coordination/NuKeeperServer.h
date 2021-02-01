@@ -37,6 +37,8 @@ private:
 
     TestKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
 
+    std::mutex append_entries_mutex;
+
 public:
     NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
 

@@ -11,6 +11,11 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+TestKeeperStorageDispatcher::TestKeeperStorageDispatcher()
+    : log(&Poco::Logger::get("TestKeeperDispatcher"))
+{
+}
+
 void TestKeeperStorageDispatcher::processingThread()
 {
     setThreadName("TestKeeperSProc");
@@ -101,6 +106,7 @@ namespace
 
 void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
+    LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("test_keeper_server.server_id");
     std::string myhostname;
     int myport;
@@ -134,26 +140,39 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
     }
 
     server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
-    server->startup();
-    if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
+    try
     {
-        for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
+        server->startup();
+        if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
         {
-            do
+            for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)
             {
-                server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader, priority);
+                LOG_DEBUG(log, "Adding server with id {} ({}:{})", id, hostname, port);
+                do
+                {
+                    server->addServer(id, hostname + ":" + std::to_string(port), can_become_leader, priority);
+                }
+                while (!server->waitForServer(id));
+
+                LOG_DEBUG(log, "Server with id {} ({}:{}) added to cluster", id, hostname, port);
             }
-            while (!server->waitForServer(id));
+        }
+        else
+        {
+            LOG_DEBUG(log, "Waiting for {} servers to build cluster", ids.size());
+            server->waitForServers(ids);
+            server->waitForCatchUp();
         }
     }
-    else
+    catch (...)
     {
-        server->waitForServers(ids);
-        server->waitForCatchUp();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
     }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 
+    LOG_DEBUG(log, "Dispatcher initialized");
 }
 
 void TestKeeperStorageDispatcher::shutdown()
@@ -166,6 +185,7 @@ void TestKeeperStorageDispatcher::shutdown()
             if (shutdown_called)
                 return;
 
+            LOG_DEBUG(log, "Shutting down storage dispatcher");
             shutdown_called = true;
 
             if (processing_thread.joinable())
@@ -189,6 +209,8 @@ void TestKeeperStorageDispatcher::shutdown()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    LOG_DEBUG(log, "Dispatcher shut down");
 }
 
 TestKeeperStorageDispatcher::~TestKeeperStorageDispatcher()

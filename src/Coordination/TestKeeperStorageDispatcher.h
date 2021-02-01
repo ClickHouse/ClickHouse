@@ -5,6 +5,7 @@
 #include <functional>
 #include <Coordination/NuKeeperServer.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -30,14 +31,15 @@ private:
     ThreadFromGlobalPool processing_thread;
 
     std::unique_ptr<NuKeeperServer> server;
-    std::mutex session_id_mutex;
+
+    Poco::Logger * log;
 
 private:
     void processingThread();
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
-    TestKeeperStorageDispatcher() = default;
+    TestKeeperStorageDispatcher();
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
@@ -59,7 +61,6 @@ public:
 
     int64_t getSessionID()
     {
-        std::lock_guard lock(session_id_mutex);
         return server->getSessionID();
     }
 
