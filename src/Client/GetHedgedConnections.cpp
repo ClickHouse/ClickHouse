@@ -426,7 +426,8 @@ void GetHedgedConnections::setBestUsableReplica(ReplicaStatePtr & replica)
         std::remove_if(
             indexes.begin(),
             indexes.end(),
-            [&](int i) {
+            [&](int i)
+            {
                 return try_get_connections[i].result.entry.isNull() || !try_get_connections[i].result.is_usable ||
                     indexes_in_process.find(i) != indexes_in_process.end() || ready_indexes.find(i) != ready_indexes.end();
             }),
@@ -439,9 +440,13 @@ void GetHedgedConnections::setBestUsableReplica(ReplicaStatePtr & replica)
     }
 
     /// Sort replicas by staleness
-    std::stable_sort(indexes.begin(), indexes.end(), [&](size_t lhs, size_t rhs) {
-        return try_get_connections[lhs].result.staleness < try_get_connections[rhs].result.staleness;
-    });
+    std::stable_sort(
+        indexes.begin(),
+        indexes.end(),
+        [&](size_t lhs, size_t rhs)
+        {
+            return try_get_connections[lhs].result.staleness < try_get_connections[rhs].result.staleness;
+        });
 
     replica->index = indexes[0];
     replica->connection = &*try_get_connections[indexes[0]].result.entry;
