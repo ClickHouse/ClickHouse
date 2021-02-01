@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -398,8 +399,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     try
     {
         auto query_context = task.makeQueryContext(context);
-        query_scope.emplace(*query_context);
-        executeQuery(istr, ostr, false, *query_context, {});
+        if (!task.is_initial_query)
+            query_scope.emplace(*query_context);
+        executeQuery(istr, ostr, !task.is_initial_query, *query_context, {});
 
         if (auto txn = query_context->getMetadataTransaction())
         {
@@ -409,6 +411,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     }
     catch (const DB::Exception & e)
     {
+        if (task.is_initial_query)
+            throw;
+
         task.execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
 
@@ -426,6 +431,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     }
     catch (...)
     {
+        if (task.is_initial_query)
+            throw;
+
         task.execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, "Query " + query + " wasn't finished successfully");
 
@@ -474,7 +482,10 @@ void DDLWorker::processTask(DDLTaskBase & task)
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                    DatabasePtr database;
+                    std::tie(database, storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
+                    if (database && database->getEngineName() == "Replicated")
+                        throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER queries are not allowed for Replicated databases");
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -496,6 +507,8 @@ void DDLWorker::processTask(DDLTaskBase & task)
         }
         catch (...)
         {
+            if (task.is_initial_query)
+                throw;
             tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
@@ -627,6 +640,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     {
         StorageReplicatedMergeTree::Status status;
         replicated_storage->getStatus(status);
+
+        if (task.is_initial_query && !status.is_leader)
+            throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot execute initial query on non-leader replica");
 
         /// Any replica which is leader tries to take lock
         if (status.is_leader && lock->tryLock())

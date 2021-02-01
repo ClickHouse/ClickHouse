@@ -42,9 +42,9 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return global_context.getZooKeeper();
 }
 
-static inline String getHostID(const Context & global_context)
+static inline String getHostID(const Context & global_context, const UUID & db_uuid)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context.getTCPPort());
+    return Cluster::Address::toString(getFQDNOrHostName(), global_context.getTCPPort()) + ':' + toString(db_uuid);
 }
 
 
@@ -94,7 +94,7 @@ DatabaseReplicated::DatabaseReplicated(
     String replica_host_id;
     if (current_zookeeper->tryGet(replica_path, replica_host_id))
     {
-        String host_id = getHostID(global_context);
+        String host_id = getHostID(global_context, db_uuid);
         if (replica_host_id != host_id)
             throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
                             "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
@@ -144,7 +144,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     //log_entry_to_execute = 0;   //FIXME
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(global_context);
+    auto host_id = getHostID(global_context, db_uuid);
 
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry;
@@ -221,11 +221,11 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
 
     LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
+    /// TODO maybe write current settings to log entry?
     DDLLogEntry entry;
-    entry.hosts = {};
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
-    String node_path = ddl_worker->enqueueQuery(entry);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry);
 
     BlockIO io;
     //FIXME use query context

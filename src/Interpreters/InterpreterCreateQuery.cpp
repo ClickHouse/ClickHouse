@@ -572,6 +572,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     validateTableStructure(create, properties);
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
+
+    create.as_database.clear();
+    create.as_table.clear();
+
     return properties;
 }
 
@@ -835,7 +839,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Data path must be relative to root_path
         create.attach_from_path = fs::relative(data_path, root_path) / "";
     }
-    else if (create.attach && !create.attach_short_syntax)
+    else if (create.attach && !create.attach_short_syntax && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
     {
         auto * log = &Poco::Logger::get("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -881,6 +885,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
         {
             assertOrSetUUID(create, database);
+            guard.reset();
             return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
         }
     }

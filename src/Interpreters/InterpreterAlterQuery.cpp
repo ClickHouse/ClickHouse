@@ -53,7 +53,10 @@ BlockIO InterpreterAlterQuery::execute()
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
+    {
+        alter_lock.reset();
         return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
+    }
 
     //FIXME commit MetadataTransaction for all ALTER kinds. Now its' implemented only for metadata alter.
 

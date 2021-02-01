@@ -186,9 +186,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     total_time = (datetime.now() - start_time).total_seconds()
 
+    # Normalize randomized database names in stdout, stderr files.
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     if not args.show_db_name:
-        # Normalize randomized database names in stdout, stderr files.
-        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''

@@ -64,6 +64,9 @@ private:
 
     ASTPtr query_ptr;
     Context & context;
+
+    /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
+    TableGuards table_guards;
 };
 
 }

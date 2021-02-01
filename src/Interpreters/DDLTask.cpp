@@ -303,9 +303,9 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
     query_context->initMetadataTransaction(txn);
     txn->current_zookeeper = from_context.getZooKeeper();
     txn->zookeeper_path = database->zookeeper_path;
-    txn->is_initial_query = we_are_initiator;
+    txn->is_initial_query = is_initial_query;
 
-    if (we_are_initiator)
+    if (is_initial_query)
     {
         txn->ops.emplace_back(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->ops.emplace_back(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
