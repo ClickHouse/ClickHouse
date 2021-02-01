@@ -28,7 +28,7 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 
     for (size_t index = 0; index < internal_select_list.size(); ++index)
     {
-        if (auto child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+        if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
             visit(*child_union, internal_select_list[index]);
         else
         {
