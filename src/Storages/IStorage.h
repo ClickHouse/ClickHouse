@@ -128,9 +128,6 @@ public:
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
-    /// Returns true if the storage supports reading of subcolumns of complex types.
-    virtual bool supportsSubcolumns() const { return false; }
-
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.

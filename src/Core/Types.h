@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <common/extended_types.h>
-#include <common/defines.h>
 
 
 namespace DB
@@ -166,9 +165,6 @@ struct Decimal
     const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
-
-    /// This is to avoid UB for sumWithOverflow()
-    void NO_SANITIZE_UNDEFINED addOverflow(const T & x) { value += x; }
 
     T value;
 };
