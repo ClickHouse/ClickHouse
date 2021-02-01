@@ -305,7 +305,9 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 
 Переводит дату-с-временем или дату в число типа UInt16, содержащее номер ISO года. ISO год отличается от обычного года, потому что в соответствии с [ISO 8601:1988](https://en.wikipedia.org/wiki/ISO_8601) ISO год начинается необязательно первого января.
 
-Пример:
+**Пример:**
+
+Запрос:
 
 ```sql
 SELECT
@@ -313,6 +315,9 @@ SELECT
     toYear(date),
     toISOYear(date)
 ```
+
+Результат:
+
 ```text
 ┌───────date─┬─toYear(toDate('2017-01-01'))─┬─toISOYear(toDate('2017-01-01'))─┐
 │ 2017-01-01 │                         2017 │                            2016 │
@@ -326,11 +331,17 @@ SELECT
 
 1 Января 2017 г. - воскресение, т.е. первая ISO неделя 2017 года началась в понедельник 2 января, поэтому 1 января 2017 это последняя неделя 2016 года.
 
+**Пример**
+
+Запрос:
+
 ```sql
 SELECT
     toISOWeek(toDate('2017-01-01')) AS ISOWeek20170101,
     toISOWeek(toDate('2017-01-02')) AS ISOWeek20170102
 ```
+
+Результат:
 
 ```text
 ┌─ISOWeek20170101─┬─ISOWeek20170102─┐
@@ -368,9 +379,13 @@ SELECT
 
 **Пример**
 
+Запрос:
+
 ```sql
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
 ```
+
+Результат:
 
 ```text
 ┌───────date─┬─week0─┬─week1─┬─week9─┐
@@ -387,9 +402,13 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 
 **Пример**
 
+Запрос:
+
 ```sql
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
 ```
+
+Результат:
 
 ```text
 ┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
@@ -573,7 +592,7 @@ dateDiff('unit', startdate, enddate, [timezone])
 SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
@@ -654,10 +673,10 @@ formatDateTime(Time, Format\[, Timezone\])
 Запрос:
 
 ``` sql
-SELECT formatDateTime(toDate('2010-01-04'), '%g')
+SELECT formatDateTime(toDate('2010-01-04'), '%g');
 ```
 
-Ответ:
+Результат:
 
 ```
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
@@ -667,7 +686,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 
 ## FROM\_UNIXTIME {#fromunixtime}
 
-Когда указан только один аргумент целочисленного типа, то функция действует так же, как `toDateTime`, и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
+Функция преобразует метку времени Unix в дату. Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Пример**
 
@@ -677,7 +696,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 SELECT FROM_UNIXTIME(423543535);
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─FROM_UNIXTIME(423543535)─┐
@@ -685,7 +704,7 @@ SELECT FROM_UNIXTIME(423543535);
 └──────────────────────────┘
 ```
 
-В случае, когда есть два аргумента: первый типа `Integer` или `DateTime`, а второй является строкой постоянного формата — функция работает таким же образом, как `formatDateTime`, и возвращает значение типа `String`.
+В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает таким же образом, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
 
 **Пример**
 
@@ -695,7 +714,7 @@ SELECT FROM_UNIXTIME(423543535);
 SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
 
-Ответ:
+Результат:
 
 ```text
 ┌─DateTime────────────┐

@@ -663,10 +663,9 @@ Result:
 
 ## FROM\_UNIXTIME {#fromunixfime}
 
-When there is only a single argument of integer type, it acts in the same way as `toDateTime` and return [DateTime](../../sql-reference/data-types/datetime.md).
-type.
+Function converts Unix timestamp to date. When there is only a single argument of integer type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
-For example:
+**Example:**
 
 Query:
 
@@ -682,7 +681,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two arguments: first is an integer or DateTime, second is a constant format string — it acts in the same way as `formatDateTime` and return `String` type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
