@@ -29,74 +29,61 @@ struct AggregateFunctionSumData
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
+        /// Compiler cannot unroll this loop, do it manually.
+        /// (at least for floats, most likely due to the lack of -fassociative-math)
+
+        /// Something around the number of SSE registers * the number of elements fit in register.
+        constexpr size_t unroll_count = 128 / sizeof(T);
+        T partial_sums[unroll_count]{};
+
         const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        if constexpr (std::is_floating_point_v<T>)
+        while (ptr < unrolled_end)
         {
-            /// Compiler cannot unroll this loop, do it manually.
-            /// (at least for floats, most likely due to the lack of -fassociative-math)
-
-            /// Something around the number of SSE registers * the number of elements fit in register.
-            constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
-
-            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
-
-            while (ptr < unrolled_end)
-            {
-                for (size_t i = 0; i < unroll_count; ++i)
-                    partial_sums[i] += ptr[i];
-                ptr += unroll_count;
-            }
-
             for (size_t i = 0; i < unroll_count; ++i)
-                sum += partial_sums[i];
+                partial_sums[i] += ptr[i];
+            ptr += unroll_count;
         }
 
-        /// clang cannot vectorize the loop if accumulator is class member instead of local variable.
-        T local_sum{};
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
         while (ptr < end)
         {
-            local_sum += *ptr;
+            sum += *ptr;
             ++ptr;
         }
-        sum += local_sum;
     }
 
     template <typename Value>
     void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
     {
+        constexpr size_t unroll_count = 128 / sizeof(T);
+        T partial_sums[unroll_count]{};
+
         const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
 
-        if constexpr (std::is_floating_point_v<T>)
+        while (ptr < unrolled_end)
         {
-            constexpr size_t unroll_count = 128 / sizeof(T);
-            T partial_sums[unroll_count]{};
-
-            const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
-
-            while (ptr < unrolled_end)
-            {
-                for (size_t i = 0; i < unroll_count; ++i)
-                    if (!null_map[i])
-                        partial_sums[i] += ptr[i];
-                ptr += unroll_count;
-                null_map += unroll_count;
-            }
-
             for (size_t i = 0; i < unroll_count; ++i)
-                sum += partial_sums[i];
+                if (!null_map[i])
+                    partial_sums[i] += ptr[i];
+            ptr += unroll_count;
+            null_map += unroll_count;
         }
 
-        T local_sum{};
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
         while (ptr < end)
         {
             if (!*null_map)
-                local_sum += *ptr;
+                sum += *ptr;
             ++ptr;
             ++null_map;
         }
-        sum += local_sum;
     }
 
     void merge(const AggregateFunctionSumData & rhs)

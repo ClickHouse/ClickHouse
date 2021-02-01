@@ -76,7 +76,7 @@ def check_privilege(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowRowPolicies_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowRowPolicies_Query("1.0"),
 )
 def show_row_policies(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW ROW POLICIES` when they have the necessary privilege.
@@ -114,7 +114,7 @@ def show_row_policies(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowCreateRowPolicy_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowCreateRowPolicy("1.0"),
 )
 def show_create(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW CREATE ROW POLICY` when they have the necessary privilege.
@@ -165,7 +165,7 @@ def show_create(self, privilege, grant_target_name, user_name, node=None):
 @TestFeature
 @Name("show row policies")
 @Requirements(
-    RQ_SRS_006_RBAC_ShowRowPolicies_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowRowPolicies("1.0"),
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW ROW POLICYS.

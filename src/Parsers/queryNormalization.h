@@ -126,17 +126,9 @@ inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const cha
             if (!prev_insignificant)
             {
                 if (0 == num_literals_in_sequence)
-                {
-                    // If it's leading whitespace, ignore it altogether.
-                    if (token.begin != begin)
-                    {
-                        res_data.push_back(' ');
-                    }
-                }
+                    res_data.push_back(' ');
                 else
-                {
                     prev_whitespace = true;
-                }
             }
             prev_insignificant = true;
             continue;

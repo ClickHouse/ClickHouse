@@ -61,7 +61,7 @@ def table(self, name, cluster=None, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_Create("1.0"),
+    RQ_SRS_006_RBAC_Table_DistributedTable_Create("1.0"),
 )
 def create(self):
     """Check the RBAC functionality of distributed table with CREATE.
@@ -161,7 +161,7 @@ def create_with_privilege(self, user_name, grant_target_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_Select("1.0"),
+    RQ_SRS_006_RBAC_Table_DistributedTable_Select("1.0"),
 )
 def select(self):
     """Check the RBAC functionality of distributed table with SELECT.
@@ -275,7 +275,7 @@ def select_with_privilege(self, user_name, grant_target_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_Insert("1.0"),
+    RQ_SRS_006_RBAC_Table_DistributedTable_Insert("1.0"),
 )
 def insert(self):
     """Check the RBAC functionality of distributed table with INSERT.
@@ -389,7 +389,7 @@ def insert_with_privilege(self, user_name, grant_target_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_SpecialTables("1.0"),
+    RQ_SRS_006_RBAC_Table_DistributedTable_SpecialTables("1.0"),
 )
 def special_cases(self):
     """Check that the user is able to successfully execute queries on distributed tables using special tables,
@@ -875,7 +875,7 @@ def insert_with_table_on_distributed_table(self, user_name, grant_target_name, n
         " where one replica is on clickhouse1 and another on clickhouse2 accessed from clickhouse1")),
 ])
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_LocalUser("1.0")
+    RQ_SRS_006_RBAC_Table_DistributedTable_LocalUser("1.0")
 )
 def local_user(self, cluster, node=None):
     """Check that a user that exists locally and not present on the remote nodes
@@ -912,7 +912,7 @@ def local_user(self, cluster, node=None):
 
 @TestScenario
 @Requirements(
-    RQ_SRS_006_RBAC_DistributedTable_SameUserDifferentNodesDifferentPrivileges("1.0")
+    RQ_SRS_006_RBAC_Table_DistributedTable_SameUserDifferentNodesDifferentPrivileges("1.0")
 )
 def multiple_node_user(self, node=None):
     """Check that a user that exists on multiple nodes with different privileges on each is able to execute queries

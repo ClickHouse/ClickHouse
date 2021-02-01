@@ -22,7 +22,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -404,11 +403,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (fn->is_window_function && fn->window_definition)
+        if (fn->is_window_function)
         {
-            auto & def = fn->window_definition->as<ASTWindowDefinition &>();
-            fuzzColumnLikeExpressionList(def.partition_by.get());
-            fuzzOrderByList(def.order_by.get());
+            fuzzColumnLikeExpressionList(fn->window_partition_by.get());
+            fuzzOrderByList(fn->window_order_by.get());
         }
 
         fuzz(fn->children);
