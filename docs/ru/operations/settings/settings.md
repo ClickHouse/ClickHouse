@@ -406,20 +406,45 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 Возможные значения:
 
--   `'best_effort'` — включает расширенный парсинг.
+-   `best_effort` — включает расширенный парсинг.
 
-ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+ClickHouse может парсить базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `2018-06-08T01:02:03.000Z`.
 
--   `'basic'` — используется базовый парсер.
+-   `basic` — используется базовый парсер.
 
-ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `'2019-08-20 10:18:56'` или `2019-08-20`.
+ClickHouse может парсить только базовый формат `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `2019-08-20 10:18:56` или `2019-08-20`.
 
-Значение по умолчанию: `'basic'`.
+Значение по умолчанию: `basic`.
 
 См. также:
 
 -   [Тип данных DateTime.](../../sql-reference/data-types/datetime.md)
 -   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
+
+## date_time_output_format {#settings-date_time_output_format}
+
+Позволяет выбрать разные выходные форматы текстового представления даты и времени.
+
+Возможные значения:
+
+-   `simple` - простой выходной формат.
+
+    Выходные дата и время Clickhouse в формате `YYYY-MM-DD hh:mm:ss`. Например, `2019-08-20 10:18:56`. Расчет выполняется в соответствии с часовым поясом типа данных (если он есть) или часовым поясом сервера.
+
+-   `iso` - выходной формат ISO.
+
+    Выходные дата и время Clickhouse в формате [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ`. Например, `2019-08-20T10:18:56Z`. Обратите внимание, что выходные данные отображаются в формате UTC (`Z` означает UTC).
+
+-   `unix_timestamp` - выходной формат Unix.
+
+    Выходные дата и время в формате [Unix](https://en.wikipedia.org/wiki/Unix_time). Например `1566285536`.
+
+Значение по умолчанию: `simple`.
+
+См. также:
+
+-   [Тип данных DateTime](../../sql-reference/data-types/datetime.md)
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 
 ## join_default_strictness {#settings-join_default_strictness}
 
