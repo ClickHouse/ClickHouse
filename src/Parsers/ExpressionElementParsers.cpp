@@ -557,7 +557,15 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
-            node->frame.begin_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+            const Field & value = ast_literal->as<ASTLiteral &>().value;
+            if (!isInt64FieldType(value.getType()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    Field::Types::toString(value.getType()));
+            }
+            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
         }
         else
         {
@@ -603,7 +611,15 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
-                node->frame.end_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+                const Field & value = ast_literal->as<ASTLiteral &>().value;
+                if (!isInt64FieldType(value.getType()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        Field::Types::toString(value.getType()));
+                }
+                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_type = WindowFrame::BoundaryType::Offset;
             }
             else
             {
