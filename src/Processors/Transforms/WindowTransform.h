@@ -101,7 +101,7 @@ public:
 
 private:
     void advancePartitionEnd();
-    void advanceFrameStart();
+    void advanceFrameStart() const;
     void advanceFrameEnd();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
