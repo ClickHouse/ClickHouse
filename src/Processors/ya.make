@@ -122,6 +122,7 @@ SRCS(
     QueryPlan/Optimizations/optimizeTree.cpp
     QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromPreparedSource.cpp
     QueryPlan/ReadNothingStep.cpp
