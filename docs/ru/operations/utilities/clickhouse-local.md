@@ -88,7 +88,7 @@ $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
 
-Ответ:
+Результат:
 
 ``` text
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.

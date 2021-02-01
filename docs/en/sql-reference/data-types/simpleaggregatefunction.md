@@ -32,7 +32,7 @@ The following aggregate functions are supported:
 -   Name of the aggregate function.
 -   Types of the aggregate function arguments.
 
-**Example**
+**Syntax**
 
 ``` sql
 CREATE TABLE t
