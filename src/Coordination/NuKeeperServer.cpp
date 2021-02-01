@@ -31,7 +31,7 @@ NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, in
 
 void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, bool can_become_leader_, int32_t priority)
 {
-    nuraft::srv_config config(server_id_, 0, server_uri_, "", /* follower= */ !can_become_leader_, priority);
+    nuraft::srv_config config(server_id_, 0, server_uri_, "", /* learner = */ !can_become_leader_, priority);
     auto ret1 = raft_instance->add_srv(config);
     auto code = ret1->get_result_code();
     if (code == nuraft::cmd_result_code::TIMEOUT
