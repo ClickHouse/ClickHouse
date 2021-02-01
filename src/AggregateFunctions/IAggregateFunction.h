@@ -513,7 +513,7 @@ private:
     }
 
 protected:
-    void extractColumns(const IColumn ** columns, const IColumn ** aggr_columns) const
+    ssize_t extractColumns(const IColumn ** columns, const IColumn ** aggr_columns, ssize_t if_argument_pos) const
     {
         if (tuple_argument)
         {
@@ -526,6 +526,13 @@ protected:
             for (size_t i = 0; i < args_count; ++i)
                 columns[i] = aggr_columns[i];
         }
+        if (if_argument_pos >= 0)
+        {
+            columns[args_count] = aggr_columns[if_argument_pos];
+            return args_count;
+        }
+        else
+            return -1;
     }
 
     bool tuple_argument;
@@ -551,8 +558,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
 
         Base::addBatch(batch_size, places, place_offset, ex_columns, arena, if_argument_pos);
     }
@@ -560,8 +567,8 @@ public:
     void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
     {
-        const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
 
         Base::addBatchSinglePlace(batch_size, place, ex_columns, arena, if_argument_pos);
     }
@@ -574,8 +581,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
-        const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
 
         Base::addBatchSinglePlaceNotNull(batch_size, place, ex_columns, null_map, arena, if_argument_pos);
     }
@@ -584,8 +591,8 @@ public:
         size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
         const override
     {
-        const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
 
         Base::addBatchSinglePlaceFromInterval(batch_begin, batch_end, place, ex_columns, arena, if_argument_pos);
     }
@@ -595,7 +602,7 @@ public:
         const override
     {
         const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        extractColumns(ex_columns, columns, -1);
 
         Base::addBatchArray(batch_size, places, place_offset, ex_columns, offsets, arena);
     }
@@ -610,7 +617,7 @@ public:
         Arena * arena) const override
     {
         const IColumn * ex_columns[args_count];
-        extractColumns(ex_columns, columns);
+        extractColumns(ex_columns, columns, -1);
 
         Base::addBatchLookupTable8(batch_size, map, place_offset, init, key, ex_columns, arena);
     }
