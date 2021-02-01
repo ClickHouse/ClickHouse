@@ -5,7 +5,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Core/Settings.h>
 
 using namespace DB;
 

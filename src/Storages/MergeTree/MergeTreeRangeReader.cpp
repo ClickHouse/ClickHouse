@@ -414,19 +414,18 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
         end -= 64;
         const auto * pos = end;
         UInt64 val =
-                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
                         zero16)))
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
                         zero16))) << 16u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
                         zero16))) << 32u)
-                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                         zero16))) << 48u);
-        val = ~val;
         if (val == 0)
             count += 64;
         else
@@ -638,7 +637,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         if (!columns.empty())
         {
-            /// If some columns absent in part, then evaluate default values
+            /// If some columns absent in part, then evaulate default values
             if (should_evaluate_missing_defaults)
             {
                 auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
@@ -682,7 +681,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             merge_tree_reader->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults,
                                                   read_result.num_rows);
 
-            /// If some columns absent in part, then evaluate default values
+            /// If some columns absent in part, then evaulate default values
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults({}, read_result.columns);
 

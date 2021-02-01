@@ -52,7 +52,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr res;
         if (!((res = executeType<UInt8>(arguments))
@@ -91,7 +91,7 @@ private:
     }
 
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & columns) const
+    ColumnPtr executeType(ColumnsWithTypeAndName & columns) const
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get()))
         {

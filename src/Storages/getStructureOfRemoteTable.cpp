@@ -71,7 +71,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, *new_context);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(table_id);

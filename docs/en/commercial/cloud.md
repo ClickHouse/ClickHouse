@@ -20,23 +20,12 @@ toc_title: Cloud
 
 ## Altinity.Cloud {#altinity.cloud}
 
-[Altinity.Cloud](https://altinity.com/cloud-database/) is a fully managed ClickHouse-as-a-Service for the Amazon public cloud.
-
+[Altinity.Cloud](https://altinity.com/cloud-database/) is a fully managed ClickHouse-as-a-Service for the Amazon public cloud. 
 -   Fast deployment of ClickHouse clusters on Amazon resources
 -   Easy scale-out/scale-in as well as vertical scaling of nodes
 -   Isolated per-tenant VPCs with public endpoint or VPC peering
 -   Configurable storage types and volume configurations
 -   Cross-AZ scaling for performance and high availability
 -   Built-in monitoring and SQL query editor
-
-## Tencent Cloud {#tencent-cloud}
-
-[Tencent Managed Service for ClickHouse](https://cloud.tencent.com/product/cdwch) provides the following key features:
-
--   Easy to deploy and manage on Tencent Cloud
--   Highly scalable and available
--   Integrated monitor and alert service
--   High security with isolated per cluster VPCs
--   On-demand pricing with no upfront costs or long-term commitments
 
 {## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}

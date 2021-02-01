@@ -153,7 +153,7 @@ CREATE TABLE table_name
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_name>
+<default_replica_name>{replica}</default_replica_path>
 ```
 
 В этом случае можно опустить аргументы при создании таблиц:
@@ -245,10 +245,5 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ## Восстановление в случае потери или повреждения метаданных на ZooKeeper кластере {#vosstanovlenie-v-sluchae-poteri-ili-povrezhdeniia-metadannykh-na-zookeeper-klastere}
 
 Если данные в ZooKeeper оказались утеряны или повреждены, то вы можете сохранить данные, переместив их в нереплицируемую таблицу, как описано в пункте выше.
-
-**Смотрите также**
-
--   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
--   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replication/) <!--hide-->
