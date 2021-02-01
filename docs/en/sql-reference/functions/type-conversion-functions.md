@@ -459,27 +459,47 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts ‘x’ to the ‘t’ data type. Always returns nullable type and returns NULL 
+Converts input value to the specified data type. Always returns nullable type and returns NULL 
 if the casted value is not representable in the target type.
 
-Example:
+**Syntax**
+
+```sql
+accurateCastOrNull(x, T)
+
+```
+
+**Parameters**
+
+-   `x` — Input value.
+-   `T` — Defines the data type of returned values.
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT
-    accurateCastOrNull(-1, 'UInt8') as uint8,
-    accurateCastOrNull(128, 'Int8') as int8,
-    accurateCastOrNull('Test', 'FixedString(2)') as fixed_string
+    cast(-1, 'UInt8') as uint8,
+    cast(128, 'Int8') as int8,
+    cast('Test', 'FixedString(2)') as fixed_string;
 ```
+
+Result:
 
 ``` text
 ┌─uint8─┬─int8─┬─fixed_string─┐
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
-└───────┴──────┴──────────────┘┘
+└───────┴──────┴──────────────┘
 ```
 
+Query:
+
 ``` sql
-SELECT toTypeName(accurateCastOrNull(5, 'UInt8'))
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 ```
+
+Result:
 
 ``` text
 ┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
