@@ -1549,7 +1549,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (!out_projection)
             out_projection = createProjection(pipe.getHeader());
 
-        QueryPlanPtr plan = createPlanFromPipe(std::move(pipe), "with final");
+        QueryPlanPtr plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
 
         auto expression_step = std::make_unique<ExpressionStep>(
             plan->getCurrentDataStream(),
