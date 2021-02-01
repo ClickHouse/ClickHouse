@@ -82,7 +82,6 @@ public:
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
-    String http_referer;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.

@@ -41,11 +41,7 @@ select * from (select * from numbers(5) order by rand()) order by count() over (
 -- Aggregate functions as window function arguments. This query is semantically
 -- the same as the above one, only we replace `number` with
 -- `any(number) group by number` and so on.
-select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc) desc;
--- some more simple cases w/aggregate functions
-select sum(any(number)) over () from numbers(1);
-select sum(any(number) + 1) over () from numbers(1);
-select sum(any(number + 1)) over () from numbers(1);
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number) + 1) over (order by min(number) desc) desc;
 
 -- different windows
 -- an explain test would also be helpful, but it's too immature now and I don't
@@ -74,21 +70,3 @@ select distinct any(number) over () from numbers(2);
 -- Various kinds of aliases are properly substituted into various parts of window
 -- function definition.
 with number + 1 as x select intDiv(number, 3) as y, sum(x + y) over (partition by y order by x) from numbers(7);
-
--- WINDOW clause
-select 1 window w1 as ();
-
-select sum(number) over w1, sum(number) over w2
-from numbers(10)
-window
-    w1 as (),
-    w2 as (partition by intDiv(number, 3))
-;
-
-select
-    sum(number) over w1,
-    sum(number) over (partition by intDiv(number, 3))
-from numbers(10)
-window
-    w1 as (partition by intDiv(number, 3))
-;

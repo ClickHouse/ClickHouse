@@ -50,9 +50,8 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code)
     ErrorCodes::increment(code);
 }
 
-Exception::Exception(const std::string & msg, int code, bool remote_)
+Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
-    , remote(remote_)
 {
     handle_error_code(msg, code);
 }

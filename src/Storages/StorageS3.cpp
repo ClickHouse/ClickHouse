@@ -196,7 +196,6 @@ StorageS3::StorageS3(
     const String & format_name_,
     UInt64 min_upload_part_size_,
     UInt64 max_single_part_upload_size_,
-    UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_,
@@ -221,12 +220,8 @@ StorageS3::StorageS3(
     if (access_key_id_.empty())
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
-    Aws::Client::ClientConfiguration client_configuration;
-    client_configuration.endpointOverride = uri_.endpoint;
-    client_configuration.maxConnections = max_connections_;
-
     client = S3::ClientFactory::instance().create(
-        client_configuration,
+        uri_.endpoint,
         uri_.is_virtual_hosted_style,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
@@ -379,7 +374,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
         UInt64 max_single_part_upload_size = args.local_context.getSettingsRef().s3_max_single_part_upload_size;
-        UInt64 max_connections = args.local_context.getSettingsRef().s3_max_connections;
 
         String compression_method;
         String format_name;
@@ -402,7 +396,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             format_name,
             min_upload_part_size,
             max_single_part_upload_size,
-            max_connections,
             args.columns,
             args.constraints,
             args.context,

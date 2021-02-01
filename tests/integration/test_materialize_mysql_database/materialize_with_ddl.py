@@ -1,11 +1,13 @@
 import time
 
 import pymysql.cursors
+import subprocess
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.network import PartitionManager
 import pytest
 from helpers.client import QueryRuntimeException
-from helpers.cluster import get_docker_compose_path, run_and_check
+from helpers.cluster import get_docker_compose_path
 import random
 
 import threading
@@ -682,7 +684,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
         t = threading.Thread(target=insert, args=(10000,))
         t.start()
 
-        run_and_check(
+        subprocess.check_call(
             ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'stop'])
     finally:
         with pytest.raises(QueryRuntimeException) as execption:
@@ -690,7 +692,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
             clickhouse_node.query("SELECT count() FROM kill_mysql_while_insert.test")
         assert "Master maybe lost." in str(execption.value)
 
-        run_and_check(
+        subprocess.check_call(
             ['docker-compose', '-p', mysql_node.project_name, '-f', mysql_node.docker_compose, 'start'])
         mysql_node.wait_mysql_to_start(120)
 

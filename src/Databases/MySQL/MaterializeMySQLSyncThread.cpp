@@ -95,22 +95,19 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
          "(Variable_name = 'log_bin' AND upper(Value) = 'ON') "
          "OR (Variable_name = 'binlog_format' AND upper(Value) = 'ROW') "
          "OR (Variable_name = 'binlog_row_image' AND upper(Value) = 'FULL') "
-         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
-         "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
+         "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD');";
 
     MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
 
     Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 5)
+    if (!variables_block || variables_block.rows() != 4)
     {
         std::unordered_map<String, String> variables_error_message{
             {"log_bin", "log_bin = 'ON'"},
             {"binlog_format", "binlog_format='ROW'"},
             {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
-            {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
+            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"}
         };
-
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
