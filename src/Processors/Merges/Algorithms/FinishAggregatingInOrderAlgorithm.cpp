@@ -12,6 +12,9 @@ FinishAggregatingInOrderAlgorithm::State::State(
     : num_rows(chunk.getNumRows())
     , all_columns(chunk.getColumns())
 {
+    if (!chunk)
+        return;
+
     sorting_columns.reserve(desc.size());
     for (const auto & column_desc : desc)
         sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
