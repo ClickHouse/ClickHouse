@@ -63,13 +63,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         const Settings & current_settings = context.getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-        bool use_hedged_requests = current_settings.use_hedged_requests;
-
-#if !defined(OS_LINUX)
-        use_hedged_requests = false;
-#endif
-
-        if (use_hedged_requests)
+#if defined(OS_LINUX)
+        if (current_settings.use_hedged_requests)
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
             if (main_table)
@@ -77,21 +72,20 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
         }
-        else
-        {
-            std::vector<IConnectionPool::Entry> connection_entries;
-            if (main_table)
-            {
-                auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName());
-                connection_entries.reserve(try_results.size());
-                for (auto & try_result : try_results)
-                    connection_entries.emplace_back(std::move(try_result.entry));
-            }
-            else
-                connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
+#endif
 
-            return std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        std::vector<IConnectionPool::Entry> connection_entries;
+        if (main_table)
+        {
+            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName());
+            connection_entries.reserve(try_results.size());
+            for (auto & try_result : try_results)
+                connection_entries.emplace_back(std::move(try_result.entry));
         }
+        else
+            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
+
+        return std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
     };
 }
 
