@@ -8,13 +8,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int DATABASE_REPLICATION_FAILED;
 }
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, const Context & context_)
     : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
-    /// Pool size must be 1 (to avoid reordering of log entries)
+    /// Pool size must be 1 to avoid reordering of log entries.
+    /// TODO Make a dependency graph of DDL queries. It will allow to execute independent entries in parallel.
+    /// We also need similar graph to load tables on server startup in order of topsort.
 }
 
 void DatabaseReplicatedDDLWorker::initializeMainThread()
@@ -72,8 +75,51 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     return node_path;
 }
 
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry)
+{
+    auto zookeeper = getAndSetZooKeeper();
+    // TODO do not enqueue query if we have big replication lag
+
+    String entry_path = enqueueQuery(entry);
+    auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper);
+    String entry_name = entry_path.substr(entry_path.rfind('/') + 1);
+    auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
+    task->entry = entry;
+    task->parseQueryFromEntry(context);
+    assert(!task->entry.query.empty());
+    assert(!zookeeper->exists(task->getFinishedNodePath()));
+    task->is_initial_query = true;
+
+    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
+    {
+        std::unique_lock lock{mutex};
+        wait_current_task_change.wait(lock, [&]() { assert(current_task <= entry_name); return zookeeper->expired() || current_task == entry_name; });
+    }
+
+    if (zookeeper->expired())
+        throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired, try again");
+
+    processTask(*task);
+
+    if (!task->was_executed)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} was executed, but was not committed: code {}: {}",
+                        task->execution_status.code, task->execution_status.message);
+    }
+
+    try_node->reset();
+
+    return entry_path;
+}
+
 DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
+    {
+        std::lock_guard lock{mutex};
+        current_task = entry_name;
+        wait_current_task_change.notify_all();
+    }
+
     UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
 
@@ -91,19 +137,24 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (zookeeper->tryGet(entry_path + "/try", initiator_name, nullptr, wait_committed_or_failed))
     {
-        task->we_are_initiator = initiator_name == task->host_id_str;
+        task->is_initial_query = initiator_name == task->host_id_str;
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
         //FIXME add some timeouts
-        if (!task->we_are_initiator)
-        {
-            LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
-            wait_committed_or_failed->wait();
-        }
+        LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
+        wait_committed_or_failed->wait();
     }
 
-    if (!task->we_are_initiator && !zookeeper->exists(entry_path + "/committed"))
+    if (!zookeeper->exists(entry_path + "/committed"))
     {
         out_reason = "Entry " + entry_name + " hasn't been committed";
+        return {};
+    }
+
+    if (task->is_initial_query)
+    {
+        assert(!zookeeper->exists(entry_path + "/try"));
+        assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == "0"));
+        out_reason = "Entry " + entry_name + " has been executed as initial query";
         return {};
     }
 
@@ -111,7 +162,6 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     if (!zookeeper->tryGet(entry_path, node_data))
     {
         LOG_ERROR(log, "Cannot get log entry {}", entry_path);
-        database->onUnexpectedLogEntry(entry_name, zookeeper);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "should be unreachable");
     }
 

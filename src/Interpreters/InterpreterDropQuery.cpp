@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DICTIONARY;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -119,11 +120,27 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
     if (database && table)
     {
-        if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
+        if (query.as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
+
+        /// Prevents recursive drop from drop database query. The original query must specify a table.
+        bool is_drop_or_detach_database = query.table.empty();
+        bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
+                                       context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
+                                       !is_drop_or_detach_database;
+        if (is_replicated_ddl_query)
+        {
+            if (query.kind == ASTDropQuery::Kind::Detach && !query.permanently)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
+                                                             "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA");
+
+            ddl_guard.reset();
+            table.reset();
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query.clone());
+        }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
@@ -134,9 +151,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-
-            if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
 
             if (query.permanently)
             {
@@ -157,10 +171,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
-            else
-                table->truncate(query_ptr, metadata_snapshot, context, table_lock);
+            table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -173,11 +184,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-            /// Prevents recursive drop from drop database query. The original query must specify a table.
-            if (typeid_cast<DatabaseReplicated *>(database.get()) && !query_ptr->as<ASTDropQuery &>().table.empty() && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
-                return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
-            else
-                database->dropTable(context, table_id.table_name, query.no_delay);
+            database->dropTable(context, table_id.table_name, query.no_delay);
         }
 
         db = database;

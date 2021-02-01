@@ -1,7 +1,6 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
 
-
 namespace DB
 {
 
@@ -14,6 +13,8 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry) override;
 
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry);
+
 private:
     void initializeMainThread() override;
     void initializeReplication();
@@ -21,7 +22,9 @@ private:
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
-
+    mutable std::mutex mutex;
+    std::condition_variable wait_current_task_change;
+    String current_task;
 };
 
 }

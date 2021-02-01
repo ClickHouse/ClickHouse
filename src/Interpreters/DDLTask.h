@@ -77,6 +77,7 @@ struct DDLTaskBase
     String host_id_str;
     ASTPtr query;
 
+    bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
 
@@ -136,7 +137,6 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     static UInt32 getLogEntryNumber(const String & log_entry_name);
 
     DatabaseReplicated * database;
-    bool we_are_initiator = false;
 };
 
 
