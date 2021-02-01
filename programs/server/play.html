@@ -1,7 +1,6 @@
 <html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <title>ClickHouse Query</title>
 
     <!-- Code Style:
@@ -22,10 +21,25 @@
 
     <!-- Development Roadmap:
 
-    1. Support readonly servers.
+    1. Add indication that the query was sent and when the query has been finished.
+    Do not use any animated spinners. Just a text or check mark.
+    Eliminate race conditions (results from the previous query should be ignored on arrival, the previous request should be cancelled).
+
+    2. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
     Also it can provide visual indication that credentials are correct.
+
+    3. Add history in localstorage. Integrate with history API.
+    There can be a counter in localstorage, that will be appended to location #fragment.
+    The 'back', 'forward' buttons in browser should work.
+    Also there should be UI element to list all the queries from history and select from the list.
+
+    4. Trivial sharing capabilities.
+    Sharing is only possible when system.query_log is accessible. Read the X-ClickHouse-QueryId from the response.
+    Share button will: - emit SYSTEM FLUSH LOGS if not readonly; - find the query in the query_log;
+    - generate an URL with the query id and: server address if not equal to the URL's host; user name if not default;
+    indication that password should be entered in case of non-empty password.
 
     -->
 
@@ -259,22 +273,6 @@
         {
             color: var(--null-color);
         }
-
-        #hourglass
-        {
-            display: none;
-            padding-left: 1rem;
-            font-size: 110%;
-            color: #888;
-        }
-
-        #check-mark
-        {
-            display: none;
-            padding-left: 1rem;
-            font-size: 110%;
-            color: #080;
-        }
     </style>
 </head>
 
@@ -287,9 +285,7 @@
     </div>
     <div id="run_div">
         <button class="shadow" id="run">Run</button>
-        <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
-        <span id="hourglass">⧗</span>
-        <span id="check-mark">✔</span>
+        <span class="hint">&nbsp;(Ctrl+Enter)</span>
         <span id="stats"></span>
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
@@ -303,120 +299,50 @@
 
 <script type="text/javascript">
 
-    /// Incremental request number. When response is received,
-    /// if it's request number does not equal to the current request number, response will be ignored.
-    /// This is to avoid race conditions.
-    var request_num = 0;
-
-    /// Save query in history only if it is different.
-    var previous_query = '';
-
     /// Substitute the address of the server where the page is served.
     if (location.protocol != 'file:') {
         document.getElementById('url').value = location.origin;
     }
 
-    /// Substitute user name if it's specified in the query string
-    var user_from_url = (new URL(window.location)).searchParams.get('user');
-    if (user_from_url) {
-        document.getElementById('user').value = user_from_url;
-    }
-
-    function postImpl(posted_request_num, query)
+    function post()
     {
+        /// TODO: Avoid race condition on subsequent requests when responses may come out of order.
         /// TODO: Check if URL already contains query string (append parameters).
-
-        var user = document.getElementById('user').value;
-        var password = document.getElementById('password').value;
 
         var url = document.getElementById('url').value +
             /// Ask server to allow cross-domain requests.
             '?add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
+            '&user=' + encodeURIComponent(document.getElementById('user').value) +
+            '&password=' + encodeURIComponent(document.getElementById('password').value) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
+        var query = document.getElementById('query').value;
         var xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
+        xhr.send(query);
 
         xhr.onreadystatechange = function()
         {
-            if (posted_request_num != request_num) {
-                return;
-            } else if (this.readyState === XMLHttpRequest.DONE) {
-                renderResponse(this.status, this.response);
-
-                /// The query is saved in browser history (in state JSON object)
-                /// as well as in URL fragment identifier.
-                if (query != previous_query) {
-                    var state = {
-                        query: query,
-                        status: this.status,
-                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
-                    };
-                    var title = "ClickHouse Query: " + query;
-                    var url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
-                    if (previous_query == '') {
-                        history.replaceState(state, title, url);
+            if (this.readyState === XMLHttpRequest.DONE) {
+                if (this.status === 200) {
+                    var json;
+                    try { json = JSON.parse(this.response); } catch (e) {}
+                    if (json !== undefined && json.statistics !== undefined) {
+                        renderResult(json);
                     } else {
-                        history.pushState(state, title, url);
+                        renderUnparsedResult(this.response);
                     }
-                    document.title = title;
-                    previous_query = query;
+                } else {
+                    /// TODO: Proper rendering of network errors.
+                    renderError(this.response);
                 }
             } else {
                 //console.log(this);
             }
         }
-
-        document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline';
-
-        xhr.send(query);
-    }
-
-    function renderResponse(status, response) {
-        document.getElementById('hourglass').style.display = 'none';
-
-        if (status === 200) {
-            var json;
-            try { json = JSON.parse(response); } catch (e) {}
-            if (json !== undefined && json.statistics !== undefined) {
-                renderResult(json);
-            } else {
-                renderUnparsedResult(response);
-            }
-            document.getElementById('check-mark').style.display = 'inline';
-        } else {
-            /// TODO: Proper rendering of network errors.
-            renderError(response);
-        }
-    }
-
-    window.onpopstate = function(event) {
-        if (!event.state) {
-            return;
-        }
-        document.getElementById('query').value = event.state.query;
-        if (!event.state.response) {
-            clear();
-            return;
-        }
-        renderResponse(event.state.status, event.state.response);
-    };
-
-    if (window.location.hash) {
-        document.getElementById('query').value = window.atob(window.location.hash.substr(1));
-    }
-
-    function post()
-    {
-        ++request_num;
-        var query = document.getElementById('query').value;
-        postImpl(request_num, query);
     }
 
     document.getElementById('run').onclick = function()
@@ -424,10 +350,10 @@
         post();
     }
 
-    document.onkeydown = function(event)
+    document.getElementById('query').onkeypress = function(event)
     {
         /// Firefox has code 13 for Enter and Chromium has code 10.
-        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+        if (event.ctrlKey && (event.charCode == 13 || event.charCode == 10)) {
             post();
         }
     }
@@ -446,9 +372,6 @@
         document.getElementById('error').style.display = 'none';
 
         document.getElementById('stats').innerText = '';
-
-        document.getElementById('hourglass').style.display = 'none';
-        document.getElementById('check-mark').style.display = 'none';
     }
 
     function renderResult(response)
@@ -520,7 +443,7 @@
     function renderError(response)
     {
         clear();
-        document.getElementById('error').innerText = response ? response : "No response.";
+        document.getElementById('error').innerText = response;
         document.getElementById('error').style.display = 'block';
     }
 
@@ -534,23 +457,6 @@
     var theme = window.localStorage.getItem('theme');
     if (theme) {
         setColorTheme(theme);
-    } else {
-        /// Obtain system-level user preference
-        var media_query_list = window.matchMedia('prefers-color-scheme: dark')
-
-        if (media_query_list.matches) {
-            /// Set without saving to localstorage
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
-
-        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-        media_query_list.addEventListener('change', function(e) {
-            if (e.matches) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
-        });
     }
 
     document.getElementById('toggle-light').onclick = function()

@@ -120,7 +120,7 @@ def test_python_client(server_address):
         cur.execute('select name from tables;')
 
     assert exc_info.value.args == (
-        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist\nSSL connection has been closed unexpectedly\n",)
+        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist.\nSSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(host=server_address, port=server_port, user='default', password='123', database='')
     cur = ch.cursor()

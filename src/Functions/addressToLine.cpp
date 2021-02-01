@@ -106,8 +106,7 @@ private:
 
     StringRef impl(uintptr_t addr) const
     {
-        auto symbol_index_ptr = SymbolIndex::instance();
-        const SymbolIndex & symbol_index = *symbol_index_ptr;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {

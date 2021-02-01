@@ -10,11 +10,6 @@
                 <max_execution_time>
                     <max>10</max>
                 </max_execution_time>
-
-                <!-- Not ready for production -->
-                <compile_expressions>
-                    <readonly />
-                </compile_expressions>
             </constraints>
         </default>
     </profiles>

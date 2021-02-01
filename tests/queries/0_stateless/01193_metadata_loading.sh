@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 # it is the worst way of making performance test, nevertheless it can detect significant slowdown and some other issues, that usually found by stress test
@@ -50,4 +49,4 @@ $CLICKHOUSE_CLIENT -q "SELECT if(quantile(0.5)(query_duration_ms) < $max_time_ms
 
 $CLICKHOUSE_CLIENT -q "SELECT count() * $count_multiplier, i, d, s, n.i, n.f FROM $db.table_merge GROUP BY i, d, s, n.i, n.f ORDER BY i"
 
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $db"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $db"

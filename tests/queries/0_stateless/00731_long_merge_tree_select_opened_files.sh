@@ -2,7 +2,6 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1"

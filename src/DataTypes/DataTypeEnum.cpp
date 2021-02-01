@@ -195,7 +195,7 @@ void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_nu
 template <typename Type>
 void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeXMLString(getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>

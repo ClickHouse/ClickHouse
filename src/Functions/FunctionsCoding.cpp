@@ -32,8 +32,6 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionIPv6CIDRToRange>();
     factory.registerFunction<FunctionIPv4CIDRToRange>();
-    factory.registerFunction<FunctionIsIPv4String>();
-    factory.registerFunction<FunctionIsIPv6String>();
 }
 
 }

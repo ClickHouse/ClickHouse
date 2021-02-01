@@ -247,15 +247,6 @@ static void explainStep(
         step.describeActions(settings);
 }
 
-std::string debugExplainStep(const IQueryPlanStep & step)
-{
-    WriteBufferFromOwnString out;
-    IQueryPlanStep::FormatSettings settings{.out = out};
-    QueryPlan::ExplainPlanOptions options{.actions = true};
-    explainStep(step, settings, options);
-    return out.str();
-}
-
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();
@@ -493,39 +484,6 @@ static void tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node * 
                     : filter_step->updateInputStream(array_join_step->getOutputStream(), true);
 }
 
-static bool tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Node * child_node)
-{
-    auto & parent = parent_node->step;
-    auto & child = child_node->step;
-
-    /// TODO: FilterStep
-    auto * parent_expr = typeid_cast<ExpressionStep *>(parent.get());
-    auto * child_expr = typeid_cast<ExpressionStep *>(child.get());
-
-    if (parent_expr && child_expr)
-    {
-        const auto & child_actions = child_expr->getExpression();
-        const auto & parent_actions = parent_expr->getExpression();
-
-        /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
-        /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
-        /// Such a query will return two zeroes if we combine actions together.
-        if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
-            return false;
-
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
-
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
-        expr->setStepDescription(parent_expr->getStepDescription() + " + " + child_expr->getStepDescription());
-
-        parent_node->step = std::move(expr);
-        parent_node->children.swap(child_node->children);
-        return true;
-    }
-
-    return false;
-}
-
 void QueryPlan::optimize()
 {
     struct Frame
@@ -545,11 +503,7 @@ void QueryPlan::optimize()
         {
             /// First entrance, try push down.
             if (frame.node->children.size() == 1)
-            {
                 tryPushDownLimit(frame.node->step, frame.node->children.front());
-
-                while (tryMergeExpressions(frame.node, frame.node->children.front()));
-            }
         }
 
         if (frame.next_child < frame.node->children.size())

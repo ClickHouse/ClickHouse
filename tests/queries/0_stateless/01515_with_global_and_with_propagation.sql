@@ -1,4 +1,4 @@
-SET enable_global_with_statement = 1;
+SET enable_global_with_statement = true;
 
 WITH 1 AS x SELECT x;
 WITH 1 AS x SELECT * FROM (SELECT x);

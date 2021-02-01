@@ -5,9 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Throttler.h>
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -18,8 +16,8 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -33,7 +31,6 @@ namespace DB
 
 class ClientInfo;
 class Pipe;
-struct Settings;
 
 /// Struct which represents data we are going to send for external table.
 struct ExternalTableData
@@ -172,8 +169,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
+    Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -228,7 +224,7 @@ private:
     String server_display_name;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
     std::optional<UInt64> last_input_packet_type;
 

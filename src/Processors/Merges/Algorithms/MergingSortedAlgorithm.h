@@ -18,9 +18,9 @@ public:
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size,
-        UInt64 limit_ = 0,
-        WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool use_average_block_sizes = false);
+        UInt64 limit_,
+        WriteBuffer * out_row_sources_buf_,
+        bool use_average_block_sizes);
 
     void addInput();
 
