@@ -33,7 +33,6 @@ public:
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
-    size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override

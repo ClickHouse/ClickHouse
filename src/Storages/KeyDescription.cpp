@@ -27,7 +27,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , additional_column(other.additional_column)
 {
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 }
 
 KeyDescription & KeyDescription::operator=(const KeyDescription & other)
@@ -47,7 +47,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
 
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
     else
         expression.reset();
 

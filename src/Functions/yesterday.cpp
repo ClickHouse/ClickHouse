@@ -18,7 +18,7 @@ public:
 
     String getName() const override { return "yesterday"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr execute(ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) override
     {
         return DataTypeDate().createColumnConst(input_rows_count, day_value);
     }

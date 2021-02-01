@@ -171,7 +171,7 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
 
         skipWhitespaceIfAny(in);
         if (in.eof())
-            throw ParsingException("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception("Unexpected end of stream while parsing JSONCompactEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
         if (file_column + 1 != column_indexes_for_input_fields.size())
         {
             assertChar(',', in);
@@ -225,7 +225,7 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
 }

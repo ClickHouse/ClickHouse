@@ -145,7 +145,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const auto * starts = checkAndGetColumn<ColumnUInt32>(arguments[0].column.get());
         const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(arguments[0].column.get());

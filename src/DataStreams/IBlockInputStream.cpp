@@ -4,8 +4,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -360,7 +359,7 @@ Block IBlockInputStream::getExtremes()
 
 String IBlockInputStream::getTreeID() const
 {
-    WriteBufferFromOwnString s;
+    std::stringstream s;
     s << getName();
 
     if (!children.empty())
@@ -399,13 +398,13 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 }
 
 
-void IBlockInputStream::dumpTree(WriteBuffer & ostr, size_t indent, size_t multiplier) const
+void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier) const
 {
     ostr << String(indent, ' ') << getName();
     if (multiplier > 1)
         ostr << " × " << multiplier;
     //ostr << ": " << getHeader().dumpStructure();
-    ostr << '\n';
+    ostr << std::endl;
     ++indent;
 
     /// If the subtree is repeated several times, then we output it once with the multiplier.

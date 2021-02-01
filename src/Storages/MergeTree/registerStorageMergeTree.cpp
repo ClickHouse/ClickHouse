@@ -234,6 +234,25 @@ If you use the Replicated version of engines, see https://clickhouse.tech/docs/e
 }
 
 
+static void randomizePartTypeSettings(const std::unique_ptr<MergeTreeSettings> & storage_settings)
+{
+    static constexpr auto MAX_THRESHOLD_FOR_ROWS = 100000;
+    static constexpr auto MAX_THRESHOLD_FOR_BYTES = 1024 * 1024 * 10;
+
+    /// Create all parts in wide format with probability 1/3.
+    if (thread_local_rng() % 3 == 0)
+    {
+        storage_settings->min_rows_for_wide_part = 0;
+        storage_settings->min_bytes_for_wide_part = 0;
+    }
+    else
+    {
+        storage_settings->min_rows_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_ROWS}(thread_local_rng);
+        storage_settings->min_bytes_for_wide_part = std::uniform_int_distribution{0, MAX_THRESHOLD_FOR_BYTES}(thread_local_rng);
+    }
+}
+
+
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     /** [Replicated][|Summing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
@@ -718,13 +737,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
     }
 
-    DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    /// Allow to randomize part type for tests to cover more cases.
+    /// But if settings were set explicitly restrict it.
+    if (storage_settings->randomize_part_type
+        && !storage_settings->min_rows_for_wide_part.changed
+        && !storage_settings->min_bytes_for_wide_part.changed)
     {
-        for (size_t i = 0; i < data_types.size(); ++i)
-            if (isFloat(data_types[i]))
-                throw Exception(
-                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+        randomizePartTypeSettings(storage_settings);
+        LOG_INFO(&Poco::Logger::get(args.table_id.getNameForLogs() + " (registerStorageMergeTree)"),
+            "Applied setting 'randomize_part_type'. "
+            "Setting 'min_rows_for_wide_part' changed to {}. "
+            "Setting 'min_bytes_for_wide_part' changed to {}.",
+            storage_settings->min_rows_for_wide_part, storage_settings->min_bytes_for_wide_part);
     }
 
     if (arg_num != arg_cnt)
@@ -765,7 +789,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_skipping_indices = true,
         .supports_sort_order = true,
         .supports_ttl = true,
-        .supports_parallel_insert = true,
     };
 
     factory.registerStorage("MergeTree", create, features);

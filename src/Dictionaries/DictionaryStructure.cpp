@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <numeric>
@@ -231,7 +230,7 @@ std::string DictionaryStructure::getKeyDescription() const
     if (id)
         return "UInt64";
 
-    WriteBufferFromOwnString out;
+    std::ostringstream out;
 
     out << '(';
 
@@ -344,9 +343,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             }
             catch (Exception & e)
             {
-                String dictionary_name = config.getString(".dictionary.name", "");
-                e.addMessage("While parsing null_value for attribute with name " + name
-                    + " in dictionary " + dictionary_name);
+                e.addMessage("error parsing null_value");
                 throw;
             }
         }
