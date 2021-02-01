@@ -2,8 +2,6 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -16,8 +14,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/StorageMaterializedView.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -31,7 +27,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     bool no_destination)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , log(&Poco::Logger::get("PushingToViewsBlockOutputStream"))
     , context(context_)
     , query_ptr(query_ptr_)
 {
@@ -146,8 +141,6 @@ Block PushingToViewsBlockOutputStream::getHeader() const
 
 void PushingToViewsBlockOutputStream::write(const Block & block)
 {
-    Stopwatch watch;
-
     /** Throw an exception if the sizes of arrays - elements of nested data structures doesn't match.
       * We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
       * NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
@@ -201,14 +194,6 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             if (views[view_num].exception)
                 std::rethrow_exception(views[view_num].exception);
         }
-    }
-
-    UInt64 milliseconds = watch.elapsedMilliseconds();
-    if (views.size() > 1)
-    {
-        LOG_TRACE(log, "Pushing from {} to {} views took {} ms.",
-            storage->getStorageID().getNameForLogs(), views.size(),
-            milliseconds);
     }
 }
 
@@ -316,7 +301,6 @@ void PushingToViewsBlockOutputStream::flush()
 
 void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
 {
-    Stopwatch watch;
     auto & view = views[view_num];
 
     try
@@ -378,12 +362,6 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     {
         view.exception = std::current_exception();
     }
-
-    UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
-        storage->getStorageID().getNameForLogs(),
-        view.table_id.getNameForLogs(),
-        milliseconds);
 }
 
 }

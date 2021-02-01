@@ -186,22 +186,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
-        "globalIn",
-        [] (RPNElement & out, const Field &)
-        {
-            out.function = RPNElement::FUNCTION_IN_SET;
-            return true;
-        }
-    },
-    {
-        "globalNotIn",
-        [] (RPNElement & out, const Field &)
-        {
-            out.function = RPNElement::FUNCTION_NOT_IN_SET;
-            return true;
-        }
-    },
-    {
         "empty",
         [] (RPNElement & out, const Field & value)
         {
@@ -444,7 +428,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    String column_name = expr->getColumnNameWithoutAlias();
+    String column_name = expr->getColumnName();
 
     if (const auto * lit = expr->as<ASTLiteral>())
     {
@@ -607,7 +591,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (strict)
         return false;
 
-    String expr_name = node->getColumnNameWithoutAlias();
+    String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -675,7 +659,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (strict)
         return false;
 
-    String expr_name = ast->getColumnNameWithoutAlias();
+    String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -1011,7 +995,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
-    String name = node->getColumnNameWithoutAlias();
+    String name = node->getColumnName();
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -1023,9 +1007,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (!func->arguments)
-            return false;
-
         const auto & args = func->arguments->children;
         if (args.size() > 2 || args.empty())
             return false;
@@ -1212,7 +1193,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
                         FunctionOverloadResolverPtr func_builder_cast
-                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver<CastType::nonAccurate>::createImpl(false));
+                                = std::make_shared<FunctionOverloadResolverAdaptor>(CastOverloadResolver::createImpl(false));
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.

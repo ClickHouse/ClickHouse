@@ -1862,56 +1862,6 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
     assert result == 1, 'Messages from RabbitMQ get duplicated!'
 
 
-@pytest.mark.timeout(420)
-def test_rabbitmq_no_connection_at_startup(rabbitmq_cluster):
-    # no connection when table is initialized
-    rabbitmq_cluster.pause_container('rabbitmq1')
-    instance.query('''
-        CREATE TABLE test.cs (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'cs',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_num_consumers = '5',
-                     rabbitmq_row_delimiter = '\\n';
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.cs;
-    ''')
-    time.sleep(5)
-    rabbitmq_cluster.unpause_container('rabbitmq1')
-    # need to make sure rabbit table made all rabbit setup
-    time.sleep(10)
-
-    messages_num = 1000
-    credentials = pika.PlainCredentials('root', 'clickhouse')
-    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    for i in range(messages_num):
-        message = json.dumps({'key': i, 'value': i})
-        channel.basic_publish(exchange='cs', routing_key='', body=message,
-                properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)))
-    connection.close()
-
-    while True:
-        result = instance.query('SELECT count() FROM test.view')
-        time.sleep(1)
-        if int(result) == messages_num:
-            break
-
-    instance.query('''
-        DROP TABLE test.consumer;
-        DROP TABLE test.cs;
-    ''')
-
-    assert int(result) == messages_num, 'ClickHouse lost some messages: {}'.format(result)
-
-
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
