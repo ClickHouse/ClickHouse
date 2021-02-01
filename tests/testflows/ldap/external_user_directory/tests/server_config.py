@@ -148,7 +148,7 @@ def invalid_enable_tls_value(self, timeout=60):
     servers = {"openldap1": {"host": "openldap1", "port": "389", "enable_tls": "foo",
         "auth_dn_prefix": "cn=", "auth_dn_suffix": ",ou=users,dc=company,dc=com"
     }}
-    invalid_server_config(servers, message=message, tail=18, timeout=timeout)
+    invalid_server_config(servers, message=message, tail=17, timeout=timeout)
 
 @TestScenario
 @Requirements(

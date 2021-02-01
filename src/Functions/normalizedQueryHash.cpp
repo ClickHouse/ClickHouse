@@ -24,7 +24,6 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool keep_names>
 struct Impl
 {
     static void vector(
@@ -39,18 +38,17 @@ struct Impl
         for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            res_data[i] = normalizedQueryHash<keep_names>(
+            res_data[i] = normalizedQueryHash(
                 reinterpret_cast<const char *>(&data[prev_src_offset]), reinterpret_cast<const char *>(&data[curr_src_offset - 1]));
             prev_src_offset = offsets[i];
         }
     }
 };
 
-template <bool keep_names>
 class FunctionNormalizedQueryHash : public IFunction
 {
 public:
-    static constexpr auto name = keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
+    static constexpr auto name = "normalizedQueryHash";
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionNormalizedQueryHash>();
@@ -84,7 +82,7 @@ public:
             auto col_res = ColumnUInt64::create();
             typename ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
-            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res);
+            Impl::vector(col->getChars(), col->getOffsets(), vec_res);
             return col_res;
         }
         else
@@ -97,8 +95,7 @@ public:
 
 void registerFunctionNormalizedQueryHash(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNormalizedQueryHash<true>>();
-    factory.registerFunction<FunctionNormalizedQueryHash<false>>();
+    factory.registerFunction<FunctionNormalizedQueryHash>();
 }
 
 }

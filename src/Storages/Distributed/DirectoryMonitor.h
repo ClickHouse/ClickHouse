@@ -70,6 +70,7 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
+    static bool isFileBrokenErrorCode(int code);
     void markAsBroken(const std::string & file_path) const;
     bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
 
@@ -109,6 +110,9 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
+
+    /// Read insert query and insert settings for backward compatible.
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

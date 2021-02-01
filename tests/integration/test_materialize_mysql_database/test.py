@@ -1,11 +1,12 @@
 import os
 import os.path as p
+import subprocess
 import time
 import pwd
 import re
 import pymysql.cursors
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 import docker
 
 from . import materialize_with_ddl
@@ -86,7 +87,7 @@ class MySQLNodeInstance:
                 print("Can't connect to MySQL " + str(ex))
                 time.sleep(0.5)
 
-        run_and_check(['docker-compose', 'ps', '--services', 'all'])
+        subprocess.check_call(['docker-compose', 'ps', '--services', 'all'])
         raise Exception("Cannot wait MySQL container")
 
 @pytest.fixture(scope="module")
@@ -95,13 +96,13 @@ def started_mysql_5_7():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, docker_compose)
 
     try:
-        run_and_check(
+        subprocess.check_call(
             ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
         mysql_node.wait_mysql_to_start(120)
         yield mysql_node
     finally:
         mysql_node.close()
-        run_and_check(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
                                '--remove-orphans'])
 
 
@@ -111,13 +112,13 @@ def started_mysql_8_0():
     mysql_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, docker_compose)
 
     try:
-        run_and_check(
+        subprocess.check_call(
             ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d'])
         mysql_node.wait_mysql_to_start(120)
         yield mysql_node
     finally:
         mysql_node.close()
-        run_and_check(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
+        subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'down', '--volumes',
                                '--remove-orphans'])
 
 

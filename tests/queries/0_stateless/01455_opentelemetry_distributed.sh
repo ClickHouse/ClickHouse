@@ -29,9 +29,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
                 array join attribute.names as attribute_name,
                     attribute.values as attribute_value) o
         join system.query_log on query_id = o.attribute_value
-    where
-        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
-        and current_database = currentDatabase()
+    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
         and parent_span_id = reinterpretAsUInt64(unhex('73'))
         and o.attribute_name = 'clickhouse.query_id'
@@ -63,7 +61,7 @@ trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString
 # https://github.com/ClickHouse/ClickHouse/issues/14228
 ${CLICKHOUSE_CURL} \
     --header "traceparent: 00-$trace_id-0000000000000073-01" \
-    --header "tracestate: some custom state" "$CLICKHOUSE_URL" \
+    --header "tracestate: some custom state" "http://127.0.0.2:8123/" \
     --get \
     --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) format Null"
 
