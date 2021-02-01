@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 #include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
@@ -229,9 +230,18 @@ void SystemLog<LogElement>::startup()
 }
 
 
+static thread_local bool recursive_add_call = false;
+
 template <typename LogElement>
 void SystemLog<LogElement>::add(const LogElement & element)
 {
+    /// It is possible that the method will be called recursively.
+    /// Better to drop these events to avoid complications.
+    if (recursive_add_call)
+        return;
+    recursive_add_call = true;
+    SCOPE_EXIT({ recursive_add_call = false; });
+
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
