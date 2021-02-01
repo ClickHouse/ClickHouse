@@ -54,7 +54,7 @@ public:
 
     String getName() const override { return "now64"; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) override
     {
         return result_type->createColumnConst(input_rows_count, time_value);
     }
