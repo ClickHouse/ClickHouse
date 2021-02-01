@@ -36,7 +36,7 @@ public:
         return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count) const override
     {
         const auto & input_column = *arguments[0].column;
         auto col_res = res_type->createColumn();

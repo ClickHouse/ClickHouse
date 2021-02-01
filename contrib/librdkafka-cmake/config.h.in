@@ -44,9 +44,9 @@
 // atomic_64
 #define ATOMIC_OP(OP1,OP2,PTR,VAL) __atomic_ ## OP1 ## _ ## OP2(PTR, VAL, __ATOMIC_SEQ_CST)
 // parseversion
-#define RDKAFKA_VERSION_STR "1.6.0"
+#define RDKAFKA_VERSION_STR "0.11.4"
 // parseversion
-#define MKL_APP_VERSION "1.6.0"
+#define MKL_APP_VERSION "0.11.4"
 // libdl
 #define WITH_LIBDL 1
 // WITH_PLUGINS
@@ -83,8 +83,7 @@
 #if (__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 101400)
 #define _TTHREAD_EMULATE_TIMESPEC_GET_
 #endif
-#elif defined(__FreeBSD__)
-#define HAVE_PTHREAD_SETNAME_FREEBSD 1
+
 #else
 // pthread_setname_gnu
 #define HAVE_PTHREAD_SETNAME_GNU 1

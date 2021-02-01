@@ -23,19 +23,12 @@ xfails = {
     "connection protocols/starttls with custom port":
      [(Fail, "it seems that starttls is not enabled by default on custom plain-text ports in LDAP server")],
     "connection protocols/tls cipher suite":
-     [(Fail, "can't get it to work")],
-    "external user directory/user authentications/valid verification cooldown value ldap unavailable":
-     [(Fail, "flaky, ask Vitaly Zakaznikov, Telegram @vzakaznikov")],
-    "user authentications/rbac=True/verification cooldown/verification cooldown performance":
-     [(Fail, "flaky, ask Vitaly Zakaznikov, Telegram @vzakaznikov")]
+     [(Fail, "can't get it to work")]
 }
 
 @TestFeature
 @Name("authentication")
 @ArgumentParser(argparser)
-@Specifications(
-    SRS_007_ClickHouse_Authentication_of_Users_via_LDAP
-)
 @Requirements(
     RQ_SRS_007_LDAP_Authentication("1.0")
 )

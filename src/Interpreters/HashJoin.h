@@ -22,7 +22,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
-#include <Core/Block.h>
 
 namespace DB
 {
@@ -150,6 +149,9 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
+    bool empty() const { return data->type == Type::EMPTY; }
+    bool overDictionary() const { return data->type == Type::DICT; }
+
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -185,7 +187,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
 
-    bool alwaysReturnsEmptySet() const final;
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty && !overDictionary(); }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -390,13 +392,6 @@ private:
     ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
-    /// Call with already locked rwlock.
-    size_t getTotalRowCountLocked() const;
-    size_t getTotalByteCountLocked() const;
-
-    bool empty() const;
-    bool overDictionary() const;
 };
 
 }

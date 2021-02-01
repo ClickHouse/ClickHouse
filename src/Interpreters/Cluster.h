@@ -1,23 +1,13 @@
 #pragma once
 
 #include <map>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
 
-namespace Poco
-{
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-}
-
 namespace DB
 {
-
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -143,27 +133,6 @@ public:
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
 
-    /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-    ///
-    /// Contains different path for permutations of:
-    /// - prefer_localhost_replica
-    ///   Notes with prefer_localhost_replica==0 will contains local nodes.
-    /// - use_compact_format_in_distributed_parts_names
-    ///   See toFullString()
-    ///
-    /// This is cached to avoid looping by replicas in insertPathForInternalReplication().
-    struct ShardInfoInsertPathForInternalReplication
-    {
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=0
-        std::string prefer_localhost_replica;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
-        std::string no_prefer_localhost_replica;
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=1
-        std::string prefer_localhost_replica_compact;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=1
-        std::string no_prefer_localhost_replica_compact;
-    };
-
     struct ShardInfo
     {
     public:
@@ -172,10 +141,13 @@ public:
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
+        const std::string & pathForInsert(bool prefer_localhost_replica) const;
 
     public:
-        ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && prefer_localhost_replica
+        std::string dir_name_for_internal_replication;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && !prefer_localhost_replica
+        std::string dir_name_for_internal_replication_with_local;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         UInt32 weight = 1;

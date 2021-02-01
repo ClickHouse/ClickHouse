@@ -51,12 +51,6 @@ struct QueryLogElement
 
     String current_database;
     String query;
-    UInt64 normalized_query_hash{};
-
-    String query_kind;
-    std::set<String> query_databases;
-    std::set<String> query_tables;
-    std::set<String> query_columns;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;

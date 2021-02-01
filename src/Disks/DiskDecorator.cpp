@@ -125,24 +125,14 @@ DiskDecorator::readFile(const String & path, size_t buf_size, size_t estimated_s
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskDecorator::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
-    return delegate->writeFile(path, buf_size, mode);
+    return delegate->writeFile(path, buf_size, mode, estimated_size, aio_threshold);
 }
 
-void DiskDecorator::removeFile(const String & path)
+void DiskDecorator::remove(const String & path)
 {
-    delegate->removeFile(path);
-}
-
-void DiskDecorator::removeFileIfExists(const String & path)
-{
-    delegate->removeFileIfExists(path);
-}
-
-void DiskDecorator::removeDirectory(const String & path)
-{
-    delegate->removeDirectory(path);
+    delegate->remove(path);
 }
 
 void DiskDecorator::removeRecursive(const String & path)

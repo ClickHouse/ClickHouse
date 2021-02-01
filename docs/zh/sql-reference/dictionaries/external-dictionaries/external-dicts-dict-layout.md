@@ -362,12 +362,6 @@ LAYOUT(DIRECT())
             <null_value>??</null_value>
     </attribute>
     ...
-</structure>
-<layout>
-    <ip_trie>
-        <access_to_key_from_attributes>true</access_to_key_from_attributes>
-    </ip_trie>
-</layout>
 ```
 
 或

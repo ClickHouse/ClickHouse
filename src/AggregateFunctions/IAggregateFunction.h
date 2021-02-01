@@ -10,7 +10,6 @@
 #include <Core/Block.h>
 #include <Common/Exception.h>
 #include <Core/Field.h>
-#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -62,7 +61,7 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual ~IAggregateFunction() = default;
+    virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */
 
@@ -105,12 +104,9 @@ public:
         return false;
     }
 
-    /// Inserts results into a column. This method might modify the state (e.g.
-    /// sort an array), so must be called once, from single thread. The state
-    /// must remain valid though, and the subsequent calls to add/merge/
-    /// insertResultInto must work correctly. This kind of call sequence occurs
-    /// in `runningAccumulate`, or when calculating an aggregate function as a
-    /// window function.
+    /// Inserts results into a column.
+    /// This method must be called once, from single thread.
+    /// After this method was called for state, you can't do anything with state but destroy.
     virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
@@ -118,7 +114,7 @@ public:
     virtual void predictValues(
         ConstAggregateDataPtr /* place */,
         IColumn & /*to*/,
-        const ColumnsWithTypeAndName & /*arguments*/,
+        ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
         const Context & /*context*/) const
@@ -144,32 +140,19 @@ public:
     /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
       *  and do a single call to "addBatch" for devirtualization and inlining.
       */
-    virtual void addBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const = 0;
+    virtual void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const = 0;
 
     /** The same for single place.
       */
-    virtual void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
+    virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       */
     virtual void addBatchSinglePlaceNotNull(
-        size_t batch_size,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const = 0;
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
 
     virtual void addBatchSinglePlaceFromInterval(
-        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
-        const = 0;
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
@@ -209,11 +192,6 @@ public:
         return nullptr;
     }
 
-    /** Return the nested function if this is an Aggregate Function Combinator.
-      * Otherwise return nullptr.
-      */
-    virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
-
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 
@@ -239,90 +217,31 @@ public:
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
-    void addBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = 0; i < batch_size; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < batch_size; ++i)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-        }
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
-    void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = 0; i < batch_size; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < batch_size; ++i)
-                static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size,
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        const UInt8 * null_map,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = 0; i < batch_size; ++i)
-                if (!null_map[i] && flags[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
-        else
-        {
-            for (size_t i = 0; i < batch_size; ++i)
-                if (!null_map[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
+        for (size_t i = 0; i < batch_size; ++i)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchSinglePlaceFromInterval(
-        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
-        const override
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = batch_begin; i < batch_end; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = batch_begin; i < batch_end; ++i)
-                static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
+        for (size_t i = batch_begin; i < batch_end; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchArray(
@@ -391,9 +310,6 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
-    // Derived class can `override` this to flag that DateTime64 is not supported.
-    static constexpr bool DateTime64Supported = true;
-
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
