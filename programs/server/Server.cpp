@@ -59,7 +59,6 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -94,6 +93,9 @@
 #   include <Server/GRPCServer.h>
 #endif
 
+#if USE_NURAFT
+#   include <Server/TestKeeperTCPHandlerFactory.h>
+#endif
 
 namespace CurrentMetrics
 {
@@ -844,27 +846,31 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (config().has("test_keeper_server"))
     {
+#if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no test_keeper_server in config.
         global_context->initializeTestKeeperStorageDispatcher();
-    }
-
-    for (const auto & listen_host : listen_hosts)
-    {
-        /// TCP TestKeeper
-        const char * port_name = "test_keeper_server.tcp_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+        for (const auto & listen_host : listen_hosts)
         {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
-            servers_to_start_before_tables->emplace_back(
-                port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+            /// TCP TestKeeper
+            const char * port_name = "test_keeper_server.tcp_port";
+            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers_to_start_before_tables->emplace_back(
+                    port_name,
+                    std::make_unique<Poco::Net::TCPServer>(
+                        new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-            LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
-        });
+                LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
+            });
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+#endif
+
     }
 
     for (auto & server : *servers_to_start_before_tables)

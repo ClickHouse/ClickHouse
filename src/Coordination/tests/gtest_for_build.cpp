@@ -1,5 +1,12 @@
 #include <gtest/gtest.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
+
+#if USE_NURAFT
+
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
 #include <Coordination/TestKeeperStorageSerializer.h>
@@ -454,5 +461,8 @@ TEST(CoordinationTest, TestNuKeeperRaft)
     s4.launcher.shutdown(5);
 }
 
-#  endif
+# endif
+
+#endif
+
 #endif

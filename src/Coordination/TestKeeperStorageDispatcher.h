@@ -1,11 +1,20 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
+
+#if USE_NURAFT
+
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <functional>
 #include <Coordination/NuKeeperServer.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -14,6 +23,7 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 
 class TestKeeperStorageDispatcher
 {
+
 private:
     Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
 
@@ -67,6 +77,9 @@ public:
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
+
 };
 
 }
+
+#endif
