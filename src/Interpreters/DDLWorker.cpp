@@ -683,7 +683,7 @@ void DDLWorker::enqueueTask(DDLTaskPtr task_ptr)
 }
 
 
-void DDLWorker::updateMaxDDLEntryID(DDLTask & task)
+void DDLWorker::updateMaxDDLEntryID(const DDLTask & task)
 {
     DB::ReadBufferFromString in(task.entry_name);
     DB::assertString("query-", in);
