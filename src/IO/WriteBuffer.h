@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include <iostream>
+#include <cassert>
 
 #include <Common/Exception.h>
 #include <IO/BufferBase.h>
@@ -72,6 +73,9 @@ public:
     void write(const char * from, size_t n)
     {
         size_t bytes_copied = 0;
+
+        /// Produces endless loop
+        assert(working_buffer.size() > 0);
 
         while (bytes_copied < n)
         {
