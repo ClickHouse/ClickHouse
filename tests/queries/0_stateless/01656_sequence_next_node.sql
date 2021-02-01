@@ -61,6 +61,15 @@ SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C') AS n
 SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
 SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode_Nullable WHERE id >= 10 GROUP BY id ORDER BY id;
 
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'C', 'D'));
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'A', 'D'));
+SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('A', 'D'));
+SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('D'));
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'C', 'D'));
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'A', 'D'));
+SELECT '(0, C->B) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C', action ='B') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('A', 'D'));
+SELECT '(0, C->B->A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('D'));
+
 DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;
 
 -- The same testcases for a non-null type.
@@ -120,11 +129,25 @@ INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:02',10,'B');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:03',10,'C');
 INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:04',10,'D');
 
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
-SELECT '(0, A) id >= 10', id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id >= 10 GROUP BY id ORDER BY id;
+SELECT '(0, A) id = 10', id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(0, A->B) id = 10', id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(0, B->C) id = 10', id, sequenceNextNode(0)(dt, action, action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(0, C) id = 10', id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(0, D->C) id = 10', id, sequenceNextNode(1)(dt, action, action = 'D', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+SELECT '(0, C->B) id = 10', id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B') AS next_node FROM test_sequenceNextNode WHERE id = 10 GROUP BY id;
+
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'A');
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'B');
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'C');
+INSERT INTO test_sequenceNextNode values ('1970-01-01 09:00:01',11,'D');
+
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'C', 'D'));
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'A', 'D'));
+SELECT '(0, B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'B', action ='C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('A', 'D'));
+SELECT '(0, A->B->C) id = 11', count() FROM (SELECT id, sequenceNextNode(0)(dt, action, action = 'A', action = 'B', action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('D'));
+SELECT '(0, A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'C', 'D'));
+SELECT '(0, C) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('B', 'A', 'D'));
+SELECT '(0, C->B) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C', action ='B') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('A', 'D'));
+SELECT '(0, C->B->A) id = 11', count() FROM (SELECT id, sequenceNextNode(1)(dt, action, action = 'C', action = 'B', action = 'A') AS next_node FROM test_sequenceNextNode WHERE id = 11 GROUP BY id HAVING next_node in ('D'));
 
 DROP TABLE IF EXISTS test_sequenceNextNode;
