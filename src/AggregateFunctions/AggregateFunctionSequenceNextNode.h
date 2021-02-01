@@ -106,7 +106,7 @@ struct SequenceNextNodeGeneralData
         {
             if constexpr (Descending)
                 return lhs->event_time == rhs->event_time ?
-                        lhs->events_bitset < rhs->events_bitset: lhs->event_time > rhs->event_time;
+                        lhs->events_bitset < rhs->events_bitset : lhs->event_time > rhs->event_time;
             else
                 return lhs->event_time == rhs->event_time ?
                         lhs->events_bitset < rhs->events_bitset : lhs->event_time < rhs->event_time;
@@ -182,6 +182,7 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[2 + i])->getData()[row_num])
                 events_bitset += (1 << i);
+        if (events_bitset == 0) events_bitset = 0x80000000; // Any events are not matched.
 
         node->event_time = timestamp;
         node->events_bitset = events_bitset;
