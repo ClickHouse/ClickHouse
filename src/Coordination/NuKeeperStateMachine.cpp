@@ -3,17 +3,17 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/TestKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperStorageSerializer.h>
 
 namespace DB
 {
 
 static constexpr int MAX_SNAPSHOTS = 3;
 
-TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
+NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    TestKeeperStorage::RequestForSession request_for_session;
+    NuKeeperStorage::RequestForSession request_for_session;
     readIntBinary(request_for_session.session_id, buffer);
 
     int32_t length;
@@ -31,7 +31,7 @@ TestKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-nuraft::ptr<nuraft::buffer> writeResponses(TestKeeperStorage::ResponsesForSessions & responses)
+nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions & responses)
 {
     WriteBufferFromNuraftBuffer buffer;
     for (const auto & response_and_session : responses)
@@ -67,7 +67,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
     else
     {
         auto request_for_session = parseRequest(data);
-        TestKeeperStorage::ResponsesForSessions responses_for_sessions;
+        NuKeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
             responses_for_sessions = storage.processRequest(request_for_session.request, request_for_session.session_id);
@@ -118,10 +118,10 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
 {
     nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
     nuraft::ptr<nuraft::snapshot> ss = nuraft::snapshot::deserialize(*snp_buf);
-    TestKeeperStorageSerializer serializer;
+    NuKeeperStorageSerializer serializer;
 
     ReadBufferFromNuraftBuffer reader(in);
-    TestKeeperStorage new_storage;
+    NuKeeperStorage new_storage;
     serializer.deserialize(new_storage, reader);
     return std::make_shared<StorageSnapshot>(ss, new_storage);
 }
@@ -129,7 +129,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
 
 void NuKeeperStateMachine::writeSnapshot(const NuKeeperStateMachine::StorageSnapshotPtr & snapshot, nuraft::ptr<nuraft::buffer> & out)
 {
-    TestKeeperStorageSerializer serializer;
+    NuKeeperStorageSerializer serializer;
 
     WriteBufferFromNuraftBuffer writer;
     serializer.serialize(snapshot->storage, writer);
@@ -223,7 +223,7 @@ int NuKeeperStateMachine::read_logical_snp_obj(
     return 0;
 }
 
-TestKeeperStorage::ResponsesForSessions NuKeeperStateMachine::processReadRequest(const TestKeeperStorage::RequestForSession & request_for_session)
+NuKeeperStorage::ResponsesForSessions NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session)
 {
     std::lock_guard lock(storage_lock);
     return storage.processRequest(request_for_session.request, request_for_session.session_id);

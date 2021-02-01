@@ -9,7 +9,7 @@
 
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/InMemoryStateManager.h>
-#include <Coordination/TestKeeperStorageSerializer.h>
+#include <Coordination/NuKeeperStorageSerializer.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/NuKeeperStateMachine.h>
 #include <Coordination/LoggerWrapper.h>
@@ -283,9 +283,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
     return buf.getBuffer();
 }
 
-DB::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
+DB::NuKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer, const Coordination::ZooKeeperRequestPtr & request)
 {
-    DB::TestKeeperStorage::ResponsesForSessions results;
+    DB::NuKeeperStorage::ResponsesForSessions results;
     DB::ReadBufferFromNuraftBuffer buf(buffer);
     while (!buf.eof())
     {
@@ -303,28 +303,28 @@ DB::TestKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nu
         Coordination::read(err, buf);
         auto response = request->makeResponse();
         response->readImpl(buf);
-        results.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+        results.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
     }
     return results;
 }
 
 TEST(CoordinationTest, TestStorageSerialization)
 {
-    DB::TestKeeperStorage storage;
-    storage.container["/hello"] = DB::TestKeeperStorage::Node{.data="world"};
-    storage.container["/hello/somepath"] =  DB::TestKeeperStorage::Node{.data="somedata"};
+    DB::NuKeeperStorage storage;
+    storage.container["/hello"] = DB::NuKeeperStorage::Node{.data="world"};
+    storage.container["/hello/somepath"] =  DB::NuKeeperStorage::Node{.data="somedata"};
     storage.session_id_counter = 5;
     storage.zxid = 156;
     storage.ephemerals[3] = {"/hello", "/"};
     storage.ephemerals[1] = {"/hello/somepath"};
 
     DB::WriteBufferFromOwnString buffer;
-    DB::TestKeeperStorageSerializer serializer;
+    DB::NuKeeperStorageSerializer serializer;
     serializer.serialize(storage, buffer);
     std::string serialized = buffer.str();
     EXPECT_NE(serialized.size(), 0);
     DB::ReadBufferFromString read(serialized);
-    DB::TestKeeperStorage new_storage;
+    DB::NuKeeperStorage new_storage;
     serializer.deserialize(new_storage, read);
 
     EXPECT_EQ(new_storage.container.size(), 3);

@@ -1,5 +1,5 @@
 <yandex>
-    <test_keeper_server>
+    <nu_keeper_server>
         <tcp_port>9181</tcp_port>
         <operation_timeout_ms>10000</operation_timeout_ms>
         <session_timeout_ms>30000</session_timeout_ms>
@@ -11,5 +11,5 @@
                 <port>44444</port>
             </server>
         </raft_configuration>
-    </test_keeper_server>
+    </nu_keeper_server>
 </yandex>

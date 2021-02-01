@@ -106,7 +106,7 @@ using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-class TestKeeperStorageDispatcher;
+class NuKeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -574,10 +574,10 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
-    std::shared_ptr<TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
+    std::shared_ptr<NuKeeperStorageDispatcher> & getNuKeeperStorageDispatcher() const;
 #endif
-    void initializeTestKeeperStorageDispatcher() const;
-    void shutdownTestKeeperStorageDispatcher() const;
+    void initializeNuKeeperStorageDispatcher() const;
+    void shutdownNuKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);

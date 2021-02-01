@@ -1,4 +1,4 @@
-#include <Coordination/TestKeeperStorageDispatcher.h>
+#include <Coordination/NuKeeperStorageDispatcher.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -11,17 +11,17 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-TestKeeperStorageDispatcher::TestKeeperStorageDispatcher()
-    : log(&Poco::Logger::get("TestKeeperDispatcher"))
+NuKeeperStorageDispatcher::NuKeeperStorageDispatcher()
+    : log(&Poco::Logger::get("NuKeeperDispatcher"))
 {
 }
 
-void TestKeeperStorageDispatcher::processingThread()
+void NuKeeperStorageDispatcher::processingThread()
 {
-    setThreadName("TestKeeperSProc");
+    setThreadName("NuKeeperSProc");
     while (!shutdown_called)
     {
-        TestKeeperStorage::RequestForSession request;
+        NuKeeperStorage::RequestForSession request;
 
         UInt64 max_wait = UInt64(operation_timeout.totalMilliseconds());
 
@@ -44,7 +44,7 @@ void TestKeeperStorageDispatcher::processingThread()
     }
 }
 
-void TestKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
+void NuKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_writer = session_to_response_callback.find(session_id);
@@ -57,7 +57,7 @@ void TestKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordina
         session_to_response_callback.erase(session_writer);
 }
 
-bool TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
 
     {
@@ -66,7 +66,7 @@ bool TestKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperReques
             return false;
     }
 
-    TestKeeperStorage::RequestForSession request_info;
+    NuKeeperStorage::RequestForSession request_info;
     request_info.request = request;
     request_info.session_id = session_id;
 
@@ -104,27 +104,27 @@ namespace
     }
 }
 
-void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
+void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
-    int myid = config.getInt("test_keeper_server.server_id");
+    int myid = config.getInt("nu_keeper_server.server_id");
     std::string myhostname;
     int myport;
     int32_t my_priority = 1;
 
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("test_keeper_server.raft_configuration", keys);
+    config.keys("nu_keeper_server.raft_configuration", keys);
     bool my_can_become_leader = true;
 
     std::vector<std::tuple<int, std::string, int, bool, int32_t>> server_configs;
     std::vector<int32_t> ids;
     for (const auto & server_key : keys)
     {
-        int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
-        std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
-        int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
-        bool can_become_leader = config.getBool("test_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
-        int32_t priority = config.getInt("test_keeper_server.raft_configuration." + server_key + ".priority", 1);
+        int server_id = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".id");
+        std::string hostname = config.getString("nu_keeper_server.raft_configuration." + server_key + ".hostname");
+        int port = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".port");
+        bool can_become_leader = config.getBool("nu_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
+        int32_t priority = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".priority", 1);
         if (server_id == myid)
         {
             myhostname = hostname;
@@ -175,7 +175,7 @@ void TestKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigura
     LOG_DEBUG(log, "Dispatcher initialized");
 }
 
-void TestKeeperStorageDispatcher::shutdown()
+void NuKeeperStorageDispatcher::shutdown()
 {
     try
     {
@@ -194,10 +194,10 @@ void TestKeeperStorageDispatcher::shutdown()
 
         if (server)
         {
-            TestKeeperStorage::RequestsForSessions expired_requests;
-            TestKeeperStorage::RequestForSession request;
+            NuKeeperStorage::RequestsForSessions expired_requests;
+            NuKeeperStorage::RequestForSession request;
             while (requests_queue.tryPop(request))
-                expired_requests.push_back(TestKeeperStorage::RequestForSession{request});
+                expired_requests.push_back(NuKeeperStorage::RequestForSession{request});
 
             auto expired_responses = server->shutdown(expired_requests);
 
@@ -213,19 +213,19 @@ void TestKeeperStorageDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
-TestKeeperStorageDispatcher::~TestKeeperStorageDispatcher()
+NuKeeperStorageDispatcher::~NuKeeperStorageDispatcher()
 {
     shutdown();
 }
 
-void TestKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+void NuKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
 }
 
-void TestKeeperStorageDispatcher::finishSession(int64_t session_id)
+void NuKeeperStorageDispatcher::finishSession(int64_t session_id)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_it = session_to_response_callback.find(session_id);

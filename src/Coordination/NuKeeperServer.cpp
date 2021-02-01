@@ -46,8 +46,8 @@ void NuKeeperServer::startup()
 {
     nuraft::raft_params params;
     params.heart_beat_interval_ = 1000;
-    params.election_timeout_lower_bound_ = 3000;
-    params.election_timeout_upper_bound_ = 6000;
+    params.election_timeout_lower_bound_ = 500;
+    params.election_timeout_upper_bound_ = 1000;
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = 10000;
@@ -75,9 +75,9 @@ void NuKeeperServer::startup()
     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot start RAFT server within startup timeout");
 }
 
-TestKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const TestKeeperStorage::RequestsForSessions & expired_requests)
+NuKeeperStorage::ResponsesForSessions NuKeeperServer::shutdown(const NuKeeperStorage::RequestsForSessions & expired_requests)
 {
-    TestKeeperStorage::ResponsesForSessions responses;
+    NuKeeperStorage::ResponsesForSessions responses;
     if (isLeader())
     {
         try
@@ -108,9 +108,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 
 }
 
-TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer)
+NuKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer)
 {
-    DB::TestKeeperStorage::ResponsesForSessions results;
+    DB::NuKeeperStorage::ResponsesForSessions results;
     DB::ReadBufferFromNuraftBuffer buf(buffer);
 
     while (!buf.eof())
@@ -153,12 +153,12 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::readZooKeeperResponses(n
         response->zxid = zxid;
         response->error = err;
 
-        results.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+        results.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
     }
     return results;
 }
 
-TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKeeperStorage::RequestsForSessions & requests)
+NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const NuKeeperStorage::RequestsForSessions & requests)
 {
     if (isLeaderAlive() && requests.size() == 1 && requests[0].request->isReadRequest())
     {
@@ -178,28 +178,28 @@ TestKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const TestKe
         auto result = raft_instance->append_entries(entries);
         if (!result->get_accepted())
         {
-            TestKeeperStorage::ResponsesForSessions responses;
+            NuKeeperStorage::ResponsesForSessions responses;
             for (const auto & [session_id, request] : requests)
             {
                 auto response = request->makeResponse();
                 response->xid = request->xid;
                 response->zxid = 0; /// FIXME what we can do with it?
                 response->error = Coordination::Error::ZSESSIONEXPIRED;
-                responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+                responses.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
             }
             return responses;
         }
 
         if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         {
-            TestKeeperStorage::ResponsesForSessions responses;
+            NuKeeperStorage::ResponsesForSessions responses;
             for (const auto & [session_id, request] : requests)
             {
                 auto response = request->makeResponse();
                 response->xid = request->xid;
                 response->zxid = 0; /// FIXME what we can do with it?
                 response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-                responses.push_back(DB::TestKeeperStorage::ResponseForSession{session_id, response});
+                responses.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
             }
             return responses;
         }
