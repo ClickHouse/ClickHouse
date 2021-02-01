@@ -462,7 +462,7 @@ void DDLWorker::scheduleTasks()
         else
         {
             LOG_DEBUG(log, "Task {} ({}) has been already processed", entry_name, task->entry.query);
-            updateMaxDDLEntryID(task);
+            updateMaxDDLEntryID(*task);
         }
 
         saveTask(entry_name);
