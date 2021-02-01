@@ -35,8 +35,8 @@ public:
 };
 
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, const Context & context_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, Context & context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
     , path_to_table_symlinks(global_context.getPath() + "data/" + escapeForFileName(name_) + "/")
     , path_to_metadata_symlink(global_context.getPath() + "metadata/" + escapeForFileName(name_))
     , db_uuid(uuid)
@@ -44,11 +44,6 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     assert(db_uuid != UUIDHelpers::Nil);
     Poco::File(path_to_table_symlinks).createDirectories();
     tryCreateMetadataSymlink();
-}
-
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const Context & context_)
-    : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_)
-{
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -216,9 +211,6 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     if (is_dictionary && !inside_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move dictionary to other database");
-
-    if (!exchange)
-        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
     table->checkTableCanBeRenamed();

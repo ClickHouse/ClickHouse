@@ -16,7 +16,6 @@ ${H3_SOURCE_DIR}/lib/mathExtensions.c
 ${H3_SOURCE_DIR}/lib/polygon.c
 ${H3_SOURCE_DIR}/lib/vec2d.c
 ${H3_SOURCE_DIR}/lib/vec3d.c
-${H3_SOURCE_DIR}/lib/vertex.c
 ${H3_SOURCE_DIR}/lib/vertexGraph.c
 )
 

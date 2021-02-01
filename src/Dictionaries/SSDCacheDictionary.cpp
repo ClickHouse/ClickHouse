@@ -21,8 +21,6 @@
 #include <ext/bit_cast.h>
 #include <filesystem>
 #include <city.h>
-#include <fcntl.h>
-
 
 namespace ProfileEvents
 {

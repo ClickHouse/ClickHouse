@@ -164,7 +164,7 @@ private:
 };
 
 /// This is a small class which collects newly added processors to QueryPipeline.
-/// Pipeline must live longer than this class.
+/// Pipeline must live longer that this class.
 class QueryPipelineProcessorsCollector
 {
 public:

@@ -2,11 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace re2
-{
-    class RE2;
-}
-
 namespace DB
 {
 class IASTColumnsTransformer : public IAST
@@ -48,13 +43,9 @@ public:
         return clone;
     }
     void transform(ASTs & nodes) const override;
-    void setPattern(String pattern);
-    bool isColumnMatching(const String & column_name) const;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    std::shared_ptr<re2::RE2> column_matcher;
-    String original_pattern;
 };
 
 class ASTColumnsReplaceTransformer : public IASTColumnsTransformer

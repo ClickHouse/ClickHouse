@@ -21,9 +21,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include <common/errnoToString.h>
-
-
 namespace DB
 {
 
@@ -249,7 +246,7 @@ static void enablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't enable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, strerror(errno), errno);
     }
 }
 
@@ -259,7 +256,7 @@ static void disablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't disable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, strerror(errno), errno);
     }
 }
 
@@ -269,7 +266,7 @@ static void releasePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't close perf event file descriptor {}: {} ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, strerror(errno), errno);
     }
 }
 
@@ -287,7 +284,7 @@ static bool validatePerfEventDescriptor(int & fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Error while checking availability of event descriptor {}: {} ({})",
-            fd, errnoToString(errno), errno);
+            fd, strerror(errno), errno);
 
         disablePerfEvent(fd);
         releasePerfEvent(fd);
@@ -394,7 +391,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
-                event_info.event_config, errnoToString(errno), errno);
+                event_info.event_config, strerror(errno), errno);
         }
     }
 
@@ -480,7 +477,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         {
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Can't read event value from file descriptor {}: '{}' ({})",
-                fd, errnoToString(errno), errno);
+                fd, strerror(errno), errno);
             current_values[i] = {};
         }
     }

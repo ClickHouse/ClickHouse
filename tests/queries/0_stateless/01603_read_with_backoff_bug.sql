@@ -1,4 +1,4 @@
-drop table if exists t;
+DROP TABLE if exists t;
 
 create table t (x UInt64, s String) engine = MergeTree order by x;
 INSERT INTO t SELECT

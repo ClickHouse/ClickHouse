@@ -10,6 +10,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";

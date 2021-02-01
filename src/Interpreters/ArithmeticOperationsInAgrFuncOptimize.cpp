@@ -20,7 +20,7 @@ namespace
 
 const ASTFunction * getInternalFunction(const ASTFunction & func)
 {
-    if (func.arguments && func.arguments->children.size() == 1)
+    if (func.arguments->children.size() == 1)
         return func.arguments->children[0]->as<ASTFunction>();
     return nullptr;
 }

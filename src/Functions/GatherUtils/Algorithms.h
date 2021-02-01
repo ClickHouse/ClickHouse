@@ -342,7 +342,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-UInt64(offset));
+                slice = src.getSliceFromRight(-offset);
 
             writeSlice(slice, sink);
         }
@@ -374,7 +374,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
+            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -offset;
 
         if (offset != 0 && size > 0)
         {
@@ -383,7 +383,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1, size);
             else
-                slice = src.getSliceFromRight(-UInt64(offset), size);
+                slice = src.getSliceFromRight(-offset, size);
 
             writeSlice(slice, sink);
         }
