@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS test_01655;
-USE test_01655;
+CREATE DATABASE IF NOT EXISTS test_01674;
+USE test_01674;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -79,50 +79,50 @@ SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (id Nullable(Int32), a UInt16, b UInt8) ENGINE = TinyLog;
-CREATE TABLE t2 (id Nullable(Int32), a Int16, b Nullable(Int64)) ENGINE = TinyLog;
-INSERT INTO t1 VALUES (0, 1, 1), (1, 2, 2);
-INSERT INTO t2 VALUES (2, -1, 1), (3, 1, NULL), (4, 1, 257), (5, 1, -1), (6, 1, 1);
+CREATE TABLE t_ab1 (id Nullable(Int32), a UInt16, b UInt8) ENGINE = TinyLog;
+CREATE TABLE t_ab2 (id Nullable(Int32), a Int16, b Nullable(Int64)) ENGINE = TinyLog;
+INSERT INTO t_ab1 VALUES (0, 1, 1), (1, 2, 2);
+INSERT INTO t_ab2 VALUES (2, -1, 1), (3, 1, NULL), (4, 1, 257), (5, 1, -1), (6, 1, 1);
 
 SELECT '--- hash ---';
 
 SELECT '- full -';
-SELECT a, b FROM t1 FULL JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 FULL JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- left -';
-SELECT a, b FROM t1 LEFT JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 LEFT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- right -';
-SELECT a, b FROM t1 RIGHT JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- inner -';
-SELECT a, b FROM t1 INNER JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 INNER JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
 SELECT '- types -';
 
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 FULL JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 LEFT JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 RIGHT JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 INNER JOIN t2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 FULL JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 LEFT JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 INNER JOIN t_ab2 USING (a, b);
 
 SELECT '--- partial_merge ---';
 
 SET join_algorithm = 'partial_merge';
 
 SELECT '- full -';
-SELECT a, b FROM t1 FULL JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 FULL JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- left -';
-SELECT a, b FROM t1 LEFT JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 LEFT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- right -';
-SELECT a, b FROM t1 RIGHT JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 SELECT '- inner -';
-SELECT a, b FROM t1 INNER JOIN t2 USING (a, b) ORDER BY ifNull(t1.id, t2.id);
+SELECT a, b FROM t_ab1 INNER JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
 SELECT '- types -';
 
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 FULL JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 LEFT JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 RIGHT JOIN t2 USING (a, b);
-SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t1 INNER JOIN t2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 FULL JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 LEFT JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b);
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)' FROM t_ab1 INNER JOIN t_ab2 USING (a, b);
 
-DROP TABLE IF EXISTS t1;
-DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t_ab1;
+DROP TABLE IF EXISTS t_ab2;
 
-DROP DATABASE IF EXISTS test_01655;
+DROP DATABASE IF EXISTS test_01674;

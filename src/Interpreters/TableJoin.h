@@ -68,10 +68,12 @@ class TableJoin
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
     NamesAndTypesList columns_added_by_join;
+    /// Columns from right table that requres type conversion
+    NamesAndTypesList converted_right_types;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
-    /// Original name -> name. Only ranamed columns.
+    /// Original name -> name. Only renamed columns.
     std::unordered_map<String, String> renames;
 
     VolumePtr tmp_volume;
@@ -124,6 +126,7 @@ public:
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
+    bool hasJoinedStorage() const { return joined_storage != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
@@ -137,6 +140,7 @@ public:
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(ColumnsWithTypeAndName & columns) const;
+    void setConvertedRightType(NamesAndTypesList columns) { converted_right_types = columns; }
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }

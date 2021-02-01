@@ -302,6 +302,8 @@ JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & le
     if (!has_using)
         return {};
 
+    JoinConvertActions actions;
+
     Block left_block_dst = left_block;
     Block right_block_dst = right_block;
 
@@ -338,6 +340,9 @@ JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & le
                             + right_keys[i] + ": " + rtype->getName() + " at right",
                             ErrorCodes::TYPE_MISMATCH);
         }
+        actions.left_target_types.emplace_back(left_keys[i], supertype);
+        actions.right_target_types.emplace_back(right_keys[i], supertype);
+
         auto & lcol_dst = left_block_dst.getByName(left_keys[i]);
         auto & rcol_dst = right_block_dst.getByName(right_keys[i]);
         lcol_dst.column = rcol_dst.column = nullptr;
@@ -347,18 +352,18 @@ JoinConvertActions columnsNeedConvert(const Block & left_block, const Names & le
     if (!any_need_cast)
         return {};
 
-    auto convert_left_actions_dag = ActionsDAG::makeConvertingActions(
+    actions.left_actions = ActionsDAG::makeConvertingActions(
         left_block.getColumnsWithTypeAndName(),
         left_block_dst.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
         true);
-    auto convert_right_actions_dag = ActionsDAG::makeConvertingActions(
+    actions.right_actions = ActionsDAG::makeConvertingActions(
         right_block.getColumnsWithTypeAndName(),
         right_block_dst.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
         true);
 
-    return std::make_pair(convert_left_actions_dag, convert_right_actions_dag);
+    return actions;
 }
 
 }
