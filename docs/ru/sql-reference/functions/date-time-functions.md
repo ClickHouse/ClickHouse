@@ -686,7 +686,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g');
 
 ## FROM\_UNIXTIME {#fromunixtime}
 
-Функция преобразует метку времени Unix в дату. Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
+Функция преобразует метку времени Unix в дату. Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md#int-ranges), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Пример**
 
@@ -704,7 +704,7 @@ SELECT FROM_UNIXTIME(423543535);
 └──────────────────────────┘
 ```
 
-В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md/#int-ranges) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает таким же образом, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
+В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md#int-ranges) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает таким же образом, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
 
 **Пример**
 
