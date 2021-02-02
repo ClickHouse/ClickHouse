@@ -1,9 +1,9 @@
 ---
 toc_priority: 36
-toc_title: 聚合函数
+toc_title: 参考手册
 ---
 
-# 聚合函数引用 {#aggregate-functions-reference}
+# 参考手册 {#aggregate-functions-reference}
 
 ## count {#agg_function-count}
 
