@@ -8,11 +8,26 @@
 #include <Processors/Pipe.h>
 #include <Processors/LimitTransform.h>
 
+#include <Functions/TargetSpecific.h>
+
+
 namespace DB
 {
 
 namespace
 {
+
+#define DECLARE_MULTITARGET_FILL(...) \
+    DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
+    DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__)
+
+DECLARE_MULTITARGET_FILL(
+void fill(UInt64 curr, UInt64 * pos, UInt64 * end)
+{
+    while (pos < end)
+        *pos++ = curr++;
+})
+
 
 class NumbersSource : public SourceWithProgress
 {
@@ -31,8 +46,13 @@ protected:
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
+
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+            TargetSpecific::AVX2::fill(curr, pos, end);
+        else
+#endif
+        TargetSpecific::Default::fill(curr, pos, end);
 
         next += step;
 
