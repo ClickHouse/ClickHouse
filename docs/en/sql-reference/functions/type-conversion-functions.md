@@ -476,8 +476,6 @@ accurateCastOrNull(x, T)
 
 Query:
 
-Query:
-
 ``` sql
 SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 ```
