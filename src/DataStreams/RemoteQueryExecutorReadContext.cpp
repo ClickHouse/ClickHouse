@@ -127,13 +127,13 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
     bool is_pipe_alarmed = false;
     bool has_timer_alarm = false;
 
-    for (size_t i = 0; i < events.size(); ++i)
+    for (const auto & event : events)
     {
-        if (events[i].data.fd == connection_fd)
+        if (event.data.fd == connection_fd)
             is_socket_ready = true;
-        if (events[i].data.fd == timer.getDescriptor())
+        if (event.data.fd == timer.getDescriptor())
             has_timer_alarm = true;
-        if (events[i].data.fd == pipe_fd[0])
+        if (event.data.fd == pipe_fd[0])
             is_pipe_alarmed = true;
     }
 

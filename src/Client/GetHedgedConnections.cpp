@@ -19,9 +19,8 @@ GetHedgedConnections::GetHedgedConnections(
     const Settings * settings_,
     const ConnectionTimeouts & timeouts_,
     std::shared_ptr<QualifiedTableName> table_to_check_)
-    : pool(pool_), settings(settings_), timeouts(timeouts_), table_to_check(table_to_check_)
+    : pool(pool_), settings(settings_), timeouts(timeouts_), table_to_check(table_to_check_), log(&Poco::Logger::get("GetHedgedConnections"))
 {
-    log = &Poco::Logger::get("GetHedgedConnections");
     shuffled_pools = pool->getShuffledPools(settings);
     for (size_t i = 0; i != shuffled_pools.size(); ++i)
         try_get_connections.emplace_back(shuffled_pools[i].pool, &timeouts, settings, table_to_check, log);
@@ -78,6 +77,7 @@ std::vector<GetHedgedConnections::ReplicaStatePtr> GetHedgedConnections::getMany
                 "All connection tries failed. Log: \n\n" + fail_messages + "\n",
                 DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
         }
+
         replicas.push_back(replica);
     }
 
@@ -86,9 +86,7 @@ std::vector<GetHedgedConnections::ReplicaStatePtr> GetHedgedConnections::getMany
 
 GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bool non_blocking)
 {
-    LOG_DEBUG(log, "getNextConnection");
     ReplicaStatePtr replica = createNewReplica();
-
     int index;
 
     /// Check if it's the first time.
@@ -104,6 +102,8 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
 
     while (index != -1 || !epoll.empty())
     {
+        /// Prevent blocking after receiving timeout when there is no new replica to connect
+        /// (processEpollEvents can return EMPTY replica after timeout processing to start new connection).
         if (index == -1 && !is_first && non_blocking)
         {
             replica->state = State::NOT_READY;
@@ -134,22 +134,14 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
         if (replica->isReady() || (replica->isNotReady() && non_blocking))
             return replica;
 
-        if (replica->isNotReady())
-            throw Exception("Not ready replica after processing epoll events.", ErrorCodes::LOGICAL_ERROR);
-
         index = getNextIndex();
     }
 
     /// We reach this point only if there was no free up to date replica.
+    /// We will try to use usable replica.
 
-    /// Check if there is no even a free usable replica
-    if (!canGetNewConnection())
-    {
-        replica->state = State::CANNOT_CHOOSE;
-        return replica;
-    }
-
-    if (!fallback_to_stale_replicas)
+    /// Check if we are not allowed to use usable replicas or there is no even a free usable replica.
+    if (!fallback_to_stale_replicas || !canGetNewConnection())
     {
         replica->state = State::CANNOT_CHOOSE;
         return replica;
@@ -161,7 +153,6 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::getNextConnection(bo
 
 void GetHedgedConnections::stopChoosingReplicas()
 {
-    LOG_DEBUG(log, "stopChoosingReplicas");
     for (auto & [fd, replica] : fd_to_replica)
     {
         removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
@@ -175,8 +166,8 @@ void GetHedgedConnections::stopChoosingReplicas()
 
 int GetHedgedConnections::getNextIndex()
 {
-    /// Check if there is no more available replicas
-    if (entries_count + failed_pools_count >= shuffled_pools.size())
+    /// Check if there is no free replica.
+    if (entries_count + indexes_in_process.size() + failed_pools_count >= shuffled_pools.size())
         return -1;
 
     bool finish = false;
@@ -185,17 +176,15 @@ int GetHedgedConnections::getNextIndex()
     {
         next_index = (next_index + 1) % shuffled_pools.size();
 
-        /// Check if we can try this replica
+        /// Check if we can try this replica.
         if (indexes_in_process.find(next_index) == indexes_in_process.end() && (max_tries == 0 || shuffled_pools[next_index].error_count < max_tries)
             && try_get_connections[next_index].stage != TryGetConnection::Stage::FINISHED)
             finish = true;
 
-        /// If we made a complete round, there is no replica to connect
+        /// If we made a complete round, there is no replica to connect.
         else if (next_index == last_used_index)
             return -1;
     }
-
-    LOG_DEBUG(log, "get next index: {}", next_index);
 
     last_used_index = next_index;
     return next_index;
@@ -203,7 +192,6 @@ int GetHedgedConnections::getNextIndex()
 
 GetHedgedConnections::Action GetHedgedConnections::startTryGetConnection(int index, ReplicaStatePtr & replica)
 {
-    LOG_DEBUG(log, "start try get connection with {} replica", index);
     TryGetConnection & try_get_connection = try_get_connections[index];
 
     replica->state = State::NOT_READY;
@@ -240,14 +228,11 @@ GetHedgedConnections::Action GetHedgedConnections::startTryGetConnection(int ind
 GetHedgedConnections::Action
 GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bool remove_from_epoll)
 {
-    LOG_DEBUG(log, "process get connection stage for {} replica", replica->index);
     TryGetConnection & try_get_connection = try_get_connections[replica->index];
 
     if (try_get_connection.stage == TryGetConnection::Stage::FINISHED)
     {
         indexes_in_process.erase(replica->index);
-
-        LOG_DEBUG(log, "stage: FINISHED");
         ++entries_count;
 
         if (remove_from_epoll)
@@ -258,39 +243,31 @@ GetHedgedConnections::processTryGetConnectionStage(ReplicaStatePtr & replica, bo
 
         if (try_get_connection.result.is_usable)
         {
-            LOG_DEBUG(log, "replica is usable");
             ++usable_count;
             if (try_get_connection.result.is_up_to_date)
             {
-                LOG_DEBUG(log, "replica is up to date, finish get hedged connections");
                 replica->state = State::READY;
                 ready_indexes.insert(replica->index);
                 return Action::FINISH;
             }
         }
 
-        /// This replica is not up to date, we will try to find up to date
-        fd_to_replica.erase(replica->fd);
+        /// This replica is not up to date, we will try to find up to date.
         replica->reset();
         return Action::TRY_NEXT_REPLICA;
     }
     else if (try_get_connection.stage == TryGetConnection::Stage::FAILED)
     {
-        LOG_DEBUG(log, "stage: FAILED");
         processFailedConnection(replica);
         return Action::TRY_NEXT_REPLICA;
     }
 
-    LOG_DEBUG(log, "middle stage, process epoll events");
-
-    /// Get connection process is not finished
+    /// Get connection process is not finished.
     return Action::PROCESS_EPOLL_EVENTS;
 }
 
 void GetHedgedConnections::processFailedConnection(ReplicaStatePtr & replica)
 {
-    LOG_DEBUG(log, "failed connection with {} replica", replica->index);
-
     ShuffledPool & shuffled_pool = shuffled_pools[replica->index];
     LOG_WARNING(
         log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), try_get_connections[replica->index].fail_message);
@@ -314,8 +291,6 @@ void GetHedgedConnections::processFailedConnection(ReplicaStatePtr & replica)
 
 void GetHedgedConnections::addTimeouts(ReplicaStatePtr & replica)
 {
-    LOG_DEBUG(log, "add timeouts for {} replica", replica->index);
-
     addTimeoutToReplica(TimerTypes::RECEIVE_TIMEOUT, replica, epoll, timeout_fd_to_replica, timeouts);
 
     auto stage = try_get_connections[replica->index].stage;
@@ -327,7 +302,6 @@ void GetHedgedConnections::addTimeouts(ReplicaStatePtr & replica)
 
 GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(bool non_blocking)
 {
-    LOG_DEBUG(log, "process epoll events");
     int event_fd;
     ReplicaStatePtr replica = nullptr;
     bool finish = false;
@@ -349,8 +323,6 @@ GetHedgedConnections::ReplicaStatePtr GetHedgedConnections::processEpollEvents(b
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_DEBUG(log, "cancel process epoll events");
-
     return replica;
 }
 
@@ -365,7 +337,6 @@ int GetHedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 
 bool GetHedgedConnections::processReplicaEvent(ReplicaStatePtr & replica, bool non_blocking)
 {
-    LOG_DEBUG(log, "epoll event is {} replica", replica->index);
     removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
     try_get_connections[replica->index].run();
     Action action = processTryGetConnectionStage(replica, true);
@@ -380,15 +351,12 @@ bool GetHedgedConnections::processReplicaEvent(ReplicaStatePtr & replica, bool n
 
 bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerDescriptorPtr timeout_descriptor, bool non_blocking)
 {
-    LOG_DEBUG(log, "epoll event is timeout for {} replica", replica->index);
-
     epoll.remove(timeout_descriptor->getDescriptor());
     replica->active_timeouts.erase(timeout_descriptor->getDescriptor());
     timeout_fd_to_replica[timeout_descriptor->getDescriptor()];
 
     if (timeout_descriptor->getType() == TimerTypes::RECEIVE_TIMEOUT)
     {
-        LOG_DEBUG(log, "process receive timeout for {} replica", replica->index);
         removeTimeoutsFromReplica(replica, epoll, timeout_fd_to_replica);
         epoll.remove(replica->fd);
         fd_to_replica.erase(replica->fd);
@@ -401,10 +369,9 @@ bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerD
 
         return true;
     }
-
     else if ((timeout_descriptor->getType() == TimerTypes::RECEIVE_HELLO_TIMEOUT
              || timeout_descriptor->getType() == TimerTypes::RECEIVE_TABLES_STATUS_TIMEOUT)
-             && entries_count + ready_indexes.size() + failed_pools_count < shuffled_pools.size())
+             && entries_count + indexes_in_process.size() + failed_pools_count < shuffled_pools.size())
     {
         replica = createNewReplica();
         return true;
@@ -415,13 +382,11 @@ bool GetHedgedConnections::processTimeoutEvent(ReplicaStatePtr & replica, TimerD
 
 void GetHedgedConnections::setBestUsableReplica(ReplicaStatePtr & replica)
 {
-    LOG_DEBUG(log, "set best usable replica");
-
     std::vector<int> indexes(try_get_connections.size());
     for (size_t i = 0; i != indexes.size(); ++i)
         indexes[i] = i;
 
-    /// Remove unusable and failed replicas, skip ready replicas
+    /// Remove unusable, failed replicas and replicas that are ready or in process.
     indexes.erase(
         std::remove_if(
             indexes.begin(),
@@ -439,7 +404,7 @@ void GetHedgedConnections::setBestUsableReplica(ReplicaStatePtr & replica)
         return;
     }
 
-    /// Sort replicas by staleness
+    /// Sort replicas by staleness.
     std::stable_sort(
         indexes.begin(),
         indexes.end(),

@@ -55,8 +55,8 @@ class IColumn;
     M(Seconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "", 0) \
     M(Seconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC, "", 0) \
     M(Seconds, tcp_keep_alive_timeout, 0, "The time in seconds the connection needs to remain idle before TCP starts sending keepalive probes", 0) \
-    M(Seconds, receive_hello_timeout, DBMS_DEFAULT_RECEIVE_HELLO_TIMEOUT_SEC, "Connection timeout for receiving hello from replica", 0) \
-    M(Seconds, receive_tables_status_timeout, DBMS_DEFAULT_RECEIVE_TABLES_STATUS_TIMEOUT_SEC, "Connection timeout for receiving tables status from replica", 0) \
+    M(Milliseconds, receive_hello_timeout, DBMS_DEFAULT_RECEIVE_HELLO_TIMEOUT_MS, "Connection timeout for receiving hello from replica", 0) \
+    M(Milliseconds, receive_tables_status_timeout, DBMS_DEFAULT_RECEIVE_TABLES_STATUS_TIMEOUT_MS, "Connection timeout for receiving tables status from replica", 0) \
     M(Seconds, receive_data_timeout, DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_SEC, "Connection timeout for receiving first packet of data from replica", 0) \
     M(Bool, use_hedged_requests, true, "Use hedged requests for distributed queries", 0) \
     M(Milliseconds, queue_max_wait_ms, 0, "The wait time in the request queue, if the number of concurrent requests exceeds the maximum.", 0) \
