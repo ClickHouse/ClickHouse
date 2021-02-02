@@ -183,14 +183,14 @@ def test_blocade_leader_twice(started_cluster):
         # Total network partition
         pm.partition_instances(node3, node2)
 
-        for i in range(30):
+        for i in range(10):
             try:
                 node3.query("INSERT INTO t2 SELECT rand() FROM numbers(100)")
                 assert False, "Node3 became leader?"
             except Exception as ex:
                 time.sleep(0.5)
 
-        for i in range(30):
+        for i in range(10):
             try:
                 node2.query("INSERT INTO t2 SELECT rand() FROM numbers(100)")
                 assert False, "Node2 became leader?"

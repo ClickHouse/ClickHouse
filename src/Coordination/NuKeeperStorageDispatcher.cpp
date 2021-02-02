@@ -107,24 +107,24 @@ namespace
 void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
-    int myid = config.getInt("nu_keeper_server.server_id");
+    int myid = config.getInt("test_keeper_server.server_id");
     std::string myhostname;
     int myport;
     int32_t my_priority = 1;
 
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("nu_keeper_server.raft_configuration", keys);
+    config.keys("test_keeper_server.raft_configuration", keys);
     bool my_can_become_leader = true;
 
     std::vector<std::tuple<int, std::string, int, bool, int32_t>> server_configs;
     std::vector<int32_t> ids;
     for (const auto & server_key : keys)
     {
-        int server_id = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".id");
-        std::string hostname = config.getString("nu_keeper_server.raft_configuration." + server_key + ".hostname");
-        int port = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".port");
-        bool can_become_leader = config.getBool("nu_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
-        int32_t priority = config.getInt("nu_keeper_server.raft_configuration." + server_key + ".priority", 1);
+        int server_id = config.getInt("test_keeper_server.raft_configuration." + server_key + ".id");
+        std::string hostname = config.getString("test_keeper_server.raft_configuration." + server_key + ".hostname");
+        int port = config.getInt("test_keeper_server.raft_configuration." + server_key + ".port");
+        bool can_become_leader = config.getBool("test_keeper_server.raft_configuration." + server_key + ".can_become_leader", true);
+        int32_t priority = config.getInt("test_keeper_server.raft_configuration." + server_key + ".priority", 1);
         if (server_id == myid)
         {
             myhostname = hostname;

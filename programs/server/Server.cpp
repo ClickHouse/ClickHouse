@@ -844,7 +844,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    if (config().has("nu_keeper_server"))
+    if (config().has("test_keeper_server"))
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
@@ -852,7 +852,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP NuKeeper
-            const char * port_name = "nu_keeper_server.tcp_port";
+            const char * port_name = "test_keeper_server.tcp_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
