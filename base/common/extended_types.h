@@ -104,8 +104,3 @@ template <> struct is_big_int<wUInt256> { static constexpr bool value = true; };
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
 
-template <typename To, typename From>
-inline To bigint_cast(const From & x [[maybe_unused]])
-{
-    return static_cast<To>(x);
-}

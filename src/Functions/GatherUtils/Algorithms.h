@@ -50,9 +50,9 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
                 throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (IsDecimalNumber<T>)
-                dst = bigint_cast<NativeU>(src.value);
+                dst = static_cast<NativeU>(src.value);
             else
-                dst = bigint_cast<NativeU>(src);
+                dst = static_cast<NativeU>(src);
         }
         else
             dst = static_cast<NativeU>(src);
@@ -465,7 +465,7 @@ std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const Equa
     for (size_t i = 1; i < pattern.size; ++i)
     {
         result[i] = 0;
-        for (auto length = i; length > 0;)
+        for (size_t length = i; length > 0;)
         {
             length = result[length - 1];
             if (isEqualFunc(pattern, i, length))
@@ -695,7 +695,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
 
             if (size >= 0)
             {
-                auto length = static_cast<size_t>(size);
+                size_t length = static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -711,7 +711,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                auto length = static_cast<size_t>(-size);
+                size_t length = -static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -744,7 +744,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 
         if (size >= 0)
         {
-            auto length = static_cast<size_t>(size);
+            size_t length = static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);
@@ -760,7 +760,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            auto length = static_cast<size_t>(-size);
+            size_t length = -static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);

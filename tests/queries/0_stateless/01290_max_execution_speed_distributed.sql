@@ -17,6 +17,7 @@ SYSTEM FLUSH LOGS;
 SELECT DISTINCT query_duration_ms >= 500
 FROM system.query_log
 WHERE
+    current_database = currentDatabase() AND
     event_date >= yesterday() AND
     query LIKE '%special query for 01290_max_execution_speed_distributed%' AND
     query NOT LIKE '%system.query_log%' AND
