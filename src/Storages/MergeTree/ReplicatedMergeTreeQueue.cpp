@@ -302,6 +302,13 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+
+    /// Do not add special virtual parts to parts_to_do
+    auto max_level = MergeTreePartInfo::MAX_LEVEL;      /// DROP/DETACH PARTITION
+    auto another_max_level = std::numeric_limits<decltype(part_info.level)>::max();    /// REPLACE/MOVE PARTITION
+    if (part_info.level == max_level || part_info.level == another_max_level)
+        return;
+
     auto in_partition = mutations_by_partition.find(part_info.partition_id);
     if (in_partition == mutations_by_partition.end())
         return;
@@ -413,13 +420,26 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
     {
         std::unique_lock lock(state_mutex);
 
-        virtual_parts.remove(part_name);
+        bool removed = virtual_parts.remove(part_name);
 
         for (Queue::iterator it = queue.begin(); it != queue.end();)
         {
             if ((*it)->new_part_name == part_name)
             {
                 found = *it;
+                if (removed)
+                {
+                    /// Preserve invariant `virtual_parts` = `current_parts` + `queue`.
+                    /// We remove new_part from virtual parts and add all source parts
+                    /// which present in current_parts.
+                    for (const auto & source_part : found->source_parts)
+                    {
+                        auto part_in_current_parts = current_parts.getContainingPart(source_part);
+                        if (part_in_current_parts == source_part)
+                            virtual_parts.add(source_part);
+                    }
+                }
+
                 updateStateOnQueueEntryRemoval(
                     found, /* is_successful = */ false,
                     min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
@@ -723,7 +743,10 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
                 Strings current_parts_to_mutate = getPartNamesToMutate(*entry, current_parts);
                 for (const String & current_part_to_mutate : current_parts_to_mutate)
+                {
+                    assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
                     mutation.parts_to_do.add(current_part_to_mutate);
+                }
 
                 /// And next we would need to mutate all parts with getDataVersion() greater than
                 /// mutation block number that would appear as a result of executing the queue.
@@ -1000,7 +1023,7 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & log_
     /// NOTE The above is redundant, but left for a more convenient message in the log.
     auto result_part = MergeTreePartInfo::fromPartName(new_part_name, format_version);
 
-    /// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
+    /// It can slow down when the size of `future_parts` is large. But it can not be large, since background pool is limited.
     for (const auto & future_part_elem : future_parts)
     {
         auto future_part = MergeTreePartInfo::fromPartName(future_part_elem.first, format_version);

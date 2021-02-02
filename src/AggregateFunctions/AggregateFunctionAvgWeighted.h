@@ -28,7 +28,7 @@ public:
 
     using ValueT = MaxFieldType<Value, Weight>;
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto& weights = static_cast<const DecimalOrVectorCol<Weight> &>(*columns[1]);
 
