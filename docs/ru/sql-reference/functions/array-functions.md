@@ -1149,7 +1149,7 @@ SELECT
 arrayMin([func,] arr)
 ```
 
-**Parameters**
+**Параметры**
 
 -   `func` — функция. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
 -   `arr` — массив. [Array](../../sql-reference/data-types/array.md).
