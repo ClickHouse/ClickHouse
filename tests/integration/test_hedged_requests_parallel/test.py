@@ -11,7 +11,7 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
-# Cluster with 1 shard of 2 replicas. node is the instance with Distributed table.
+# Cluster with 1 shard of 3 replicas. node is the instance with Distributed table.
 node = cluster.add_instance(
     'node', with_zookeeper=True, main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.xml'])
 node_1 = cluster.add_instance('node_1', with_zookeeper=True,  user_configs=['configs/users1.xml'])
