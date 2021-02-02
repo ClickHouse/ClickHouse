@@ -6,6 +6,7 @@
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
+#include <mysqlxx/Types.h>
 
 
 namespace mysqlxx
@@ -57,8 +58,21 @@ void Query::reset()
 void Query::executeImpl()
 {
     std::string query_string = query_buf.str();
-    if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
-        throw BadQuery(errorMessage(conn->getDriver()), mysql_errno(conn->getDriver()));
+
+    MYSQL* mysql_driver = conn->getDriver();
+    if (mysql_real_query(mysql_driver, query_string.data(), query_string.size()))
+    {
+        const auto errno = mysql_errno(mysql_driver);
+        switch (errno)
+        {
+        case 2006 /* CR_SERVER_GONE_ERROR */:
+            [[fallthrough]];
+        case 2013 /* CR_SERVER_LOST */:
+            throw ConnectionLost(errorMessage(mysql_driver), errno);
+        default:
+            throw BadQuery(errorMessage(mysql_driver), errno);
+        }
+    }
 }
 
 UseQueryResult Query::use()
