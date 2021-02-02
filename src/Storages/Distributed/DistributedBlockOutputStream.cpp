@@ -383,11 +383,18 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     bool random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
     size_t start = 0;
     size_t end = shards_info.size();
-    if (random_shard_insert)
+
+    if (settings.insert_shard_id)
+    {
+        start = settings.insert_shard_id - 1;
+        end = settings.insert_shard_id;
+    }
+    else if (random_shard_insert)
     {
         start = storage.getRandomShardIndex(shards_info);
         end = start + 1;
     }
+
     size_t num_shards = end - start;
 
     if (!pool)
@@ -545,7 +552,7 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
+void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context.getSettingsRef();
