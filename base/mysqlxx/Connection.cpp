@@ -51,10 +51,11 @@ Connection::Connection(
     const char* ssl_key,
     unsigned timeout,
     unsigned rw_timeout,
-    bool enable_local_infile)
+    bool enable_local_infile,
+    bool opt_reconnect)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -80,7 +81,8 @@ void Connection::connect(const char* db,
     const char * ssl_key,
     unsigned timeout,
     unsigned rw_timeout,
-    bool enable_local_infile)
+    bool enable_local_infile,
+    bool opt_reconnect)
 {
     if (is_connected)
         disconnect();
@@ -104,9 +106,8 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile_arg))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Enables auto-reconnect.
-    bool reconnect = true;
-    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
+    /// See C API Developer Guide: Automatic Reconnection Control
+    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&opt_reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs
