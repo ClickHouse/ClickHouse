@@ -47,16 +47,18 @@ BlockIO InterpreterAlterQuery::execute()
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
-    auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
     {
-        alter_lock.reset();
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+        guard->releaseTableLock();
         return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
     }
+
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     //FIXME commit MetadataTransaction for all ALTER kinds. Now its' implemented only for metadata alter.
 

@@ -956,21 +956,25 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     ++it->second.counter;
     guards_lock.unlock();
     table_lock = std::unique_lock(*it->second.mutex);
-    bool is_database = elem.empty();
-    if (!is_database)
+    is_database_guard = elem.empty();
+    if (!is_database_guard)
     {
 
         bool locked_database_for_read = db_mutex.try_lock_shared();
         if (!locked_database_for_read)
         {
-            removeTableLock();
+            releaseTableLock();
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }
 
-void DDLGuard::removeTableLock()
+void DDLGuard::releaseTableLock() noexcept
 {
+    if (table_lock_removed)
+        return;
+
+    table_lock_removed = true;
     guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)
@@ -978,14 +982,14 @@ void DDLGuard::removeTableLock()
         table_lock.unlock();
         map.erase(it);
     }
+    guards_lock.unlock();
 }
 
 DDLGuard::~DDLGuard()
 {
-    bool is_database = it->first.empty();
-    if (!is_database)
+    if (!is_database_guard)
         db_mutex.unlock_shared();
-    removeTableLock();
+    releaseTableLock();
 }
 
 }

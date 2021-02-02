@@ -885,7 +885,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY)
         {
             assertOrSetUUID(create, database);
-            guard.reset();
+            guard->releaseTableLock();
             return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
         }
     }
