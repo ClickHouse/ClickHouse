@@ -427,6 +427,54 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 -   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
 
+## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
+
+Преобразует входное значение `x` в указанный тип данных `T`. Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md), и возвращает [NULL](../../sql-reference/syntax.md#null-literal), если приведенное значение не может быть представлено в целевом типе.
+
+**Синтаксис**
+
+```sql
+accurateCastOrNull(x, T)
+```
+
+**Parameters**
+
+-   `x` — входное значение.
+-   `T` — имя возвращаемого типа данных.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
+```
+
+Результат:
+
+``` text
+┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
+│ Nullable(UInt8)                            │
+└────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT
+    cast(-1, 'UInt8') as uint8,
+    cast(128, 'Int8') as int8,
+    cast('Test', 'FixedString(2)') as fixed_string;
+```
+
+Результат:
+
+``` text
+┌─uint8─┬─int8─┬─fixed_string─┐
+│  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
+└───────┴──────┴──────────────┘
+```
+
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
 
 Приводит аргумент из числового типа данных к типу данных [IntervalType](../../sql-reference/data-types/special-data-types/interval.md).
