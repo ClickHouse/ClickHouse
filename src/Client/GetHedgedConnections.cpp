@@ -23,7 +23,7 @@ GetHedgedConnections::GetHedgedConnections(
 {
     shuffled_pools = pool->getShuffledPools(settings);
     for (size_t i = 0; i != shuffled_pools.size(); ++i)
-        try_get_connections.emplace_back(shuffled_pools[i].pool, &timeouts, settings, table_to_check, log);
+        try_get_connections.emplace_back(shuffled_pools[i].pool, &timeouts, settings, table_to_check.get(), log);
 
     max_tries
         = (settings ? size_t{settings->connections_with_failover_max_tries} : size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
