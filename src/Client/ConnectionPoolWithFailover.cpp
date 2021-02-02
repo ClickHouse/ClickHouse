@@ -132,8 +132,6 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Co
                                                                         const Settings * settings,
                                                                         PoolMode pool_mode)
 {
-    LOG_DEBUG(log, "ConnectionPoolWithFailover getMany");
-
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings);
@@ -166,9 +164,6 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     const Settings * settings, PoolMode pool_mode,
     const QualifiedTableName & table_to_check)
 {
-
-    LOG_DEBUG(log, "ConnectionPoolWithFailover getManyChecked");
-
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check);
@@ -219,7 +214,6 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry)
 {
-    LOG_DEBUG(log, "ConnectionPoolWithFailover getManyImpl");
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
     size_t max_tries = (settings ?
         size_t{settings->connections_with_failover_max_tries} :
@@ -258,10 +252,7 @@ ConnectionPoolWithFailover::tryGetEntry(
     TryResult result;
     try
     {
-        LOG_DEBUG(log, "ConnectionPoolWithFailover tryGetEntry");
         result.entry = pool.get(timeouts, settings, /* force_connected = */ false);
-
-        LOG_DEBUG(log, "ConnectionPoolWithFailover isConnected {}", result.entry->isConnected());
 
         UInt64 server_revision = 0;
         if (table_to_check)
