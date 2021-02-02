@@ -20,7 +20,7 @@
 -   `database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится кусок.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — имя таблицы, в которой находится кусок.
 -   `part_name` ([String](../../sql-reference/data-types/string.md)) — имя куска.
--   `partition_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение ‘all’, если таблица партициируется по выражению `tuple()`.
+-   `partition_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение `all`, если таблица партициируется по выражению `tuple()`.
 -   `path_on_disk` ([String](../../sql-reference/data-types/string.md)) — абсолютный путь к папке с файлами кусков данных.
 -   `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — число строк в куске.
 -   `size_in_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер куска данных в байтах.
