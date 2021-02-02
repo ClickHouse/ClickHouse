@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -412,6 +413,15 @@ void ValuesBlockInputFormat::readPrefix()
 
 void ValuesBlockInputFormat::readSuffix()
 {
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+        if (buf.hasUnreadData())
+            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
+        return;
+    }
+
     if (buf.hasUnreadData())
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
