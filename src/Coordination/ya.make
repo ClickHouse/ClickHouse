@@ -5,20 +5,10 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/NuRaft
 )
 
-
 SRCS(
-    InMemoryLogStore.cpp
-    InMemoryStateManager.cpp
-    NuKeeperServer.cpp
-    NuKeeperStateMachine.cpp
-    NuKeeperStorage.cpp
     NuKeeperStorageDispatcher.cpp
-    NuKeeperStorageSerializer.cpp
-    SummingStateMachine.cpp
-    WriteBufferFromNuraftBuffer.cpp
 
 )
 

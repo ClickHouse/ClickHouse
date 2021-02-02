@@ -1591,7 +1591,7 @@ void Context::initializeNuKeeperStorageDispatcher() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
 
     const auto & config = getConfigRef();
-    if (config.has("nu_keeper_server"))
+    if (config.has("test_keeper_server"))
     {
         shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
         shared->nu_keeper_storage_dispatcher->initialize(config);
