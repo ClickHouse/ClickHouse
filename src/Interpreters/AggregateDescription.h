@@ -39,6 +39,34 @@ struct WindowFunctionDescription
     std::string dump() const;
 };
 
+struct WindowFrame
+{
+    enum class FrameType { Rows, Groups, Range };
+    enum class OffsetType { Unbounded, Current, Offset };
+
+    // This flag signifies that the frame properties were not set explicitly by
+    // user, but the fields of this structure still have to contain proper values
+    // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
+    bool is_default = true;
+
+    FrameType type = FrameType::Range;
+
+    /*
+     * We don't need these yet.
+     * OffsetType begin_offset = Unbounded;
+
+     * OffsetType end_offset = Current;
+     */
+
+
+    bool operator == (const WindowFrame & other) const
+    {
+        // We don't compare is_default because it's not a real property of the
+        // frame, and only influences how we display it.
+        return other.type == type;
+    }
+};
+
 struct WindowDescription
 {
     std::string window_name;
@@ -54,7 +82,7 @@ struct WindowDescription
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
 
-    // No frame info as of yet.
+    WindowFrame frame;
 
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
