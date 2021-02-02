@@ -25,7 +25,7 @@
 -   `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — число строк в куске.
 -   `size_in_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер куска данных в байтах.
 -   `merged_from` ([Array(String)](../../sql-reference/data-types/array.md)) — массив имён кусков, из которых образован текущий кусок в результате слияния (также столбец заполняется в случае скачивания уже смерженного куска).
--   `bytes_uncompressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — количество прочитанных разжатых байт.
+-   `bytes_uncompressed` ([UInt64](../../sql-reference/data-types/int-uint.md)) — количество прочитанных не сжатых байт.
 -   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — сколько было прочитано строк при слиянии кусков.
 -   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — сколько было прочитано байт при слиянии кусков.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
