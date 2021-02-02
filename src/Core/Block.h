@@ -129,6 +129,7 @@ public:
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
+    Block cloneWithCutColumns(size_t start, size_t length) const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
