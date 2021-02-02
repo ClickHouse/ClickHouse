@@ -44,6 +44,10 @@ static Context createQueryContext(const Context & global_context)
     Settings new_query_settings = global_context.getSettings();
     new_query_settings.insert_allow_materialized_columns = true;
 
+    /// To avoid call AST::format
+    /// TODO: We need to implement the format function for MySQLAST
+    new_query_settings.enable_global_with_statement = false;
+
     Context query_context(global_context);
     query_context.setSettings(new_query_settings);
     CurrentThread::QueryScope query_scope(query_context);

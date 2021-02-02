@@ -479,7 +479,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
-        return;
+        table_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -493,7 +493,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
-        return;
+        column_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -507,10 +507,12 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
-        if (aliases_set.size() < 1000)
+        if (aliases_set.size() > 1000)
         {
-            aliases_set.insert(impl->alias);
+            aliases_set.clear();
         }
+
+        aliases_set.insert(impl->alias);
     }
 
     if (typeid_cast<ASTLiteral *>(ast.get()))

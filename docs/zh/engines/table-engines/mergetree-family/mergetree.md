@@ -401,7 +401,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 ### 列 TTL {#mergetree-column-ttl}
 
-当列中的值过期时, ClickHouse会将它们替换成该列数据类型的默认值。如果数据片段中列的所有值均已过期，则ClickHouse 会从文件系统中的数据片段中此列。
+当列中的值过期时, ClickHouse会将它们替换成该列数据类型的默认值。如果数据片段中列的所有值均已过期，则ClickHouse 会从文件系统中的数据片段中删除此列。
 
 `TTL`子句不能被用于主键字段。
 
