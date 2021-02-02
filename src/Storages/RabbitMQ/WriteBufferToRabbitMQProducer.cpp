@@ -321,7 +321,7 @@ void WriteBufferToRabbitMQProducer::writingFunc()
             setupChannel();
     }
 
-    LOG_DEBUG(log, "Prodcuer on channel {} completed", channel_id);
+    LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
 }
 
 
