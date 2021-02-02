@@ -39,7 +39,5 @@ public:
     void setType(int type_) { type = type_; }
 };
 
-using TimerDescriptorPtr = std::shared_ptr<TimerDescriptor>;
-
 }
 #endif
