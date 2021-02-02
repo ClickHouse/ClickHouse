@@ -5,7 +5,7 @@ toc_title: mannWhitneyUTest
 
 # mannWhitneyUTest {#mannwhitneyutest}
 
-Applies the Mann-Whitney rank test.
+Applies the Mann-Whitney rank test to samples from two populations.
 
 **Syntax**
 
@@ -14,7 +14,7 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 ```
 
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
-The null hypothesis is that the medians of populations are equal. Also one-sided hypothesises can be tested. This test does not assume that data have normal distribution.
+The null hypothesis is that two populations are stochastically equal. Also one-sided hypothesises can be tested. This test does not assume that data have normal distribution.
 
 **Parameters**
 
@@ -29,6 +29,7 @@ The null hypothesis is that the medians of populations are equal. Also one-sided
 
 **Returned values**
 
+[Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
 -   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
@@ -65,5 +66,6 @@ Result:
 **See Also**
 
 -   [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
+-   [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->

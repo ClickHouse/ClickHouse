@@ -5,7 +5,7 @@ toc_title: studentTTest
 
 # studentTTest {#studentttest}
 
-Applies Student's t-test to data samples. 
+Applies Student's t-test to samples from two populations. 
 
 **Syntax**
 
@@ -23,6 +23,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 **Returned values**
 
+[Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
 -   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
