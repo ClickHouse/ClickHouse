@@ -459,24 +459,36 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#type_conversion_function-accurate-cast_or_null}
 
-Converts input value to the specified data type. Always returns nullable type and returns NULL 
-if the casted value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../../sql-reference/data-types/nullable.md) type and returns [NULL](../../sql-reference/syntax.md#null-literal) if the casted value is not representable in the target type.
 
 **Syntax**
 
 ```sql
 accurateCastOrNull(x, T)
-
 ```
 
 **Parameters**
 
 -   `x` — Input value.
--   `T` — Defines the data type of returned values.
+-   `T` — The name of the returned data type.
 
 **Example**
 
 Query:
+
+Query:
+
+``` sql
+SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
+```
+
+Result:
+
+``` text
+┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
+│ Nullable(UInt8)                            │
+└────────────────────────────────────────────┘
+```
 
 ``` sql
 SELECT
@@ -491,20 +503,6 @@ Result:
 ┌─uint8─┬─int8─┬─fixed_string─┐
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
 └───────┴──────┴──────────────┘
-```
-
-Query:
-
-``` sql
-SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
-```
-
-Result:
-
-``` text
-┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
-│ Nullable(UInt8)                            │
-└────────────────────────────────────────────┘
 ```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}
