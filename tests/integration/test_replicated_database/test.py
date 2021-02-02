@@ -13,6 +13,8 @@ competing_node = cluster.add_instance('competing_node', main_configs=['configs/c
 snapshotting_node = cluster.add_instance('snapshotting_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 1})
 snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main_configs=['configs/config.xml'], with_zookeeper=True, macros={"shard": 2, "replica": 2})
 
+all_nodes = [main_node, dummy_node, competing_node, snapshotting_node, snapshot_recovering_node]
+
 uuid_regex = re.compile("[0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12}")
 def assert_create_query(nodes, table_name, expected):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
@@ -31,11 +33,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-#TODO better tests
-
 def test_create_replicated_table(started_cluster):
-    #FIXME should fail (replicated with old syntax)
-    #main_node.query("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree(d, k, 8192);")
+    assert "Old syntax is not allowed" in \
+           main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);")
+
     main_node.query("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);")
 
     expected = "CREATE TABLE testdb.replicated_table\\n(\\n    `d` Date,\\n    `k` UInt64,\\n    `i32` Int32\\n)\\n" \
@@ -47,6 +48,7 @@ def test_create_replicated_table(started_cluster):
 
 @pytest.mark.parametrize("engine", ['MergeTree', 'ReplicatedMergeTree'])
 def test_simple_alter_table(started_cluster, engine):
+    # test_simple_alter_table
     name  = "testdb.alter_test_{}".format(engine)
     main_node.query("CREATE TABLE {} "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
@@ -69,10 +71,7 @@ def test_simple_alter_table(started_cluster, engine):
 
     assert_create_query([main_node, dummy_node], name, expected)
 
-
-@pytest.mark.dependency(depends=['test_simple_alter_table'])
-@pytest.mark.parametrize("engine", ['MergeTree', 'ReplicatedMergeTree'])
-def test_create_replica_after_delay(started_cluster, engine):
+    # test_create_replica_after_delay
     competing_node.query("CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
 
     name  = "testdb.alter_test_{}".format(engine)
@@ -90,13 +89,17 @@ def test_create_replica_after_delay(started_cluster, engine):
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
 
-@pytest.mark.dependency(depends=['test_create_replica_after_delay'])
+
 def test_alters_from_different_replicas(started_cluster):
+    # test_alters_from_different_replicas
+    competing_node.query("CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
+
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
                     "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);")
 
-    time.sleep(1)   #FIXME
+    main_node.query("CREATE TABLE testdb.dist AS testdb.concurrent_test ENGINE = Distributed(cluster, testdb, concurrent_test, CounterID)")
+
     dummy_node.kill_clickhouse(stop_start_wait_sec=0)
 
     competing_node.query("ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;")
@@ -115,50 +118,56 @@ def test_alters_from_different_replicas(started_cluster):
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
-@pytest.mark.dependency(depends=['test_alters_from_different_replicas'])
-def test_drop_and_create_table(started_cluster):
+    # test_create_replica_after_delay
     main_node.query("DROP TABLE testdb.concurrent_test")
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
-                    "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);")
+                    "ENGINE = ReplicatedMergeTree ORDER BY CounterID;")
 
     expected = "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n" \
                "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n" \
-               "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192)"
+               "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
-@pytest.mark.dependency(depends=['test_drop_and_create_table'])
-def test_replica_restart(started_cluster):
+    main_node.query("INSERT INTO testdb.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)")
+
+    # test_replica_restart
     main_node.restart_clickhouse()
 
     expected = "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n" \
                "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n" \
-               "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192)"
-
-    assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
+               "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
 
 
-@pytest.mark.dependency(depends=['test_replica_restart'])
-def test_snapshot_and_snapshot_recover(started_cluster):
-    snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica4');")
-    snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica5');")
+    # test_snapshot_and_snapshot_recover
+    snapshotting_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica1');")
+    snapshot_recovering_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica2');")
+    assert_create_query(all_nodes, "testdb.concurrent_test", expected)
 
-    assert_eq_with_retry(snapshotting_node, "select count() from system.tables where name like 'alter_test_%'", "2\n")
-    assert_eq_with_retry(snapshot_recovering_node, "select count() from system.tables where name like 'alter_test_%'", "2\n")
-    assert snapshotting_node.query("desc table testdb.alter_test_MergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_MergeTree")
-    assert snapshotting_node.query("desc table testdb.alter_test_ReplicatedMergeTree") == snapshot_recovering_node.query("desc table testdb.alter_test_ReplicatedMergeTree")
+    main_node.query("SYSTEM FLUSH DISTRIBUTED testdb.dist")
+    main_node.query("ALTER TABLE testdb.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1")
+    main_node.query("ALTER TABLE testdb.concurrent_test DELETE WHERE UserID % 2")
 
-@pytest.mark.dependency(depends=['test_replica_restart'])
-def test_drop_and_create_replica(started_cluster):
+    # test_drop_and_create_replica
     main_node.query("DROP DATABASE testdb")
     main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
 
     expected = "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n" \
                "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n" \
-               "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192)"
+               "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
+    assert_create_query(all_nodes, "testdb.concurrent_test", expected)
 
-#TODO tests with Distributed
+    for node in all_nodes:
+        node.query("SYSTEM SYNC REPLICA testdb.concurrent_test")
+
+    expected = "0\t2021-02-02\t4249604106\n" \
+               "1\t2021-02-03\t1343103100\n" \
+               "4\t2021-02-06\t3902320246\n" \
+               "7\t2021-02-09\t3844986530\n" \
+               "9\t2021-02-11\t1241149650\n"
+
+    assert_eq_with_retry(dummy_node, "SELECT CounterID, StartDate, UserID FROM testdb.dist ORDER BY CounterID", expected)
 

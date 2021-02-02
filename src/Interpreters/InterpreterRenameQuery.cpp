@@ -43,6 +43,9 @@ BlockIO InterpreterRenameQuery::execute()
     RenameDescriptions descriptions;
     descriptions.reserve(rename.elements.size());
 
+    /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
+    TableGuards table_guards;
+
     for (const auto & elem : rename.elements)
     {
         descriptions.emplace_back(elem, current_database);
@@ -64,10 +67,10 @@ BlockIO InterpreterRenameQuery::execute()
     if (rename.database)
         return executeToDatabase(rename, descriptions);
     else
-        return executeToTables(rename, descriptions);
+        return executeToTables(rename, descriptions, table_guards);
 }
 
-BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
+BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
     auto & database_catalog = DatabaseCatalog::instance();
 
@@ -83,7 +86,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
                                 "it does not support renaming of multiple tables in single query.", elem.from_database_name);
 
-            table_guards.clear();
+            UniqueTableName from(elem.from_database_name, elem.from_table_name);
+            UniqueTableName to(elem.to_database_name, elem.to_table_name);
+            ddl_guards[from]->releaseTableLock();
+            ddl_guards[to]->releaseTableLock();
             return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
         }
         else

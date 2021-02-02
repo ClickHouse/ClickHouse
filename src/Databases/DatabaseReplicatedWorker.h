@@ -21,7 +21,7 @@ private:
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
 
-    DatabaseReplicated * database;
+    DatabaseReplicated * const database;
     mutable std::mutex mutex;
     std::condition_variable wait_current_task_change;
     String current_task;

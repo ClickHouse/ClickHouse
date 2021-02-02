@@ -137,7 +137,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
                                                              "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA");
 
-            ddl_guard.reset();
+            ddl_guard->releaseTableLock();
             table.reset();
             return typeid_cast<DatabaseReplicated *>(database.get())->propose(query.clone());
         }
