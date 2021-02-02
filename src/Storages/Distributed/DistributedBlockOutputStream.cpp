@@ -60,7 +60,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats)
 {
     if (!blocksHaveEqualStructure(out->getHeader(), block))
     {
@@ -588,7 +588,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 }
 
 
-void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
+void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
     InterpreterInsertQuery interp(query_ast, context);
