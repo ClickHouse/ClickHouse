@@ -131,7 +131,7 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
     if (auto * mv = dynamic_cast<StorageMaterializedView *>(table.get()))
-        mv->dropInnerTable(no_delay);
+        mv->dropInnerTable(no_delay, context);
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);

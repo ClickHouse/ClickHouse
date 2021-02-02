@@ -484,7 +484,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
                     auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     DatabasePtr database;
                     std::tie(database, storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
-                    if (database && database->getEngineName() == "Replicated")
+                    if (database && database->getEngineName() == "Replicated" && !typeid_cast<const DatabaseReplicatedTask *>(&task))
                         throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER queries are not allowed for Replicated databases");
                 }
 

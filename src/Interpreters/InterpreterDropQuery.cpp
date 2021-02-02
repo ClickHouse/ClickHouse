@@ -127,7 +127,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
-        bool is_drop_or_detach_database = query.table.empty();
+        bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
                                        context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY &&
                                        !is_drop_or_detach_database;
