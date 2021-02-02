@@ -69,49 +69,6 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-这个例子表明 `count(DISTINCT num)` 由执行 `uniqExact` 根据功能 `count_distinct_implementation` 设定值。
-
-## any(x) {#agg_function-any}
-
-选择第一个遇到的值。
-查询可以以任何顺序执行，甚至每次都以不同的顺序执行，因此此函数的结果是不确定的。
-要获得确定的结果，您可以使用 ‘min’ 或 ‘max’ 功能，而不是 ‘any’.
-
-在某些情况下，可以依靠执行的顺序。 这适用于SELECT来自使用ORDER BY的子查询的情况。
-
-当一个 `SELECT` 查询具有 `GROUP BY` 子句或至少一个聚合函数，ClickHouse（相对于MySQL）要求在所有表达式 `SELECT`, `HAVING`，和 `ORDER BY` 子句可以从键或聚合函数计算。 换句话说，从表中选择的每个列必须在键或聚合函数内使用。 要获得像MySQL这样的行为，您可以将其他列放在 `any` 聚合函数。
-
-## anyHeavy(x) {#anyheavyx}
-
-使用选择一个频繁出现的值 [重打者](http://www.cs.umd.edu/~samir/498/karp.pdf) 算法。 如果某个值在查询的每个执行线程中出现的情况超过一半，则返回此值。 通常情况下，结果是不确定的。
-
-``` sql
-anyHeavy(column)
-```
-
-**参数**
-
--   `column` – The column name.
-
-**示例**
-
-就拿 [时间](../../getting-started/example-datasets/ontime.md) 数据集，并选择在任何频繁出现的值 `AirlineID` 列。
-
-``` sql
-SELECT anyHeavy(AirlineID) AS res
-FROM ontime
-```
-
-``` text
-┌───res─┐
-│ 19690 │
-└───────┘
-```
-
-## anyLast(x) {#anylastx}
-
-选择遇到的最后一个值。
-其结果是一样不确定的 `any` 功能。
 
 ## groupBitAnd {#groupbitand}
 
@@ -283,46 +240,6 @@ num
 3
 ```
 
-## min(x) {#agg_function-min}
-
-计算最小值。
-
-## max(x) {#agg_function-max}
-
-计算最大值。
-
-## argMin(arg,val) {#agg-function-argmin}
-
-计算 ‘arg’ 最小值的值 ‘val’ 价值。 如果有几个不同的值 ‘arg’ 对于最小值 ‘val’，遇到的第一个值是输出。
-
-**示例:**
-
-``` text
-┌─user─────┬─salary─┐
-│ director │   5000 │
-│ manager  │   3000 │
-│ worker   │   1000 │
-└──────────┴────────┘
-```
-
-``` sql
-SELECT argMin(user, salary) FROM salary
-```
-
-``` text
-┌─argMin(user, salary)─┐
-│ worker               │
-└──────────────────────┘
-```
-
-## argMax(arg,val) {#agg-function-argmax}
-
-计算 ‘arg’ 最大值 ‘val’ 价值。 如果有几个不同的值 ‘arg’ 对于最大值 ‘val’，遇到的第一个值是输出。
-
-## sum(x) {#agg_function-sum}
-
-计算总和。
-只适用于数字。
 
 ## sumWithOverflow(x) {#sumwithoverflowx}
 
@@ -461,12 +378,6 @@ kurtSamp(expr)
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
-
-## avg(x) {#agg_function-avg}
-
-计算平均值。
-只适用于数字。
-结果总是Float64。
 
 ## avgWeighted {#avgweighted}
 
