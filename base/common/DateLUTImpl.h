@@ -274,6 +274,23 @@ public:
         return res / 3600;
     }
 
+
+    inline time_t timezoneOffset(time_t t) const
+    {
+        DayNum index = findIndex(t);
+
+        /// Calculate daylight saving offset first, ignore the leap seconds
+        time_t res = (lut[index].date - lut[0].date) % 86400;
+        res = res > 43200 ? (86400 - res) : (0 - res);
+        /// Check if has a offset change during this day
+        if (lut[index].amount_of_offset_change != 0 && t >= lut[index].date + lut[index].time_at_offset_change)
+            res += lut[index].amount_of_offset_change;
+
+        return res + offset_at_start_of_epoch;
+    }
+
+
+
     /** Only for time zones with/when offset from UTC is multiple of five minutes.
       * This is true for all time zones: right now, all time zones have an offset that is multiple of 15 minutes.
       *
