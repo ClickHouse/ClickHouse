@@ -2,7 +2,6 @@
 
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
-#include <Common/Epoll.h>
 
 #include <chrono>
 #include <vector>
@@ -62,6 +61,8 @@ public:
     /// Reset class to initial stage.
     void reset();
 
+    /// If action_before_disconnect is set, action_before_disconnect(socket_fd) will be called before
+    /// disconnect. It may be useful for removing file descriptor from epoll.
     void setActionBeforeDisconnect(std::function<void(int)> action) { action_before_disconnect = action; }
 
     /// Process fail connection.
