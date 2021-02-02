@@ -357,7 +357,7 @@ bool MergeTreeConditionFullText::atomFromAST(
             return false;
         }
 
-        if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
+        if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
             return false;
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
