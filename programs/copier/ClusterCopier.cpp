@@ -642,7 +642,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                 query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
                                                 ((partition_name == "'all'") ? " PARTITION ID " : " PARTITION ") + partition_name + " DEDUPLICATE;";
 
-                LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_alter_ast_string);
+                LOG_DEBUG(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_deduplicate_ast_string);
 
                 UInt64 num_nodes = executeQueryOnCluster(
                         task_table.cluster_push,
