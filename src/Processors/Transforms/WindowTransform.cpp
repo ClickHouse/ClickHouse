@@ -326,12 +326,19 @@ void WindowTransform::advanceFrameStart()
 
     const auto frame_start_before = frame_start;
     advanceFrameStartChoose();
+    assert(frame_start_before <= frame_start);
     if (frame_start == frame_start_before)
     {
-        return;
+        // If the frame start didn't move, this means we validated that the frame
+        // starts at the point we reached earlier but were unable to validate.
+        // This probably only happens in degenerate cases where the frame start
+        // is further than the end of partition, and the partition ends at the
+        // last row of the block, but we can only tell for sure after a new
+        // block arrives. We still have to update the state of aggregate
+        // functions when the frame start becomes valid, so we continue.
+        assert(frame_started);
     }
 
-    assert(frame_start_before < frame_start);
     assert(partition_start <= frame_start);
     assert(frame_start <= partition_end);
     if (partition_ended && frame_start == partition_end)
@@ -669,6 +676,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // The frame can be empty sometimes, e.g. the boundaries coincide
             // or the start is after the partition end. But hopefully start is
             // not after end.
+            assert(frame_started);
+            assert(frame_ended);
             assert(frame_start <= frame_end);
 
             // Write out the aggregation results.
