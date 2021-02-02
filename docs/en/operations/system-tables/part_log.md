@@ -20,7 +20,7 @@ The `system.part_log` table contains the following columns:
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database the data part is in.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table the data part is in.
 -   `part_name` ([String](../../sql-reference/data-types/string.md)) — Name of the data part.
--   `partition_id` ([String](../../sql-reference/data-types/string.md)) — ID of the partition that the data part was inserted to. The column takes the ‘all’ value if the partitioning is by `tuple()`.
+-   `partition_id` ([String](../../sql-reference/data-types/string.md)) — ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`.
 -   `path_on_disk` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the folder with data part files.
 -   `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of rows in the data part.
 -   `size_in_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of the data part in bytes.
@@ -37,7 +37,7 @@ The `system.part_log` table is created after the first inserting data to the `Me
 **Example**
 
 ``` sql
-SELECT * FROM system.part_log LIMIT 1 \G
+SELECT * FROM system.part_log LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
