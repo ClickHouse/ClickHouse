@@ -407,7 +407,7 @@ struct ToHourImpl
     using FactorTransform = ToDateImpl;
 };
 
-struct timezoneOffsetImpl
+struct TimezoneOffsetImpl
 {
     static constexpr auto name = "timezoneOffset";
 
@@ -420,8 +420,8 @@ struct timezoneOffsetImpl
     {
         return dateIsNotSupported(name);
     }
-/////need to do
-    using FactorTransform = ToDateImpl;
+
+    using FactorTransform = ToTimeImpl;
 };
 
 struct ToMinuteImpl
