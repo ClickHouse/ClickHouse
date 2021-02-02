@@ -119,6 +119,7 @@ def test_blocade_leader(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
+                node.query("SYSTEM RESTART REPLICA t1", timeout=10)
                 node.query("SYSTEM SYNC REPLICA t1", timeout=10)
                 break
             except Exception as ex:
