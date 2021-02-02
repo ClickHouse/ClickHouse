@@ -90,6 +90,7 @@
         "01300_client_save_history_when_terminated",
         "orc_output",
         "01370_client_autocomplete_word_break_characters",
+        "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
         "01455_time_zones"
     ],
@@ -311,7 +312,8 @@
         "01643_system_suspend",
         "01655_plan_optimizations",
         "01475_read_subcolumns_storages",
-        "01674_clickhouse_client_query_param_cte"
+        "01674_clickhouse_client_query_param_cte",
+        "01666_merge_tree_max_query_limit"
     ],
     "parallel":
     [
