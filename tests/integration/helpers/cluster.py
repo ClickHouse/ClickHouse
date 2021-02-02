@@ -1028,6 +1028,10 @@ class ClickHouseInstance:
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
+    def file_exists(self, path):
+        return self.exec_in_container(
+            ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
+
     def copy_file_to_container(self, local_path, dest_path):
         container_id = self.get_docker_handle().id
         return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
