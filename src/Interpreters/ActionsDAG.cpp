@@ -39,7 +39,17 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     for (const auto & input : inputs_)
     {
         if (input.column && isColumnConst(*input.column))
+        {
             addInput(input, true);
+
+            /// Here we also add column.
+            /// It will allow to remove input which is actually constant (after projection).
+            /// Also, some transforms from query pipeline may randomly materialize constants,
+            ///   without any respect to header structure. So, it is a way to drop materialized column and use
+            ///   constant value from header.
+            /// We cannot remove such input right now cause inputs positions are important in some cases.
+            addColumn(input, true);
+        }
         else
             addInput(input.name, input.type, true);
     }
