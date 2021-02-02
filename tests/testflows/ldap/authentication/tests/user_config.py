@@ -39,7 +39,7 @@ def empty_server_name(self, timeout=20):
         "message": "DB::Exception: user1: Authentication failed: password is incorrect or there is no user with such name"
     }]
     config = create_ldap_users_config_content(*users)
-    invalid_user_config(servers, config, message=message, tail=15, timeout=timeout)
+    invalid_user_config(servers, config, message=message, tail=30, timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -147,7 +147,7 @@ def ldap_and_password(self):
     error_message = "DB::Exception: More than one field of 'password'"
 
     with Then("I expect an error when I try to load the configuration file", description=error_message):
-        invalid_user_config(servers, new_config, message=error_message, tail=16)
+        invalid_user_config(servers, new_config, message=error_message, tail=30)
 
 @TestFeature
 @Name("user config")
