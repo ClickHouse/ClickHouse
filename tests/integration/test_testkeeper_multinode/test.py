@@ -237,5 +237,15 @@ def test_blocade_leader_twice(started_cluster):
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
     assert node1.query("SELECT COUNT() FROM t2") == "510\n"
+    if node2.query("SELECT COUNT() FROM t2") != "510\n":
+        print(node2.query("SELECT * FROM system.replication_queue FORMAT Vertical"))
+        print("Replicas")
+        print(node2.query("SELECT * FROM system.replicas FORMAT Vertical"))
+        print("Replica 2 info")
+        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/replicas/2' FORMAT Vertical"))
+        print("Queue")
+        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/replicas/2/queue' FORMAT Vertical"))
+        print("Log")
+        print(node2.query("SELECT * FROM system.zookeeper WHERE path = '/clickhouse/t2/log' FORMAT Vertical"))
     assert node2.query("SELECT COUNT() FROM t2") == "510\n"
     assert node3.query("SELECT COUNT() FROM t2") == "510\n"
