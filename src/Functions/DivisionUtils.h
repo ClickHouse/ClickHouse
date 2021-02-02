@@ -3,7 +3,9 @@
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
+
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -87,7 +89,19 @@ struct DivideIntegralImpl
             return static_cast<Result>(checkedDivision(static_cast<SignedCastA>(a), static_cast<SignedCastB>(b)));
         }
         else
+        {
+            if constexpr (std::is_floating_point_v<A>)
+                if (isNaN(a) || a > std::numeric_limits<CastA>::max() || a < std::numeric_limits<CastA>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (isNaN(b) || b > std::numeric_limits<CastB>::max() || b < std::numeric_limits<CastB>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
             return static_cast<Result>(checkedDivision(CastA(a), CastB(b)));
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -114,6 +128,16 @@ struct ModuloImpl
         }
         else
         {
+            if constexpr (std::is_floating_point_v<A>)
+                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
+                        ErrorCodes::ILLEGAL_DIVISION);
+
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
             if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
