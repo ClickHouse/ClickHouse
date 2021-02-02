@@ -185,9 +185,7 @@ SELECT visibleWidth(NULL)
 
 ## byteSize {#function-bytesize}
 
-Возвращает примерный размер аргументов в памяти в байтах в несжатом виде.
-
-Пример использования: в сервисе, хранящим данные для нескольких клиентов в одной таблице, пользователь платит за хранение данных. Поэтому требуется узнать количество памяти, занимаемое ими. Функция позволяет вычислить размер данных для каждой строки.
+Возвращает оценку в байтах размера аргументов в памяти в несжатом виде.
 
 **Синтаксис**
 
@@ -245,40 +243,28 @@ ORDER BY key;
 
 INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
 
-SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)` FROM test ORDER BY key ASC FORMAT Vertical;
-
-SELECT key, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)` FROM test ORDER BY key ASC FORMAT Vertical;
-
-SELECT key, byteSize(f32) AS `byteSize(Float32)`,  byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
+SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
 ```
 
-Результат:
+Result:
 
 ``` text
 Row 1:
 ──────
-key:              1
-byteSize(UInt8):  1
-byteSize(UInt16): 2
-byteSize(UInt32): 4
-byteSize(UInt64): 8
-
-Row 1:
-──────
-key:             1
-byteSize(Int8):  1
-byteSize(Int16): 2
-byteSize(Int32): 4
-byteSize(Int64): 8
-
-Row 1:
-──────
 key:               1
+byteSize(UInt8):   1
+byteSize(UInt16):  2
+byteSize(UInt32):  4
+byteSize(UInt64):  8
+byteSize(Int8):    1
+byteSize(Int16):   2
+byteSize(Int32):   4
+byteSize(Int64):   8
 byteSize(Float32): 4
 byteSize(Float64): 8
 ```
 
-Функция может принимать несколько аргументов и будет возвращать их совокупный размер в байтах.
+Если функция принимает несколько аргументов, то она возвращает их совокупный размер в байтах.
 
 Запрос:
 
