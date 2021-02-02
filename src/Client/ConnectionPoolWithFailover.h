@@ -50,8 +50,9 @@ public:
     TryGetConnection(IConnectionPool * pool_,
                      const ConnectionTimeouts * timeouts_,
                      const Settings * settings_,
-                     std::shared_ptr<QualifiedTableName> table_to_check = nullptr,
-                     Poco::Logger * log_ = nullptr);
+                     const QualifiedTableName * table_to_check = nullptr,
+                     Poco::Logger * log_ = nullptr,
+                     bool non_blocking_ = true);
 
     /// Continue connecting to replica from previous stage. Initial stage is CONNECT.
     void run();
@@ -72,11 +73,12 @@ public:
     const ConnectionTimeouts * timeouts;
     std::string fail_message;
     const Settings * settings;
-    std::shared_ptr<QualifiedTableName> table_to_check;
+    const QualifiedTableName * table_to_check;
     Poco::Logger * log;
     TryResult result;
     Stage stage;
     int socket_fd;
+    bool non_blocking;
     std::function<void(int)> action_before_disconnect;
 };
 
