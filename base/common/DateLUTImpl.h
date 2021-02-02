@@ -851,7 +851,7 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    inline time_t addYears(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addYears(time_t t, Int64 delta) const
     {
         DayNum result_day = addYears(toDayNum(t), delta);
 
@@ -863,7 +863,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addYears(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
