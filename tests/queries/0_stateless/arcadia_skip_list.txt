@@ -200,3 +200,4 @@
 01676_clickhouse_client_autocomplete
 01671_aggregate_function_group_bitmap_data
 01674_executable_dictionary_implicit_key
+01686_rocksdb
