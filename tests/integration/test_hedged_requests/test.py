@@ -20,7 +20,7 @@ node_2 = cluster.add_instance('node_2', with_zookeeper=True)
 config = '''<yandex>
     <profiles>
         <default>
-            <{setting}>{sleep}</{setting}>
+            <{setting}>30</{setting}>
         </default>
     </profiles>
 </yandex>'''
@@ -45,16 +45,14 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def process_test(sleep_setting_name, receive_timeout_name, receive_timeout, sleep_timeout):
-    node_1.replace_config('/etc/clickhouse-server/users.d/users1.xml', config.format(setting=sleep_setting_name, sleep=sleep_timeout))
+def process_test(sleep_setting_name, receive_timeout_name):
+    node_1.replace_config('/etc/clickhouse-server/users.d/users1.xml', config.format(setting=sleep_setting_name))
 
     # Restart node to make new config relevant
-    node_1.restart_clickhouse(sleep_timeout + 1)
+    node_1.restart_clickhouse(30)
     
-    # Without hedged requests select query will last more than sleep_timeout seconds,
-    # with hedged requests it will last just over receive_timeout
-
-    node.query("SET {setting}={value}".format(setting=receive_timeout_name, value=receive_timeout))
+    # Without hedged requests select query will last more than 30 seconds,
+    # with hedged requests it will last just around 1-2 second
 
     start = time.time()
     node.query("SELECT * FROM distributed");
@@ -66,7 +64,7 @@ def process_test(sleep_setting_name, receive_timeout_name, receive_timeout, slee
 def test(started_cluster):
     node.query("INSERT INTO distributed VALUES (1, '2020-01-01')")
 
-    process_test("sleep_before_send_hello", "receive_hello_timeout", 1000, 30)
-    process_test("sleep_before_send_tables_status", "receive_tables_status_timeout", 1000, 30)
-    process_test("sleep_before_send_data", "receive_data_timeout", 1, 30)
+    process_test("sleep_before_send_hello", "receive_hello_timeout")
+    process_test("sleep_before_send_tables_status", "receive_tables_status_timeout")
+    process_test("sleep_before_send_data", "receive_data_timeout")
 
