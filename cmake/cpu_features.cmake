@@ -80,6 +80,9 @@ check_cxx_source_compiles("
         return 0;
     }
 " HAVE_AVX2)
+if (HAVE_AVX2)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+endif ()
 
 set (TEST_FLAG "-mpclmul")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
