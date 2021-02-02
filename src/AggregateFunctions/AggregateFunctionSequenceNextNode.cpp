@@ -94,7 +94,8 @@ AggregateFunctionPtr createAggregateFunctionSequenceNextNode(const std::string &
 
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNextNode });
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNextNode, properties });
 }
 
 }
