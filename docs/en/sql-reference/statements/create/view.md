@@ -59,6 +59,8 @@ A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Note
 
 The execution of [ALTER](../../../sql-reference/statements/alter/index.md) queries on materialized views has limitations, so they might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
+Note that Materialized view is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) settings, because there is a merge of data before the insertion in a view.
+
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 There isn’t a separate query for deleting views. To delete a view, use [DROP TABLE](../../../sql-reference/statements/drop.md).
