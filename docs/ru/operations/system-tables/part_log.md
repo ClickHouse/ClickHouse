@@ -37,7 +37,7 @@
 **Пример**
 
 ``` sql
-SELECT * FROM system.part_log LIMIT 1 \G
+SELECT * FROM system.part_log LIMIT 1 FORMAT Vertical;
 ```
 
 ``` text
