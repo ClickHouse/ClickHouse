@@ -192,7 +192,7 @@ void ReplxxLineReader::openEditor()
     }
 
     const char * editor = std::getenv("EDITOR");
-    if (!editor)
+    if (!editor || !*editor)
         editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
