@@ -85,7 +85,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
         }
         else
         {
-            std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
+            Map::iterator iter;
             size_t pos;
             for (iter = copiedDataInfo.begin(); iter != copiedDataInfo.end(); iter++)
             {
@@ -488,7 +488,7 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
 {
-    std::unordered_map<ConstAggregateDataPtr, size_t>::iterator iter;
+    Map::iterator iter;
     iter = copiedDataInfo.find(place);
     if (iter == copiedDataInfo.end())
     {
