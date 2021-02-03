@@ -182,3 +182,12 @@ SELECT number, max(number) OVER (PARTITION BY intDiv(number, 7) ORDER BY number 
 
 -- a corner case
 select count() over ();
+
+-- RANGE CURRENT ROW frame start
+select number, p, o,
+    count(*) over (partition by p order by o
+        range between current row and unbounded following)
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31))
+order by p, o, number
+settings max_block_size = 2;
