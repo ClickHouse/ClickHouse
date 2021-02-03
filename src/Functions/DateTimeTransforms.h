@@ -407,6 +407,23 @@ struct ToHourImpl
     using FactorTransform = ToDateImpl;
 };
 
+struct TimezoneOffsetImpl
+{
+    static constexpr auto name = "timezoneOffset";
+
+    static inline time_t execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.timezoneOffset(t);
+    }
+
+    static inline time_t execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ToTimeImpl;
+};
+
 struct ToMinuteImpl
 {
     static constexpr auto name = "toMinute";
