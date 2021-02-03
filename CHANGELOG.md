@@ -5,7 +5,6 @@
 #### Bug Fix
 
 * BloomFilter index crash fix. Fixes [#19757](https://github.com/ClickHouse/ClickHouse/issues/19757). [#19884](https://github.com/ClickHouse/ClickHouse/pull/19884) ([Maksim Kita](https://github.com/kitaisreal)).
-* Deadlock was possible if system.text_log is enabled. This fixes [#19874](https://github.com/ClickHouse/ClickHouse/issues/19874). [#19875](https://github.com/ClickHouse/ClickHouse/pull/19875) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Fix crash when pushing down predicates to union distinct subquery. This fixes [#19855](https://github.com/ClickHouse/ClickHouse/issues/19855). [#19861](https://github.com/ClickHouse/ClickHouse/pull/19861) ([Amos Bird](https://github.com/amosbird)).
 * Fix filtering by UInt8 greater than 127. [#19799](https://github.com/ClickHouse/ClickHouse/pull/19799) ([Anton Popov](https://github.com/CurtizJ)).
 * In previous versions, unusual arguments for function arrayEnumerateUniq may cause crash or infinite loop. This closes [#19787](https://github.com/ClickHouse/ClickHouse/issues/19787). [#19788](https://github.com/ClickHouse/ClickHouse/pull/19788) ([alexey-milovidov](https://github.com/alexey-milovidov)).
