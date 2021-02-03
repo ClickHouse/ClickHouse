@@ -1,6 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test_01674;
-USE test_01674;
-
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -79,6 +76,9 @@ SELECT * FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (a); -- { serverError 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
+DROP TABLE IF EXISTS t_ab1;
+DROP TABLE IF EXISTS t_ab2;
+
 CREATE TABLE t_ab1 (id Nullable(Int32), a UInt16, b UInt8) ENGINE = TinyLog;
 CREATE TABLE t_ab2 (id Nullable(Int32), a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t_ab1 VALUES (0, 1, 1), (1, 2, 2);
@@ -124,5 +124,3 @@ SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(b)) == 'Nullable(Int64)'
 
 DROP TABLE IF EXISTS t_ab1;
 DROP TABLE IF EXISTS t_ab2;
-
-DROP DATABASE IF EXISTS test_01674;

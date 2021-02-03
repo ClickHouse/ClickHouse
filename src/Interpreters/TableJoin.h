@@ -68,7 +68,7 @@ class TableJoin
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
     NamesAndTypesList columns_added_by_join;
-    /// Columns from right table that requres type conversion
+    /// Columns from right table that requires type conversion
     NamesAndTypesList converted_right_types;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
