@@ -113,6 +113,7 @@ private:
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    void updateAggregationState();
     void writeOutCurrentRow();
 
     Columns & inputAt(const RowNumber & x)
@@ -254,7 +255,7 @@ public:
     RowNumber partition_end;
     bool partition_ended = false;
 
-    // This is the row for which we are computing the window functions now.
+    // The row for which we are now computing the window functions.
     RowNumber current_row;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
@@ -270,6 +271,12 @@ public:
     RowNumber frame_end;
     bool frame_ended = false;
     bool frame_started = false;
+
+    // The previous frame boundaries that correspond to the current state of the
+    // aggregate function. We use them to determine how to update the aggregation
+    // state after we find the new frame.
+    RowNumber prev_frame_start;
+    RowNumber prev_frame_end;
 };
 
 }
