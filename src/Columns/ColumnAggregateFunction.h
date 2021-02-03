@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionHelpers.h>
 
-#include <unordered_map>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -86,7 +86,13 @@ private:
 
     /// MergedData records, used to avoid duplicated data copy.
     ///key: src pointer, val:  pos in current column.
-    std::unordered_map<ConstAggregateDataPtr, size_t> copiedDataInfo;
+    using Map = HashMap<
+        AggregateDataPtr,
+        size_t,
+        DefaultHash<ConstAggregateDataPtr>,
+        HashTableGrower<3>,
+        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    Map copiedDataInfo;
 
     ColumnAggregateFunction() {}
 
