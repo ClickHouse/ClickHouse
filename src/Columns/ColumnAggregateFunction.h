@@ -90,7 +90,7 @@ private:
         ConstAggregateDataPtr,
         size_t,
         DefaultHash<ConstAggregateDataPtr>,
-        HashTableGrower<4>,
+        HashTableGrower<3>,
         HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
 
     Map copiedDataInfo;
