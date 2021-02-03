@@ -95,7 +95,7 @@ void geodistInit()
 
         sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
 
-        sphere_metric_lut[i] = cosf(latitude);
+        sphere_metric_lut[i] = sqrf(cosf(latitude));
     }
 }
 
@@ -182,7 +182,7 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         ///  (Remember how a plane flies from Moscow to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
-        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
+        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
         size_t latitude_midpoint_index = floatToIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".

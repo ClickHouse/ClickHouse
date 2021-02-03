@@ -228,3 +228,12 @@ def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7, 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_utf8mb4(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.utf8mb4_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_system_parts_table(started_cluster, started_mysql_8_0, clickhouse_node):
+    materialize_with_ddl.system_parts_test(clickhouse_node, started_mysql_8_0, "mysql8_0")

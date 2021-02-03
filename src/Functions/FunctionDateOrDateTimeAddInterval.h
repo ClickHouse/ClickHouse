@@ -68,12 +68,12 @@ struct AddSecondsImpl : public AddOnDateTime64DefaultImpl<AddSecondsImpl>
 
     static constexpr auto name = "addSeconds";
 
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &)
     {
         return t + delta;
     }
 
-    static inline UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(DayNum(d)) + delta;
     }
@@ -92,7 +92,7 @@ struct AddMinutesImpl : public AddOnDateTime64DefaultImpl<AddMinutesImpl>
         return t + delta * 60;
     }
 
-    static inline UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(DayNum(d)) + delta * 60;
     }
@@ -111,7 +111,7 @@ struct AddHoursImpl : public AddOnDateTime64DefaultImpl<AddHoursImpl>
         return t + delta * 3600;
     }
 
-    static inline UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(DayNum(d)) + delta * 3600;
     }
@@ -125,18 +125,12 @@ struct AddDaysImpl : public AddOnDateTime64DefaultImpl<AddDaysImpl>
 
     static constexpr auto name = "addDays";
 
-//    static inline UInt32 execute(UInt64 t, Int64 delta, const DateLUTImpl & time_zone)
-//    {
-//        // TODO (nemkov): LUT does not support out-of range date values for now.
-//        return time_zone.addDays(t, delta);
-//    }
-
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addDays(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta;
     }
@@ -155,7 +149,7 @@ struct AddWeeksImpl : public AddOnDateTime64DefaultImpl<AddWeeksImpl>
         return time_zone.addWeeks(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta * 7;
     }

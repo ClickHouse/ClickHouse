@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -178,6 +177,13 @@ namespace
             || code == ErrorCodes::CANNOT_DECOMPRESS
             || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
+
+    SyncGuardPtr getDirectorySyncGuard(bool dir_fsync, const DiskPtr & disk, const String & path)
+    {
+        if (dir_fsync)
+            return disk->getDirectorySyncGuard(path);
+        return nullptr;
+    }
 }
 
 
@@ -244,10 +250,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         task_handle->deactivate();
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File(path).remove(true);
 }
 
@@ -448,10 +451,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File{file_path}.remove();
     metric_pending_files.sub();
 
@@ -537,9 +537,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
 
             if (Poco::File{tmp_file}.exists())
                 LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
@@ -607,10 +605,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
-
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
         }
@@ -813,9 +808,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 
     {
-        std::optional<DirectorySyncGuard> dir_sync_guard;
-        if (dir_fsync)
-            dir_sync_guard.emplace(disk, relative_path);
+        auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
 
         /// current_batch.txt will not exist if there was no send
         /// (this is the case when all batches that was pending has been marked as pending)
@@ -834,13 +827,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 
     Poco::File{broken_path}.createDirectory();
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    std::optional<DirectorySyncGuard> broken_dir_sync_guard;
-    if (dir_fsync)
-    {
-        broken_dir_sync_guard.emplace(disk, relative_path + "/broken/");
-        dir_sync_guard.emplace(disk, relative_path);
-    }
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
+    auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path + "/broken/");
 
     Poco::File{file_path}.renameTo(broken_file_path);
 
