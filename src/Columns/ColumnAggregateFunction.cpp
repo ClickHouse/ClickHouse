@@ -85,11 +85,10 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
         }
         else
         {
-            Map::iterator iter;
             size_t pos;
-            for (iter = copiedDataInfo.begin(); iter != copiedDataInfo.end(); iter++)
+            for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
             {
-                pos = iter->getValue();
+                pos = iter->getValue().second;
                 if (data[pos] != nullptr)
                 {
                     func->destroy(data[pos]);
@@ -497,7 +496,7 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
     }
     else
     {
-        size_t pos = iter->getValue();
+        size_t pos = result->getValue().second;
         if (pos != data.size() - 1)
         {
             data[data.size() - 1] = data[pos];
