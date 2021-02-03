@@ -49,14 +49,6 @@ SELECT encrypt('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError 43} bad
 SELECT encrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad AAD type
 
 -----------------------------------------------------------------------------------------
--- Valid cases
------------------------------------------------------------------------------------------
-
-SELECT 'UInt64', hex(aes_encrypt_mysql('aes-128-ecb', 123456789101112, 'keykeykeykeykeykeykeykeykeykeyke'));
-SELECT 'Float64', hex(aes_encrypt_mysql('aes-128-ecb', 1234567891011.12, 'keykeykeykeykeykeykeykeykeykeyke'));
-SELECT 'Decimal64', hex(aes_encrypt_mysql('aes-128-ecb', toDecimal64(1234567891011.12, 2), 'keykeykeykeykeykeykeykeykeykeyke'));
-
------------------------------------------------------------------------------------------
 -- Validate against predefined ciphertext,plaintext,key and IV for MySQL compatibility mode
 -----------------------------------------------------------------------------------------
 CREATE TABLE encryption_test

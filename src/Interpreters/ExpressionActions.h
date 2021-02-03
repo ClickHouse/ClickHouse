@@ -79,6 +79,7 @@ private:
     Block sample_block;
 
 public:
+    ExpressionActions() = delete;
     ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_);
     ExpressionActions(const ExpressionActions &) = default;
@@ -114,8 +115,6 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
-    ExpressionActions() = default;
-
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();

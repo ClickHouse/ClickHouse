@@ -497,7 +497,7 @@ public:
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-private:
+protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
     /// Customize this DataType
@@ -597,6 +597,7 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
+inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
