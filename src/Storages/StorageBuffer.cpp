@@ -736,10 +736,11 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
-
     if (!destination_id)
+    {
+        LOG_TRACE(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
         return;
+    }
 
     /** For simplicity, buffer is locked during write.
         * We could unlock buffer temporary, but it would lead to too many difficulties:
@@ -747,6 +748,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
         * - this could lead to infinite memory growth.
         */
+
+    Stopwatch watch;
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, global_context));
@@ -770,6 +773,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         /// After a while, the next write attempt will happen.
         throw;
     }
+
+    UInt64 milliseconds = watch.elapsedMilliseconds();
+    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
 }
 
 
@@ -861,9 +867,21 @@ void StorageBuffer::reschedule()
 
     for (auto & buffer : buffers)
     {
-        std::lock_guard lock(buffer.mutex);
-        min_first_write_time = buffer.first_write_time;
-        rows += buffer.data.rows();
+        /// try_to_lock here to avoid waiting for other layers flushing to be finished,
+        /// since the buffer table may:
+        /// - push to Distributed table, that may take too much time,
+        /// - push to table with materialized views attached,
+        ///   this is also may take some time.
+        ///
+        /// try_to_lock is also ok for background flush, since if there is
+        /// INSERT contended, then the reschedule will be done after
+        /// INSERT will be done.
+        std::unique_lock lock(buffer.mutex, std::try_to_lock);
+        if (lock.owns_lock())
+        {
+            min_first_write_time = buffer.first_write_time;
+            rows += buffer.data.rows();
+        }
     }
 
     /// will be rescheduled via INSERT
