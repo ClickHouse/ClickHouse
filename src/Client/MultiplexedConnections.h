@@ -106,7 +106,7 @@ private:
     /// in separate thread.
     mutable std::mutex cancel_mutex;
 
-    friend class RemoteQueryExecutorReadContext;
+    friend struct RemoteQueryExecutorRoutine;
 };
 
 }

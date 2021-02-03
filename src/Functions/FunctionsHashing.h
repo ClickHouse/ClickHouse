@@ -806,16 +806,7 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                ToType h;
-                if constexpr (OverBigInt<FromType>)
-                {
-                    using NativeT = typename NativeType<FromType>::Type;
-
-                    std::string buffer = BigInt<NativeT>::serialize(vec_from[i]);
-                    h = Impl::apply(buffer.data(), buffer.size());
-                }
-                else
-                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
 
                 if constexpr (first)
                     vec_to[i] = h;
@@ -827,16 +818,7 @@ private:
         {
             auto value = col_from_const->template getValue<FromType>();
 
-            ToType h;
-            if constexpr (OverBigInt<FromType>)
-            {
-                using NativeT = typename NativeType<FromType>::Type;
-
-                std::string buffer = BigInt<NativeT>::serialize(value);
-                h = Impl::apply(buffer.data(), buffer.size());
-            }
-            else
-                h = Impl::apply(reinterpret_cast<const char *>(&value), sizeof(value));
+            ToType h = Impl::apply(reinterpret_cast<const char *>(&value), sizeof(value));
 
             size_t size = vec_to.size();
             if constexpr (first)

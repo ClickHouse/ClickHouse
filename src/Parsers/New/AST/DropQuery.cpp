@@ -41,6 +41,16 @@ DropQuery::createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<Ta
     return query;
 }
 
+// static
+PtrTo<DropQuery>
+DropQuery::createDropView(bool detach, bool if_exists, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster)
+{
+    auto query = PtrTo<DropQuery>(new DropQuery(cluster, QueryType::VIEW, {identifier}));
+    query->detach = detach;
+    query->if_exists = if_exists;
+    return query;
+}
+
 DropQuery::DropQuery(PtrTo<ClusterClause> cluster, QueryType type, PtrList exprs) : DDLQuery(cluster, exprs), query_type(type)
 {
 }
@@ -73,6 +83,14 @@ ASTPtr DropQuery::convertToOld() const
                 query->database = database->getName();
             break;
         }
+        case QueryType::VIEW:
+        {
+            query->is_view = true;
+            query->table = get<TableIdentifier>(NAME)->getName();
+            if (auto database = get<TableIdentifier>(NAME)->getDatabase())
+                query->database = database->getName();
+            break;
+        }
     }
 
     convertToOldPartially(query);
@@ -100,6 +118,8 @@ antlrcpp::Any ParseTreeVisitor::visitDropTableStmt(ClickHouseParser::DropTableSt
         return DropQuery::createDropTable(!!ctx->DETACH(), !!ctx->EXISTS(), !!ctx->TEMPORARY(), visit(ctx->tableIdentifier()), cluster);
     if (ctx->DICTIONARY())
         return DropQuery::createDropDictionary(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->tableIdentifier()), cluster);
+    if (ctx->VIEW())
+        return DropQuery::createDropView(!!ctx->DETACH(), !!ctx->EXISTS(), visit(ctx->tableIdentifier()), cluster);
     __builtin_unreachable();
 }
 

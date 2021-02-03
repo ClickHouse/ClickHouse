@@ -120,9 +120,10 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
     for (size_t offset = min_size; offset < max_size; offset += 16)
     {
-        uint16_t mask = _mm_movemask_epi8(_mm_cmpgt_epi8(
+        uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(longest + offset)),
             zero16));
+        mask = ~mask;
 
         if (mask)
         {

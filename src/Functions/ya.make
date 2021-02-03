@@ -221,6 +221,7 @@ SRCS(
     currentUser.cpp
     dateDiff.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
@@ -427,6 +428,7 @@ SRCS(
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
+    sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
