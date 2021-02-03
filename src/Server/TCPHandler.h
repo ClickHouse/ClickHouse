@@ -109,15 +109,16 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_)
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_,
+        std::string server_display_name_)
         : Poco::Net::TCPServerConnection(socket_)
         , server(server_)
         , parse_proxy_protocol(parse_proxy_protocol_)
         , log(&Poco::Logger::get("TCPHandler"))
         , connection_context(server.context())
         , query_context(server.context())
+        , server_display_name(std::move(server_display_name_))
     {
-        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
     void run() override;

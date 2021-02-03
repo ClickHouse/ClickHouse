@@ -10,6 +10,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -27,8 +29,14 @@ namespace ErrorCodes
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
+    /// Data type parser can be invoked from coroutines with small stack.
+    /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
+    /// let's make the threshold significantly lower.
+    /// It is impractical for user to have complex data types with this depth.
+    static constexpr size_t data_type_max_parse_depth = 200;
+
     ParserDataType parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
     return get(ast);
 }
 
@@ -76,7 +84,16 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    DataTypePtr res = findCreatorByName(family_name)(parameters);
+
+    if (CurrentThread::isInitialized())
+    {
+        const auto * query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
+    }
+
+    return res;
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const

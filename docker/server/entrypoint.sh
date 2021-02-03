@@ -120,7 +120,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         sleep 1
     done
 
-    clickhouseclient=( clickhouse-client --multiquery -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
+    clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
 
     echo
 
