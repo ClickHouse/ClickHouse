@@ -41,6 +41,7 @@ public:
 
 private:
     void nextImpl() override;
+    void addChunk();
     void reinitializeChunks();
 
     void iterateEventLoop();

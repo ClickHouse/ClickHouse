@@ -326,10 +326,16 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
 void WriteBufferToRabbitMQProducer::nextImpl()
 {
+    addChunk();
+}
+
+void WriteBufferToRabbitMQProducer::addChunk()
+{
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
 }
+
 void WriteBufferToRabbitMQProducer::reinitializeChunks()
 {
     rows = 0;
@@ -337,7 +343,7 @@ void WriteBufferToRabbitMQProducer::reinitializeChunks()
     /// We cannot leave the buffer in the undefined state (i.e. without any
     /// underlying buffer), since in this case the WriteBuffeR::next() will
     /// not call our nextImpl() (due to available() == 0)
-    nextImpl();
+    addChunk();
 }
 
 
