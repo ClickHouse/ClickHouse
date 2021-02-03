@@ -491,7 +491,7 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
     result = copiedDataInfo.find(place);
     if (result == nullptr)
     {
-        copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
+        copiedDataInfo[place] = data.size()-1;
         func->merge(data.back(), place, &createOrGetArena());
     }
     else
