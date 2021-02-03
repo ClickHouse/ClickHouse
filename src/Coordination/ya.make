@@ -8,8 +8,6 @@ PEERDIR(
 )
 
 SRCS(
-    NuKeeperStorageDispatcher.cpp
-
 )
 
 END()
