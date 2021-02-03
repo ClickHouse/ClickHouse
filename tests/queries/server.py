@@ -303,6 +303,10 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
         <implementation>testkeeper</implementation>
     </zookeeper>
 
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+
     <part_log>
         <database>system</database>
         <table>part_log</table>
@@ -1117,6 +1121,136 @@ ServerThread.DEFAULT_DICTIONARIES_CONFIG = \
                 <null_value>0</null_value>
             </attribute>
         </structure>
+    </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tFirstKey\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
     </dictionary>
 </yandex>
 """

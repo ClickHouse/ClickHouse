@@ -40,6 +40,7 @@ SKIP_LIST = [
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
+    "01181_db_atomic_drop_on_cluster",  # tcp port in reference
     "01280_ssd_complex_key_dictionary",
     "01293_client_interactive_vertical_multiline",  # expect-test
     "01293_client_interactive_vertical_singleline",  # expect-test
@@ -71,24 +72,18 @@ SKIP_LIST = [
     "01555_system_distribution_queue_mask",
     "01558_ttest_scipy",
     "01561_mann_whitney_scipy",
-    "01564_test_hint_woes",  # echo-mode
     "01582_distinct_optimization",
-    "01591_window_functions",  # echo-mode
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01610_client_spawn_editor",  # expect-test
-    "01611_constant_folding_subqueries",  # echo-mode
-    "01661_arraySlice_ubsan",  # echo-mode
-    "01662_date_ubsan",  # echo-mode
-    "01664_decimal_ubsan",  # echo-mode
-    "01666_gcd_ubsan",  # echo-mode
-    "01666_lcm_ubsan",  # echo-mode
+    "01683_text_log_deadlock",  # secure tcp
 ]
 
 
 def check_result(result, error, return_code, reference, replace_map):
-    for old, new in replace_map.items():
-        result = result.replace(old.encode('utf-8'), new.encode('utf-8'))
+    if replace_map:
+        for old, new in replace_map.items():
+            result = result.replace(old.encode('utf-8'), new.encode('utf-8'))
 
     if return_code != 0:
         try:
@@ -105,9 +100,9 @@ def check_result(result, error, return_code, reference, replace_map):
             pytrace=False)
 
 
-def run_client(bin_prefix, port, query, reference, replace_map={}):
+def run_client(bin_prefix, port, database, query, reference, replace_map=None):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-m', '-n', '--testmode'],
+    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode'],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
@@ -115,7 +110,7 @@ def run_client(bin_prefix, port, query, reference, replace_map={}):
     check_result(result, error, client.returncode, reference, replace_map)
 
 
-def run_shell(bin_prefix, server, database, path, reference, replace_map={}):
+def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
     env = {
         'CLICKHOUSE_BINARY': bin_prefix,
         'CLICKHOUSE_DATABASE': database,
@@ -160,17 +155,18 @@ def test_sql_query(bin_prefix, sql_query, standalone_server):
         reference = file.read()
 
     random_name = 'test_{random}'.format(random=random_str())
-    query = 'CREATE DATABASE {random}; USE {random}; {query}'.format(random=random_name, query=query)
-    run_client(bin_prefix, tcp_port, query, reference, {random_name: 'default'})
+    run_client(bin_prefix, tcp_port, 'default', 'CREATE DATABASE {random};'.format(random=random_name), b'')
+
+    run_client(bin_prefix, tcp_port, random_name, query, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED TABLES\n')
+    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, query, b'')
+    run_client(bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
 
 
 def test_shell_query(bin_prefix, shell_query, standalone_server):
@@ -192,15 +188,15 @@ def test_shell_query(bin_prefix, shell_query, standalone_server):
 
     random_name = 'test_{random}'.format(random=random_str())
     query = 'CREATE DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, query, b'')
+    run_client(bin_prefix, tcp_port, 'default', query, b'')
 
     run_shell(bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED TABLES\n')
+    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, query, b'')
+    run_client(bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
