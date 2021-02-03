@@ -1149,10 +1149,7 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         /// Restore file if object has 'path' in metadata.
         auto path_entry = object_metadata.find("path");
         if (path_entry == object_metadata.end())
-        {
-            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' in metadata", key);
-            continue;
-        }
+            throw Exception("Failed to restore key " + key + " because it doesn't have 'path' in metadata", ErrorCodes::S3_ERROR);
 
         const auto & path = path_entry->second;
 
