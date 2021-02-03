@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -46,6 +45,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 
@@ -155,6 +155,35 @@ namespace
 
         return header;
     }
+
+    /// remote_error argument is used to decide whether some errors should be
+    /// ignored or not, in particular:
+    ///
+    /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
+    ///   if we receive it from remote (receiver), since:
+    ///   - the sender will got ATTEMPT_TO_READ_AFTER_EOF when the client just go away,
+    ///     i.e. server had been restarted
+    ///   - since #18853 the file will be checked on the sender locally, and
+    ///     if there is something wrong with the file itself, we will receive
+    ///     ATTEMPT_TO_READ_AFTER_EOF not from the remote at first
+    ///     and mark batch as broken.
+    bool isFileBrokenErrorCode(int code, bool remote_error)
+    {
+        return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+            || code == ErrorCodes::EMPTY_DATA_PASSED
+            || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
+            || code == ErrorCodes::CANNOT_READ_ALL_DATA
+            || code == ErrorCodes::UNKNOWN_CODEC
+            || code == ErrorCodes::CANNOT_DECOMPRESS
+            || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+    }
+
+    SyncGuardPtr getDirectorySyncGuard(bool dir_fsync, const DiskPtr & disk, const String & path)
+    {
+        if (dir_fsync)
+            return disk->getDirectorySyncGuard(path);
+        return nullptr;
+    }
 }
 
 
@@ -221,10 +250,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         task_handle->deactivate();
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File(path).remove(true);
 }
 
@@ -425,10 +451,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File{file_path}.remove();
     metric_pending_files.sub();
 
@@ -514,9 +537,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
 
             if (Poco::File{tmp_file}.exists())
                 LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
@@ -571,7 +592,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         catch (const Exception & e)
         {
-            if (isFileBrokenErrorCode(e.code()))
+            if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
             {
                 tryLogCurrentException(parent.log, "Failed to send batch due to");
                 batch_broken = true;
@@ -584,10 +605,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
-
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
         }
@@ -790,25 +808,13 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 
     {
-        std::optional<DirectorySyncGuard> dir_sync_guard;
-        if (dir_fsync)
-            dir_sync_guard.emplace(disk, relative_path);
+        auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
 
         /// current_batch.txt will not exist if there was no send
         /// (this is the case when all batches that was pending has been marked as pending)
         if (Poco::File{current_batch_file_path}.exists())
             Poco::File{current_batch_file_path}.remove();
     }
-}
-
-bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
-{
-    return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
-        || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
-        || code == ErrorCodes::CANNOT_READ_ALL_DATA
-        || code == ErrorCodes::UNKNOWN_CODEC
-        || code == ErrorCodes::CANNOT_DECOMPRESS
-        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
@@ -821,13 +827,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 
     Poco::File{broken_path}.createDirectory();
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    std::optional<DirectorySyncGuard> broken_dir_sync_guard;
-    if (dir_fsync)
-    {
-        broken_dir_sync_guard.emplace(disk, relative_path + "/broken/");
-        dir_sync_guard.emplace(disk, relative_path);
-    }
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
+    auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path + "/broken/");
 
     Poco::File{file_path}.renameTo(broken_file_path);
 
@@ -837,7 +838,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
 {
     /// mark file as broken if necessary
-    if (isFileBrokenErrorCode(e.code()))
+    if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);
         return true;

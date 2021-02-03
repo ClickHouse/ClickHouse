@@ -263,6 +263,12 @@ public:
     static constexpr auto name = "IPv6StringToNum";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
+    static inline bool tryParseIPv4(const char * pos)
+    {
+        UInt32 result = 0;
+        return DB::parseIPv4(pos, reinterpret_cast<unsigned char *>(&result));
+    }
+
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -270,8 +276,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
     }
@@ -292,13 +298,27 @@ public:
             const ColumnString::Chars & vec_src = col_in->getChars();
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
+            char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
-            for (size_t out_offset = 0, i = 0;
-                 out_offset < vec_res.size();
-                 out_offset += IPV6_BINARY_LENGTH, ++i)
+            for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
             {
-                /// In case of failure, the function fills vec_res with zero bytes.
-                parseIPv6(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
+
+                /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
+                /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
+                if (tryParseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset])))
+                {
+                    std::memcpy(
+                        src_ipv4_buf + std::strlen("::ffff:"),
+                        reinterpret_cast<const char *>(&vec_src[src_offset]),
+                        std::min<UInt64>(offsets_src[i] - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
+                    parseIPv6(src_ipv4_buf, reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                }
+                else
+                {
+                    parseIPv6(
+                        reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                }
                 src_offset = offsets_src[i];
             }
 

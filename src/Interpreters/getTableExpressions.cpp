@@ -73,8 +73,12 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
-static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context,
-                                                NamesAndTypesList & materialized, NamesAndTypesList & aliases, NamesAndTypesList & virtuals)
+static NamesAndTypesList getColumnsFromTableExpression(
+    const ASTTableExpression & table_expression,
+    const Context & context,
+    NamesAndTypesList & materialized,
+    NamesAndTypesList & aliases,
+    NamesAndTypesList & virtuals)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)

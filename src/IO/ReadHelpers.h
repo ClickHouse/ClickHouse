@@ -17,7 +17,6 @@
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
-#include <Core/BigInt.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -119,17 +118,6 @@ template <typename T>
 inline void readFloatBinary(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
-}
-
-template <typename T>
-void readBigIntBinary(T & x, ReadBuffer & buf)
-{
-    static const constexpr size_t bytesize = BigInt<T>::size;
-    char bytes[bytesize];
-
-    buf.readStrict(bytes, bytesize);
-
-    x = BigInt<T>::deserialize(bytes);
 }
 
 inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
@@ -849,11 +837,11 @@ inline void readBinary(DummyUInt256 & x, ReadBuffer & buf) { readPODBinary(x, bu
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readBigIntBinary(x.value, buf); }
+inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
-inline void readBinary(Int256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Int256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
@@ -1073,7 +1061,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-Exception readException(ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "", bool remote_exception = false);
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
