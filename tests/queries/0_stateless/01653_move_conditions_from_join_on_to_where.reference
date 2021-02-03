@@ -60,3 +60,19 @@ ALL INNER JOIN
 ) AS table2 ON a = table2.a
 WHERE 0
 ---------Q6----------
+---------Q7----------
+0	0	0	0
+SELECT
+    a,
+    b,
+    table2.a,
+    table2.b
+FROM table1
+ALL INNER JOIN 
+(
+    SELECT
+        a,
+        b
+    FROM table2
+) AS table2 ON a = table2.a
+WHERE (table2.b < toUInt32(40)) AND (b < 1)

@@ -1,3 +1,6 @@
+DROP DATABASE IF EXISTS test_01653;
+CREATE DATABASE test_01653;
+USE test_01653;
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 
@@ -29,5 +32,11 @@ EXPLAIN SYNTAX SELECT table1.a, table2.b FROM table1 JOIN table2 ON (table1.a = 
 SELECT '---------Q6----------';
 SELECT table1.a, table2.b FROM table1 JOIN table2 ON (table1.b = 6) AND (table2.b > 20); -- { serverError 403 } 
 
+SELECT '---------Q7----------';
+SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(40)) where table1.b < 1;
+EXPLAIN SYNTAX SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(40)) where table1.b < 1;
+SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt32(40)) where table1.b > 10;
+
 DROP TABLE table1;
 DROP TABLE table2;
+DROP DATABASE test_01653;

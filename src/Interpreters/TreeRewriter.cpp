@@ -425,9 +425,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
             data.asofToJoinKeys();
-        else if (data.move_to_where)
+        else if (data.new_where_conditions != nullptr)
         {
-            table_join.on_expression = (data.new_on_expression)->clone();
+            table_join.on_expression = data.new_on_expression;
             new_where_conditions = data.new_where_conditions;
         }
     }
@@ -438,7 +438,7 @@ void moveJoinedKeyToWhere(ASTSelectQuery * select_query, ASTPtr & new_where_cond
 {
     if (select_query->where())
         select_query->setExpression(ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("and", new_where_conditions->clone(), select_query->where()->clone()));
+            makeASTFunction("and", new_where_conditions, select_query->where()));
     else
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, new_where_conditions->clone());
 }
