@@ -2594,7 +2594,7 @@ Default value: `16`.
 
 ## optimize_on_insert {#optimize-on-insert}
 
-Do the same transformation for inserted block of data as if merge was done on this block.
+Do the same transformation for inserted block of data as if merge was done on this block (e.g. replacing, collapsing, aggregating...).
 
 Possible values:
 
@@ -2605,7 +2605,7 @@ Default value: 1.
 
 **Example**
 
-The difference enabled and disabled:
+The difference between enabled and disabled:
 
 Query:
 
@@ -2643,5 +2643,7 @@ Result:
 │           1 │
 └─────────────┘
 ```
+
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
