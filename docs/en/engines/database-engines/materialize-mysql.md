@@ -93,6 +93,7 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
 - Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
+- `MaterializeMySQL` is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) settings. There is a merge of data in the corresponding table in `MaterializeMySQL` database when a table in MySQL server changes.
 
 ## Examples of Use {#examples-of-use}
 
