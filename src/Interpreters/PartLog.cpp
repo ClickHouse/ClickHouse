@@ -29,25 +29,25 @@ Block PartLogElement::createBlock()
             {"MovePart",      static_cast<Int8>(MOVE_PART)},
         }
     );
+
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    return
-    {
+    return {
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(),   "query_id"),
-        columns_with_type_and_name.emplace_back(  std::move(event_type_datatype),       "event_type"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeDate>(),     "event_date"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "query_id"),
+        columns_with_type_and_name.emplace_back(std::move(event_type_datatype), "event_type"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(), "event_date"),
 
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(), "event_time"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6),"event_time_microseconds"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"),
 
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeUInt64>(),   "duration_ms"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "duration_ms"),
 
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeString>(),   "database"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeString>(),   "table"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeString>(),   "part_name"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(),   "partition_id"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeString>(),   "path_on_disk"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "database"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "table"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "part_name"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "partition_id"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "path_on_disk"),
 
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "rows"),
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "size_in_bytes"), // On disk
