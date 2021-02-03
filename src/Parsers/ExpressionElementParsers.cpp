@@ -640,6 +640,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (keyword_following.ignore(pos, expected))
             {
+                // Positive offset or UNBOUNDED FOLLOWING.
             }
             else
             {
