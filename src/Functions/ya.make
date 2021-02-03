@@ -452,6 +452,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp
