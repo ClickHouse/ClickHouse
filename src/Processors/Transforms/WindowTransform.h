@@ -246,7 +246,7 @@ public:
 
     // Boundaries of the current partition.
     // partition_start doesn't point to a valid block, because we want to drop
-    // the blocks early to save memory. We still have track it so that we can
+    // the blocks early to save memory. We still have to track it so that we can
     // cut off a PRECEDING frame at the partition start.
     // The `partition_end` is past-the-end, as usual. When
     // partition_ended = false, it still haven't ended, and partition_end is the
