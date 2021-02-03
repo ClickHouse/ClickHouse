@@ -78,9 +78,11 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(left, right, data);
-        if (table_numbers.first != 0)
+        bool need_optimize = false;
+        auto table_numbers = getTableNumbers(left, right, data, &need_optimize);
+        if (!need_optimize)
         {
+            // related to two different tables
             data.addJoinKeys(left, right, table_numbers);
             if (!data.new_on_expression)
                 data.new_on_expression = ast->clone();
@@ -93,8 +95,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                 data.new_where_conditions = ast->clone();
             else
                 data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
-
-            data.move_to_where = true;
         }
 
     }
@@ -104,7 +104,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         {
             ASTPtr left = func.arguments->children.at(0);
             ASTPtr right = func.arguments->children.at(1);
-            auto table_numbers = getTableNumbers(left, right, data);
+            bool need_optimize_unused = false;
+            auto table_numbers = getTableNumbers(left, right, data, &need_optimize_unused);
             if (table_numbers.first != 0)
             {
                 throw Exception("JOIN ON inequalities are not supported. Unexpected '" + queryToString(ast) + "'",
@@ -116,8 +117,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                     data.new_where_conditions = ast->clone();
                 else
                     data.new_where_conditions = makeASTFunction("and", data.new_where_conditions, ast->clone());
-
-                data.move_to_where = true;
             }
         }
 
@@ -127,7 +126,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        auto table_numbers = getTableNumbers(left, right, data);
+        bool need_optimize_unused;
+        auto table_numbers = getTableNumbers(left, right, data, &need_optimize_unused);
 
         data.addAsofJoinKeys(left, right, table_numbers, inequality);
     }
@@ -153,7 +153,7 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
 }
 
 std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast,
-                                                                    Data & data)
+                                                                    Data & data, bool *need_optimize)
 {
     std::vector<const ASTIdentifier *> left_identifiers;
     std::vector<const ASTIdentifier *> right_identifiers;
@@ -162,17 +162,18 @@ std::pair<size_t, size_t> CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr
     getIdentifiers(right_ast, right_identifiers);
 
     if (left_identifiers.empty() || right_identifiers.empty())
-        return std::make_pair(0, 0);
+    {
+        *need_optimize = true;
+        return {0, 0};
+    }
 
     size_t left_idents_table = getTableForIdentifiers(left_identifiers, data);
     size_t right_idents_table = getTableForIdentifiers(right_identifiers, data);
 
     if (left_idents_table && left_idents_table == right_idents_table)
     {
-        auto left_name = queryToString(*left_identifiers[0]);
-        auto right_name = queryToString(*right_identifiers[0]);
-
-        return std::make_pair(0, 0);
+        *need_optimize = true;
+        return {0, 0};
     }
 
     return std::make_pair(left_idents_table, right_idents_table);
