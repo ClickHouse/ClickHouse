@@ -55,6 +55,8 @@ public:
       */
     bool next()
     {
+        assert(!hasPendingData());
+
         bytes += offset();
         bool res = nextImpl();
         if (!res)
@@ -72,7 +74,7 @@ public:
             next();
     }
 
-    virtual ~ReadBuffer() {}
+    virtual ~ReadBuffer() = default;
 
 
     /** Unlike std::istream, it returns true if all data was read
@@ -192,7 +194,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] void throwReadAfterEOF()
+    [[noreturn]] static inline void throwReadAfterEOF()
     {
         throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
