@@ -51,8 +51,7 @@ public:
                      const ConnectionTimeouts * timeouts_,
                      const Settings * settings_,
                      const QualifiedTableName * table_to_check = nullptr,
-                     Poco::Logger * log_ = nullptr,
-                     bool non_blocking_ = true);
+                     Poco::Logger * log_ = nullptr);
 
     /// Continue connecting to replica from previous stage. Initial stage is CONNECT.
     void run();
@@ -78,7 +77,6 @@ public:
     TryResult result;
     Stage stage;
     int socket_fd;
-    bool non_blocking;
     std::function<void(int)> action_before_disconnect;
 };
 
