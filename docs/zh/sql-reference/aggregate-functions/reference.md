@@ -379,47 +379,6 @@ kurtSamp(expr)
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## avgWeighted {#avgweighted}
-
-计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
-
-**语法**
-
-``` sql
-avgWeighted(x, weight)
-```
-
-**参数**
-
--   `x` — 值。 [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
--   `weight` — 值的加权。 [整数](../data-types/int-uint.md) 或 [浮点](../data-types/float.md).
-
-`x` 和 `weight` 的类型一定是一样的
-
-**返回值**
-
--   加权平均值。
--   `NaN`. 如果所有的权重都等于0。
-
-类型: [Float64](../data-types/float.md).
-
-**示例**
-
-查询:
-
-``` sql
-SELECT avgWeighted(x, w)
-FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
-```
-
-结果:
-
-``` text
-┌─avgWeighted(x, weight)─┐
-│                      8 │
-└────────────────────────┘
-```
-
 ## uniq {#agg_function-uniq}
 
 计算参数的不同值的近似数量。

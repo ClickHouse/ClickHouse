@@ -4,11 +4,19 @@ toc_priority: 110
 
 # groupArray {#agg_function-grouparray}
 
-Syntax: `groupArray(x)` or `groupArray(max_size)(x)`
+**语法**
+``` sql
+`groupArray(x)`
 
-Creates an array of argument values.
-Values can be added to the array in any (indeterminate) order.
+or
 
-The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any (x)]`.
+`groupArray(max_size)(x)`
+```
 
-In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
+创建参数值的数组。
+值可以按任何（不确定）顺序添加到数组中。
+
+第二个版本（带有 `max_size` 参数）将结果数组的大小限制为 `max_size` 个元素。
+例如, `groupArray (1) (x)` 相当于 `[any (x)]` 。
+
+在某些情况下，您仍然可以依赖执行顺序。这适用于SELECT(查询)来自使用了 `ORDER BY` 子查询的情况。

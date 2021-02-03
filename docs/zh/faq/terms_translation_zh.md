@@ -4,8 +4,12 @@
 ## 保持英文，不译
 Parquet
 
-## 英文  <-> 中文
-Tuple       元组
+## 英文   <->     中文
+Integer             整数
+floating-point      浮点数
+Decimal             定点数
+Tuple               元组
+function            函数
 
 
 
