@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 std::string WindowFunctionDescription::dump() const
 {
     WriteBufferFromOwnString ss;
