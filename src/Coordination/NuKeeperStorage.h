@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/SessionExpiryQueue.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -50,6 +51,7 @@ public:
     using Container = std::map<std::string, Node>;
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<String>>;
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<String>>;
+    using SessionAndTimeout = std::unordered_map<int64_t, long>;
     using SessionIDs = std::vector<int64_t>;
 
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
@@ -57,6 +59,8 @@ public:
     Container container;
     Ephemerals ephemerals;
     SessionAndWatcher sessions_and_watchers;
+    SessionExpiryQueue session_expiry_queue;
+    SessionAndTimeout session_and_timeout;
 
     int64_t zxid{0};
     bool finalized{false};
@@ -72,15 +76,23 @@ public:
     }
 
 public:
-    NuKeeperStorage();
+    NuKeeperStorage(long tick_time_ms);
 
-    int64_t getSessionID()
+    int64_t getSessionID(long session_timeout_ms)
     {
-        return session_id_counter++;
+        auto result = session_id_counter++;
+        session_and_timeout.emplace(result, session_timeout_ms);
+        session_expiry_queue.update(result, session_timeout_ms);
+        return result;
     }
 
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
     ResponsesForSessions finalize(const RequestsForSessions & expired_requests);
+
+    std::unordered_set<int64_t> getDeadSessions()
+    {
+        return session_expiry_queue.getExpiredSessions();
+    }
 };
 
 }

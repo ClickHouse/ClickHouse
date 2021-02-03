@@ -59,7 +59,6 @@ void NuKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordinati
 
 bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
-
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         if (session_to_response_callback.count(session_id) == 0)
@@ -171,6 +170,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
+    session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -187,6 +187,9 @@ void NuKeeperStorageDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
             shutdown_called = true;
+
+            if (session_cleaner_thread.joinable())
+                session_cleaner_thread.join();
 
             if (processing_thread.joinable())
                 processing_thread.join();
@@ -223,6 +226,43 @@ void NuKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperRes
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
+}
+
+void NuKeeperStorageDispatcher::sessionCleanerTask()
+{
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (isLeader())
+            {
+                auto dead_sessions = server->getDeadSessions();
+                for (int64_t dead_session : dead_sessions)
+                {
+                    LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
+                    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+                    request->xid = Coordination::CLOSE_XID;
+                    putRequest(request, dead_session);
+                    {
+                        std::lock_guard lock(session_to_response_callback_mutex);
+                        auto session_it = session_to_response_callback.find(dead_session);
+                        if (session_it != session_to_response_callback.end())
+                            session_to_response_callback.erase(session_it);
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        /*FIXME*/
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
 }
 
 void NuKeeperStorageDispatcher::finishSession(int64_t session_id)

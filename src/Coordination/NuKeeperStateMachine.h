@@ -10,7 +10,7 @@ namespace DB
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine();
+    NuKeeperStateMachine(long tick_time);
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
@@ -48,6 +48,8 @@ public:
     }
 
     NuKeeperStorage::ResponsesForSessions processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
+
+    std::unordered_set<int64_t> getDeadSessions();
 
 private:
     struct StorageSnapshot

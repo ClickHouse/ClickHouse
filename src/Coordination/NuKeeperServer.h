@@ -46,7 +46,9 @@ public:
 
     NuKeeperStorage::ResponsesForSessions putRequests(const NuKeeperStorage::RequestsForSessions & requests);
 
-    int64_t getSessionID();
+    int64_t getSessionID(long session_timeout_ms);
+
+    std::unordered_set<int64_t> getDeadSessions();
 
     void addServer(int server_id_, const std::string & server_uri, bool can_become_leader_, int32_t priority);
 

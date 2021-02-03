@@ -27,7 +27,6 @@ class NuKeeperStorageDispatcher
 private:
     Poco::Timespan operation_timeout{0, Coordination::DEFAULT_OPERATION_TIMEOUT_MS * 1000};
 
-
     std::mutex push_request_mutex;
 
     using RequestsQueue = ConcurrentBoundedQueue<NuKeeperStorage::RequestForSession>;
@@ -40,12 +39,15 @@ private:
 
     ThreadFromGlobalPool processing_thread;
 
+    ThreadFromGlobalPool session_cleaner_thread;
+
     std::unique_ptr<NuKeeperServer> server;
 
     Poco::Logger * log;
 
 private:
     void processingThread();
+    void sessionCleanerTask();
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
@@ -69,15 +71,14 @@ public:
         return server->isLeaderAlive();
     }
 
-    int64_t getSessionID()
+    int64_t getSessionID(long session_timeout_ms)
     {
-        return server->getSessionID();
+        return server->getSessionID(session_timeout_ms);
     }
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
-
 };
 
 }

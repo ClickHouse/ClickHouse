@@ -53,10 +53,9 @@ private:
     void runImpl();
 
     void sendHandshake(bool has_leader);
-    void receiveHandshake();
+    Poco::Timespan receiveHandshake();
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
-    void finish();
 };
 
 }
