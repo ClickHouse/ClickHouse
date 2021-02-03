@@ -357,7 +357,7 @@ void DDLWorker::scheduleTasks()
         if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
-            updateMaxDDLEntryID(*task);
+            updateMaxDDLEntryID(entry_name);
             continue;
         }
 
@@ -449,9 +449,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     return true;
 }
 
-void DDLWorker::updateMaxDDLEntryID(const DDLTaskBase & task)
+void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 {
-    DB::ReadBufferFromString in(task.entry_name);
+    DB::ReadBufferFromString in(entry_name);
     DB::assertString("query-", in);
     UInt64 id;
     readText(id, in);
@@ -511,6 +511,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
 
             if (task.execute_on_leader)
             {
+                tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
             }
             else
             {
@@ -549,7 +550,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
         task.was_executed = true;
     }
 
-    updateMaxDDLEntryID(task);
+    updateMaxDDLEntryID(task.entry_name);
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
     /// If ZooKeeper connection is lost here, we will try again to write query status.

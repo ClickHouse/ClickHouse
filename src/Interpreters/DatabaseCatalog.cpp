@@ -976,12 +976,10 @@ void DDLGuard::releaseTableLock() noexcept
 
     table_lock_removed = true;
     guards_lock.lock();
-    --it->second.counter;
-    if (!it->second.counter)
-    {
-        table_lock.unlock();
+    UInt32 counter = --it->second.counter;
+    table_lock.unlock();
+    if (counter == 0)
         map.erase(it);
-    }
     guards_lock.unlock();
 }
 

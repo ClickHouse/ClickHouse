@@ -33,7 +33,7 @@ bool isSupportedAlterType(int type)
 {
     assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
-        /// It's dangerous, because it may duplicate data if executed on multiple replicas
+        /// It's dangerous, because it may duplicate data if executed on multiple replicas. We can allow it after #18978
         ASTAlterCommand::ATTACH_PARTITION,
         /// Usually followed by ATTACH PARTITION
         ASTAlterCommand::FETCH_PARTITION,
