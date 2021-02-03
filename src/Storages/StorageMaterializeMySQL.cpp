@@ -30,9 +30,8 @@ namespace DB
 StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
-    auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
     StorageInMemoryMetadata in_memory_metadata;
-    in_memory_metadata.setColumns(nested_memory_metadata.getColumns());
+    in_memory_metadata = nested_storage->getInMemoryMetadata();
     setInMemoryMetadata(in_memory_metadata);
 }
 
