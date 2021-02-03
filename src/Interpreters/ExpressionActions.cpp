@@ -67,7 +67,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 
 void ExpressionActions::linearizeActions()
 {
-    /// This function does the topological sort or DAG and fills all the fields of ExpressionActions.
+    /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
     /// For every node we support the number of created children, and if all children are created, put node into queue.
     struct Data
@@ -472,9 +472,16 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
                 block.erase(input);
     }
 
+    Block res;
+
     for (auto pos : result_positions)
         if (execution_context.columns[pos].column)
-            block.insert(execution_context.columns[pos]);
+            res.insert(execution_context.columns[pos]);
+
+    for (const auto & item : block)
+        res.insert(std::move(item));
+
+    block.swap(res);
 
     num_rows = execution_context.num_rows;
 }
