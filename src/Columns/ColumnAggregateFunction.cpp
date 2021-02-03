@@ -88,7 +88,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
             size_t pos;
             for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
             {
-                pos = iter->getValue().second;
+                pos = it->getValue().second;
                 if (data[pos] != nullptr)
                 {
                     func->destroy(data[pos]);
