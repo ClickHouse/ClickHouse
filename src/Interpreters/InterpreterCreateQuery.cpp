@@ -465,7 +465,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    res.flattenNested();
+    if (context.getSettingsRef().flatten_nested)
+        res.flattenNested();
 
     if (res.getAllPhysical().empty())
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};

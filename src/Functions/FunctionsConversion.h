@@ -188,7 +188,10 @@ struct ConvertImpl
                     (std::is_same_v<FromFieldType, UInt128> || std::is_same_v<ToFieldType, UInt128>))
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                    {
+                        vec_to[i] = 0;
                         (*vec_null_map_to)[i] = true;
+                    }
                     else
                         throw Exception("Unexpected UInt128 to big int conversion", ErrorCodes::NOT_IMPLEMENTED);
                 }
@@ -215,7 +218,10 @@ struct ConvertImpl
                             if (convert_result)
                                 vec_to[i] = result;
                             else
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(0);
                                 (*vec_null_map_to)[i] = true;
+                            }
                         }
                         else
                         {
@@ -238,6 +244,7 @@ struct ConvertImpl
                             {
                                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
+                                    vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
                                     continue;
                                 }
@@ -255,6 +262,7 @@ struct ConvertImpl
                             {
                                 if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
+                                    vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
                                 }
                                 else
@@ -946,6 +954,12 @@ struct ConvertThroughParsing
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                }
+                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
+                {
+                    time_t res;
+                    parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                    vec_to[i] = res;
                 }
                 else
                 {
@@ -1995,9 +2009,11 @@ using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Dec
 using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
-struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
+struct NameParseDateTimeBestEffortUS { static constexpr auto name = "parseDateTimeBestEffortUS"; };
+struct NameParseDateTimeBestEffortUSOrZero { static constexpr auto name = "parseDateTimeBestEffortUSOrZero"; };
+struct NameParseDateTimeBestEffortUSOrNull { static constexpr auto name = "parseDateTimeBestEffortUSOrNull"; };
 struct NameParseDateTime32BestEffort { static constexpr auto name = "parseDateTime32BestEffort"; };
 struct NameParseDateTime32BestEffortOrZero { static constexpr auto name = "parseDateTime32BestEffortOrZero"; };
 struct NameParseDateTime32BestEffortOrNull { static constexpr auto name = "parseDateTime32BestEffortOrNull"; };
@@ -2008,12 +2024,17 @@ struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parse
 
 using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTimeBestEffortUS = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortUS, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
 using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
 using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+
+using FunctionParseDateTimeBestEffortUS = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortUS, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTimeBestEffortUSOrZero = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortUSOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTimeBestEffortUSOrNull = FunctionConvertFromString<
+    DataTypeDateTime, NameParseDateTimeBestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 using FunctionParseDateTime32BestEffort = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTime32BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;

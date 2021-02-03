@@ -53,7 +53,7 @@ private:
     std::atomic<MemoryTracker *> parent {};
 
     /// You could specify custom metric to track memory usage.
-    CurrentMetrics::Metric metric = CurrentMetrics::end();
+    std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
@@ -96,6 +96,8 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
+    void setHardLimit(Int64 value);
+
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
@@ -132,7 +134,7 @@ public:
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
     void setMetric(CurrentMetrics::Metric metric_)
     {
-        metric = metric_;
+        metric.store(metric_, std::memory_order_relaxed);
     }
 
     void setDescription(const char * description)
@@ -165,7 +167,7 @@ public:
         VariableContext previous_level;
     public:
         /// level_ - block in level and above
-        BlockerInThread(VariableContext level_ = VariableContext::Global);
+        BlockerInThread(VariableContext level_ = VariableContext::User);
         ~BlockerInThread();
 
         static bool isBlocked(VariableContext current_level)
@@ -201,7 +203,7 @@ public:
     public:
         /// level_ - block in level and above
         /// block_fault_injections_ - block in fault injection too
-        LockExceptionInThread(VariableContext level_ = VariableContext::Global, bool block_fault_injections_ = true);
+        LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
         ~LockExceptionInThread();
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)

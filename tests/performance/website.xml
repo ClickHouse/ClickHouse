@@ -35,7 +35,7 @@
 <query>SELECT SearchPhrase, uniq(UserID) AS u FROM {table} WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10</query>
 <query>SELECT SearchEngineID, SearchPhrase, count() AS c FROM {table} WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10</query>
 <query>SELECT UserID, count() FROM {table} GROUP BY UserID ORDER BY count() DESC LIMIT 10</query>
-<query>SELECT UserID, SearchPhrase, count() FROM {table} GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
+<query>SELECT UserID, SearchPhrase, count() FROM hits_10m_single GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
 <query>SELECT UserID, SearchPhrase, count() FROM hits_10m_single GROUP BY UserID, SearchPhrase LIMIT 10</query>
 <query>SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits_10m_single GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10</query>
 <query short="1">SELECT count() FROM hits_100m_single WHERE UserID = 12345678901234567890</query>
