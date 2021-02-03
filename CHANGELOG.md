@@ -1,5 +1,37 @@
 ## ClickHouse release 21.1
 
+### ClickHouse release v21.1.3.32-stable, 2021-02-03
+
+#### Bug Fix
+
+* BloomFilter index crash fix. Fixes [#19757](https://github.com/ClickHouse/ClickHouse/issues/19757). [#19884](https://github.com/ClickHouse/ClickHouse/pull/19884) ([Maksim Kita](https://github.com/kitaisreal)).
+* Deadlock was possible if system.text_log is enabled. This fixes [#19874](https://github.com/ClickHouse/ClickHouse/issues/19874). [#19875](https://github.com/ClickHouse/ClickHouse/pull/19875) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix crash when pushing down predicates to union distinct subquery. This fixes [#19855](https://github.com/ClickHouse/ClickHouse/issues/19855). [#19861](https://github.com/ClickHouse/ClickHouse/pull/19861) ([Amos Bird](https://github.com/amosbird)).
+* Fix filtering by UInt8 greater than 127. [#19799](https://github.com/ClickHouse/ClickHouse/pull/19799) ([Anton Popov](https://github.com/CurtizJ)).
+* In previous versions, unusual arguments for function arrayEnumerateUniq may cause crash or infinite loop. This closes [#19787](https://github.com/ClickHouse/ClickHouse/issues/19787). [#19788](https://github.com/ClickHouse/ClickHouse/pull/19788) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fixed stack overflow when using accurate comparison of arithmetic type with string type. [#19773](https://github.com/ClickHouse/ClickHouse/pull/19773) ([tavplubix](https://github.com/tavplubix)).
+* Fix crash when nested column name was used in `WHERE` or `PREWHERE`. Fixes [#19755](https://github.com/ClickHouse/ClickHouse/issues/19755). [#19763](https://github.com/ClickHouse/ClickHouse/pull/19763) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix a segmentation fault in `bitmapAndnot` function. Fixes [#19668](https://github.com/ClickHouse/ClickHouse/issues/19668). [#19713](https://github.com/ClickHouse/ClickHouse/pull/19713) ([Maksim Kita](https://github.com/kitaisreal)).
+* Some functions with big integers may cause segfault. Big integers is experimental feature. This closes [#19667](https://github.com/ClickHouse/ClickHouse/issues/19667). [#19672](https://github.com/ClickHouse/ClickHouse/pull/19672) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix wrong result of function `neighbor` for `LowCardinality` argument. Fixes [#10333](https://github.com/ClickHouse/ClickHouse/issues/10333). [#19617](https://github.com/ClickHouse/ClickHouse/pull/19617) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix use-after-free of the CompressedWriteBuffer in Connection after disconnect. [#19599](https://github.com/ClickHouse/ClickHouse/pull/19599) ([Azat Khuzhin](https://github.com/azat)).
+* `DROP/DETACH TABLE table ON CLUSTER cluster SYNC` query might hang, it's fixed. Fixes [#19568](https://github.com/ClickHouse/ClickHouse/issues/19568). [#19572](https://github.com/ClickHouse/ClickHouse/pull/19572) ([tavplubix](https://github.com/tavplubix)).
+* Query CREATE DICTIONARY id expression fix. [#19571](https://github.com/ClickHouse/ClickHouse/pull/19571) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fix SIGSEGV with merge_tree_min_rows_for_concurrent_read/merge_tree_min_bytes_for_concurrent_read=0/UINT64_MAX. [#19528](https://github.com/ClickHouse/ClickHouse/pull/19528) ([Azat Khuzhin](https://github.com/azat)).
+* Buffer overflow (on memory read) was possible if `addMonth` function was called with specifically crafted arguments. This fixes [#19441](https://github.com/ClickHouse/ClickHouse/issues/19441). This fixes [#19413](https://github.com/ClickHouse/ClickHouse/issues/19413). [#19472](https://github.com/ClickHouse/ClickHouse/pull/19472) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Uninitialized memory read was possible in encrypt/decrypt functions if empty string was passed as IV. This closes [#19391](https://github.com/ClickHouse/ClickHouse/issues/19391). [#19397](https://github.com/ClickHouse/ClickHouse/pull/19397) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Fix possible buffer overflow in Uber H3 library. See https://github.com/uber/h3/issues/392. This closes [#19219](https://github.com/ClickHouse/ClickHouse/issues/19219). [#19383](https://github.com/ClickHouse/ClickHouse/pull/19383) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Added `cast`, `accurateCast`, `accurateCastOrNull` performance tests. [#19354](https://github.com/ClickHouse/ClickHouse/pull/19354) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fix system.parts _state column (LOGICAL_ERROR when querying this column, due to incorrect order). [#19346](https://github.com/ClickHouse/ClickHouse/pull/19346) ([Azat Khuzhin](https://github.com/azat)).
+* Fixed possible wrong result or segfault on aggregation when Materialized View and its target table have different structure. Fixes [#18063](https://github.com/ClickHouse/ClickHouse/issues/18063). [#19322](https://github.com/ClickHouse/ClickHouse/pull/19322) ([tavplubix](https://github.com/tavplubix)).
+* Fix error `Cannot convert column now64() because it is constant but values of constants are different in source and result`. Continuation of [#7156](https://github.com/ClickHouse/ClickHouse/issues/7156). [#19316](https://github.com/ClickHouse/ClickHouse/pull/19316) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Fix bug when concurrent `ALTER` and `DROP` queries may hang while processing ReplicatedMergeTree table. [#19237](https://github.com/ClickHouse/ClickHouse/pull/19237) ([alesapin](https://github.com/alesapin)).
+* Fixed `There is no checkpoint` error when inserting data through http interface using `Template` or `CustomSeparated` format. Fixes [#19021](https://github.com/ClickHouse/ClickHouse/issues/19021). [#19072](https://github.com/ClickHouse/ClickHouse/pull/19072) ([tavplubix](https://github.com/tavplubix)).
+* Disable constant folding for subqueries on the analysis stage, when the result cannot be calculated. [#18446](https://github.com/ClickHouse/ClickHouse/pull/18446) ([Azat Khuzhin](https://github.com/azat)).
+* Mutation might hang waiting for some non-existent part after `MOVE` or `REPLACE PARTITION` or, in rare cases, after `DETACH` or `DROP PARTITION`. It's fixed. [#15537](https://github.com/ClickHouse/ClickHouse/pull/15537) ([tavplubix](https://github.com/tavplubix)).
+
+
+
 ### ClickHouse release v21.1.2.15-stable 2021-01-18
 
 #### Backward Incompatible Change
