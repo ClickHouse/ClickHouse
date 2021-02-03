@@ -191,3 +191,8 @@ from (select number, intDiv(number, 5) p, mod(number, 3) o
     from numbers(31))
 order by p, o, number
 settings max_block_size = 2;
+
+select
+    count(*) over (rows between  current row and current row),
+    count(*) over (range between  current row and current row)
+from numbers(3);

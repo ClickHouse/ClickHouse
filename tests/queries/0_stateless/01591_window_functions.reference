@@ -607,3 +607,10 @@ settings max_block_size = 2;
 26	5	2	2
 29	5	2	2
 30	6	0	1
+select
+    count(*) over (rows between  current row and current row),
+    count(*) over (range between  current row and current row)
+from numbers(3);
+1	3
+1	3
+1	3
