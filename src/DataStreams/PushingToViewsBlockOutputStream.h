@@ -60,7 +60,7 @@ private:
     std::unique_ptr<Context> select_context;
     std::unique_ptr<Context> insert_context;
 
-    void process(const Block & block, size_t view_num);
+    void process(const Block & block, ViewInfo & view);
 };
 
 
