@@ -45,9 +45,9 @@ void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, 
 void NuKeeperServer::startup()
 {
     nuraft::raft_params params;
-    params.heart_beat_interval_ = 1000;
-    params.election_timeout_lower_bound_ = 500;
-    params.election_timeout_upper_bound_ = 1000;
+    params.heart_beat_interval_ = 500;
+    params.election_timeout_lower_bound_ = 1000;
+    params.election_timeout_upper_bound_ = 2000;
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
     params.client_req_timeout_ = 10000;
@@ -184,7 +184,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const NuKeeper
                 auto response = request->makeResponse();
                 response->xid = request->xid;
                 response->zxid = 0; /// FIXME what we can do with it?
-                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                response->error = Coordination::Error::ZOPERATIONTIMEOUT;
                 responses.push_back(DB::NuKeeperStorage::ResponseForSession{session_id, response});
             }
             return responses;
