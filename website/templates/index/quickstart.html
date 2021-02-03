@@ -1,0 +1,51 @@
+<div>
+    <div class="container lead">
+    <h2 id="quick-start" class="display-4 mt-5">Quick start</h2>
+
+    <p>System requirements for pre-built packages: Linux, x86_64 with SSE 4.2.</p>
+
+    <ul class="nav nav-tabs" id="install-tab" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="deb-tab" data-toggle="tab" href="#deb" role="tab" aria-controls="deb" aria-selected="true" title="deb packages">Ubuntu or Debian</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="rpm-tab" data-toggle="tab" href="#rpm" role="tab" aria-controls="rpm" aria-selected="false" title="rpm packages">CentOS or RedHat</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="tgz-tab" data-toggle="tab" href="#tgz" role="tab" aria-controls="tgz" aria-selected="false" title="tgz packages">Other Linux</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/docs/en/commercial/cloud/" role="tab" aria-controls="cloud" aria-selected="false" title="Cloud Service Providers"><strong>Cloud</strong></a>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="install-tab-content">
+        <div class="tab-pane show active syntax p-3 my-3" id="deb" role="tabpanel" aria-labelledby="deb-tab">
+            <pre>{% include "install/deb.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
+            <pre>{% include "install/rpm.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="tgz" role="tabpanel" aria-labelledby="tgz-tab">
+            <pre>{% include "install/tgz.sh" %}</pre>
+        </div>
+    </div>
+
+    <p>For other operating systems the easiest way to get started is using
+        <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow noreferrer"
+           target="_blank">
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting-started/">option</a> though.
+        Alternatively, you can easily get a running ClickHouse instance or cluster at
+        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow noreferrer" target="_blank">
+            Yandex Managed Service for ClickHouse</a>.
+    </p>
+
+    <p>After you got connected to your ClickHouse server, you can proceed to:</p>
+        <p>
+            <a href="/docs/en/getting-started/tutorial/" class="btn btn-lg btn-outline-orange" role="button">
+                &nbsp;&nbsp;&nbsp;Tutorial&nbsp;&nbsp;&nbsp;
+            </a>&nbsp;&nbsp;
+            <a href="/docs/en/" class="btn btn-lg btn-outline-orange" role="button">Documentation</a>
+        </p>
+    </div>
+</div>

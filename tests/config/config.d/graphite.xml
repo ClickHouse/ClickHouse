@@ -1,0 +1,28 @@
+<yandex>
+    <graphite_rollup>
+        <version_column_name>Version</version_column_name>
+        <pattern>
+            <regexp>sum</regexp>
+            <function>sum</function>
+            <retention>
+                <age>0</age>
+                <precision>600</precision>
+            </retention>
+            <retention>
+                <age>172800</age> <!-- 2 days -->
+                <precision>6000</precision>
+            </retention>
+        </pattern>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>600</precision>
+            </retention>
+            <retention>
+                <age>172800</age>
+                <precision>6000</precision>
+            </retention>
+        </default>
+    </graphite_rollup>
+</yandex>

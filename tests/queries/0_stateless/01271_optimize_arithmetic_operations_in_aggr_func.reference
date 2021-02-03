@@ -1,0 +1,558 @@
+SELECT
+    sum(n + 1),
+    sum(1 + n),
+    sum(n - 1),
+    sum(1 - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(n) * 2,
+    2 * sum(n),
+    sum(n) / 2,
+    sum(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n) + 1,
+    1 + min(n),
+    min(n) - 1,
+    1 - min(n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n) * 2,
+    2 * min(n),
+    min(n) / 2,
+    min(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n) + 1,
+    1 + max(n),
+    max(n) - 1,
+    1 - max(n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n) * 2,
+    2 * max(n),
+    max(n) / 2,
+    max(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(n + -1),
+    sum(-1 + n),
+    sum(n - -1),
+    sum(-1 - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(n) * -2,
+    -2 * sum(n),
+    sum(n) / -2,
+    sum(-1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n) + -1,
+    -1 + min(n),
+    min(n) - -1,
+    -1 - min(n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n) * -2,
+    -2 * max(n),
+    max(n) / -2,
+    min(-1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n) + -1,
+    -1 + max(n),
+    max(n) - -1,
+    -1 - max(n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n) * -2,
+    -2 * min(n),
+    min(n) / -2,
+    max(-1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(abs(2) + 1),
+    sum(abs(2) + n),
+    sum(n - abs(2)),
+    sum(1 - abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(abs(2)) * 2,
+    sum(abs(2) * n),
+    sum(n / abs(2)),
+    sum(1 / abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(abs(2)) + 1,
+    min(abs(2) + n),
+    min(n - abs(2)),
+    1 - min(abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(abs(2)) * 2,
+    min(abs(2) * n),
+    min(n / abs(2)),
+    min(1 / abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(abs(2)) + 1,
+    max(abs(2) + n),
+    max(n - abs(2)),
+    1 - max(abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(abs(2)) * 2,
+    max(abs(2) * n),
+    max(n / abs(2)),
+    max(1 / abs(2))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(abs(n) + 1),
+    sum(abs(n) + n),
+    sum(n - abs(n)),
+    sum(1 - abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(abs(n)) * 2,
+    sum(abs(n) * n),
+    sum(n / abs(n)),
+    sum(1 / abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(abs(n)) + 1,
+    min(abs(n) + n),
+    min(n - abs(n)),
+    1 - min(abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(abs(n)) * 2,
+    min(abs(n) * n),
+    min(n / abs(n)),
+    min(1 / abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(abs(n)) + 1,
+    max(abs(n) + n),
+    max(n - abs(n)),
+    1 - max(abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(abs(n)) * 2,
+    max(abs(n) * n),
+    max(n / abs(n)),
+    max(1 / abs(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum((n * n) + 1),
+    sum(1 + (n * n)),
+    sum((n * n) - 1),
+    sum(1 - (n * n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(n * n) * 2,
+    sum((2 * n) * n),
+    sum(n * n) / 2,
+    sum((1 / n) * n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n * n) + 1,
+    1 + min(n * n),
+    min(n * n) - 1,
+    1 - min(n * n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    min(n * n) * 2,
+    min((2 * n) * n),
+    min(n * n) / 2,
+    min((1 / n) * n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n * n) + 1,
+    1 + max(n * n),
+    max(n * n) - 1,
+    1 - max(n * n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    max(n * n) * 2,
+    max((2 * n) * n),
+    max(n * n) / 2,
+    max((1 / n) * n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum((1 + n) + 1),
+    sum((1 + 1) + n),
+    sum((1 + n) - 1),
+    sum((1 + 1) - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum(1 + (n * 2)),
+    sum(1 + (2 * n)),
+    sum(1 + (n / 2)),
+    sum(1 + (1 / n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (1 + min(n)) + 1,
+    min((1 + 1) + n),
+    (1 + min(n)) - 1,
+    min((1 + 1) - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    1 + min(n * 2),
+    1 + min(2 * n),
+    1 + min(n / 2),
+    1 + min(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (1 + max(n)) + 1,
+    max((1 + 1) + n),
+    (1 + max(n)) - 1,
+    max((1 + 1) - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    1 + max(n * 2),
+    1 + max(2 * n),
+    1 + max(n / 2),
+    1 + max(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    sum((n + -1) + -1),
+    sum((-1 + n) + -1),
+    sum((n - -1) + -1),
+    sum((-1 - n) + -1)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (sum(n) * -2) * -1,
+    (-2 * sum(n)) * -1,
+    (sum(n) / -2) / -1,
+    sum(-1 / n) / -1
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (min(n) + -1) + -1,
+    (-1 + min(n)) + -1,
+    (min(n) - -1) + -1,
+    (-1 - min(n)) + -1
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (min(n) * -2) * -1,
+    (-2 * min(n)) * -1,
+    (min(n) / -2) / -1,
+    max(-1 / n) / -1
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (max(n) + -1) + -1,
+    (-1 + max(n)) + -1,
+    (max(n) - -1) + -1,
+    (-1 - max(n)) + -1
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT
+    (max(n) * -2) * -1,
+    (-2 * max(n)) * -1,
+    (max(n) / -2) / -1,
+    min(-1 / n) / -1
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT ((sum(n + 1) + sum(1 + n)) + sum(n - 1)) + sum(1 - n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT (((sum(n) * 2) + (2 * sum(n))) + (sum(n) / 2)) + sum(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT (((min(n) + 1) + (1 + min(n))) + (min(n) - 1)) + (1 - min(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT (((min(n) * 2) + (2 * min(n))) + (min(n) / 2)) + min(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT (((max(n) + 1) + (1 + max(n))) + (max(n) - 1)) + (1 - max(n))
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+SELECT (((max(n) * 2) + (2 * max(n))) + (max(n) / 2)) + max(1 / n)
+FROM 
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+55	55	35	-35
+90	90	22.5	inf
+1	1	-1	1
+0	0	0	0.1111111111111111
+10	10	8	-8
+18	18	4.5	inf
+35	35	55	-55
+-90	-90	-22.5	-inf
+-1	-1	1	-1
+-18	-18	-4.5	-inf
+8	8	10	-10
+0	0	-0	-0.1111111111111111
+30	65	25	-10
+40	90	22.5	5
+3	2	-2	-1
+4	0	0	0.5
+3	11	7	-1
+4	18	4.5	0.5
+55	90	0	-35
+90	285	nan	inf
+1	0	0	1
+0	0	nan	0.1111111111111111
+10	18	0	-8
+18	81	nan	inf
+295	295	275	-275
+570	570	142.5	nan
+1	1	-1	1
+0	0	0	nan
+82	82	80	-80
+162	162	40.5	nan
+65	65	45	-25
+100	100	32.5	inf
+2	2	0	-7
+1	1	1	1.1111111111111112
+11	11	9	2
+19	19	5.5	inf
+25	25	45	-65
+90	90	22.5	inf
+-2	-2	0	-2
+0	0	0	0.1111111111111111
+7	7	9	-11
+18	18	4.5	inf
+110
+inf
+2
+0.1111111111111111
+20
+inf
+-15444
+68.62157087543459
+243
+55	55	35	-35
+90	90	22.5	inf
+1	1	-1	-8
+0	0	0	0.1111111111111111
+10	10	8	1
+18	18	4.5	inf
+35	35	55	-55
+-90	-90	-22.5	-inf
+-1	-1	1	-10
+-18	-18	-4.5	-inf
+8	8	10	-1
+0	0	-0	-0.1111111111111111
+30	65	25	-10
+40	90	22.5	5
+3	2	-2	-1
+4	0	0	0.5
+3	11	7	-1
+4	18	4.5	0.5
+55	90	0	-35
+90	285	nan	inf
+1	0	0	-8
+0	0	nan	0.1111111111111111
+10	18	0	1
+18	81	nan	inf
+295	295	275	-275
+570	570	142.5	nan
+1	1	-1	-80
+0	0	0	nan
+82	82	80	1
+162	162	40.5	nan
+65	65	45	-25
+100	100	32.5	inf
+2	2	0	-7
+1	1	1	1.1111111111111112
+11	11	9	2
+19	19	5.5	inf
+25	25	45	-65
+90	90	22.5	inf
+-2	-2	0	-11
+0	0	0	0.1111111111111111
+7	7	9	-2
+18	18	4.5	inf
+110
+inf
+-7
+0.1111111111111111
+29
+inf
+-15444
+68.62157087543459
+243

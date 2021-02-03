@@ -1,0 +1,8 @@
+CREATE DATABASE memory_01069\nENGINE = Memory()
+1
+2
+3
+4
+3
+4
+CREATE TABLE memory_01069.file\n(\n    `n` UInt8\n)\nENGINE = File(\'CSV\')

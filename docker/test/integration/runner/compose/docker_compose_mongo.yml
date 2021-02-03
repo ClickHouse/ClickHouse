@@ -1,0 +1,11 @@
+version: '2.3'
+services:
+    mongo1:
+        image: mongo:3.6
+        restart: always
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: root
+            MONGO_INITDB_ROOT_PASSWORD: clickhouse
+        ports:
+          - 27018:27017
+        command: --profile=2 --verbose

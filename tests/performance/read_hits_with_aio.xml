@@ -1,0 +1,14 @@
+<test>
+
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+<query>SELECT count() FROM hits_100m_single where UserID=1234567890 SETTINGS max_threads = 1, min_bytes_to_use_direct_io = 1, max_read_buffer_size = 10485760;</query>
+<query>SELECT count() FROM hits_100m_single where EventDate between toDate('2013-07-10') and toDate('2013-07-16') and UserID=123 SETTINGS max_threads = 1, min_bytes_to_use_direct_io = 1, max_read_buffer_size = 10485760;</query>
+
+<query>SELECT count() FROM hits_100m_single where UserID=1234567890 SETTINGS max_threads = 1, min_bytes_to_use_direct_io = 0, max_read_buffer_size = 10485760;</query>
+<query>SELECT count() FROM hits_100m_single where EventDate between toDate('2013-07-10') and toDate('2013-07-16') and UserID=123 SETTINGS max_threads = 1, min_bytes_to_use_direct_io = 0, max_read_buffer_size = 10485760;</query>
+
+</test>

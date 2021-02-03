@@ -57,7 +57,7 @@ function die {
 
 ./install-os-packages.sh prepare
 
-# Configuration parameters may be overriden with CONFIG environment variable pointing to config file.
+# Configuration parameters may be overridden with CONFIG environment variable pointing to config file.
 [[ -n "$CONFIG" ]] && source $CONFIG
 
 mkdir -p $WORKSPACE

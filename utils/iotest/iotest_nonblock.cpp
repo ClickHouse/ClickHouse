@@ -1,24 +1,26 @@
-#include <fcntl.h>
-#include <port/unistd.h>
-#include <stdlib.h>
-#include <time.h>
-#include <stdlib.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <malloc.h>
-#endif
-#include <poll.h>
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <random>
-#include <pcg_random.hpp>
 #include <IO/ReadHelpers.h>
+#include <pcg_random.hpp>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <port/clock.h>
+#include <Common/ThreadPool.h>
+#include <Common/randomSeed.h>
+
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <vector>
+
+#include <fcntl.h>
+#include <poll.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+#if defined (OS_LINUX)
+#   include <malloc.h>
+#endif
+
 
 namespace DB
 {
@@ -45,7 +47,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     Mode mode = MODE_READ;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;
@@ -111,9 +113,9 @@ int mainImpl(int argc, char ** argv)
             polls[i].revents = 0;
             ++ops;
 
-            long rand_result1 = rng();
-            long rand_result2 = rng();
-            long rand_result3 = rng();
+            uint64_t rand_result1 = rng();
+            uint64_t rand_result2 = rng();
+            uint64_t rand_result3 = rng();
 
             size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
             size_t offset;

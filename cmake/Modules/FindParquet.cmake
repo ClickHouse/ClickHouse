@@ -17,131 +17,116 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# - Find PARQUET (parquet/parquet.h, libparquet.a, libparquet.so)
+# - Find Parquet (parquet/api/reader.h, libparquet.a, libparquet.so)
+#
+# This module requires Arrow from which it uses
+#  arrow_find_package()
+#
 # This module defines
+#  PARQUET_FOUND, whether Parquet has been found
+#  PARQUET_IMPORT_LIB, path to libparquet's import library (Windows only)
 #  PARQUET_INCLUDE_DIR, directory containing headers
-#  PARQUET_LIBS, directory containing parquet libraries
-#  PARQUET_STATIC_LIB, path to libparquet.a
+#  PARQUET_LIBS, deprecated. Use PARQUET_LIB_DIR instead
+#  PARQUET_LIB_DIR, directory containing Parquet libraries
+#  PARQUET_SHARED_IMP_LIB, deprecated. Use PARQUET_IMPORT_LIB instead
 #  PARQUET_SHARED_LIB, path to libparquet's shared library
-#  PARQUET_SHARED_IMP_LIB, path to libparquet's import library (MSVC only)
-#  PARQUET_FOUND, whether parquet has been found
+#  PARQUET_SO_VERSION, shared object version of found Parquet such as "100"
+#  PARQUET_STATIC_LIB, path to libparquet.a
 
-include(FindPkgConfig)
+if(DEFINED PARQUET_FOUND)
+  return()
+endif()
+
+set(find_package_arguments)
+if(${CMAKE_FIND_PACKAGE_NAME}_FIND_VERSION)
+  list(APPEND find_package_arguments "${${CMAKE_FIND_PACKAGE_NAME}_FIND_VERSION}")
+endif()
+if(${CMAKE_FIND_PACKAGE_NAME}_FIND_REQUIRED)
+  list(APPEND find_package_arguments REQUIRED)
+endif()
+if(${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY)
+  list(APPEND find_package_arguments QUIET)
+endif()
+find_package(Arrow ${find_package_arguments})
 
 if(NOT "$ENV{PARQUET_HOME}" STREQUAL "")
-    set(PARQUET_HOME "$ENV{PARQUET_HOME}")
+  file(TO_CMAKE_PATH "$ENV{PARQUET_HOME}" PARQUET_HOME)
 endif()
 
-if (MSVC)
-  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib" ".dll")
+if((NOT PARQUET_HOME) AND ARROW_HOME)
+  set(PARQUET_HOME ${ARROW_HOME})
+endif()
 
-  if (MSVC AND NOT DEFINED PARQUET_MSVC_STATIC_LIB_SUFFIX)
-    set(PARQUET_MSVC_STATIC_LIB_SUFFIX "_static")
-  endif()
-
-  find_library(PARQUET_SHARED_LIBRARIES NAMES parquet
-    PATHS ${PARQUET_HOME} NO_DEFAULT_PATH
-    PATH_SUFFIXES "bin" )
-
-  get_filename_component(PARQUET_SHARED_LIBS ${PARQUET_SHARED_LIBRARIES} PATH )
-endif ()
-
-if(PARQUET_HOME)
-    set(PARQUET_SEARCH_HEADER_PATHS
-        ${PARQUET_HOME}/include
-        )
-    set(PARQUET_SEARCH_LIB_PATH
-        ${PARQUET_HOME}/lib
-        )
-    find_path(PARQUET_INCLUDE_DIR parquet/api/reader.h PATHS
-        ${PARQUET_SEARCH_HEADER_PATHS}
-        # make sure we don't accidentally pick up a different version
-        NO_DEFAULT_PATH
-        )
-    find_library(PARQUET_LIBRARIES NAMES parquet
-        PATHS ${PARQUET_HOME} NO_DEFAULT_PATH
-        PATH_SUFFIXES "lib")
-    get_filename_component(PARQUET_LIBS ${PARQUET_LIBRARIES} PATH )
-
-    # Try to autodiscover the Parquet ABI version
-    get_filename_component(PARQUET_LIB_REALPATH ${PARQUET_LIBRARIES} REALPATH)
-    get_filename_component(PARQUET_EXT_REALPATH ${PARQUET_LIB_REALPATH} EXT)
-    string(REGEX MATCH ".([0-9]+.[0-9]+.[0-9]+)" HAS_ABI_VERSION ${PARQUET_EXT_REALPATH})
-    if (HAS_ABI_VERSION)
-      if (APPLE)
-        string(REGEX REPLACE ".([0-9]+.[0-9]+.[0-9]+).dylib" "\\1" PARQUET_ABI_VERSION ${PARQUET_EXT_REALPATH})
+if(ARROW_FOUND)
+  arrow_find_package(PARQUET
+                     "${PARQUET_HOME}"
+                     parquet
+                     parquet/api/reader.h
+                     Parquet
+                     parquet)
+  if(PARQUET_HOME)
+    if(PARQUET_INCLUDE_DIR)
+      file(READ "${PARQUET_INCLUDE_DIR}/parquet/parquet_version.h"
+           PARQUET_VERSION_H_CONTENT)
+      arrow_extract_macro_value(PARQUET_VERSION_MAJOR "PARQUET_VERSION_MAJOR"
+                                "${PARQUET_VERSION_H_CONTENT}")
+      arrow_extract_macro_value(PARQUET_VERSION_MINOR "PARQUET_VERSION_MINOR"
+                                "${PARQUET_VERSION_H_CONTENT}")
+      arrow_extract_macro_value(PARQUET_VERSION_PATCH "PARQUET_VERSION_PATCH"
+                                "${PARQUET_VERSION_H_CONTENT}")
+      if("${PARQUET_VERSION_MAJOR}" STREQUAL ""
+         OR "${PARQUET_VERSION_MINOR}" STREQUAL ""
+         OR "${PARQUET_VERSION_PATCH}" STREQUAL "")
+        set(PARQUET_VERSION "0.0.0")
       else()
-        string(REGEX REPLACE ".so.([0-9]+.[0-9]+.[0-9]+)" "\\1" PARQUET_ABI_VERSION ${PARQUET_EXT_REALPATH})
+        set(PARQUET_VERSION
+            "${PARQUET_VERSION_MAJOR}.${PARQUET_VERSION_MINOR}.${PARQUET_VERSION_PATCH}")
       endif()
-      string(REGEX REPLACE "([0-9]+).[0-9]+.[0-9]+" "\\1" PARQUET_SO_VERSION ${PARQUET_ABI_VERSION})
-    else()
-      set(PARQUET_ABI_VERSION "1.0.0")
-      set(PARQUET_SO_VERSION "1")
+
+      arrow_extract_macro_value(PARQUET_SO_VERSION_QUOTED "PARQUET_SO_VERSION"
+                                "${PARQUET_VERSION_H_CONTENT}")
+      string(REGEX
+             REPLACE "^\"(.+)\"$" "\\1" PARQUET_SO_VERSION "${PARQUET_SO_VERSION_QUOTED}")
+      arrow_extract_macro_value(PARQUET_FULL_SO_VERSION_QUOTED "PARQUET_FULL_SO_VERSION"
+                                "${PARQUET_VERSION_H_CONTENT}")
+      string(REGEX
+             REPLACE "^\"(.+)\"$" "\\1" PARQUET_FULL_SO_VERSION
+                     "${PARQUET_FULL_SO_VERSION_QUOTED}")
     endif()
-else()
-    pkg_check_modules(PARQUET parquet)
-    if (PARQUET_FOUND)
-        pkg_get_variable(PARQUET_ABI_VERSION parquet abi_version)
-        message(STATUS "Parquet C++ ABI version: ${PARQUET_ABI_VERSION}")
-        pkg_get_variable(PARQUET_SO_VERSION parquet so_version)
-        message(STATUS "Parquet C++ SO version: ${PARQUET_SO_VERSION}")
-        set(PARQUET_INCLUDE_DIR ${PARQUET_INCLUDE_DIRS})
-        set(PARQUET_LIBS ${PARQUET_LIBRARY_DIRS})
-        set(PARQUET_SEARCH_LIB_PATH ${PARQUET_LIBRARY_DIRS})
-        message(STATUS "Searching for parquet libs in: ${PARQUET_SEARCH_LIB_PATH}")
-        find_library(PARQUET_LIBRARIES NAMES parquet
-            PATHS ${PARQUET_SEARCH_LIB_PATH} NO_DEFAULT_PATH)
-    else()
-        find_path(PARQUET_INCLUDE_DIR NAMES parquet/api/reader.h )
-        find_library(PARQUET_LIBRARIES NAMES parquet)
-        get_filename_component(PARQUET_LIBS ${PARQUET_LIBRARIES} PATH )
+  else()
+    if(PARQUET_USE_CMAKE_PACKAGE_CONFIG)
+      find_package(Parquet CONFIG)
+    elseif(PARQUET_USE_PKG_CONFIG)
+      pkg_get_variable(PARQUET_SO_VERSION parquet so_version)
+      pkg_get_variable(PARQUET_FULL_SO_VERSION parquet full_so_version)
     endif()
+  endif()
+  set(PARQUET_ABI_VERSION "${PARQUET_SO_VERSION}")
 endif()
 
-if (PARQUET_INCLUDE_DIR AND PARQUET_LIBRARIES)
-  set(PARQUET_FOUND TRUE)
-  set(PARQUET_LIB_NAME parquet)
-  if (MSVC)
-    set(PARQUET_STATIC_LIB "${PARQUET_LIBS}/${PARQUET_LIB_NAME}${PARQUET_MSVC_STATIC_LIB_SUFFIX}${CMAKE_STATIC_LIBRARY_SUFFIX}")
-    set(PARQUET_SHARED_LIB "${PARQUET_SHARED_LIBS}/${PARQUET_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    set(PARQUET_SHARED_IMP_LIB "${PARQUET_LIBS}/${PARQUET_LIB_NAME}.lib")
-  else()
-    set(PARQUET_STATIC_LIB ${PARQUET_LIBS}/${CMAKE_STATIC_LIBRARY_PREFIX}${PARQUET_LIB_NAME}.a)
-    set(PARQUET_SHARED_LIB ${PARQUET_LIBS}/${CMAKE_SHARED_LIBRARY_PREFIX}${PARQUET_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-  endif()
-else ()
-  set(PARQUET_FOUND FALSE)
-endif ()
+mark_as_advanced(PARQUET_ABI_VERSION
+                 PARQUET_IMPORT_LIB
+                 PARQUET_INCLUDE_DIR
+                 PARQUET_LIBS
+                 PARQUET_LIB_DIR
+                 PARQUET_SHARED_IMP_LIB
+                 PARQUET_SHARED_LIB
+                 PARQUET_SO_VERSION
+                 PARQUET_STATIC_LIB
+                 PARQUET_VERSION)
 
-if (PARQUET_FOUND)
-  if (NOT Parquet_FIND_QUIETLY)
-    message(STATUS "Found the Parquet library: ${PARQUET_LIBRARIES}")
-  endif ()
-else ()
-  if (NOT Parquet_FIND_QUIETLY)
-    if (NOT PARQUET_FOUND)
-      set(PARQUET_ERR_MSG "${PARQUET_ERR_MSG} Could not find the parquet library.")
-    endif()
+find_package_handle_standard_args(Parquet
+                                  REQUIRED_VARS
+                                  PARQUET_INCLUDE_DIR
+                                  PARQUET_LIB_DIR
+                                  PARQUET_SO_VERSION
+                                  VERSION_VAR
+                                  PARQUET_VERSION)
+set(PARQUET_FOUND ${Parquet_FOUND})
 
-    set(PARQUET_ERR_MSG "${PARQUET_ERR_MSG} Looked in ")
-    if ( _parquet_roots )
-      set(PARQUET_ERR_MSG "${PARQUET_ERR_MSG} in ${_parquet_roots}.")
-    else ()
-      set(PARQUET_ERR_MSG "${PARQUET_ERR_MSG} system search paths.")
-    endif ()
-    if (Parquet_FIND_REQUIRED)
-      message(FATAL_ERROR "${PARQUET_ERR_MSG}")
-    else (Parquet_FIND_REQUIRED)
-      message(STATUS "${PARQUET_ERR_MSG}")
-    endif (Parquet_FIND_REQUIRED)
-  endif ()
-endif ()
-
-mark_as_advanced(
-  PARQUET_FOUND
-  PARQUET_INCLUDE_DIR
-  PARQUET_LIBS
-  PARQUET_LIBRARIES
-  PARQUET_STATIC_LIB
-  PARQUET_SHARED_LIB
-)
+if(Parquet_FOUND AND NOT Parquet_FIND_QUIETLY)
+  message(STATUS "Parquet version: ${PARQUET_VERSION} (${PARQUET_FIND_APPROACH})")
+  message(STATUS "Found the Parquet shared library: ${PARQUET_SHARED_LIB}")
+  message(STATUS "Found the Parquet import library: ${PARQUET_IMPORT_LIB}")
+  message(STATUS "Found the Parquet static library: ${PARQUET_STATIC_LIB}")
+endif()

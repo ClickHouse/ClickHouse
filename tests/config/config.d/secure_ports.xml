@@ -1,0 +1,13 @@
+<yandex>
+    <https_port>8443</https_port>
+    <tcp_port_secure>9440</tcp_port_secure>
+
+    <openSSL>
+        <client>
+            <invalidCertificateHandler replace="replace">
+                <name>AcceptCertificateHandler</name>  <!-- For tests only-->
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+
+</yandex>

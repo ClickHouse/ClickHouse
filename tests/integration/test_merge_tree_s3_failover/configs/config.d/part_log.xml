@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </part_log>
+</yandex>

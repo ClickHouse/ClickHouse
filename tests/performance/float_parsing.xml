@@ -1,0 +1,27 @@
+<test>
+    <substitutions>
+       <substitution>
+           <name>expr</name>
+           <values>
+               <value>toString(number)</value>
+               <value>toString(number % 10)</value>
+           </values>
+       </substitution>
+        <substitution>
+            <name>expr_zero</name>
+            <values>
+                <value>toString(1 / rand())</value>
+                <value>toString(rand() / 0xFFFFFFFF)</value>
+                <value>toString(0xFFFFFFFF / rand())</value>
+                <value>toString(rand())</value>
+                <value>toString(rand64())</value>
+                <value>concat(toString(rand(1)), '.', toString(rand(2)))</value>
+                <value>concat(toString(rand(1)), 'e', toString(rand(2) % 100))</value>
+                <value>concat(toString(rand64(1)), toString(rand64(2)), toString(rand64(3)))</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toFloat64({expr}))</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(toFloat64({expr_zero}))</query>
+</test>

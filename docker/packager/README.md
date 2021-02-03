@@ -3,10 +3,10 @@ compilers and build settings. Correctly configured Docker daemon is single depen
 
 Usage:
 
-Build deb package with `gcc-8` in `debug` mode:
+Build deb package with `gcc-9` in `debug` mode:
 ```
 $ mkdir deb/test_output
-$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=gcc-8 --build-type=debug
+$ ./packager --output-dir deb/test_output/ --package-type deb --compiler=gcc-9 --build-type=debug
 $ ls -l deb/test_output
 -rw-r--r-- 1 root root      3730 clickhouse-client_18.14.2+debug_all.deb
 -rw-r--r-- 1 root root  84221888 clickhouse-common-static_18.14.2+debug_amd64.deb
@@ -18,11 +18,11 @@ $ ls -l deb/test_output
 
 ```
 
-Build ClickHouse binary with `clang-6.0` and `address` sanitizer in `relwithdebuginfo`
+Build ClickHouse binary with `clang-10` and `address` sanitizer in `relwithdebuginfo`
 mode:
 ```
 $ mkdir $HOME/some_clickhouse
-$ ./packager --output-dir=$HOME/some_clickhouse --package-type binary --compiler=clang-6.0 --sanitizer=address
+$ ./packager --output-dir=$HOME/some_clickhouse --package-type binary --compiler=clang-10 --sanitizer=address
 $ ls -l $HOME/some_clickhouse
 -rwxr-xr-x 1 root root 787061952  clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-benchmark -> clickhouse
@@ -36,6 +36,5 @@ lrwxrwxrwx 1 root root        10  clickhouse-lld -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-local -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-obfuscator -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-odbc-bridge -> clickhouse
-lrwxrwxrwx 1 root root        10  clickhouse-performance-test -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-server -> clickhouse
 ```
