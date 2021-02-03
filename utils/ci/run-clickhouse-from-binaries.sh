@@ -6,8 +6,8 @@ set -e -x
 
 source default-config
 
-SERVER_BIN="${WORKSPACE}/build/dbms/src/Server/clickhouse"
-SERVER_CONF="${WORKSPACE}/sources/dbms/src/Server/config.xml"
+SERVER_BIN="${WORKSPACE}/build/src/Server/clickhouse"
+SERVER_CONF="${WORKSPACE}/sources/src/Server/config.xml"
 SERVER_DATADIR="${WORKSPACE}/clickhouse"
 
 [[ -x "$SERVER_BIN" ]] || die "Run build-normal.sh first"

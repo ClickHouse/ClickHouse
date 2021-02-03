@@ -1,1 +1,0 @@
-../../en/introduction/adopters.md

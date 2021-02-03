@@ -66,7 +66,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-8 g++-8 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-8 g++-8 libc6-dev libicu-dev libreadline-dev psmisc bash expect python3 python3-lxml python3-termcolor python3-requests curl perl sudo openssl netcat-openbsd"
         shift
     elif [[ $1 == '--rpm' ]]; then
         MAKE_RPM=1
@@ -95,9 +95,9 @@ then
         exit 3
     fi
 
-    export DEB_CC=${DEB_CC=clang-6.0}
-    export DEB_CXX=${DEB_CXX=clang++-6.0}
-    EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
+    export DEB_CC=${DEB_CC=clang-10}
+    export DEB_CXX=${DEB_CXX=clang++-10}
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-10 lld-10"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
     VERSION_POSTFIX+="+valgrind"
@@ -106,9 +106,8 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+="+debug"
 fi
 
-CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_CHECK_HEAVY_BUILDS=1 $CMAKE_FLAGS"
 [[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
-#[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
 export CMAKE_FLAGS
 export EXTRAPACKAGES
@@ -119,8 +118,8 @@ echo -e "\nCurrent version is $VERSION_STRING"
 if [ -z "$NO_BUILD" ] ; then
     gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
     if [ -z "$USE_PBUILDER" ] ; then
-        DEB_CC=${DEB_CC:=`which gcc-9 gcc-8 gcc | head -n1`}
-        DEB_CXX=${DEB_CXX:=`which g++-9 g++-8 g++ | head -n1`}
+        DEB_CC=${DEB_CC:=`which gcc-10 gcc-9 gcc | head -n1`}
+        DEB_CXX=${DEB_CXX:=`which gcc-10 g++-9 g++ | head -n1`}
         # Build (only binary packages).
         debuild --preserve-env -e PATH \
         -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \

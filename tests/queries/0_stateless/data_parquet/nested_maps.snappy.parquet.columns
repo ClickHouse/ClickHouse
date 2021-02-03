@@ -1,0 +1,1 @@
+`a` Tuple(Nullable(String), Nullable(Int32), Nullable(UInt8)), `b` Nullable(Int32), `c` Nullable(Float64)

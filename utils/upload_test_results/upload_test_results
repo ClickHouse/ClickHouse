@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+import requests
+import argparse
+
+# CREATE TABLE test_suites
+# (
+# sha String,
+# pr UInt16,
+# suite String,
+# errors UInt16,
+# failures UInt16,
+# hostname String,
+# skipped UInt16,
+# duration Double,
+# timestamp DateTime
+# ) ENGINE = MergeTree ORDER BY tuple(timestamp, suite);
+
+QUERY_SUITES="INSERT INTO test_suites "\
+             "SELECT '{sha}' AS sha, "\
+             "{pr} AS pr, "\
+             "suite, "\
+             "errors, "\
+             "failures, "\
+             "hostname, "\
+             "skipped, "\
+             "duration, "\
+             "timestamp "\
+             "FROM input('"\
+             "suite String, "\
+             "errors UInt16, "\
+             "failures UInt16, "\
+             "hostname String, "\
+             "skipped UInt16, "\
+             "duration Double, "\
+             "timestamp DateTime"\
+             "') FORMAT JSONEachRow"
+
+# CREATE TABLE test_cases
+# (
+# sha String,
+# pr UInt16,
+# hostname String,
+# suite String,
+# timestamp DateTime,
+# testname String,
+# classname String,
+# file String,
+# line UInt16,
+# duration Double,
+# suite_duration Double,
+# stderr String,
+# stdout String
+# ) ENGINE = MergeTree ORDER BY tuple(timestamp, testname);
+
+QUERY_CASES="INSERT INTO test_cases "\
+             "SELECT '{sha}' AS sha, "\
+             "{pr} AS pr, "\
+             "hostname, "\
+             "suite, "\
+             "timestamp, "\
+             "testname, "\
+             "classname, "\
+             "file, "\
+             "line, "\
+             "duration, "\
+             "suite_duration, "\
+             "stderr,"\
+             "stdout "\
+             "FROM input('"\
+             "hostname String, "\
+             "suite String, "\
+             "timestamp DateTime, "\
+             "testname String, "\
+             "classname String, "\
+             "file String, "\
+             "line UInt16, "\
+             "duration Double, "\
+             "suite_duration Double, "\
+             "stderr String, "\
+             "stdout String"\
+             "') FORMAT JSONEachRow"
+
+
+def upload_request(sha, pr, file, q_type, user, password, ca_cert, host, db):
+    with open(file) as upload_f:
+        query = QUERY_SUITES if q_type=="suites" else QUERY_CASES
+        query = query.format(sha=sha, pr=pr)
+        url = 'https://{host}:8443/?database={db}&query={query}&date_time_input_format=best_effort'.format(
+            host=host,
+            db=db,
+            query=query
+        )
+        data=upload_f
+        auth = {
+            'X-ClickHouse-User': user,
+            'X-ClickHouse-Key': password,
+        }
+
+        print(query);
+
+        res = requests.post(
+            url,
+            data=data,
+            headers=auth,
+            verify=ca_cert)
+        res.raise_for_status()
+        return res.text
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Upload test result to CI ClickHouse.')
+    parser.add_argument('--sha', help='sha of current commit', type=str, required=True)
+    parser.add_argument('--pr', help='pr of current commit. 0 for master', type=int, required=True)
+    parser.add_argument('--file', help='file to upload', required=True)
+    parser.add_argument('--type', help='Export type', choices=['suites', 'cases'] , required=True)
+    parser.add_argument('--user', help='user name', type=str, default="clickhouse-ci")
+    parser.add_argument('--password', help='password', type=str, required=True)
+    parser.add_argument('--ca-cert', help='CA certificate path', type=str, default="/usr/local/share/ca-certificates/YandexInternalRootCA.crt")
+    parser.add_argument('--host', help='CI ClickHouse host', type=str, default="c1a-ity5agjmuhyu6nu9.mdb.yandexcloud.net")
+    parser.add_argument('--db', help='CI ClickHouse database name', type=str, default="clickhouse-ci")
+
+    args = parser.parse_args()
+
+    print((upload_request(args.sha, args.pr, args.file, args.type, args.user, args.password, args.ca_cert, args.host, args.db)))
+
+
+

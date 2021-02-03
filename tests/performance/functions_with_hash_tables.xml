@@ -1,0 +1,8 @@
+<test>
+    <query>select arrayUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
+    <query>select arrayDistinct(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
+    <query>select arrayEnumerateUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
+    <query>select arrayIntersect(range((1 + number % 100)), range(1, (1 + number % 100) + 1)) from numbers(1000000) format Null</query>
+    <query>select groupUniqArray(rand() % 100) from numbers(1000 * 1000) group by number / 1000 format Null</query>
+    <query>select entropy(number / 10) from numbers(1000 * 1000) group by number / 1000 format Null</query>
+</test>

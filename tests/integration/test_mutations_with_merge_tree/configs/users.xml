@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <max_expanded_ast_elements>500</max_expanded_ast_elements>
+            <force_index_by_date>1</force_index_by_date>
+            <force_primary_key>1</force_primary_key>
+        </default>
+    </profiles>
+</yandex>

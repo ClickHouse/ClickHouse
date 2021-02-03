@@ -1,0 +1,16 @@
+<test>
+    <tags>
+        <tag>sorting</tag>
+        <tag>comparison</tag>
+    </tags>
+
+
+
+    <query>SELECT toInt32(number) AS n FROM numbers(1000000) ORDER BY n DESC FORMAT Null</query>
+    <query>SELECT toDecimal32(number, 0) AS n FROM numbers(1000000) ORDER BY n FORMAT Null</query>
+
+    <query>SELECT toDecimal32(number, 0) AS n FROM numbers(1000000) ORDER BY n DESC FORMAT Null</query>
+    <query>SELECT toDecimal64(number, 8) AS n FROM numbers(1000000) ORDER BY n DESC FORMAT Null</query>
+    <query>SELECT toDecimal128(number, 10) AS n FROM numbers(1000000) ORDER BY n DESC FORMAT Null</query>
+
+</test>

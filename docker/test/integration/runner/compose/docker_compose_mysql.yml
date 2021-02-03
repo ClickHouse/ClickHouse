@@ -1,0 +1,10 @@
+version: '2.3'
+services:
+    mysql1:
+        image: mysql:5.7
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: clickhouse
+        ports:
+          - 3308:3306
+        command: --server_id=100 --log-bin='mysql-bin-1.log' --default-time-zone='+3:00' --gtid-mode="ON" --enforce-gtid-consistency

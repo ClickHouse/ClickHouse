@@ -1,0 +1,54 @@
+#pragma once
+
+#include <Core/QueryProcessingStage.h>
+#include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+
+namespace DB
+{
+
+class Context;
+class InterpreterSelectQuery;
+class QueryPlan;
+
+/** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
+  */
+class InterpreterSelectWithUnionQuery : public IInterpreterUnionOrSelectQuery
+{
+public:
+    using IInterpreterUnionOrSelectQuery::getSampleBlock;
+
+    InterpreterSelectWithUnionQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {});
+
+    ~InterpreterSelectWithUnionQuery() override;
+
+    /// Builds QueryPlan for current query.
+    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+
+    BlockIO execute() override;
+
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
+
+    static Block getSampleBlock(
+        const ASTPtr & query_ptr_,
+        const Context & context_);
+
+    virtual void ignoreWithTotals() override;
+
+private:
+    std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
+
+    static Block getCommonHeaderForUnion(const Blocks & headers);
+
+    Block getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names);
+
+    std::unique_ptr<IInterpreterUnionOrSelectQuery>
+    buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names);
+
+};
+
+}

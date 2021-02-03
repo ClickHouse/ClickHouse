@@ -5,7 +5,7 @@
 #include <Common/hex.h>
 
 
-/** A tool to easily proove if "Checksum doesn't match: corrupted data"
+/** A tool to easily prove if "Checksum doesn't match: corrupted data"
   *  errors are caused by random bit flips due to hardware issues.
   * It frequently happens due to bad memory on network switches
   *  (at least about a few times a year in a fleet of ~1200 ClickHouse servers).

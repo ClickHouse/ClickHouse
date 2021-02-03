@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+ <yandex>
+     <postgresql_port>5433</postgresql_port>
+ </yandex>

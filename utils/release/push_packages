@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import argparse
 import subprocess
@@ -54,7 +54,7 @@ class DebRelease(object):
 
     def __init__(self, dupload_config, login, ssh_key_path):
         self.__config = {}
-        for repo, conf in dupload_config.iteritems():
+        for repo, conf in dupload_config.items():
             d = {
                 "fqdn": conf["fqdn"],
                 "method": "scpb",
@@ -65,7 +65,7 @@ class DebRelease(object):
             }
             d.update(conf)
             self.__config[repo] = d
-        print self.__config
+        print(self.__config)
         self.ssh_key_path = ssh_key_path
 
     def __enter__(self):
@@ -74,7 +74,7 @@ class DebRelease(object):
         self.__dupload_conf = open(self.DUPLOAD_CONF_PATH, 'w')
         self.__dupload_conf.write('package config;\n\n$default_host = undef;\n\n' + '\n\n'.join([
             self.DUPLOAD_CONF_TEMPLATE.format(title=title, **values)
-            for title, values in self.__config.iteritems()]))
+            for title, values in self.__config.items()]))
         self.__dupload_conf.write('\n')
         self.__dupload_conf.close()
         if self.ssh_key_path:
@@ -152,7 +152,7 @@ def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_direc
     }
     with DebRelease(config, repo_user, ssh_key):
         logging.info("Duploading")
-        subprocess.check_call("dupload --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
+        subprocess.check_call("dupload -f --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
         logging.info("Dupload finished")
 
 
@@ -188,7 +188,7 @@ def _fix_args(args):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="Programm to push clickhouse packages to repository")
+    parser = argparse.ArgumentParser(description="Program to push clickhouse packages to repository")
     parser.add_argument('--deb-directory')
     parser.add_argument('--rpm-directory')
     parser.add_argument('--tgz-directory')

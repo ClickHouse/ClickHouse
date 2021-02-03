@@ -1,0 +1,13 @@
+<test>
+    <tags>
+        <tag>comparison</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <settings><max_threads>1</max_threads></settings>
+
+    <query><![CDATA[SELECT count() FROM test.hits WHERE ClientIP6 < RemoteIP6]]></query>
+</test>

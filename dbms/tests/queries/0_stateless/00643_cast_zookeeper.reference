@@ -1,5 +1,0 @@
-CREATE TABLE test.cast1 (`x` UInt8, `e` Enum8('hello' = 1, 'world' = 2) DEFAULT CAST(x, 'Enum8(\'hello\' = 1, \'world\' = 2)')) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r1') ORDER BY e SETTINGS index_granularity = 8192
-x	UInt8					
-e	Enum8(\'hello\' = 1, \'world\' = 2)	DEFAULT	CAST(x, \'Enum8(\\\'hello\\\' = 1, \\\'world\\\' = 2)\')			
-1	hello
-1	hello
