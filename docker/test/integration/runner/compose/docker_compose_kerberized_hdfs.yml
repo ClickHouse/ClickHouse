@@ -14,7 +14,7 @@ services:
     ports:
       - 1006:1006
       - 50070:50070
-      - 9000:9000
+      - 9010:9010
     depends_on:
         - hdfskerberos
     entrypoint: /etc/bootstrap.sh -d

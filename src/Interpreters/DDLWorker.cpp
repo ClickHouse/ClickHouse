@@ -357,6 +357,7 @@ void DDLWorker::scheduleTasks()
         if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
+            updateMaxDDLEntryID(*task);
             continue;
         }
 
@@ -448,6 +449,23 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task)
     return true;
 }
 
+void DDLWorker::updateMaxDDLEntryID(const DDLTaskBase & task)
+{
+    DB::ReadBufferFromString in(task.entry_name);
+    DB::assertString("query-", in);
+    UInt64 id;
+    readText(id, in);
+    auto prev_id = max_id.load(std::memory_order_relaxed);
+    while (prev_id < id)
+    {
+        if (max_id.compare_exchange_weak(prev_id, id))
+        {
+            CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
+            break;
+        }
+    }
+}
+
 void DDLWorker::processTask(DDLTaskBase & task)
 {
     auto zookeeper = tryGetZooKeeper();
@@ -493,7 +511,6 @@ void DDLWorker::processTask(DDLTaskBase & task)
 
             if (task.execute_on_leader)
             {
-                tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);
             }
             else
             {
@@ -532,21 +549,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
         task.was_executed = true;
     }
 
-    {
-        DB::ReadBufferFromString in(task.entry_name);
-        DB::assertString("query-", in);
-        UInt64 id;
-        readText(id, in);
-        auto prev_id = max_id.load(std::memory_order_relaxed);
-        while (prev_id < id)
-        {
-            if (max_id.compare_exchange_weak(prev_id, id))
-            {
-                CurrentMetrics::set(CurrentMetrics::MaxDDLEntryID, id);
-                break;
-            }
-        }
-    }
+    updateMaxDDLEntryID(task);
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
     /// If ZooKeeper connection is lost here, we will try again to write query status.
@@ -639,7 +642,18 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
         StorageReplicatedMergeTree::Status status;
-        replicated_storage->getStatus(status);
+        // Has to get with zk fields to get active replicas field
+        replicated_storage->getStatus(status, true);
+
+        // Should return as soon as possible if the table is dropped.
+        bool replica_dropped = replicated_storage->is_dropped;
+        bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(replicated_storage->getStorageID(), context);
+        if (replica_dropped || all_replicas_likely_detached)
+        {
+            LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
+            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, table is dropped or detached permanently");
+            return false;
+        }
 
         if (task.is_initial_query && !status.is_leader)
             throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot execute initial query on non-leader replica");

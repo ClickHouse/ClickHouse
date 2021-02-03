@@ -55,6 +55,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/formatAST.h>
 
 namespace DB
 {
@@ -515,6 +516,21 @@ void makeWindowDescriptionFromAST(WindowDescription & desc, const IAST * ast)
     desc.full_sort_description = desc.partition_by;
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
+
+    if (definition.frame.type != WindowFrame::FrameType::Rows
+        && definition.frame.type != WindowFrame::FrameType::Range)
+    {
+        std::string name = definition.frame.type == WindowFrame::FrameType::Rows
+            ? "ROWS"
+            : definition.frame.type == WindowFrame::FrameType::Groups
+                ? "GROUPS" : "RANGE";
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Window frame '{}' is not implemented (while processing '{}')",
+            name, ast->formatForErrorMessage());
+    }
+
+    desc.frame = definition.frame;
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
@@ -843,7 +859,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    auto filter_type = (*step.actions()->getIndex().find(prewhere_column_name))->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(prewhere_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", prewhere_column_name);
+
+    auto filter_type = (*it)->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
@@ -943,7 +964,12 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     step.required_output.push_back(where_column_name);
     step.can_remove_required_output = {true};
 
-    auto filter_type = (*step.actions()->getIndex().find(where_column_name))->result_type;
+    const auto & index = step.actions()->getIndex();
+    auto it = index.find(where_column_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", where_column_name);
+
+    auto filter_type = (*it)->result_type;
     if (!filter_type->canBeUsedInBooleanContext())
         throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);

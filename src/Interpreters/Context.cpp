@@ -50,7 +50,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -344,8 +343,7 @@ struct ContextShared
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
-    mutable std::optional<BackgroundSchedulePool> replicated_schedule_pool; /// A thread pool that can run different jobs in background (used in Replicated database engine)
-
+    mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -444,7 +442,7 @@ struct ContextShared
         buffer_flush_schedule_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
-        replicated_schedule_pool.reset();
+        message_broker_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -1531,13 +1529,15 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     return *shared->distributed_schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getReplicatedSchedulePool() const
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
     auto lock = getLock();
-    if (!shared->replicated_schedule_pool)
-        shared->replicated_schedule_pool.emplace(
-            settings.background_replicated_schedule_pool_size, CurrentMetrics::BackgroundReplicatedSchedulePoolTask, "BgRplSchPool");
-    return *shared->replicated_schedule_pool;
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            "BgMsgBrkSchPool");
+    return *shared->message_broker_schedule_pool;
 }
 
 bool Context::hasDistributedDDL() const

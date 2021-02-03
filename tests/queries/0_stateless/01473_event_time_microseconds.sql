@@ -33,6 +33,7 @@ SELECT '01473_query_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_log
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -42,6 +43,7 @@ SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_thread_log
+        WHERE current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -51,6 +53,7 @@ SELECT '01473_text_log_table_event_start_time_microseconds_test';
 WITH (
           SELECT event_time_microseconds, event_time
           FROM system.query_thread_log
+          WHERE current_database = currentDatabase()
           ORDER BY event_time DESC
           LIMIT 1
       ) AS time

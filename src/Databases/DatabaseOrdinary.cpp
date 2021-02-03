@@ -172,6 +172,26 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     ThreadPool pool;
 
+    /// We must attach dictionaries before attaching tables
+    /// because while we're attaching tables we may need to have some dictionaries attached
+    /// (for example, dictionaries can be used in the default expressions for some tables).
+    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
+    /// without having any tables attached. It is so because attaching of a dictionary means
+    /// loading of its config only, it doesn't involve loading the dictionary itself.
+
+    /// Attach dictionaries.
+    for (const auto & [name, query] : file_names)
+    {
+        auto create_query = query->as<const ASTCreateQuery &>();
+        if (create_query.is_dictionary)
+        {
+            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
+
+            /// Messages, so that it's not boring to wait for the server to load for a long time.
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
+        }
+    }
+
     /// Attach tables.
     for (const auto & name_with_query : file_names)
     {
@@ -196,19 +216,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
-
-    /// Attach dictionaries.
-    for (const auto & [name, query] : file_names)
-    {
-        auto create_query = query->as<const ASTCreateQuery &>();
-        if (create_query.is_dictionary)
-        {
-            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
-
-            /// Messages, so that it's not boring to wait for the server to load for a long time.
-            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
-        }
-    }
 }
 
 
