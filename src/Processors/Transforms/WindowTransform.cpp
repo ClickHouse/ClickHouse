@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 WindowTransform::WindowTransform(const Block & input_header_,
         const Block & output_header_,
         const WindowDescription & window_description_,
@@ -160,10 +165,17 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-void WindowTransform::advanceFrameStart()
+void WindowTransform::advanceFrameStart() const
 {
     // Frame start is always UNBOUNDED PRECEDING for now, so we don't have to
     // move it. It is initialized when the new partition starts.
+    if (window_description.frame.begin_type
+        != WindowFrame::BoundaryType::Unbounded)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Frame start type '{}' is not implemented",
+            WindowFrame::toString(window_description.frame.begin_type));
+    }
 }
 
 bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
@@ -180,7 +192,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return false;
     }
 
-    // For RANGE frame, rows that compare equal w/ORDER BY are peers.
+    // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
     assert(window_description.frame.type == WindowFrame::FrameType::Range);
     const size_t n = order_by_indices.size();
     if (n == 0)
@@ -272,6 +284,13 @@ void WindowTransform::advanceFrameEndCurrentRow()
     frame_ended = partition_ended;
 }
 
+void WindowTransform::advanceFrameEndUnbounded()
+{
+    // The UNBOUNDED FOLLOWING frame ends when the partition ends.
+    frame_end = partition_end;
+    frame_ended = partition_ended;
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -279,8 +298,20 @@ void WindowTransform::advanceFrameEnd()
 
     const auto frame_end_before = frame_end;
 
-    // The only frame end we have for now is CURRENT ROW.
-    advanceFrameEndCurrentRow();
+    switch (window_description.frame.end_type)
+    {
+        case WindowFrame::BoundaryType::Current:
+            // The only frame end we have for now is CURRENT ROW.
+            advanceFrameEndCurrentRow();
+            break;
+        case WindowFrame::BoundaryType::Unbounded:
+            advanceFrameEndUnbounded();
+            break;
+        case WindowFrame::BoundaryType::Offset:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The frame end type '{}' is not implemented",
+                WindowFrame::toString(window_description.frame.end_type));
+    }
 
 //    fmt::print(stderr, "frame_end {} -> {}\n", frame_end_before, frame_end);
 
@@ -628,7 +659,7 @@ void WindowTransform::work()
 //            first_used_block);
 
         blocks.erase(blocks.begin(),
-            blocks.begin() + first_used_block - first_block_number);
+            blocks.begin() + (first_used_block - first_block_number));
         first_block_number = first_used_block;
 
         assert(next_output_block_number >= first_block_number);

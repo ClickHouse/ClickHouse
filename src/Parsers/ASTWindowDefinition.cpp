@@ -59,11 +59,36 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
 
     if (!frame.is_default)
     {
-        const auto * name = frame.type == WindowFrame::FrameType::Rows
-            ? "ROWS" : frame.type == WindowFrame::FrameType::Groups
-                ? "GROUPS" : "RANGE";
-
-        settings.ostr << name << " UNBOUNDED PRECEDING";
+        settings.ostr << WindowFrame::toString(frame.type) << " BETWEEN ";
+        if (frame.begin_type == WindowFrame::BoundaryType::Current)
+        {
+            settings.ostr << "CURRENT ROW";
+        }
+        else if (frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            settings.ostr << "UNBOUNDED PRECEDING";
+        }
+        else
+        {
+            settings.ostr << abs(frame.begin_offset);
+            settings.ostr << " "
+                << (frame.begin_offset > 0 ? "FOLLOWING" : "PRECEDING");
+        }
+        settings.ostr << " AND ";
+        if (frame.end_type == WindowFrame::BoundaryType::Current)
+        {
+            settings.ostr << "CURRENT ROW";
+        }
+        else if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        {
+            settings.ostr << "UNBOUNDED PRECEDING";
+        }
+        else
+        {
+            settings.ostr << abs(frame.end_offset);
+            settings.ostr << " "
+                << (frame.end_offset > 0 ? "FOLLOWING" : "PRECEDING");
+        }
     }
 }
 
