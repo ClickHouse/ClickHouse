@@ -174,3 +174,7 @@ select number, p,
 from (select number, intDiv(number, 5) p from numbers(31))
 order by p, number
 settings max_block_size = 2;
+
+-- seen a use-after-free under MSan in this query once
+SELECT number, max(number) OVER (PARTITION BY intDiv(number, 7) ORDER BY number ASC NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1024) SETTINGS max_block_size = 2 FORMAT Null;
+
