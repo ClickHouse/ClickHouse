@@ -64,3 +64,5 @@ Note that materialized view is influenced by [optimize_on_insert](../../../opera
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 There isn’t a separate query for deleting views. To delete a view, use [DROP TABLE](../../../sql-reference/statements/drop.md).
+
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->
