@@ -49,19 +49,19 @@ Block PartLogElement::createBlock()
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "partition_id"),
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "path_on_disk"),
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "rows"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "size_in_bytes"), // On disk
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "rows"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "size_in_bytes"), // On disk
 
         /// Merge-specific info
         columns_with_type_and_name.emplace_back(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "merged_from"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),   "bytes_uncompressed"), // Result bytes
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeUInt64>(),   "read_rows"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeUInt64>(),   "read_bytes"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeUInt64>(),   "peak_memory_usage"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "bytes_uncompressed"), // Result bytes
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "read_rows"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "read_bytes"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "peak_memory_usage"),
 
         /// Is there an error during the execution or commit
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeUInt16>(),   "error"),
-        columns_with_type_and_name.emplace_back( std::make_shared<DataTypeString>(),   "exception"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt16>(), "error"),
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "exception"),
     };
 }
 
