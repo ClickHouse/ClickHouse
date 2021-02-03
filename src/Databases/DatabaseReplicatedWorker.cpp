@@ -93,7 +93,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
     {
         std::unique_lock lock{mutex};
-        wait_current_task_change.wait(lock, [&]() { assert(current_task <= entry_name); return zookeeper->expired() || current_task == entry_name; });
+        wait_current_task_change.wait(lock, [&]() { assert(zookeeper->expired() || current_task <= entry_name); return zookeeper->expired() || current_task == entry_name; });
     }
 
     if (zookeeper->expired())

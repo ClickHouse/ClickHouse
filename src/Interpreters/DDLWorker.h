@@ -73,7 +73,7 @@ protected:
     virtual DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
     void processTask(DDLTaskBase & task);
-    void updateMaxDDLEntryID(const DDLTaskBase & task);
+    void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
     static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
