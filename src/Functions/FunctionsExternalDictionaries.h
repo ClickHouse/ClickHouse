@@ -121,25 +121,26 @@ public:
         return getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
     }
 
-    DictionaryAttribute getDictionaryAttribute(std::shared_ptr<const IDictionaryBase> dictionary, const String& attribute_name) const
+    DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        const DictionaryStructure & structure = dictionary->getStructure();
-
-        auto find_iter = std::find_if(structure.attributes.begin(), structure.attributes.end(), [&](const auto &attribute)
-        {
-            return attribute.name == attribute_name;
-        });
-
-        if (find_iter == structure.attributes.end())
-            throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
-
-        return *find_iter;
+        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
+        auto load_result = external_loader.getLoadResult(resolved_name);
+        if (!load_result.config)
+            throw Exception("Dictionary " + backQuote(dictionary_name) + " not found", ErrorCodes::BAD_ARGUMENTS);
+        return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
     }
+
 private:
     const Context & context;
     const ExternalDictionariesLoader & external_loader;
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
+
+    /// We must not cache dictionary or dictionary's structure here, because there are places
+    /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
+    /// optimize_skip_unused_shards), and if the dictionary will be cached within "query" then
+    /// cached ExpressionActionsPtr will always have first version of the query and the dictionary
+    /// will not be updated after reload (see https://github.com/ClickHouse/ClickHouse/pull/16205)
 };
 
 
@@ -267,10 +268,7 @@ public:
         if (arguments.size() < 3)
             throw Exception{"Wrong argument count for function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        /// TODO: We can load only dictionary structure
-
         String dictionary_name;
-
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
             dictionary_name = name_col->getValue<String>();
         else
@@ -278,16 +276,14 @@ public:
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String attribute_name;
-
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             attribute_name = name_col->getValue<String>();
         else
             throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
                 + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        auto dictionary = helper.getDictionary(dictionary_name);
-
-        return helper.getDictionaryAttribute(dictionary, attribute_name).type;
+        /// We're extracting the return type from the dictionary's config, without loading the dictionary.
+        return helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name).type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
