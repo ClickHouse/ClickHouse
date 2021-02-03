@@ -4,35 +4,36 @@ toc_priority: 1
 
 # count {#agg_function-count}
 
-Counts the number of rows or not-NULL values.
 
-ClickHouse supports the following syntaxes for `count`:
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
+计数行数或非空值。
 
-**Parameters**
+ClickHouse支持以下 `count` 语法:
+- `count(expr)` 或 `COUNT(DISTINCT expr)`。
+- `count()` 或 `COUNT(*)`. 该 `count()` 语法是ClickHouse特定的。
 
-The function can take:
+**参数**
 
--   Zero parameters.
--   One [expression](../../../sql-reference/syntax.md#syntax-expressions).
+该函数可以采取:
 
-**Returned value**
+-   零参数。
+-   一个 [表达式](../../../sql-reference/syntax.md#syntax-expressions)。
 
--   If the function is called without parameters it counts the number of rows.
--   If the [expression](../../../sql-reference/syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+**返回值**
 
-In both cases the type of the returned value is [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   如果没有参数调用函数，它会计算行数。
+-   如果 [表达式](../../../syntax.md#syntax-expressions) 被传递，则该函数计数此表达式返回非null的次数。 如果表达式返回 [可为空](../../../sql-reference/data-types/nullable.md)类型的值，`count`的结果仍然不 `Nullable`。 如果表达式对于所有的行都返回 `NULL` ，则该函数返回 0 。
 
-**Details**
+在这两种情况下，返回值的类型为 [UInt64](../../../sql-reference/data-types/int-uint.md)。
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
+**详细信息**
 
-The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
+ClickHouse支持 `COUNT(DISTINCT ...)` 语法，这种结构的行为取决于 [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了用于执行该操作的 [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)函数。 默认值是 [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)函数。
 
-**Examples**
+`SELECT count() FROM table` 这个查询未被优化，因为表中的条目数没有单独存储。 它从表中选择一个小列并计算其值的个数。
 
-Example 1:
+**示例**
+
+示例1:
 
 ``` sql
 SELECT count() FROM t
@@ -44,7 +45,7 @@ SELECT count() FROM t
 └─────────┘
 ```
 
-Example 2:
+示例2:
 
 ``` sql
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
@@ -66,4 +67,4 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
+这个例子表明 `count(DISTINCT num)` 是通过 `count_distinct_implementation` 的设定值 `uniqExact` 函数来执行的。

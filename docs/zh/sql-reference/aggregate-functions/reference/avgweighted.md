@@ -4,42 +4,43 @@ toc_priority: 107
 
 # avgWeighted {#avgweighted}
 
-Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 
-**Syntax**
+计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**语法**
 
 ``` sql
 avgWeighted(x, weight)
 ```
 
-**Parameters**
+**参数**
 
--   `x` — Values.
--   `weight` — Weights of the values.
+-   `x` — 值。 
+-   `weight` — 值的加权。 
 
-`x` and `weight` must both be
-[Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or 
-[Decimal](../../../sql-reference/data-types/decimal.md),
-but may have different types.
+`x` 和 `weight` 的类型必须是
+[整数](../../../sql-reference/data-types/int-uint.md), 或
+[浮点数](../../../sql-reference/data-types/float.md), 或
+[定点数](../../../sql-reference/data-types/decimal.md),
+但是可以不一样。
 
-**Returned value**
+**返回值**
 
--   `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
--   Weighted mean otherwise.
+-   `NaN`。 如果所有的权重都等于0 或所提供的权重参数是空。
+-   加权平均值。 其他。
 
-**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+类型: 总是[Float64](../data-types/float.md).
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─avgWeighted(x, weight)─┐
@@ -47,33 +48,17 @@ Result:
 └────────────────────────┘
 ```
 
-**Example**
 
-Query:
+**示例**
 
-``` sql
-SELECT avgWeighted(x, w)
-FROM values('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
-```
-
-Result:
-
-``` text
-┌─avgWeighted(x, weight)─┐
-│                      8 │
-└────────────────────────┘
-```
-
-**Example**
-
-Query:
+查询:
 
 ``` sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─avgWeighted(x, weight)─┐
@@ -81,16 +66,16 @@ Result:
 └────────────────────────┘
 ```
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 CREATE table test (t UInt8) ENGINE = Memory;
 SELECT avgWeighted(t) FROM test
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─avgWeighted(x, weight)─┐
