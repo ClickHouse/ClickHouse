@@ -487,9 +487,9 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
 {
-    Map::iterator iter;
-    iter = copiedDataInfo.find(place);
-    if (iter == copiedDataInfo.end())
+    Map::LookupResult result;
+    result = copiedDataInfo.find(place);
+    if (result == nullptr)
     {
         copiedDataInfo.insert(std::pair<ConstAggregateDataPtr, size_t>(place, data.size()-1));
         func->merge(data.back(), place, &createOrGetArena());
