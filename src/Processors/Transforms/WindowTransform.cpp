@@ -659,7 +659,7 @@ void WindowTransform::work()
 //            first_used_block);
 
         blocks.erase(blocks.begin(),
-            blocks.begin() + first_used_block - first_block_number);
+            blocks.begin() + (first_used_block - first_block_number));
         first_block_number = first_used_block;
 
         assert(next_output_block_number >= first_block_number);
