@@ -87,11 +87,12 @@ private:
     /// MergedData records, used to avoid duplicated data copy.
     ///key: src pointer, val:  pos in current column.
     using Map = HashMap<
-        AggregateDataPtr,
+        ConstAggregateDataPtr,
         size_t,
         DefaultHash<ConstAggregateDataPtr>,
-        HashTableGrower<3>,
-        HashTableAllocatorWithStackMemory<sizeof(ConstAggregateDataPtr) * (1 << 3)>>;
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
+
     Map copiedDataInfo;
 
     ColumnAggregateFunction() {}
