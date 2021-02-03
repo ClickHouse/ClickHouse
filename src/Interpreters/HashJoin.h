@@ -367,6 +367,7 @@ private:
 
     Poco::Logger * log;
 
+    std::atomic_int has_totals{0};
     Block totals;
 
     void init(Type type_);

@@ -83,6 +83,7 @@ private:
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
+    std::atomic_int has_totals{0};
     Block totals;
     std::atomic<bool> is_in_memory{true};
     const bool nullable_right_side;

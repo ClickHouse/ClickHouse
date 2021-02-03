@@ -1267,20 +1267,23 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::setTotals(const Block & block)
 {
-    std::unique_lock lock(data->rwlock);
+    if (has_totals.exchange(2))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set totals for HashJoin second time");
+
     totals = block;
+    has_totals.store(1, std::memory_order_release);
 }
 
 bool HashJoin::hasTotals() const
 {
-    std::shared_lock lock(data->rwlock);
-    return totals;
+    return has_totals.load(std::memory_order_acquire) == 1;
 }
 
 void HashJoin::joinTotals(Block & block) const
 {
-    std::shared_lock lock(data->rwlock);
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
+    Block empty_totals;
+    const Block & cur_totals = hasTotals() ? totals : empty_totals;
+    JoinCommon::joinTotals(cur_totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 
 
