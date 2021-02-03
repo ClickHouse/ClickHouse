@@ -22,6 +22,8 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , input_header(input_header_)
     , window_description(window_description_)
 {
+    window_description.frame.checkValid();
+
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -210,14 +212,21 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
                 break;
             }
 
+            // Move to the first row in current block. Note that the offset is
+            // negative.
+            offset += x.row;
+            x.row = 0;
+
+            // Move to the last row of the previous block, if we are not at the
+            // first one. Offset also is incremented by one, because we pass over
+            // the first row of this block.
             if (x.block == first_block_number)
             {
                 break;
             }
 
-            // offset is negative
-            offset += (x.row + 1);
             --x.block;
+            offset += 1;
             x.row = blockRowsNumber(x) - 1;
         }
     }
@@ -253,10 +262,10 @@ void WindowTransform::advanceFrameStartRowsOffset()
 
     assertValid(frame_start);
 
-//    fmt::print(stderr, "frame start {} partition start {}\n", frame_start,
-//        partition_start);
+//    fmt::print(stderr, "frame start {} left {} partition start {}\n",
+//        frame_start, offset_left, partition_start);
 
-    if (moved_row <= partition_start)
+    if (frame_start <= partition_start)
     {
         // Got to the beginning of partition and can't go further back.
         frame_start = partition_start;
@@ -269,10 +278,10 @@ void WindowTransform::advanceFrameStartRowsOffset()
     {
         // A FOLLOWING frame start ran into the end of partition.
         frame_started = true;
+        return;
     }
 
     assert(partition_start < frame_start);
-    frame_start = moved_row;
     frame_started = offset_left == 0;
 }
 

@@ -558,5 +558,10 @@ settings max_block_size = 2;
 28	5	3	2	1
 29	5	2	1	0
 30	6	1	1	0
+SELECT count(*) OVER (ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM numbers(4);
+1
+2
+3
+3
 -- seen a use-after-free under MSan in this query once
 SELECT number, max(number) OVER (PARTITION BY intDiv(number, 7) ORDER BY number ASC NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1024) SETTINGS max_block_size = 2 FORMAT Null;
