@@ -472,3 +472,47 @@ select min(number) over (partition by p)  from (select number, intDiv(number, 3)
 6
 6
 9
+-- UNBOUNDED FOLLOWING frame end
+select
+    min(number) over wa, min(number) over wo,
+    max(number) over wa, max(number) over wo
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(31))
+window
+    wa as (partition by p order by o
+        range between unbounded preceding and unbounded following),
+    wo as (partition by p order by o
+        rows between unbounded preceding and unbounded following)
+settings max_block_size = 2;
+0	0	2	2
+0	0	2	2
+0	0	2	2
+3	3	5	5
+3	3	5	5
+3	3	5	5
+6	6	8	8
+6	6	8	8
+6	6	8	8
+9	9	11	11
+9	9	11	11
+9	9	11	11
+12	12	14	14
+12	12	14	14
+12	12	14	14
+15	15	17	17
+15	15	17	17
+15	15	17	17
+18	18	20	20
+18	18	20	20
+18	18	20	20
+21	21	23	23
+21	21	23	23
+21	21	23	23
+24	24	26	26
+24	24	26	26
+24	24	26	26
+27	27	29	29
+27	27	29	29
+27	27	29	29
+30	30	30	30
