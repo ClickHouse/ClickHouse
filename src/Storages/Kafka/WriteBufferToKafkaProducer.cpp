@@ -136,6 +136,11 @@ void WriteBufferToKafkaProducer::flush()
 
 void WriteBufferToKafkaProducer::nextImpl()
 {
+    addChunk();
+}
+
+void WriteBufferToKafkaProducer::addChunk()
+{
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
@@ -148,7 +153,7 @@ void WriteBufferToKafkaProducer::reinitializeChunks()
     /// We cannot leave the buffer in the undefined state (i.e. without any
     /// underlying buffer), since in this case the WriteBuffeR::next() will
     /// not call our nextImpl() (due to available() == 0)
-    nextImpl();
+    addChunk();
 }
 
 }
