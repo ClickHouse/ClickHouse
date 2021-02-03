@@ -90,7 +90,7 @@ Block PostgreSQLBlockInputStream::readImpl()
             }
             else
             {
-                insertDefaultValue(*columns[idx], *sample.column);
+                insertDefaultPostgreSQLValue(*columns[idx], *sample.column);
             }
 
         }

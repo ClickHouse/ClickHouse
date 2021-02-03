@@ -2,6 +2,7 @@
 #include "PostgreSQLReplicaConsumer.h"
 #include <Interpreters/InterpreterInsertQuery.h>
 
+#include <Poco/File.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
@@ -38,6 +39,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , replication_slot(replication_slot_name_)
     , max_block_size(max_block_size_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
+    , metadata_path(DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata")
 {
     /// Create a replication connection, through which it is possible to execute only commands from streaming replication protocol
     /// interface. Passing 'database' as the value instructs walsender to connect to the database specified in the dbname parameter,
@@ -82,6 +84,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
         throw;
     }
 
+    LOG_DEBUG(log, "PostgreSQLReplica starting replication proccess");
     startReplication();
 }
 
@@ -170,17 +173,19 @@ void PostgreSQLReplicationHandler::startReplication()
         createReplicationSlot(ntx);
     }
 
+    LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Creating replication consumer");
     consumer = std::make_shared<PostgreSQLReplicaConsumer>(
             context,
             table_name,
             connection->conn_str(),
             replication_slot,
             publication_name,
+            metadata_path,
             start_lsn,
             max_block_size,
             nested_storage);
 
-    LOG_DEBUG(log, "Commiting replication transaction");
+    LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Successfully created replication consumer");
     ntx->commit();
 
     consumer->startSynchronization();
@@ -303,18 +308,28 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, st
 
 void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr ntx)
 {
+    if (publication_name.empty())
+        return;
+
     std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     ntx->exec(query_str);
 }
 
 
 /// Only used when MaterializePostgreSQL table is dropped.
-void PostgreSQLReplicationHandler::removeSlotAndPublication()
+void PostgreSQLReplicationHandler::shutdownFinal()
 {
+    if (Poco::File(metadata_path).exists())
+        Poco::File(metadata_path).remove();
+
+    /// TODO: another transaction might be active on this same connection. Need to make sure it does not happen.
+    replication_connection->conn()->close();
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+
     dropPublication(ntx);
     if (isReplicationSlotExist(ntx, replication_slot))
         dropReplicationSlot(ntx, replication_slot, false);
+
     ntx->commit();
 }
 

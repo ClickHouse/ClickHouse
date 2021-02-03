@@ -2,6 +2,7 @@
 
 #include "PostgreSQLConnection.h"
 #include <Core/BackgroundSchedulePool.h>
+#include "PostgreSQLReplicaMetadata.h"
 #include <common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Core/ExternalResultDescription.h>
@@ -47,6 +48,7 @@ public:
             const std::string & conn_str_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
+            const std::string & metadata_path,
             const LSNPosition & start_lsn,
             const size_t max_block_size_,
             StoragePtr nested_storage_);
@@ -61,16 +63,26 @@ private:
     void replicationStream();
     void stopReplicationStream();
 
+    enum class PostgreSQLQuery
+    {
+        INSERT,
+        UPDATE,
+        DELETE
+    };
+
     /// Start changes stream from WAL via copy command (up to max_block_size changes).
     bool readFromReplicationSlot();
-    void decodeReplicationMessage(const char * replication_message, size_t size);
+    void processReplicationMessage(const char * replication_message, size_t size);
 
     void insertValue(std::string & value, size_t column_idx);
+    //static void insertValueMaterialized(IColumn & column, uint64_t value);
+    void insertDefaultValue(size_t column_idx);
+
     void syncIntoTable(Block & block);
     void advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     /// Methods to parse replication message data.
-    void readTupleData(const char * message, size_t & pos, size_t size);
+    void readTupleData(const char * message, size_t & pos, PostgreSQLQuery type);
     void readString(const char * message, size_t & pos, size_t size, String & result);
     Int64 readInt64(const char * message, size_t & pos);
     Int32 readInt32(const char * message, size_t & pos);
@@ -81,6 +93,7 @@ private:
     std::shared_ptr<Context> context;
     const std::string replication_slot_name;
     const std::string publication_name;
+    PostgreSQLReplicaMetadata metadata;
 
     const std::string table_name;
     PostgreSQLConnectionPtr connection, replication_connection;
@@ -97,6 +110,8 @@ private:
     MutableColumns columns;
     /// Needed for insertPostgreSQLValue() method to parse array
     std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+
+    size_t data_version = 1;
 };
 
 }

@@ -67,7 +67,7 @@ private:
     ASTPtr getCreateHelperTableQuery();
     void dropNested();
 
-    String relative_data_path;
+    String relative_data_path, metadata_path;
     std::shared_ptr<Context> global_context;
 
     std::unique_ptr<PostgreSQLReplicationSettings> replication_settings;
