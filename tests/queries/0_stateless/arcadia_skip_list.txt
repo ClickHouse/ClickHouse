@@ -199,3 +199,4 @@
 01675_data_type_coroutine
 01671_aggregate_function_group_bitmap_data
 01674_executable_dictionary_implicit_key
+01683_dist_INSERT_block_structure_mismatch
