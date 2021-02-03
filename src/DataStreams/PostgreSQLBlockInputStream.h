@@ -15,7 +15,6 @@
 
 namespace DB
 {
-using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class PostgreSQLBlockInputStream : public IBlockInputStream
 {
@@ -34,16 +33,10 @@ private:
     Block readImpl() override;
     void readSuffix() override;
 
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column)
-    {
-        column.insertFrom(sample_column, 0);
-    }
-
     String query_str;
     const UInt64 max_block_size;
     ExternalResultDescription description;
 
-    ConnectionPtr connection;
     std::unique_ptr<pqxx::work> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 

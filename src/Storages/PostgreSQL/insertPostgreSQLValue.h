@@ -26,4 +26,6 @@ void insertPostgreSQLValue(
 void preparePostgreSQLArrayInfo(
         std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type);
 
+void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column);
+
 }

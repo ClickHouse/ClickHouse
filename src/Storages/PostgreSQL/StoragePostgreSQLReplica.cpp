@@ -40,7 +40,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static auto nested_storage_suffix = "_ReplacingMergeTree";
+static const auto NESTED_STORAGE_SUFFIX = "_ReplacingMergeTree";
+
 
 StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     const StorageID & table_id_,
@@ -57,9 +58,9 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
     , replication_settings(std::move(replication_settings_))
 {
     setInMemoryMetadata(storage_metadata);
-    relative_data_path.resize(relative_data_path.size() - 1);
-    relative_data_path += nested_storage_suffix;
-
+    if (relative_data_path.ends_with("/"))
+        relative_data_path.resize(relative_data_path.size() - 1);
+    relative_data_path += NESTED_STORAGE_SUFFIX;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -132,7 +133,7 @@ ASTPtr StoragePostgreSQLReplica::getCreateHelperTableQuery()
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
-    create_table_query->table = table_id.table_name + nested_storage_suffix;
+    create_table_query->table = table_id.table_name + NESTED_STORAGE_SUFFIX;
     create_table_query->database = table_id.database_name;
     create_table_query->if_not_exists = true;
 
@@ -166,13 +167,63 @@ Pipe StoragePostgreSQLReplica::read(
     StoragePtr storage = DatabaseCatalog::instance().getTable(nested_storage->getStorageID(), *global_context);
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    const StorageMetadataPtr & nested_metadata = storage->getInMemoryMetadataPtr();
+    const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
+
+    NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
+
+    Block nested_header = nested_metadata->getSampleBlock();
+    ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
+    ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
+
+    if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>(); select_query && !column_names_set.count(version_column.name))
+    {
+        auto & tables_in_select_query = select_query->tables()->as<ASTTablesInSelectQuery &>();
+
+        if (!tables_in_select_query.children.empty())
+        {
+            auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+
+            if (tables_element.table_expression)
+                tables_element.table_expression->as<ASTTableExpression &>().final = true;
+        }
+    }
+
+    String filter_column_name;
+    Names require_columns_name = column_names;
+    ASTPtr expressions = std::make_shared<ASTExpressionList>();
+    if (column_names_set.empty() || !column_names_set.count(sign_column.name))
+    {
+        require_columns_name.emplace_back(sign_column.name);
+
+        const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
+        const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(Int8(1)));
+
+        expressions->children.emplace_back(makeASTFunction("equals", sign_column_name, fetch_sign_value));
+        filter_column_name = expressions->children.back()->getColumnName();
+
+        for (const auto & column_name : column_names)
+            expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+    }
+
     Pipe pipe = storage->read(
-            column_names,
+            require_columns_name,
             nested_metadata, query_info, context,
             processed_stage, max_block_size, num_streams);
 
     pipe.addTableLock(lock);
+
+    if (!expressions->children.empty() && !pipe.empty())
+    {
+        Block pipe_header = pipe.getHeader();
+        auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
+        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
+
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FilterTransform>(header, expression_actions, filter_column_name, false);
+        });
+    }
+
     return pipe;
 }
 
@@ -187,7 +238,7 @@ void StoragePostgreSQLReplica::startup()
     if (!path.exists())
     {
         LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
-                "Creating helper table {}", table_id.table_name + nested_storage_suffix);
+                "Creating helper table {}", table_id.table_name + NESTED_STORAGE_SUFFIX);
         InterpreterCreateQuery interpreter(ast_create, context_copy);
         interpreter.execute();
     }
@@ -196,12 +247,8 @@ void StoragePostgreSQLReplica::startup()
                 "Directory already exists {}", relative_data_path);
 
     nested_storage = DatabaseCatalog::instance().getTable(
-            StorageID(table_id.database_name, table_id.table_name + nested_storage_suffix),
+            StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX),
             *global_context);
-
-    //nested_storage = createTableFromAST(
-    //        ast_create->as<const ASTCreateQuery &>(), getStorageID().database_name, relative_data_path, context_copy, false).second;
-    //nested_storage->startup();
 
     replication_handler->startup(nested_storage);
 }
@@ -215,7 +262,7 @@ void StoragePostgreSQLReplica::shutdown()
 
 void StoragePostgreSQLReplica::shutdownFinal()
 {
-    replication_handler->removeSlotAndPublication();
+    replication_handler->shutdownFinal();
     dropNested();
 }
 

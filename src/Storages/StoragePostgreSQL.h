@@ -17,6 +17,7 @@ namespace DB
 
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
+using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>, public IStorage
 {

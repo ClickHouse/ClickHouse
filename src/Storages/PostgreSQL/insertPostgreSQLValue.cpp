@@ -16,6 +16,7 @@
 #include <ext/range.h>
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -23,6 +24,13 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+
+void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column)
+{
+    column.insertFrom(sample_column, 0);
+}
+
 
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,

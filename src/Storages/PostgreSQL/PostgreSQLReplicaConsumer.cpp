@@ -29,6 +29,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -36,7 +37,8 @@ namespace ErrorCodes
 
 static const auto reschedule_ms = 500;
 static const auto max_thread_work_duration_ms = 60000;
-static const auto max_empty_slot_reads = 2;
+static const auto max_empty_slot_reads = 16;
+
 
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     std::shared_ptr<Context> context_,
@@ -44,6 +46,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     const std::string & conn_str,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
+    const std::string & metadata_path,
     const LSNPosition & start_lsn,
     const size_t max_block_size_,
     StoragePtr nested_storage_)
@@ -51,6 +54,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
+    , metadata(metadata_path)
     , table_name(table_name_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
     , current_lsn(start_lsn)
@@ -69,6 +73,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
 
     wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ replicationStream(); });
     wal_reader_task->deactivate();
+
 }
 
 
@@ -118,10 +123,10 @@ void PostgreSQLReplicaConsumer::replicationStream()
 
 void PostgreSQLReplicaConsumer::insertValue(std::string & value, size_t column_idx)
 {
+    LOG_TRACE(log, "INSERTING VALUE {}", value);
     const auto & sample = description.sample_block.getByPosition(column_idx);
     bool is_nullable = description.types[column_idx].second;
 
-    LOG_TRACE(log, "INSERTING VALUE {}", value);
     if (is_nullable)
     {
         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[column_idx]);
@@ -138,6 +143,13 @@ void PostgreSQLReplicaConsumer::insertValue(std::string & value, size_t column_i
         insertPostgreSQLValue(
                 *columns[column_idx], value, description.types[column_idx].first, sample.type, array_info, column_idx);
     }
+}
+
+
+void PostgreSQLReplicaConsumer::insertDefaultValue(size_t column_idx)
+{
+    const auto & sample = description.sample_block.getByPosition(column_idx);
+    insertDefaultPostgreSQLValue(*columns[column_idx], *sample.column);
 }
 
 
@@ -198,7 +210,7 @@ Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos)
 }
 
 
-void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos, size_t /* size */)
+void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos, PostgreSQLQuery type)
 {
     Int16 num_columns = readInt16(message, pos);
     /// 'n' means nullable, 'u' means TOASTed value, 't' means text formatted data
@@ -218,19 +230,35 @@ void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos
         LOG_DEBUG(log, "identifier {}, col_len {}, value {}", identifier, col_len, value);
     }
 
-    String val = "1";
-    insertValue(val, num_columns);
-    insertValue(val, num_columns + 1);
-    //readString(message, pos, size, result);
+    switch (type)
+    {
+        case PostgreSQLQuery::INSERT:
+        {
+            columns[num_columns]->insert(Int8(1));
+            columns[num_columns + 1]->insert(UInt64(metadata.version()));
+            //insertValueMaterialized(*columns[num_columns], 1);
+            //insertValueMaterialized(*columns[num_columns + 1], metadata.version());
+            break;
+        }
+        case PostgreSQLQuery::DELETE:
+        {
+            columns[num_columns]->insert(Int8(-1));
+            columns[num_columns + 1]->insert(UInt64(metadata.version()));
+            break;
+        }
+        case PostgreSQLQuery::UPDATE:
+        {
+            break;
+        }
+    }
 }
 
 
-void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replication_message, size_t size)
+void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replication_message, size_t size)
 {
     /// Skip '\x'
     size_t pos = 2;
     char type = readInt8(replication_message, pos);
-
 
     LOG_TRACE(log, "TYPE: {}", type);
     switch (type)
@@ -292,13 +320,23 @@ void PostgreSQLReplicaConsumer::decodeReplicationMessage(const char * replicatio
             Int32 relation_id = readInt32(replication_message, pos);
             Int8 new_tuple = readInt8(replication_message, pos);
             LOG_DEBUG(log, "relationID {}, newTuple {}", relation_id, new_tuple);
-            readTupleData(replication_message, pos, size);
+            readTupleData(replication_message, pos, PostgreSQLQuery::INSERT);
             break;
         }
         case 'U': // Update
             break;
         case 'D': // Delete
+        {
+            Int32 relation_id = readInt32(replication_message, pos);
+            //Int8 index_replica_identity = readInt8(replication_message, pos);
+            Int8 full_replica_identity = readInt8(replication_message, pos);
+            LOG_DEBUG(log, "relationID {}, full replica identity {}",
+                    relation_id, full_replica_identity);
+            //LOG_DEBUG(log, "relationID {}, index replica identity {} full replica identity {}",
+            //        relation_id, index_replica_identity, full_replica_identity);
+            readTupleData(replication_message, pos, PostgreSQLQuery::DELETE);
             break;
+        }
         case 'T': // Truncate
             break;
         default:
@@ -344,16 +382,18 @@ void PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction>
 bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 {
     columns = description.sample_block.cloneEmptyColumns();
+    std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+        tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
         /// up_to_lsn is set to NULL, up_to_n_changes is set to max_block_size.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
                 "'{}', NULL, NULL, 'publication_names', '{}', 'proto_version', '1')",
                 replication_slot_name, publication_name);
         pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query_str));
+        LOG_DEBUG(log, "Starting replication stream");
 
         while (true)
         {
@@ -364,14 +404,12 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
                 LOG_TRACE(log, "STREAM REPLICATION END");
                 stream.complete();
 
-                Block result_rows = description.sample_block.cloneWithColumns(std::move(columns));
-                if (result_rows.rows())
+                if (slot_empty)
                 {
-                    syncIntoTable(result_rows);
-                    advanceLSN(tx);
+                    tx->commit();
+                    return false;
                 }
 
-                tx->commit();
                 break;
             }
 
@@ -379,7 +417,7 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
             current_lsn.lsn = (*row)[0];
             LOG_TRACE(log, "Replication message: {}", (*row)[1]);
-            decodeReplicationMessage((*row)[1].c_str(), (*row)[1].size());
+            processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
     }
     catch (...)
@@ -388,7 +426,21 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
         return false;
     }
 
-    return !slot_empty;
+    Block result_rows = description.sample_block.cloneWithColumns(std::move(columns));
+    if (result_rows.rows())
+    {
+        assert(!slot_empty);
+        metadata.commitVersion([&]()
+        {
+            syncIntoTable(result_rows);
+            advanceLSN(tx);
+
+            /// TODO: Can transaction still be active if got exception before commiting it? It must be closed if connection is ok.
+            tx->commit();
+        });
+    }
+
+    return true;
 }
 
 }

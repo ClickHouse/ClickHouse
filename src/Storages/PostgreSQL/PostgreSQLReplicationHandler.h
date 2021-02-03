@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaConsumer.h"
+#include "PostgreSQLReplicaMetadata.h"
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include "pqxx/pqxx"
@@ -29,7 +30,7 @@ public:
 
     void startup(StoragePtr storage_);
     void shutdown();
-    void removeSlotAndPublication();
+    void shutdownFinal();
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
@@ -61,10 +62,10 @@ private:
     PostgreSQLConnectionPtr replication_connection;
     std::shared_ptr<pqxx::work> tx;
 
+    const String metadata_path;
     BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
     StoragePtr nested_storage;
-    //LSNPosition start_lsn, final_lsn;
 };
 
 
