@@ -74,7 +74,11 @@ bool check(const T x) { return x == 0; }
 template <typename T>
 void set(T & x) { x = 0; }
 
+template <>
 bool check(const char * x) { return x == nullptr; }
+
+template <>
+void set(const char *& x){ x = nullptr; }
 }
 
 
