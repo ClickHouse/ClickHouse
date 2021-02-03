@@ -91,7 +91,7 @@ private:
         size_t,
         DefaultHash<ConstAggregateDataPtr>,
         HashTableGrower<3>,
-        HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+        HashTableAllocatorWithStackMemory<sizeof(ConstAggregateDataPtr) * (1 << 3)>>;
     Map copiedDataInfo;
 
     ColumnAggregateFunction() {}
