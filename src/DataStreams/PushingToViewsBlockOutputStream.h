@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
+#include <Common/Stopwatch.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
@@ -44,6 +45,7 @@ private:
 
     const Context & context;
     ASTPtr query_ptr;
+    Stopwatch main_watch;
 
     struct ViewInfo
     {
@@ -51,6 +53,7 @@ private:
         StorageID table_id;
         BlockOutputStreamPtr out;
         std::exception_ptr exception;
+        UInt64 elapsed_ms = 0;
     };
 
     std::vector<ViewInfo> views;
