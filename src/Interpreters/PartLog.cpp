@@ -31,14 +31,18 @@ Block PartLogElement::createBlock()
             {"MovePart",      static_cast<Int8>(MOVE_PART)},
         }
     );
+    ColumnsWithTypeAndName columns_with_type_and_name;
 
     return
     {
+
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "query_id"},
         {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
         {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
+
         {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"},
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6),"event_time_microseconds"),
+
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "duration_ms"},
 
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "database"},
@@ -71,6 +75,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(database_name);
