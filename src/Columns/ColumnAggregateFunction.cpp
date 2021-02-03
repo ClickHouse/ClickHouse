@@ -89,7 +89,7 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
             size_t pos;
             for (iter = copiedDataInfo.begin(); iter != copiedDataInfo.end(); iter++)
             {
-                pos = iter->second;
+                pos = iter->getValue();
                 if (data[pos] != nullptr)
                 {
                     func->destroy(data[pos]);
@@ -497,7 +497,7 @@ void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
     }
     else
     {
-        size_t pos = iter->second;
+        size_t pos = iter->getValue();
         if (pos != data.size() - 1)
         {
             data[data.size() - 1] = data[pos];
