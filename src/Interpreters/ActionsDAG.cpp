@@ -126,7 +126,6 @@ ActionsDAG::Node & ActionsDAG::addAlias(Node & child, std::string alias, bool ca
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
-    node.allow_constant_folding = child.allow_constant_folding;
     node.children.emplace_back(&child);
 
     return addNode(std::move(node), can_replace);
@@ -194,7 +193,6 @@ ActionsDAG::Node & ActionsDAG::addFunction(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         auto & child = *node.children[i];
-        node.allow_constant_folding = node.allow_constant_folding && child.allow_constant_folding;
 
         ColumnWithTypeAndName argument;
         argument.column = child.column;
@@ -359,10 +357,15 @@ void ActionsDAG::removeUnusedActions()
         stack.push(node);
     }
 
-    /// We cannot remove arrayJoin because it changes the number of rows.
     for (auto & node : nodes)
     {
-        if (node.type == ActionType::ARRAY_JOIN && visited_nodes.count(&node) == 0)
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        bool is_array_join = node.type == ActionType::ARRAY_JOIN;
+
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -420,7 +423,6 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases, std::vector<Node *
             node.result_type = child->result_type;
             node.result_name = std::move(item.second);
             node.column = child->column;
-            node.allow_constant_folding = child->allow_constant_folding;
             node.children.emplace_back(child);
 
             auto & alias = addNode(std::move(node), true);
