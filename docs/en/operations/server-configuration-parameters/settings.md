@@ -310,7 +310,6 @@ Port for exchanging data between ClickHouse servers over `HTTPS`.
 
 Similar to `interserver_http_host`, except that this hostname can be used by other servers to access this server over `HTTPS`.
 
-
 **Example**
 
 ``` xml
