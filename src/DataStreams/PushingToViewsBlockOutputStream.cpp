@@ -175,15 +175,15 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     {
         // Push to views concurrently if enabled and more than one view is attached
         ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
-        for (size_t view_num = 0; view_num < views.size(); ++view_num)
+        for (auto & view : views)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.scheduleOrThrowOnError([=, this]
+            pool.scheduleOrThrowOnError([=, &view, this]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
-                process(block, view_num);
+                process(block, view);
             });
         }
         // Wait for concurrent view processing
@@ -192,12 +192,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     else
     {
         // Process sequentially
-        for (size_t view_num = 0; view_num < views.size(); ++view_num)
+        for (auto & view : views)
         {
-            process(block, view_num);
+            process(block, view);
 
-            if (views[view_num].exception)
-                std::rethrow_exception(views[view_num].exception);
+            if (view.exception)
+                std::rethrow_exception(view.exception);
         }
     }
 }
@@ -326,9 +326,8 @@ void PushingToViewsBlockOutputStream::flush()
         view.out->flush();
 }
 
-void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
+void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
 {
-    auto & view = views[view_num];
     Stopwatch watch;
 
     try
