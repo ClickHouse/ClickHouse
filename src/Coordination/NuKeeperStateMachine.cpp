@@ -43,8 +43,9 @@ nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions
 }
 
 
-NuKeeperStateMachine::NuKeeperStateMachine()
-    : last_committed_idx(0)
+NuKeeperStateMachine::NuKeeperStateMachine(long tick_time)
+    : storage(tick_time)
+    , last_committed_idx(0)
     , log(&Poco::Logger::get("NuRaftStateMachine"))
 {
     LOG_DEBUG(log, "Created nukeeper state machine");
@@ -52,15 +53,19 @@ NuKeeperStateMachine::NuKeeperStateMachine()
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
-    if (data.size() == sizeof(size_t))
+    if (data.size() == sizeof(long))
     {
-        LOG_DEBUG(log, "Session ID response {}", log_idx);
+        nuraft::buffer_serializer timeout_data(data);
+        long session_timeout_ms = timeout_data.get_i64();
         auto response = nuraft::buffer::alloc(sizeof(size_t));
+        int64_t session_id;
         nuraft::buffer_serializer bs(response);
         {
             std::lock_guard lock(storage_lock);
-            bs.put_i64(storage.getSessionID());
+            session_id = storage.getSessionID(session_timeout_ms);
+            bs.put_i64(session_id);
         }
+        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_timeout_ms);
         last_committed_idx = log_idx;
         return response;
     }
@@ -121,7 +126,7 @@ NuKeeperStateMachine::StorageSnapshotPtr NuKeeperStateMachine::readSnapshot(nura
     NuKeeperStorageSerializer serializer;
 
     ReadBufferFromNuraftBuffer reader(in);
-    NuKeeperStorage new_storage;
+    NuKeeperStorage new_storage(500 /*FIXME*/);
     serializer.deserialize(new_storage, reader);
     return std::make_shared<StorageSnapshot>(ss, new_storage);
 }
@@ -227,6 +232,12 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStateMachine::processReadRequest(c
 {
     std::lock_guard lock(storage_lock);
     return storage.processRequest(request_for_session.request, request_for_session.session_id);
+}
+
+std::unordered_set<int64_t> NuKeeperStateMachine::getDeadSessions()
+{
+    std::lock_guard lock(storage_lock);
+    return storage.getDeadSessions();
 }
 
 }

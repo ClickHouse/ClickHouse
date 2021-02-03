@@ -24,7 +24,7 @@ NuKeeperServer::NuKeeperServer(int server_id_, const std::string & hostname_, in
     , hostname(hostname_)
     , port(port_)
     , endpoint(hostname + ":" + std::to_string(port))
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>())
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(500 /* FIXME */))
     , state_manager(nuraft::cs_new<InMemoryStateManager>(server_id, endpoint))
 {
 }
@@ -214,12 +214,12 @@ NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const NuKeeper
     }
 }
 
-int64_t NuKeeperServer::getSessionID()
+int64_t NuKeeperServer::getSessionID(long session_timeout_ms)
 {
-    auto entry = nuraft::buffer::alloc(sizeof(int64_t));
+    auto entry = nuraft::buffer::alloc(sizeof(long));
     /// Just special session request
     nuraft::buffer_serializer bs(entry);
-    bs.put_i64(0);
+    bs.put_i64(session_timeout_ms);
 
     std::lock_guard lock(append_entries_mutex);
 
@@ -273,6 +273,11 @@ void NuKeeperServer::waitForCatchUp() const
         LOG_DEBUG(&Poco::Logger::get("NuRaftInit"), "Waiting current RAFT instance to catch up");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+}
+
+std::unordered_set<int64_t> NuKeeperServer::getDeadSessions()
+{
+    return state_machine->getDeadSessions();
 }
 
 }

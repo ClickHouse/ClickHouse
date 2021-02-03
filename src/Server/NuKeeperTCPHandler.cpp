@@ -230,8 +230,8 @@ NuKeeperTCPHandler::NuKeeperTCPHandler(IServer & server_, const Poco::Net::Strea
     , log(&Poco::Logger::get("NuKeeperTCPHandler"))
     , global_context(server.context())
     , nu_keeper_storage_dispatcher(global_context.getNuKeeperStorageDispatcher())
-    , operation_timeout(0, global_context.getConfigRef().getUInt("nu_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context.getConfigRef().getUInt("nu_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
@@ -245,7 +245,7 @@ void NuKeeperTCPHandler::sendHandshake(bool has_leader)
     else /// Specially ignore connections if we are not leader, client will throw exception
         Coordination::write(42, *out);
 
-    Coordination::write(Coordination::DEFAULT_SESSION_TIMEOUT_MS, *out);
+    Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
     Coordination::write(session_id, *out);
     std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
     Coordination::write(passwd, *out);
@@ -257,15 +257,14 @@ void NuKeeperTCPHandler::run()
     runImpl();
 }
 
-void NuKeeperTCPHandler::receiveHandshake()
+Poco::Timespan NuKeeperTCPHandler::receiveHandshake()
 {
     int32_t handshake_length;
     int32_t protocol_version;
     int64_t last_zxid_seen;
-    int32_t timeout;
+    int32_t timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
-
     Coordination::read(handshake_length, *in);
     if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH && handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
@@ -280,7 +279,7 @@ void NuKeeperTCPHandler::receiveHandshake()
     if (last_zxid_seen != 0)
         throw Exception("Non zero last_zxid_seen is not supported", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
-    Coordination::read(timeout, *in);
+    Coordination::read(timeout_ms, *in);
     Coordination::read(previous_session_id, *in);
 
     if (previous_session_id != 0)
@@ -291,6 +290,8 @@ void NuKeeperTCPHandler::receiveHandshake()
     int8_t readonly;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
+
+    return Poco::Timespan(0, timeout_ms * 1000);
 }
 
 
@@ -316,7 +317,9 @@ void NuKeeperTCPHandler::runImpl()
 
     try
     {
-        receiveHandshake();
+        auto client_timeout = receiveHandshake();
+        if (client_timeout != 0)
+            session_timeout = std::min(client_timeout, session_timeout);
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -328,7 +331,7 @@ void NuKeeperTCPHandler::runImpl()
     {
         try
         {
-            session_id = nu_keeper_storage_dispatcher->getSessionID();
+            session_id = nu_keeper_storage_dispatcher->getSessionID(session_timeout.totalMilliseconds());
         }
         catch (const Exception & e)
         {
@@ -416,7 +419,7 @@ void NuKeeperTCPHandler::runImpl()
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
                 LOG_DEBUG(log, "Session #{} expired", session_id);
-                finish();
+                nu_keeper_storage_dispatcher->finishSession(session_id);
                 break;
             }
         }
@@ -424,19 +427,8 @@ void NuKeeperTCPHandler::runImpl()
     catch (const Exception & ex)
     {
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
-        finish();
+        nu_keeper_storage_dispatcher->finishSession(session_id);
     }
-}
-
-void NuKeeperTCPHandler::finish()
-{
-    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
-    request->xid = close_xid;
-    /// Put close request (so storage will remove all info about session)
-    nu_keeper_storage_dispatcher->putRequest(request, session_id);
-    /// We don't need any callbacks because session can be already dead and
-    /// nobody wait for response
-    nu_keeper_storage_dispatcher->finishSession(session_id);
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> NuKeeperTCPHandler::receiveRequest()

@@ -67,7 +67,8 @@ static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & p
     return result;
 }
 
-NuKeeperStorage::NuKeeperStorage()
+NuKeeperStorage::NuKeeperStorage(long tick_time_ms)
+    : session_expiry_queue(tick_time_ms)
 {
     container.emplace("/", Node());
 }
@@ -638,6 +639,18 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
         auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
         response->xid = zk_request->xid;
         response->zxid = getZXID();
+        session_expiry_queue.remove(session_id);
+        session_and_timeout.erase(session_id);
+        results.push_back(ResponseForSession{session_id, response});
+    }
+    else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
+    {
+        session_expiry_queue.update(session_id, session_and_timeout[session_id]);
+        NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
+        auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
+        response->xid = zk_request->xid;
+        response->zxid = getZXID();
+
         results.push_back(ResponseForSession{session_id, response});
     }
     else
