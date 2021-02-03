@@ -109,6 +109,10 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
+    using Serializations = std::map<String, SerializationPtr>;
+    Serializations serializations;
+
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;

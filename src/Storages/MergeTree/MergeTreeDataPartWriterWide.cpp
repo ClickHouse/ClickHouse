@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
@@ -88,9 +89,9 @@ void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & column,
     const ASTPtr & effective_codec_desc)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & substream_type)
+    ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(column, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(column, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
@@ -99,7 +100,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         /// If we can use special codec then just get it
         if (IDataType::isSpecialCompressionAllowed(substream_path))
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
-        else /// otherwise return only generic codecs and don't use info about the data_type
+        else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         column_streams[stream_name] = std::make_unique<Stream>(

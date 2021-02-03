@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
@@ -68,6 +69,8 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
+
+    SerializationPtr getDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
 };
 
 }

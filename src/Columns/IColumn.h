@@ -26,6 +26,9 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+
 
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
@@ -357,6 +360,8 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void getIndicesOfNotDefaultValues(Offsets & /* offsets */) const {}
+    virtual size_t getNumberOfNotDefaultValues() const { return 0; }
 
     static MutablePtr mutate(Ptr ptr)
     {

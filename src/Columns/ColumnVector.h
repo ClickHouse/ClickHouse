@@ -298,6 +298,23 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
+    void getIndicesOfNotDefaultValues(IColumn::Offsets & offsets) const override
+    {
+        offsets.reserve(data.size());
+        for (size_t i = 0; i < data.size(); ++i)
+            if (data[i] != T{})
+                offsets.push_back(i);
+    }
+
+    size_t getNumberOfNotDefaultValues() const override
+    {
+        size_t res = 0;
+        for (size_t i = 0; i < data.size(); ++i)
+            res += (data[i] != T{});
+
+        return res;
+    }
+
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 

@@ -11,6 +11,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
 
 
 namespace DB
@@ -448,6 +449,37 @@ ColumnPtr IDataType::getFromSubstreamsCache(SubstreamsCache * cache, const Subst
         return nullptr;
 
     return it->second;
+}
+
+SerializationPtr IDataType::getDefaultSerialization() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no serialization in type {}", getName());
+}
+
+SerializationPtr IDataType::getSerialization(const IColumn & column) const
+{
+    auto default_serialization = getDefaultSerialization();
+
+    size_t size = column.size();
+    size_t num_not_default = column.getNumberOfNotDefaultValues();
+
+    if (num_not_default * 10 <= size)
+        return std::make_shared<SerializationSparse>(default_serialization);
+    
+    return default_serialization;
+}
+
+DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const
+{
+    return shared_from_this();
+}
+
+void IDataType::enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const
+{
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        callback(path, *getTypeForSubstream(path));
+    });
 }
 
 }

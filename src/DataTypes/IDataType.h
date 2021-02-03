@@ -6,6 +6,7 @@
 #include <Core/Names.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeCustom_fwd.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
@@ -39,7 +40,7 @@ struct NameAndTypePair;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType : private boost::noncopyable
+class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
     IDataType();
@@ -274,6 +275,16 @@ public:
       */
     void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
+    virtual SerializationPtr getDefaultSerialization() const;
+    SerializationPtr getSerialization(const IColumn & column) const;
+
+    virtual DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
+
+    using SubstreamCallback = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
+    virtual void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath & path) const;
+    void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
+    void enumerateStreams(const SerializationPtr & serialization, const SubstreamCallback & callback) const { enumerateStreams(serialization, callback, {}); }
+
 protected:
     virtual String doGetName() const;
 
@@ -497,6 +508,7 @@ public:
     /// For all other substreams (like ArraySizes, NullMasks, etc.) we use only
     /// generic compression codecs like LZ4.
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
+
 protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
