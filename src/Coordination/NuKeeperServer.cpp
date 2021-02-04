@@ -214,9 +214,9 @@ NuKeeperStorage::ResponsesForSessions NuKeeperServer::putRequests(const NuKeeper
     }
 }
 
-int64_t NuKeeperServer::getSessionID(long session_timeout_ms)
+int64_t NuKeeperServer::getSessionID(int64_t session_timeout_ms)
 {
-    auto entry = nuraft::buffer::alloc(sizeof(long));
+    auto entry = nuraft::buffer::alloc(sizeof(int64_t));
     /// Just special session request
     nuraft::buffer_serializer bs(entry);
     bs.put_i64(session_timeout_ms);

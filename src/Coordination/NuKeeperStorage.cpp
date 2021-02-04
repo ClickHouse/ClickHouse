@@ -67,7 +67,7 @@ static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & p
     return result;
 }
 
-NuKeeperStorage::NuKeeperStorage(long tick_time_ms)
+NuKeeperStorage::NuKeeperStorage(int64_t tick_time_ms)
     : session_expiry_queue(tick_time_ms)
 {
     container.emplace("/", Node());

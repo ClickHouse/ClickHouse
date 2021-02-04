@@ -310,7 +310,7 @@ DB::NuKeeperStorage::ResponsesForSessions getZooKeeperResponses(nuraft::ptr<nura
 
 TEST(CoordinationTest, TestStorageSerialization)
 {
-    DB::NuKeeperStorage storage;
+    DB::NuKeeperStorage storage(500);
     storage.container["/hello"] = DB::NuKeeperStorage::Node{.data="world"};
     storage.container["/hello/somepath"] =  DB::NuKeeperStorage::Node{.data="somedata"};
     storage.session_id_counter = 5;
@@ -324,7 +324,7 @@ TEST(CoordinationTest, TestStorageSerialization)
     std::string serialized = buffer.str();
     EXPECT_NE(serialized.size(), 0);
     DB::ReadBufferFromString read(serialized);
-    DB::NuKeeperStorage new_storage;
+    DB::NuKeeperStorage new_storage(500);
     serializer.deserialize(new_storage, read);
 
     EXPECT_EQ(new_storage.container.size(), 3);

@@ -76,9 +76,9 @@ public:
     }
 
 public:
-    NuKeeperStorage(long tick_time_ms);
+    NuKeeperStorage(int64_t tick_time_ms);
 
-    int64_t getSessionID(long session_timeout_ms)
+    int64_t getSessionID(int64_t session_timeout_ms)
     {
         auto result = session_id_counter++;
         session_and_timeout.emplace(result, session_timeout_ms);
