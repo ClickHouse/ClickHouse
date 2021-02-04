@@ -205,6 +205,8 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
+            if (working_buffer.size())
+                impl->position() = position();
             if (!impl->next())
                 return false;
             internal_buffer = impl->buffer();
