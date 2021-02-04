@@ -139,7 +139,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query.clone());
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query.clone(), context);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -325,6 +325,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
+            if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
+                replicated->stopReplication();
 
             if (database->shouldBeEmptyOnDetach())
             {

@@ -67,6 +67,8 @@ private:
     bool is_database_guard = false;
 };
 
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -120,7 +122,7 @@ public:
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
+    DDLGuardPtr getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
 

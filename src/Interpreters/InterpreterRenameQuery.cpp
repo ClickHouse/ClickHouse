@@ -90,7 +90,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
         }
         else
         {

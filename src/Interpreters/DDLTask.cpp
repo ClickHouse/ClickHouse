@@ -309,13 +309,9 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
     {
         txn->ops.emplace_back(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->ops.emplace_back(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
-        //txn->ops.emplace_back(zkutil::makeRemoveRequest(getActiveNodePath(), -1));
         txn->ops.emplace_back(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    //if (execute_on_leader)
-    //    txn->ops.emplace_back(zkutil::makeCreateRequest(getShardNodePath() + "/executed", host_id_str, zkutil::CreateMode::Persistent));
-    //txn->ops.emplace_back(zkutil::makeCreateRequest(getFinishedNodePath(), execution_status.serializeText(), zkutil::CreateMode::Persistent));
     txn->ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
 
     std::move(ops.begin(), ops.end(), std::back_inserter(txn->ops));

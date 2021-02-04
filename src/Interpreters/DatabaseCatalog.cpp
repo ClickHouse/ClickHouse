@@ -609,7 +609,7 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
         view_dependencies[{new_from.getDatabaseName(), new_from.getTableName()}].insert(new_where);
 }
 
-std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
+DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;

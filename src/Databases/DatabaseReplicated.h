@@ -60,8 +60,9 @@ public:
 
     String getEngineName() const override { return "Replicated"; }
 
-    BlockIO propose(const ASTPtr & query);
+    BlockIO propose(const ASTPtr & query, const Context & query_context);
 
+    void stopReplication();
     void shutdown() override;
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
