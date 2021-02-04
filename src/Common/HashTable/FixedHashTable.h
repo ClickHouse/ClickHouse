@@ -476,6 +476,13 @@ public:
 
     size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
+    }
+
     const Cell * data() const { return buf; }
     Cell * data() { return buf; }
 
