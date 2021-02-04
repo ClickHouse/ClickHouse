@@ -247,17 +247,6 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const String & att
     throw Exception{"No such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 }
 
-const DictionaryAttribute & DictionaryStructure::getAttribute(const String & attribute_name, const DataTypePtr & type) const
-{
-    const auto & attribute = getAttribute(attribute_name);
-
-    if (!areTypesEqual(attribute.type, type))
-        throw Exception{"Attribute type does not match, expected " + attribute.type->getName() + ", found " + type->getName(),
-            ErrorCodes::TYPE_MISMATCH};
-
-    return attribute;
-}
-
 std::string DictionaryStructure::getKeyDescription() const
 {
     if (id)
