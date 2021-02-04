@@ -4,29 +4,30 @@ toc_priority: 114
 
 # groupArraySample {#grouparraysample}
 
-Creates an array of sample argument values. The size of the resulting array is limited to `max_size` elements. Argument values are selected and added to the array randomly. 
+构建一个参数值的采样数组。
+结果数组的大小限制为 `max_size` 个元素。参数值被随机选择并添加到数组中。
 
-**Syntax**
+**语法**
 
 ``` sql
 groupArraySample(max_size[, seed])(x)
 ```
 
-**Parameters**
+**参数**
 
--   `max_size` — Maximum size of the resulting array. [UInt64](../../data-types/int-uint.md).
--   `seed` — Seed for the random number generator. Optional. [UInt64](../../data-types/int-uint.md). Default value: `123456`.
--   `x` — Argument (column name or expression).
+-   `max_size` — 结果数组的最大长度. [UInt64](../../data-types/int-uint.md)。
+-   `seed` — 随机数发生器的种子. 可选。 [UInt64](../../data-types/int-uint.md)。 默认值: `123456`。
+-   `x` — 参数 (列名 或者 表达式).
 
-**Returned values**
+**返回值**
 
--   Array of randomly selected `x` arguments.
+-   随机选取参数 `x` (的值)组成的数组。
 
-Type: [Array](../../data-types/array.md).
+类型: [Array](../../../data-types/array.md).
 
-**Examples**
+**示例**
 
-Consider table `colors`:
+样表 `colors`:
 
 ``` text
 ┌─id─┬─color──┐
@@ -38,13 +39,13 @@ Consider table `colors`:
 └────┴────────┘
 ```
 
-Query with column name as argument:
+使用列名做参数查询:
 
 ``` sql
 SELECT groupArraySample(3)(color) as newcolors FROM colors;
 ```
 
-Result:
+结果:
 
 ```text
 ┌─newcolors──────────────────┐
@@ -52,13 +53,13 @@ Result:
 └────────────────────────────┘
 ```
 
-Query with column name and different seed:
+使用列名和不同的(随机数)种子查询:
 
 ``` sql
 SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
 ```
 
-Result:
+结果:
 
 ```text
 ┌─newcolors──────────────────┐
@@ -66,13 +67,13 @@ Result:
 └────────────────────────────┘
 ```
 
-Query with expression as argument:
+使用表达式做参数查询:
 
 ``` sql
 SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
 ```
 
-Result:
+结果:
 
 ```text
 ┌─newcolors───────────────────────────────────┐
