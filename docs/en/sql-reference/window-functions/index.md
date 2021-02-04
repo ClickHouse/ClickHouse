@@ -1,4 +1,9 @@
-# [development] Window Functions
+---
+toc_priority: 62
+toc_title: Window Functions
+---
+
+# [experimental] Window Functions
 
 !!! warning "Warning"
 This is an experimental feature that is currently in development and is not ready
@@ -11,9 +16,7 @@ Pure window functions such as `rank`, `lag`, `lead` and so on are not yet suppor
 The window can be specified either with an `OVER` clause or with a separate
 `WINDOW` clause.
 
-Only two variants of frame are supported, `ROWS` and `RANGE`. The only supported
-frame boundaries are `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
-
+Only two variants of frame are supported, `ROWS` and `RANGE`. Offsets for the `RANGE` frame are not yet supported.
 
 ## References
 
