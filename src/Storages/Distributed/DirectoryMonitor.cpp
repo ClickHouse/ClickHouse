@@ -1,5 +1,7 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -7,7 +9,6 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -178,6 +179,44 @@ namespace
             || code == ErrorCodes::CANNOT_DECOMPRESS
             || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
+
+    SyncGuardPtr getDirectorySyncGuard(bool dir_fsync, const DiskPtr & disk, const String & path)
+    {
+        if (dir_fsync)
+            return disk->getDirectorySyncGuard(path);
+        return nullptr;
+    }
+
+    void writeRemoteConvert(const DistributedHeader & header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
+    {
+        if (remote.getHeader() && header.header != remote.getHeader().dumpStructure())
+        {
+            LOG_WARNING(log,
+                "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
+                remote.getHeader().dumpStructure(), header.header);
+
+            CompressedReadBuffer decompressing_in(in);
+            /// Lack of header, requires to read blocks
+            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+
+            block_in.readPrefix();
+            while (Block block = block_in.read())
+            {
+                ConvertingBlockInputStream convert(
+                    std::make_shared<OneBlockInputStream>(block),
+                    remote.getHeader(),
+                    ConvertingBlockInputStream::MatchColumnsMode::Name);
+                auto adopted_block = convert.read();
+                remote.write(adopted_block);
+            }
+            block_in.readSuffix();
+        }
+        else
+        {
+            CheckingCompressedReadBuffer checking_in(in);
+            remote.writePrepared(checking_in);
+        }
+    }
 }
 
 
@@ -244,10 +283,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         task_handle->deactivate();
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File(path).remove(true);
 }
 
@@ -435,11 +471,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         auto connection = pool->get(timeouts, &header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
             header.insert_query, header.insert_settings, header.client_info};
-
-        CheckingCompressedReadBuffer checking_in(in);
-
         remote.writePrefix();
-        remote.writePrepared(checking_in);
+        writeRemoteConvert(header, remote, in, log);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -448,10 +481,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    if (dir_fsync)
-        dir_sync_guard.emplace(disk, relative_path);
-
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     Poco::File{file_path}.remove();
     metric_pending_files.sub();
 
@@ -537,9 +567,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
 
             if (Poco::File{tmp_file}.exists())
                 LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
@@ -562,7 +590,6 @@ struct StorageDistributedDirectoryMonitor::Batch
         try
         {
             std::unique_ptr<RemoteBlockOutputStream> remote;
-            bool first = true;
 
             for (UInt64 file_idx : file_indices)
             {
@@ -577,16 +604,14 @@ struct StorageDistributedDirectoryMonitor::Batch
                 ReadBufferFromFile in(file_path->second);
                 const auto & header = readDistributedHeader(in, parent.log);
 
-                if (first)
+                if (!remote)
                 {
-                    first = false;
                     remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts,
                         header.insert_query, header.insert_settings, header.client_info);
                     remote->writePrefix();
                 }
 
-                CheckingCompressedReadBuffer checking_in(in);
-                remote->writePrepared(checking_in);
+                writeRemoteConvert(header, *remote, in, parent.log);
             }
 
             if (remote)
@@ -607,10 +632,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
 
-            std::optional<DirectorySyncGuard> dir_sync_guard;
-            if (dir_fsync)
-                dir_sync_guard.emplace(parent.disk, parent.relative_path);
-
+            auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
         }
@@ -813,9 +835,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     }
 
     {
-        std::optional<DirectorySyncGuard> dir_sync_guard;
-        if (dir_fsync)
-            dir_sync_guard.emplace(disk, relative_path);
+        auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
 
         /// current_batch.txt will not exist if there was no send
         /// (this is the case when all batches that was pending has been marked as pending)
@@ -834,13 +854,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 
     Poco::File{broken_path}.createDirectory();
 
-    std::optional<DirectorySyncGuard> dir_sync_guard;
-    std::optional<DirectorySyncGuard> broken_dir_sync_guard;
-    if (dir_fsync)
-    {
-        broken_dir_sync_guard.emplace(disk, relative_path + "/broken/");
-        dir_sync_guard.emplace(disk, relative_path);
-    }
+    auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
+    auto broken_dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path + "/broken/");
 
     Poco::File{file_path}.renameTo(broken_file_path);
 

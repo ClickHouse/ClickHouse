@@ -688,7 +688,7 @@ public:
         if constexpr (has_defaults)
             applyLazyDefaults();
 
-        for (size_t j = 0; j < right_indexes.size(); ++j)
+        for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
             columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
     }
 
@@ -701,7 +701,7 @@ public:
     {
         if (lazy_defaults_count)
         {
-            for (size_t j = 0; j < right_indexes.size(); ++j)
+            for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
                 JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
