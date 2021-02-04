@@ -48,9 +48,9 @@ def run_and_check(args, env=None, shell=False):
     res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=shell)
     if res.returncode != 0:
         # check_call(...) from subprocess does not print stderr, so we do it manually
-        print('Stderr:\n{}\n'.format(res.stderr))
-        print('Stdout:\n{}\n'.format(res.stdout))
-        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr))
+        print('Stderr:\n{}\n'.format(res.stderr.decode('utf-8')))
+        print('Stdout:\n{}\n'.format(res.stdout.decode('utf-8')))
+        raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
 
 
 def subprocess_check_call(args):
