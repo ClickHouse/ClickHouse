@@ -6,6 +6,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/config_with_hosts.x
 node2 = cluster.add_instance('node2', main_configs=['configs/config_with_only_primary_hosts.xml'])
 node3 = cluster.add_instance('node3', main_configs=['configs/config_with_only_regexp_hosts.xml'])
 node4 = cluster.add_instance('node4', main_configs=['configs/config_without_allowed_hosts.xml'])
+node5 = cluster.add_instance('node5', main_configs=[]) # No `remote_url_allow_hosts` at all.
 node6 = cluster.add_instance('node6', main_configs=['configs/config_for_remote.xml'])
 node7 = cluster.add_instance('node7', main_configs=['configs/config_for_redirect.xml'], with_hdfs=True)
 
@@ -51,10 +52,21 @@ def test_config_with_only_regexp_hosts(start_cluster):
 
 
 def test_config_without_allowed_hosts(start_cluster):
-    assert node4.query("CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)") == ""
-    assert node4.query("CREATE TABLE table_test_4_2 (word String) Engine=URL('https://host', HDFS)") == ""
-    assert node4.query("CREATE TABLE table_test_4_3 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
-    assert node4.query("CREATE TABLE table_test_4_4 (word String) Engine=URL('ftp://something.com', S3)") == ""
+    assert "not allowed" in node4.query_and_get_error(
+        "CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)")
+    assert "not allowed" in node4.query_and_get_error(
+        "CREATE TABLE table_test_4_2 (word String) Engine=URL('https://host', HDFS)")
+    assert "not allowed" in node4.query_and_get_error(
+        "CREATE TABLE table_test_4_3 (word String) Engine=URL('https://yandex.ru', CSV)")
+    assert "not allowed" in node4.query_and_get_error(
+        "CREATE TABLE table_test_4_4 (word String) Engine=URL('ftp://something.com', S3)")
+
+
+def test_config_without_allowed_hosts_section(start_cluster):
+    assert node5.query("CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)") == ""
+    assert node5.query("CREATE TABLE table_test_4_2 (word String) Engine=URL('https://host', HDFS)") == ""
+    assert node5.query("CREATE TABLE table_test_4_3 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
+    assert node5.query("CREATE TABLE table_test_4_4 (word String) Engine=URL('ftp://something.com', S3)") == ""
 
 
 def test_table_function_remote(start_cluster):
