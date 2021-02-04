@@ -101,6 +101,14 @@ void WindowFrame::checkValid() const
         return;
     }
 
+    if (end_type == BoundaryType::Current
+        && begin_type == BoundaryType::Current)
+    {
+        // BETWEEN CURRENT ROW AND CURRENT ROW makes some sense for RANGE or
+        // GROUP frames, and is technically valid for ROWS frame.
+        return;
+    }
+
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Window frame '{}' is invalid",
         toString());
