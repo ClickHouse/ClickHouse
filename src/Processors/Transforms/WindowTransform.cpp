@@ -293,18 +293,14 @@ void WindowTransform::advanceFrameStartChoose()
             frame_started = true;
             return;
         case WindowFrame::BoundaryType::Current:
-            switch (window_description.frame.type)
-            {
-                case WindowFrame::FrameType::Rows:
-                    // CURRENT ROW
-                    frame_start = current_row;
-                    frame_started = true;
-                    return;
-                default:
-                    // Fallthrough to the "not implemented" error.
-                    break;
-            }
-            break;
+            // CURRENT ROW differs between frame types only in how the peer
+            // groups are accounted.
+            assert(partition_start <= peer_group_start);
+            assert(peer_group_start < partition_end);
+            assert(peer_group_start <= current_row);
+            frame_start = peer_group_start;
+            frame_started = true;
+            return;
         case WindowFrame::BoundaryType::Offset:
             switch (window_description.frame.type)
             {
@@ -436,18 +432,15 @@ void WindowTransform::advanceFrameEndCurrentRow()
 
 //    fmt::print(stderr, "first row {} last {}\n", frame_end.row, rows_end);
 
-    // We could retreat the frame_end here, but for some reason I am reluctant
-    // to do this... It would have better data locality.
-    auto reference = current_row;
+    // Advance frame_end while it is still peers with the current row.
     for (; frame_end.row < rows_end; ++frame_end.row)
     {
-        if (!arePeers(reference, frame_end))
+        if (!arePeers(current_row, frame_end))
         {
 //            fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
             frame_ended = true;
             return;
         }
-        reference = frame_end;
     }
 
     // Might have gotten to the end of the current block, have to properly
@@ -649,6 +642,13 @@ void WindowTransform::appendChunk(Chunk & chunk)
 //                current_row, frame_start, frame_end,
 //                frame_started, frame_ended);
 
+            // We now know that the current row is valid, so we can update the
+            // peer group start.
+            if (!arePeers(peer_group_start, current_row))
+            {
+                peer_group_start = current_row;
+            }
+
             // Advance the frame start.
             advanceFrameStart();
 
@@ -701,6 +701,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             writeOutCurrentRow();
 
             // Move to the next row. The frame will have to be recalculated.
+            // The peer group start is updated at the beginning of the loop,
+            // because current_row might now be past-the-end.
             advanceRowNumber(current_row);
             first_not_ready_row = current_row;
             frame_ended = false;
@@ -736,6 +738,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         prev_frame_start = partition_start;
         prev_frame_end = partition_start;
         assert(current_row == partition_start);
+        peer_group_start = partition_start;
 
 //        fmt::print(stderr, "reinitialize agg data at start of {}\n",
 //            new_partition_start);
@@ -923,6 +926,7 @@ void WindowTransform::work()
         assert(next_output_block_number >= first_block_number);
         assert(frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
+        assert(peer_group_start.block >= first_block_number);
     }
 }
 
