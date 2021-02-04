@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -533,6 +534,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_between("BETWEEN");
     ParserKeyword keyword_unbounded("UNBOUNDED");
     ParserKeyword keyword_preceding("PRECEDING");
+    ParserKeyword keyword_following("FOLLOWING");
     ParserKeyword keyword_and("AND");
     ParserKeyword keyword_current_row("CURRENT ROW");
 
@@ -540,40 +542,92 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     // 2) ROWS UNBOUNDED PRECEDING
     // When the frame end is not specified (2), it defaults to CURRENT ROW.
-    if (keyword_between.ignore(pos, expected))
+    const bool has_frame_end = keyword_between.ignore(pos, expected);
+
+    if (keyword_current_row.ignore(pos, expected))
     {
-        // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        if (!keyword_unbounded.ignore(pos, expected))
+        node->frame.begin_type = WindowFrame::BoundaryType::Current;
+    }
+    else
+    {
+        ParserLiteral parser_literal;
+        ASTPtr ast_literal;
+        if (keyword_unbounded.ignore(pos, expected))
+        {
+            node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
+        }
+        else if (parser_literal.parse(pos, ast_literal, expected))
+        {
+            node->frame.begin_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+        }
+        else
         {
             return false;
         }
 
-        if (!keyword_preceding.ignore(pos, expected))
+        if (keyword_preceding.ignore(pos, expected))
+        {
+            node->frame.begin_offset = - node->frame.begin_offset;
+        }
+        else if (keyword_following.ignore(pos, expected))
+        {
+            if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Frame start UNBOUNDED FOLLOWING is not implemented");
+            }
+        }
+        else
         {
             return false;
         }
+    }
 
+    if (has_frame_end)
+    {
         if (!keyword_and.ignore(pos, expected))
         {
             return false;
         }
 
-        if (!keyword_current_row.ignore(pos, expected))
+        if (keyword_current_row.ignore(pos, expected))
         {
-            return false;
+            node->frame.end_type = WindowFrame::BoundaryType::Current;
         }
-    }
-    else
-    {
-        // 2) ROWS UNBOUNDED PRECEDING
-        if (!keyword_unbounded.ignore(pos, expected))
+        else
         {
-            return false;
-        }
+            ParserLiteral parser_literal;
+            ASTPtr ast_literal;
+            if (keyword_unbounded.ignore(pos, expected))
+            {
+                node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
+            }
+            else if (parser_literal.parse(pos, ast_literal, expected))
+            {
+                node->frame.end_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+            }
+            else
+            {
+                return false;
+            }
 
-        if (!keyword_preceding.ignore(pos, expected))
-        {
-            return false;
+            if (keyword_preceding.ignore(pos, expected))
+            {
+                if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
+                {
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Frame end UNBOUNDED PRECEDING is not implemented");
+                }
+
+                node->frame.end_offset = -node->frame.end_offset;
+            }
+            else if (keyword_following.ignore(pos, expected))
+            {
+            }
+            else
+            {
+                return false;
+            }
         }
     }
 
