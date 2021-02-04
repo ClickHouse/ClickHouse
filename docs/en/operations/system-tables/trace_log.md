@@ -12,7 +12,7 @@ Columns:
 
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
--   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment with microseconds precision.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Timestamp of the sampling moment with microseconds precision.
 
 -   `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
 
