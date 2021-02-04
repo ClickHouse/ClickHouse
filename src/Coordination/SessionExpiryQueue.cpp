@@ -74,4 +74,10 @@ std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions()
     return {};
 }
 
+void SessionExpiryQueue::clear()
+{
+    session_to_timeout.clear();
+    expiry_to_sessions.clear();
+}
+
 }

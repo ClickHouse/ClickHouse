@@ -513,50 +513,23 @@ struct NuKeeperStorageCloseRequest final : public NuKeeperStorageRequest
     }
 };
 
-NuKeeperStorage::ResponsesForSessions NuKeeperStorage::finalize(const RequestsForSessions & expired_requests)
+void NuKeeperStorage::finalize()
 {
     if (finalized)
         throw DB::Exception("Testkeeper storage already finalized", ErrorCodes::LOGICAL_ERROR);
 
     finalized = true;
 
-    /// TODO delete ephemerals
-    ResponsesForSessions finalize_results;
-    auto finish_watch = [] (const auto & watch_pair) -> ResponsesForSessions
-    {
-        ResponsesForSessions results;
-        std::shared_ptr<Coordination::ZooKeeperWatchResponse> response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-        response->type = Coordination::SESSION;
-        response->state = Coordination::EXPIRED_SESSION;
-        response->error = Coordination::Error::ZSESSIONEXPIRED;
+    for (const auto & [session_id, ephemerals] : ephemerals)
+        for (const String & ephemeral_path : ephemerals)
+            container.erase(ephemeral_path);
 
-        for (auto & watcher_session : watch_pair.second)
-            results.push_back(ResponseForSession{watcher_session, response});
-        return results;
-    };
-
-    for (auto & path_watch : watches)
-    {
-        auto watch_responses = finish_watch(path_watch);
-        finalize_results.insert(finalize_results.end(), watch_responses.begin(), watch_responses.end());
-    }
+    ephemerals.clear();
 
     watches.clear();
-    for (auto & path_watch : list_watches)
-    {
-        auto list_watch_responses = finish_watch(path_watch);
-        finalize_results.insert(finalize_results.end(), list_watch_responses.begin(), list_watch_responses.end());
-    }
     list_watches.clear();
     sessions_and_watchers.clear();
-
-    for (const auto & [session_id, zk_request] : expired_requests)
-    {
-        auto response = zk_request->makeResponse();
-        response->error = Coordination::Error::ZSESSIONEXPIRED;
-        finalize_results.push_back(ResponseForSession{session_id, response});
-    }
-    return finalize_results;
+    session_expiry_queue.clear();
 }
 
 
@@ -674,15 +647,6 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
             {
                 watches[zk_request->getPath()].emplace_back(session_id);
                 sessions_and_watchers[session_id].emplace(zk_request->getPath());
-            }
-            else
-            {
-                std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                watch_response->path = zk_request->getPath();
-                watch_response->xid = -1;
-                watch_response->error = response->error;
-                watch_response->type = Coordination::Event::NOTWATCHING;
-                results.push_back(ResponseForSession{session_id, watch_response});
             }
         }
 

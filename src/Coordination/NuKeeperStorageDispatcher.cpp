@@ -32,7 +32,7 @@ void NuKeeperStorageDispatcher::processingThread()
 
             try
             {
-                auto responses = server->putRequests({request});
+                auto responses = server->putRequest(request);
                 for (const auto & response_for_session : responses)
                     setResponse(response_for_session.session_id, response_for_session.response);
             }
@@ -196,17 +196,16 @@ void NuKeeperStorageDispatcher::shutdown()
         }
 
         if (server)
+            server->shutdown();
+
+        NuKeeperStorage::RequestForSession request_for_session;
+        while (requests_queue.tryPop(request_for_session))
         {
-            NuKeeperStorage::RequestsForSessions expired_requests;
-            NuKeeperStorage::RequestForSession request;
-            while (requests_queue.tryPop(request))
-                expired_requests.push_back(NuKeeperStorage::RequestForSession{request});
-
-            auto expired_responses = server->shutdown(expired_requests);
-
-            for (const auto & response_for_session : expired_responses)
-                setResponse(response_for_session.session_id, response_for_session.response);
+            auto response = request_for_session.request->makeResponse();
+            response->error = Coordination::Error::ZSESSIONEXPIRED;
+            setResponse(request_for_session.session_id, response);
         }
+        session_to_response_callback.clear();
     }
     catch (...)
     {

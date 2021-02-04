@@ -43,7 +43,7 @@ nuraft::ptr<nuraft::buffer> writeResponses(NuKeeperStorage::ResponsesForSessions
 }
 
 
-NuKeeperStateMachine::NuKeeperStateMachine(long tick_time)
+NuKeeperStateMachine::NuKeeperStateMachine(int64_t tick_time)
     : storage(tick_time)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("NuRaftStateMachine"))
@@ -238,6 +238,12 @@ std::unordered_set<int64_t> NuKeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_lock);
     return storage.getDeadSessions();
+}
+
+void NuKeeperStateMachine::shutdownStorage()
+{
+    std::lock_guard lock(storage_lock);
+    storage.finalize();
 }
 
 }

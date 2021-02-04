@@ -30,7 +30,7 @@ struct ZooKeeperResponse : virtual Response
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
-    void write(WriteBuffer & out) const;
+    virtual void write(WriteBuffer & out) const;
     virtual OpNum getOpNum() const = 0;
 };
 
@@ -87,6 +87,8 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     void readImpl(ReadBuffer & in) override;
 
     void writeImpl(WriteBuffer & out) const override;
+
+    void write(WriteBuffer & out) const override;
 
     OpNum getOpNum() const override
     {

@@ -51,6 +51,8 @@ public:
 
     std::unordered_set<int64_t> getDeadSessions();
 
+    void shutdownStorage();
+
 private:
     struct StorageSnapshot
     {
