@@ -740,5 +740,4 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
         return cloned_col;
     }
 }
-
 }
