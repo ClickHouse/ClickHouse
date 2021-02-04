@@ -25,20 +25,29 @@
     
     `SimpleAggregateFunction` имеет лучшую производительность, чем `AggregateFunction` с той же агрегатной функцией.
 
-
 **Параметры**
 
 -   `func` — имя агрегатной функции.
 -   `type` — типы аргументов агрегатной функции.
 
-**Синтаксис**
+**Пример**
+
+Запрос:
 
 ``` sql
-CREATE TABLE t
+CREATE TABLE simple (id UInt64,val SimpleAggregateFunction(sum,Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+```
+
+Ответ:
+
+``` text
+CREATE TABLE simple
 (
-    column1 SimpleAggregateFunction(sum, UInt64),
-    column2 SimpleAggregateFunction(any, String)
-) ENGINE = ...
+    `id` UInt64,
+    `val` SimpleAggregateFunction(sum, Double)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->
