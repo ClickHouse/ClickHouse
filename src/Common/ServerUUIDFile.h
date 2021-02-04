@@ -1,13 +1,12 @@
 #pragma once
 
-#include <string>
 #include <functional>
+#include <string>
 #include <boost/noncopyable.hpp>
 
 
 namespace DB
 {
-
 class WriteBuffer;
 
 
@@ -16,7 +15,7 @@ class WriteBuffer;
 class ServerUUIDFile : private boost::noncopyable
 {
 public:
-    using FillFunction = std::function<void(WriteBuffer&)>;
+    using FillFunction = std::function<void(WriteBuffer &)>;
 
     ServerUUIDFile(std::string path_, FillFunction fill_);
     ~ServerUUIDFile();

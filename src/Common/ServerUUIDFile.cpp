@@ -5,10 +5,9 @@
 #include <errno.h>
 
 #include <Poco/File.h>
+#include <Poco/UUID.h>
 #include <common/logger_useful.h>
 #include <common/errnoToString.h>
-#include <Common/ClickHouseRevision.h>
-#include <common/LocalDateTime.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
@@ -28,10 +27,30 @@ extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 
-ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer & out)
-{
-    // TODO: compute random uuid
-    out << "736833cf-2224-475b-82e2-cbc114407345";
+ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer & out) {
+    union
+    {
+        char bytes[16];
+        struct
+        {
+            UInt64 a;
+            UInt64 b;
+        } words;
+        __uint128_t uuid;
+    } random;
+
+    random.words.a = thread_local_rng(); //-V656
+    random.words.b = thread_local_rng(); //-V656
+
+    struct QueryUUID : Poco::UUID
+    {
+        QueryUUID(const char * bytes, Poco::UUID::Version version)
+            : Poco::UUID(bytes, version) {}
+    };
+
+    auto server_uuid = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+
+    out << server_uuid;
 };
 
 
