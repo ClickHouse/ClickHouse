@@ -618,6 +618,25 @@ bool ActionsDAG::trivial() const
     return true;
 }
 
+void ActionsDAG::addMaterializingOutputActions()
+{
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    Index new_index;
+    for (auto * node : index)
+    {
+        auto & name = node->result_name;
+        node = &addFunction(func_builder_materialize, {node}, {}, true);
+        node = &addAlias(*node, name, true);
+        new_index.insert(node);
+    }
+
+    index.swap(new_index);
+}
+
 ActionsDAGPtr ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & source,
     const ColumnsWithTypeAndName & result,

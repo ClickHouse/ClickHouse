@@ -7,6 +7,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -74,7 +75,12 @@ Block addMissingDefaults(
     }
 
     /// Computes explicitly specified values by default and materialized columns.
-    evaluateMissingDefaults(res, required_columns, columns, context);
+    auto dag = createFillingMissingDefaultsExpression(res, required_columns, columns, context);
+    if (dag)
+    {
+        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+        actions->execute(res);
+    }
     return res;
 }
 
