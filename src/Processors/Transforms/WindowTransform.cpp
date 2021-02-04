@@ -22,8 +22,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , input_header(input_header_)
     , window_description(window_description_)
 {
-    window_description.frame.checkValid();
-
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
