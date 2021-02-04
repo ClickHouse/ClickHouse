@@ -9,6 +9,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DATABASE_REPLICATION_FAILED;
+    extern const int NOT_A_LEADER;
+    extern const int UNFINISHED;
 }
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, const Context & context_)
@@ -22,7 +24,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 void DatabaseReplicatedDDLWorker::initializeMainThread()
 {
-    do
+    while (!initialized && !stop_flag)
     {
         try
         {
@@ -36,17 +38,17 @@ void DatabaseReplicatedDDLWorker::initializeMainThread()
             sleepForSeconds(5);
         }
     }
-    while (!initialized && !stop_flag);
 }
 
 void DatabaseReplicatedDDLWorker::initializeReplication()
 {
     /// Check if we need to recover replica.
-    /// Invariant: replica is lost if it's log_ptr value is less then min_log_ptr value.
+    /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
     UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
-    UInt32 min_log_ptr = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/min_log_ptr"));
-    if (our_log_ptr < min_log_ptr)
+    UInt32 max_log_ptr = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    UInt32 logs_to_keep = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    if (our_log_ptr + logs_to_keep < max_log_ptr)
         database->recoverLostReplica(current_zookeeper, 0);
 }
 
@@ -75,10 +77,19 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context)
 {
+    /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
+    /// but it requires more complex logic around /try node.
+
     auto zookeeper = getAndSetZooKeeper();
-    // TODO do not enqueue query if we have big replication lag
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    assert(our_log_ptr <= max_log_ptr);
+    constexpr UInt32 max_replication_lag = 16;
+    if (max_replication_lag < max_log_ptr - our_log_ptr)
+        throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
+                        "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
     String entry_path = enqueueQuery(entry);
     auto try_node = zkutil::EphemeralNodeHolder::existing(entry_path + "/try", *zookeeper);
@@ -91,9 +102,18 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->is_initial_query = true;
 
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
+    UInt64 timeout = query_context.getSettingsRef().distributed_ddl_task_timeout;
     {
         std::unique_lock lock{mutex};
-        wait_current_task_change.wait(lock, [&]() { assert(zookeeper->expired() || current_task <= entry_name); return zookeeper->expired() || current_task == entry_name; });
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
+        {
+            assert(zookeeper->expired() || current_task <= entry_name);
+            return zookeeper->expired() || current_task == entry_name || stop_flag;
+        });
+
+        if (!processed)
+            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica,"
+                            "most likely because replica is busy with previous queue entries");
     }
 
     if (zookeeper->expired())
@@ -116,8 +136,11 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 {
     {
         std::lock_guard lock{mutex};
-        current_task = entry_name;
-        wait_current_task_change.notify_all();
+        if (current_task < entry_name)
+        {
+            current_task = entry_name;
+            wait_current_task_change.notify_all();
+        }
     }
 
     UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(database->replica_path + "/log_ptr"));
@@ -135,18 +158,50 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     String initiator_name;
     zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
-    if (zookeeper->tryGet(entry_path + "/try", initiator_name, nullptr, wait_committed_or_failed))
+    String try_node_path = entry_path + "/try";
+    if (zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
     {
         task->is_initial_query = initiator_name == task->host_id_str;
+
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
-        //FIXME add some timeouts
         LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
-        wait_committed_or_failed->wait();
+        constexpr size_t wait_time_ms = 1000;
+        constexpr size_t max_iterations = 3600;
+        size_t iteration = 0;
+
+        while (!wait_committed_or_failed->tryWait(wait_time_ms))
+        {
+            if (stop_flag)
+            {
+                /// We cannot return task to process and we cannot return nullptr too,
+                /// because nullptr means "task should not be executed".
+                /// We can only exit by exception.
+                throw Exception(ErrorCodes::UNFINISHED, "Replication was stopped");
+            }
+
+            if (max_iterations <= ++iteration)
+            {
+                /// What can we do if initiator hangs for some reason? Seems like we can remove /try node.
+                /// Initiator will fail to commit entry to ZK (including ops for replicated table) if /try does not exist.
+                /// But it's questionable.
+
+                /// We use tryRemove(...) because multiple hosts (including initiator) may try to do it concurrently.
+                auto code = zookeeper->tryRemove(try_node_path);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception(code, try_node_path);
+
+                if (!zookeeper->exists(entry_path + "/committed"))
+                {
+                    out_reason = fmt::format("Entry {} was forcefully cancelled due to timeout", entry_name);
+                    return {};
+                }
+            }
+        }
     }
 
     if (!zookeeper->exists(entry_path + "/committed"))
     {
-        out_reason = "Entry " + entry_name + " hasn't been committed";
+        out_reason = fmt::format("Entry {} hasn't been committed", entry_name);
         return {};
     }
 
@@ -154,7 +209,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         assert(!zookeeper->exists(entry_path + "/try"));
         assert(zookeeper->exists(entry_path + "/committed") == (zookeeper->get(task->getFinishedNodePath()) == "0"));
-        out_reason = "Entry " + entry_name + " has been executed as initial query";
+        out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
 
@@ -169,8 +224,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->entry.query.empty())
     {
-        //TODO better way to determine special entries
-        out_reason = "It's dummy task";
+        out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }
 
@@ -178,7 +232,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (zookeeper->exists(task->getFinishedNodePath()))
     {
-        out_reason = "Task has been already processed";
+        out_reason = fmt::format("Task {} has been already processed", entry_name);
         return {};
     }
 

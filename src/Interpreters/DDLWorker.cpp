@@ -341,7 +341,8 @@ void DDLWorker::scheduleTasks()
     {
         /// We will recheck status of last executed tasks. It's useful if main thread was just restarted.
         auto & min_task = *std::min_element(current_tasks.begin(), current_tasks.end());
-        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_task->entry_name);
+        String min_entry_name = last_skipped_entry_name ? std::min(min_task->entry_name, *last_skipped_entry_name) : min_task->entry_name;
+        begin_node = std::upper_bound(queue_nodes.begin(), queue_nodes.end(), min_entry_name);
         current_tasks.clear();
     }
 
@@ -358,6 +359,7 @@ void DDLWorker::scheduleTasks()
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
             updateMaxDDLEntryID(entry_name);
+            last_skipped_entry_name.emplace(entry_name);
             continue;
         }
 
@@ -500,10 +502,7 @@ void DDLWorker::processTask(DDLTaskBase & task)
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    DatabasePtr database;
-                    std::tie(database, storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
-                    if (database && database->getEngineName() == "Replicated" && !typeid_cast<const DatabaseReplicatedTask *>(&task))
-                        throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER queries are not allowed for Replicated databases");
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 task.execute_on_leader = storage && taskShouldBeExecutedOnLeader(task.query, storage) && !task.is_circular_replicated;
@@ -553,7 +552,8 @@ void DDLWorker::processTask(DDLTaskBase & task)
     updateMaxDDLEntryID(task.entry_name);
 
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
-    /// If ZooKeeper connection is lost here, we will try again to write query status.
+    /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
+    /// NOTE: If both table and database are replicated, task is executed in single ZK transaction.
 
     bool status_written = task.ops.empty();
     if (!status_written)
@@ -958,12 +958,6 @@ void DDLWorker::runMainThread()
             {
                 initialized = false;
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
-            }
-            else if (e.code == Coordination::Error::ZNONODE)
-            {
-                // TODO add comment: when it happens and why it's expected?
-                // maybe because cleanup thread may remove nodes inside queue entry which are currently processed
-                LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
             }
             else
             {

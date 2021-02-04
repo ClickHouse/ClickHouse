@@ -81,7 +81,6 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
 
-    //MetadataTransactionPtr txn;
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -163,6 +162,7 @@ struct MetadataTransaction
 
     void commit();
 
+    ~MetadataTransaction() { assert(state != CREATED || std::uncaught_exception()); }
 };
 
 }

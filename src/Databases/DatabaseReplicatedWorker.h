@@ -13,7 +13,7 @@ public:
 
     String enqueueQuery(DDLLogEntry & entry) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, const Context & query_context);
 
 private:
     void initializeMainThread() override;

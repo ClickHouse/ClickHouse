@@ -886,7 +886,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr);
+            return typeid_cast<DatabaseReplicated *>(database.get())->propose(query_ptr, context);
         }
     }
 

@@ -115,7 +115,7 @@ protected:
     ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
-    //std::optional<String> last_entry_name;
+    std::optional<String> last_skipped_entry_name;
     std::list<DDLTaskPtr> current_tasks;
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();

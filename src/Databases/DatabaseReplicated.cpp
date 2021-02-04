@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int DATABASE_REPLICATION_FAILED;
     extern const int UNKNOWN_DATABASE;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
@@ -121,8 +122,8 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter/cnt-", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/counter/cnt-", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/min_log_ptr", "1", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/max_log_ptr", "1", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", "1000", zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     auto res = current_zookeeper->tryMulti(ops, responses);
@@ -194,7 +195,7 @@ void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const Z
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} already executed, current pointer is {}", entry_number, log_entry_to_execute);
 
     /// Entry name is valid. Let's get min log pointer to check if replica is staled.
-    UInt32 min_snapshot = parse<UInt32>(zookeeper->get(zookeeper_path + "/min_log_ptr"));
+    UInt32 min_snapshot = parse<UInt32>(zookeeper->get(zookeeper_path + "/min_log_ptr"));   // FIXME
 
     if (log_entry_to_execute < min_snapshot)
     {
@@ -207,13 +208,15 @@ void DatabaseReplicated::onUnexpectedLogEntry(const String & entry_name, const Z
 }
 
 
-BlockIO DatabaseReplicated::propose(const ASTPtr & query)
+BlockIO DatabaseReplicated::propose(const ASTPtr & query, const Context & query_context)
 {
+    if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
+
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            //FIXME allow all types of queries (maybe we should execute ATTACH an similar queries on leader)
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
@@ -225,17 +228,16 @@ BlockIO DatabaseReplicated::propose(const ASTPtr & query)
     DDLLogEntry entry;
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     BlockIO io;
-    //FIXME use query context
-    if (global_context.getSettingsRef().distributed_ddl_task_timeout == 0)
+    if (query_context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
     //FIXME need list of all replicas, we can obtain it from zk
     Strings hosts_to_wait;
     hosts_to_wait.emplace_back(getFullReplicaName());
-    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, global_context, hosts_to_wait);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, query_context, hosts_to_wait);
     io.in = std::move(stream);
     return io;
 }
@@ -295,17 +297,20 @@ void DatabaseReplicated::drop(const Context & context_)
 {
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path, "DROPPED");
-    current_zookeeper->tryRemoveRecursive(replica_path);
     DatabaseAtomic::drop(context_);
+    current_zookeeper->tryRemoveRecursive(replica_path);
+}
+
+void DatabaseReplicated::stopReplication()
+{
+    if (ddl_worker)
+        ddl_worker->shutdown();
 }
 
 void DatabaseReplicated::shutdown()
 {
-    if (ddl_worker)
-    {
-        ddl_worker->shutdown();
-        ddl_worker = nullptr;
-    }
+    stopReplication();
+    ddl_worker = nullptr;
     DatabaseAtomic::shutdown();
 }
 
@@ -330,10 +335,15 @@ void DatabaseReplicated::renameTable(const Context & context, const String & tab
 
     if (txn->is_initial_query)
     {
+        if (!isTableExist(table_name, context))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_name);
+        if (exchange && !to_database.isTableExist(to_table_name, context))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
+
         String statement;
         String statement_to;
         {
-            //FIXME It's not atomic (however we have only one thread)
+            /// NOTE It's not atomic (however, we have only one thread)
             ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
             readStringUntilEOF(statement, in);
             if (exchange)
