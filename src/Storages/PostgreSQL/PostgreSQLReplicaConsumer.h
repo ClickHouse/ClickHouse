@@ -82,7 +82,7 @@ private:
     void advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     /// Methods to parse replication message data.
-    void readTupleData(const char * message, size_t & pos, PostgreSQLQuery type);
+    void readTupleData(const char * message, size_t & pos, PostgreSQLQuery type, bool old_value = false);
     void readString(const char * message, size_t & pos, size_t size, String & result);
     Int64 readInt64(const char * message, size_t & pos);
     Int32 readInt32(const char * message, size_t & pos);

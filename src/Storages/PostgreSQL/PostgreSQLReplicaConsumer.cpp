@@ -210,7 +210,7 @@ Int64 PostgreSQLReplicaConsumer::readInt64(const char * message, size_t & pos)
 }
 
 
-void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos, PostgreSQLQuery type)
+void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos, PostgreSQLQuery type, bool old_value)
 {
     Int16 num_columns = readInt16(message, pos);
     /// 'n' means nullable, 'u' means TOASTed value, 't' means text formatted data
@@ -236,8 +236,6 @@ void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos
         {
             columns[num_columns]->insert(Int8(1));
             columns[num_columns + 1]->insert(UInt64(metadata.version()));
-            //insertValueMaterialized(*columns[num_columns], 1);
-            //insertValueMaterialized(*columns[num_columns + 1], metadata.version());
             break;
         }
         case PostgreSQLQuery::DELETE:
@@ -248,6 +246,12 @@ void PostgreSQLReplicaConsumer::readTupleData(const char * message, size_t & pos
         }
         case PostgreSQLQuery::UPDATE:
         {
+            if (old_value)
+                columns[num_columns]->insert(Int8(-1));
+            else
+                columns[num_columns]->insert(Int8(1));
+
+            columns[num_columns + 1]->insert(UInt64(metadata.version()));
             break;
         }
     }
@@ -319,17 +323,35 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
         {
             Int32 relation_id = readInt32(replication_message, pos);
             Int8 new_tuple = readInt8(replication_message, pos);
+
             LOG_DEBUG(log, "relationID {}, newTuple {}", relation_id, new_tuple);
             readTupleData(replication_message, pos, PostgreSQLQuery::INSERT);
             break;
         }
         case 'U': // Update
+        {
+            Int32 relation_id = readInt32(replication_message, pos);
+            Int8 primary_key_or_old_tuple_data = readInt8(replication_message, pos);
+
+            LOG_DEBUG(log, "relationID {}, key {}", relation_id, primary_key_or_old_tuple_data);
+
+            readTupleData(replication_message, pos, PostgreSQLQuery::UPDATE, true);
+
+            if (pos + 1 < size)
+            {
+                Int8 new_tuple_data = readInt8(replication_message, pos);
+                LOG_DEBUG(log, "new tuple data {}", new_tuple_data);
+                readTupleData(replication_message, pos, PostgreSQLQuery::UPDATE);
+            }
+
             break;
+        }
         case 'D': // Delete
         {
             Int32 relation_id = readInt32(replication_message, pos);
             //Int8 index_replica_identity = readInt8(replication_message, pos);
             Int8 full_replica_identity = readInt8(replication_message, pos);
+
             LOG_DEBUG(log, "relationID {}, full replica identity {}",
                     relation_id, full_replica_identity);
             //LOG_DEBUG(log, "relationID {}, index replica identity {} full replica identity {}",
