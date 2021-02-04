@@ -67,8 +67,6 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
         if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
             preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
 
-    columns = description.sample_block.cloneEmptyColumns();
-
     wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ replicationStream(); });
     wal_reader_task->deactivate();
 
@@ -92,7 +90,7 @@ void PostgreSQLReplicaConsumer::replicationStream()
 {
     size_t count_empty_slot_reads = 0;
     auto start_time = std::chrono::steady_clock::now();
-    metadata.readDataVersion();
+    metadata.readMetadata();
 
     LOG_TRACE(log, "Starting replication stream");
 
@@ -384,18 +382,19 @@ void PostgreSQLReplicaConsumer::syncIntoTable(Block & block)
 }
 
 
-void PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx)
+String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx)
 {
     LOG_TRACE(log, "CURRENT LSN FROM TO {}", final_lsn.lsn);
-    std::string query_str = fmt::format("SELECT pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn.lsn);
-    pqxx::result result{ntx->exec(query_str)};
-    if (!result.empty())
-    {
-        std::string s1 = result[0].size() > 0 && !result[0][0].is_null() ? result[0][0].as<std::string>() : "NULL";
-        std::string s2 = result[0].size() > 1 && !result[0][1].is_null() ? result[0][1].as<std::string>() : "NULL";
-        LOG_TRACE(log, "ADVANCE LSN: {} and {}", s1, s2);
 
-    }
+    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn.lsn);
+    pqxx::result result{ntx->exec(query_str)};
+
+    ntx->commit();
+
+    if (!result.empty())
+        return result[0][0].as<std::string>();
+
+    return final_lsn.lsn;
 }
 
 
@@ -454,13 +453,10 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     if (result_rows.rows())
     {
         assert(!slot_empty);
-        metadata.commitVersion([&]()
+        metadata.commitMetadata(final_lsn.lsn, [&]()
         {
             syncIntoTable(result_rows);
-            advanceLSN(tx);
-
-            /// TODO: Can transaction still be active if got exception before commiting it? It must be closed if connection is ok.
-            tx->commit();
+            return advanceLSN(tx);
         });
     }
 

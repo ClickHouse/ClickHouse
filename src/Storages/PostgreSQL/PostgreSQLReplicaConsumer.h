@@ -22,9 +22,6 @@ struct LSNPosition
         uint64_t upper_half, lower_half, result;
         std::sscanf(lsn.data(), "%lX/%lX", &upper_half, &lower_half);
         result = (upper_half << 32) + lower_half;
-        //LOG_DEBUG(&Poco::Logger::get("LSNParsing"),
-        //        "Created replication slot. upper half: {}, lower_half: {}, start lsn: {}",
-        //        upper_half, lower_half, result);
         return result;
     }
 
@@ -32,7 +29,6 @@ struct LSNPosition
     {
         char result[16];
         std::snprintf(result, sizeof(result), "%lX/%lX", (lsn_value >> 32), lsn_value & 0xFFFFFFFF);
-        //assert(lsn_value == result.getValue());
         std::string ans = result;
         return ans;
     }
@@ -79,7 +75,7 @@ private:
     void insertDefaultValue(size_t column_idx);
 
     void syncIntoTable(Block & block);
-    void advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
+    String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
     /// Methods to parse replication message data.
     void readTupleData(const char * message, size_t & pos, PostgreSQLQuery type, bool old_value = false);

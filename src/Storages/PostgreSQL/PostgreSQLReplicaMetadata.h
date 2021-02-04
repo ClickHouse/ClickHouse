@@ -10,22 +10,22 @@ class PostgreSQLReplicaMetadata
 public:
     PostgreSQLReplicaMetadata(const std::string & metadata_file_path);
 
-    void commitVersion(const std::function<void()> & syncTableFunc);
-    void readDataVersion();
+    void commitMetadata(std::string & lsn, const std::function<String()> & syncTableFunc);
+    void readMetadata();
 
     size_t version()
     {
-        return data_version++;
+        return last_version++;
     }
 
 private:
-    void writeDataVersion();
+    void writeMetadata(bool append_metadata = false);
 
     const std::string metadata_file;
     const std::string tmp_metadata_file;
 
-    size_t data_version;
-
+    uint64_t last_version;
+    std::string last_lsn;
 };
 
 }
