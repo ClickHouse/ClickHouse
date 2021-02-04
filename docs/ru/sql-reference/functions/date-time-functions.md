@@ -688,7 +688,9 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g');
 
 Функция преобразует метку времени Unix в дату. Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
 
-**Пример**
+**Примеры**
+
+Если указан только один аргумент типа [Integer](../../sql-reference/data-types/int-uint.md), то функция действует так же, как [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime), и возвращает тип [DateTime](../../sql-reference/data-types/datetime.md).
 
 Запрос:
 
