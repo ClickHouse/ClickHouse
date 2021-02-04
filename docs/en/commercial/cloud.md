@@ -29,14 +29,4 @@ toc_title: Cloud
 -   Cross-AZ scaling for performance and high availability
 -   Built-in monitoring and SQL query editor
 
-## Tencent Cloud {#tencent-cloud}
-
-[Tencent Managed Service for ClickHouse](https://cloud.tencent.com/product/cdwch) provides the following key features:
-
--   Easy to deploy and manage on Tencent Cloud
--   Highly scalable and available
--   Integrated monitor and alert service
--   High security with isolated per cluster VPCs
--   On-demand pricing with no upfront costs or long-term commitments
-
 {## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
