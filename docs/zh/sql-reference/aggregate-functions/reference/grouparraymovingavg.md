@@ -4,29 +4,36 @@ toc_priority: 114
 
 # groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
-Calculates the moving average of input values.
+计算输入值的移动平均值。
+
+**语法**
 
 ``` sql
 groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+该函数可以将窗口大小作为参数。 如果未指定，则该函数的窗口大小等于列中的行数。
 
-**Parameters**
+**参数**
 
--   `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
--   `window_size` — Size of the calculation window.
+-   `numbers_for_summing` — [表达式](../../../sql-reference/syntax.md#syntax-expressions) 生成数值数据类型值。
+-   `window_size` — 窗口大小。
 
-**Returned values**
+**返回值**
 
--   Array of the same size and type as the input data.
+-   与输入数据大小相同的数组。
 
-The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
+对于输入数据类型是[Integer](../../../sql-reference/data-types/int-uint.md),
+和[floating-point](../../../sql-reference/data-types/float.md),
+对应的返回值类型是 `Float64` 。
+对于输入数据类型是[Decimal](../../../sql-reference/data-types/decimal.md) 返回值类型是 `Decimal128` 。
 
-**Example**
+该函数对于 `Decimal128` 使用 [四舍五入到零](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 它截断无意义的小数位来保证结果的数据类型。
 
-The sample table `b`:
+**示例**
+
+样表 `t`:
 
 ``` sql
 CREATE TABLE t
@@ -47,7 +54,7 @@ ENGINE = TinyLog
 └─────┴───────┴──────┘
 ```
 
-The queries:
+查询:
 
 ``` sql
 SELECT
@@ -58,9 +65,9 @@ FROM t
 ```
 
 ``` text
-┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
-│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
-└───────────┴─────────────────────────────────────┴───────────────────────┘
+┌─I────────────────────┬─F─────────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.25,0.75,1.75,3.5] │ [0.2750000059604645,0.8250000178813934,1.9250000417232513,3.8499999940395355] │ [0.27,0.82,1.92,3.86] │
+└──────────────────────┴───────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
 ```
 
 ``` sql
@@ -72,7 +79,7 @@ FROM t
 ```
 
 ``` text
-┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
-│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
-└───────────┴──────────────────────────────────┴───────────────────────┘
+┌─I───────────────┬─F───────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.5,1.5,3,5.5] │ [0.550000011920929,1.6500000357627869,3.3000000715255737,6.049999952316284] │ [0.55,1.65,3.30,6.08] │
+└─────────────────┴─────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
 ```

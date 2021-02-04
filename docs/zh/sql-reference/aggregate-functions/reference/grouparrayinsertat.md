@@ -4,41 +4,41 @@ toc_priority: 112
 
 # groupArrayInsertAt {#grouparrayinsertat}
 
-Inserts a value into the array at the specified position.
+在指定位置向数组中插入一个值。
 
-**Syntax**
+**语法**
 
 ``` sql
 groupArrayInsertAt(default_x, size)(x, pos);
 ```
 
-If in one query several values are inserted into the same position, the function behaves in the following ways:
+如果在一个查询中将多个值插入到同一位置，则该函数的行为方式如下:
 
--   If a query is executed in a single thread, the first one of the inserted values is used.
--   If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
+-   如果在单个线程中执行查询，则使用第一个插入的值。
+-   如果在多个线程中执行查询，则结果值是未确定的插入值之一。
 
-**Parameters**
+**参数**
 
--   `x` — Value to be inserted. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in one of the [supported data types](../../../sql-reference/data-types/index.md).
--   `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
--   `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../../sql-reference/statements/create/table.md#create-default-values) are used.
--   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `x` — 要插入的值。生成所[支持的数据类型](../../../sql-reference/data-types/index.md)(数据)的[表达式](../../../syntax.md#syntax-expressions)。
+-   `pos` — 指定元素 `x` 将被插入的位置。 数组中的索引编号从零开始。 [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— 在空位置替换的默认值。可选参数。生成 `x` 数据类型 (数据) 的[表达式](../../../syntax.md#syntax-expressions)。  如果 `default_x` 未定义，则 [默认值](../../../sql-reference/statements/create.md#create-default-values) 被使用。
+-   `size`— 结果数组的长度。可选参数。如果使用该参数，必须指定默认值 `default_x` 。 [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges)。
 
-**Returned value**
+**返回值**
 
--   Array with inserted values.
+-   具有插入值的数组。
 
-Type: [Array](../../../sql-reference/data-types/array.md#data-type-array).
+类型: [阵列](../../../sql-reference/data-types/array.md#data-type-array)。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
@@ -46,13 +46,13 @@ Result:
 └───────────────────────────────────────────────────────────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
@@ -60,13 +60,13 @@ Result:
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
@@ -74,15 +74,15 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Multi-threaded insertion of elements into one position.
+在一个位置多线程插入数据。
 
-Query:
+查询:
 
 ``` sql
 SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
 ```
 
-As a result of this query you get random integer in the `[0,9]` range. For example:
+作为这个查询的结果，你会得到 `[0,9]` 范围的随机整数。 例如:
 
 ``` text
 ┌─groupArrayInsertAt(number, 0)─┐
