@@ -79,6 +79,40 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+# quantilesTimingWeighted {#quantilestimingweighted}
+
+Same as `quantileTimingWeighted`, but accept multiple parameters with quantile levels and return an Array filled with many values of that quantiles.
+
+
+**Example**
+
+Input table:
+
+``` text
+┌─response_time─┬─weight─┐
+│            68 │      1 │
+│           104 │      2 │
+│           112 │      3 │
+│           126 │      2 │
+│           138 │      1 │
+│           162 │      1 │
+└───────────────┴────────┘
+```
+
+Query:
+
+``` sql
+SELECT quantilesTimingWeighted(0,5, 0.99)(response_time, weight) FROM t
+```
+
+Result:
+
+``` text
+┌─quantilesTimingWeighted(0.5, 0.99)(response_time, weight)─┐
+│ [112,162]                                                 │
+└───────────────────────────────────────────────────────────┘
+```
+
 **See Also**
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
