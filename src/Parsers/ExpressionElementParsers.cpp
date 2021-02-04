@@ -585,7 +585,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_preceding.ignore(pos, expected))
         {
-            node->frame.begin_offset = - node->frame.begin_offset;
+            node->frame.begin_offset = -node->frame.begin_offset;
         }
         else if (keyword_following.ignore(pos, expected))
         {
