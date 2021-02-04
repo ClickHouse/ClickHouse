@@ -10,7 +10,7 @@ import string
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True, user_configs=['configs/profiles.xml'])
+node3 = cluster.add_instance('node3', with_zookeeper=True, main_configs=['configs/merge_tree.xml'])
 
 DEFAULT_MAX_THREADS_FOR_FETCH = 3
 
