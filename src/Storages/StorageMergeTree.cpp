@@ -954,6 +954,29 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
         if (!commands->empty())
         {
+            bool affected = false;
+            for (const auto & command : commands)
+            {
+                if (command.partition == nullptr)
+                {
+                    affected = true;
+                    break;
+                }
+
+                const String partition_id = part->storage.getPartitionIDFromQuery(command.partition, global_context);
+                if (partition_id == part->info.partition_id)
+                {
+                    affected = true;
+                    break;
+                }
+            }
+
+            if (!affected)
+            {
+                /// Shall not create a new part, but will do that later if mutation with higher version appear.
+                continue;
+            }
+
             auto new_part_info = part->info;
             new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
