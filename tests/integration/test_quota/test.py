@@ -71,12 +71,12 @@ def started_cluster():
 @pytest.fixture(autouse=True)
 def reset_quotas_and_usage_info():
     try:
-        yield
-    finally:
-        copy_quota_xml('simpliest.xml')  # To reset usage info.
         instance.query("DROP QUOTA IF EXISTS qA, qB")
         copy_quota_xml('simpliest.xml')  # To reset usage info.
         copy_quota_xml('normal_limits.xml')
+        yield
+    finally:
+        pass
 
 
 def test_quota_from_users_xml():
@@ -380,3 +380,10 @@ def test_query_inserts():
     instance.query("INSERT INTO test_table values(1)")
     system_quota_usage(
         [["myQuota", "default", 31556952, 1, 1000, 0, 500, 1, 500, 0, "\\N", 0, "\\N", 0, "\\N", 0, 1000, 0, "\\N", "\\N"]])
+
+def test_consumption_show_tables_quota():
+    instance.query("SHOW TABLES")
+
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N\\t19\\t\\\\N\\t1\\t1000\\t35\\t\\\\N\\t.*\\t\\\\N\n",
+        instance.query("SHOW QUOTA"))
