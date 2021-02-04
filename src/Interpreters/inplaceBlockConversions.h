@@ -12,9 +12,13 @@ class Context;
 class NamesAndTypesList;
 class ColumnsDescription;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
 /// Adds missing defaults to block according to required_columns
 /// using columns description
-void evaluateMissingDefaults(Block & block,
+ActionsDAGPtr createFillingMissingDefaultsExpression(
+    const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
     const Context & context, bool save_unneeded_columns = true);

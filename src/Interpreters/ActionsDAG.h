@@ -231,6 +231,9 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    /// For apply materialize() function for every output.
+    /// Also add aliases so the result names remain unchanged.
+    void addMaterializingOutputActions();
 
     enum class MatchColumnsMode
     {
