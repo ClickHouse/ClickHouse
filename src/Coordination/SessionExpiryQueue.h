@@ -38,6 +38,8 @@ public:
     bool update(int64_t session_id, int64_t timeout_ms);
 
     std::unordered_set<int64_t> getExpiredSessions();
+
+    void clear();
 };
 
 }

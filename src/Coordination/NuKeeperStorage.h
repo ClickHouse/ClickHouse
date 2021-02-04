@@ -87,7 +87,8 @@ public:
     }
 
     ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
-    ResponsesForSessions finalize(const RequestsForSessions & expired_requests);
+
+    void finalize();
 
     std::unordered_set<int64_t> getDeadSessions()
     {

@@ -404,12 +404,13 @@ void NuKeeperTCPHandler::runImpl()
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
                     return;
                 }
-
-                if (response->error == Coordination::Error::ZOK)
-                    response->write(*out);
-                else if (response->xid != Coordination::WATCH_XID)
-                    response->write(*out);
-                /// skipping bad response for watch
+                response->write(*out);
+                if (response->error == Coordination::Error::ZSESSIONEXPIRED)
+                {
+                    LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
+                    nu_keeper_storage_dispatcher->finishSession(session_id);
+                    return;
+                }
                 result.ready_responses_count--;
             }
 

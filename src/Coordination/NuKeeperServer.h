@@ -29,14 +29,6 @@ private:
 
     nuraft::ptr<nuraft::raft_server> raft_instance;
 
-    using XIDToOp = std::unordered_map<Coordination::XID, Coordination::ZooKeeperResponsePtr>;
-
-    using SessionIDOps = std::unordered_map<int64_t, XIDToOp>;
-
-    SessionIDOps ops_mapping;
-
-    NuKeeperStorage::ResponsesForSessions readZooKeeperResponses(nuraft::ptr<nuraft::buffer> & buffer);
-
     std::mutex append_entries_mutex;
 
 public:
@@ -44,7 +36,7 @@ public:
 
     void startup();
 
-    NuKeeperStorage::ResponsesForSessions putRequests(const NuKeeperStorage::RequestsForSessions & requests);
+    NuKeeperStorage::ResponsesForSessions putRequest(const NuKeeperStorage::RequestForSession & request);
 
     int64_t getSessionID(int64_t session_timeout_ms);
 
@@ -60,7 +52,7 @@ public:
     void waitForServers(const std::vector<int32_t> & ids) const;
     void waitForCatchUp() const;
 
-    NuKeeperStorage::ResponsesForSessions shutdown(const NuKeeperStorage::RequestsForSessions & expired_requests);
+    void shutdown();
 };
 
 }

@@ -51,6 +51,13 @@ void ZooKeeperWatchResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(path, out);
 }
 
+void ZooKeeperWatchResponse::write(WriteBuffer & out) const
+{
+    if (error == Error::ZOK)
+        ZooKeeperResponse::write(out);
+    /// skip bad responses for watches
+}
+
 void ZooKeeperAuthRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(type, out);
