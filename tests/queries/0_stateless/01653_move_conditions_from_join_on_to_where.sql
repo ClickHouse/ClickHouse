@@ -1,6 +1,3 @@
-DROP DATABASE IF EXISTS test_01653;
-CREATE DATABASE test_01653;
-USE test_01653;
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 
@@ -39,4 +36,3 @@ SELECT * FROM table1 JOIN table2 ON (table1.a = table2.a) AND (table2.b < toUInt
 
 DROP TABLE table1;
 DROP TABLE table2;
-DROP DATABASE test_01653;
