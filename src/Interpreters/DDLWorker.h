@@ -129,6 +129,7 @@ private:
     /// Returns non-empty DDLTaskPtr if entry parsed and the check is passed
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
+    void updateMaxDDLEntryID(const DDLTask & task);
     void enqueueTask(DDLTaskPtr task);
     void processTask(DDLTask & task);
 
