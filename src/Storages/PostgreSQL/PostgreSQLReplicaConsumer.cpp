@@ -43,7 +43,7 @@ static const auto max_empty_slot_reads = 16;
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     std::shared_ptr<Context> context_,
     const std::string & table_name_,
-    const std::string & conn_str,
+    PostgreSQLConnectionPtr connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
     const std::string & metadata_path,
@@ -56,14 +56,12 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     , publication_name(publication_name_)
     , metadata(metadata_path)
     , table_name(table_name_)
-    , connection(std::make_shared<PostgreSQLConnection>(conn_str))
+    , connection(std::move(connection_))
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
     , nested_storage(nested_storage_)
     , sample_block(nested_storage->getInMemoryMetadata().getSampleBlock())
 {
-    replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", conn_str));
-
     description.init(sample_block);
     for (const auto idx : ext::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
@@ -94,6 +92,7 @@ void PostgreSQLReplicaConsumer::replicationStream()
 {
     size_t count_empty_slot_reads = 0;
     auto start_time = std::chrono::steady_clock::now();
+    metadata.readDataVersion();
 
     LOG_TRACE(log, "Starting replication stream");
 
@@ -406,9 +405,12 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     columns = description.sample_block.cloneEmptyColumns();
     std::shared_ptr<pqxx::nontransaction> tx;
     bool slot_empty = true;
+
     try
     {
-        tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+        tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
+        //tx->set_variable("transaction_isolation", "'repeatable read'");
+
         /// up_to_lsn is set to NULL, up_to_n_changes is set to max_block_size.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("

@@ -11,6 +11,7 @@ public:
     PostgreSQLReplicaMetadata(const std::string & metadata_file_path);
 
     void commitVersion(const std::function<void()> & syncTableFunc);
+    void readDataVersion();
 
     size_t version()
     {
@@ -18,7 +19,6 @@ public:
     }
 
 private:
-    void readDataVersion();
     void writeDataVersion();
 
     const std::string metadata_file;

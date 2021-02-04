@@ -7,7 +7,7 @@ services:
             POSTGRES_PASSWORD: mysecretpassword
         ports:
           - 5432:5432
-        command: [ "postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=5"]
+        command: [ "postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=2"]
         networks:
           default:
             aliases:
