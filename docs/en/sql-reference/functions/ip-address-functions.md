@@ -265,32 +265,86 @@ SELECT toIPv6('127.0.0.1')
 └─────────────────────┘
 ```
 
-## isIPv4String
+## isIPv4String {#isIPv4String}
 
-Determines if the input string is an IPv4 address or not. Returns `1` if true `0` otherwise.
+Determines whether the input string is an IPv4 address or not.
 
-``` sql
-SELECT isIPv4String('127.0.0.1')
+**Syntax**
+
+```sql
+isIPv4String(string)
 ```
+
+**Parameters**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `1` if `string` is IPv4 address, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT isIPv4String('0.0.0.0');
+
+SELECT isIPv4String('Hello');
+```
+
+Result:
 
 ``` text
-┌─isIPv4String('127.0.0.1')─┐
-│                         1 │
-└───────────────────────────┘
+┌─isIPv4String('0.0.0.0')─┐
+│                       1 │
+└─────────────────────────┘
+┌─isIPv4String('Hello')─┐
+│                     0 │
+└───────────────────────┘
 ```
 
-## isIPv6String
+## isIPv6String {#isIPv4String}
 
-Determines if the input string is an IPv6 address or not. Returns `1` if true `0` otherwise.
+Determines whether the input string is an IPv6 address or not. 
+
+**Syntax**
+
+```sql
+isIPv6String(string)
+```
+
+**Parameters**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `1` if `string` is IPv6 address, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
 
 ``` sql
-SELECT isIPv6String('2001:438:ffff::407d:1bc1')
+SELECT isIPv6String('::ffff:127.0.0.1');
+
+SELECT isIPv6String('Hello');
 ```
 
+Result:
+
 ``` text
-┌─isIPv6String('2001:438:ffff::407d:1bc1')─┐
-│                                        1 │
-└──────────────────────────────────────────┘
+┌─isIPv6String('::ffff:127.0.0.1')─┐
+│                                1 │
+└──────────────────────────────────┘
+┌─isIPv6String('Hello')─┐
+│                     0 │
+└───────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

@@ -243,4 +243,86 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
+## isIPv4String {#isIPv4String}
+
+Определяет, является ли строка адресом IPv4 или нет.
+
+**Синтаксис**
+
+```sql
+isIPv4String(string)
+```
+
+**Параметры**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `1` если `string` является адресом IPv4 , `0` если нет.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT isIPv4String('0.0.0.0');
+
+SELECT isIPv4String('Hello');
+```
+
+Результат:
+
+``` text
+┌─isIPv4String('0.0.0.0')─┐
+│                       1 │
+└─────────────────────────┘
+┌─isIPv4String('Hello')─┐
+│                     0 │
+└───────────────────────┘
+```
+
+## isIPv6String {#isIPv4String}
+
+Определяет, является ли строка адресом IPv6 или нет.
+
+**Синтаксис**
+
+```sql
+isIPv6String(string)
+```
+
+**Параметры**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   `1` если `string` является адресом IPv6 , `0` если нет.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT isIPv6String('::ffff:127.0.0.1');
+
+SELECT isIPv6String('Hello');
+```
+
+Результат:
+
+``` text
+┌─isIPv6String('::ffff:127.0.0.1')─┐
+│                                1 │
+└──────────────────────────────────┘
+┌─isIPv6String('Hello')─┐
+│                     0 │
+└───────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->
