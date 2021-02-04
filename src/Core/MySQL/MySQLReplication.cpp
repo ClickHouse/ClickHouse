@@ -866,7 +866,8 @@ namespace MySQLReplication
     {
         if (replicate_do_db.empty())
             return false;
-        if (table_id == 0x00ffffff) {
+        if (table_id == 0x00ffffff)
+        {
             // Special "dummy event"
             return false;
         }
