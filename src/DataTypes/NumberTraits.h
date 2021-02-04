@@ -110,7 +110,7 @@ template <typename A, typename B> struct ResultOfIntegerDivision
 template <typename A, typename B> struct ResultOfModulo
 {
     static constexpr bool result_is_signed = is_signed_v<A>;
-    /// If modulo of division can yield negative number, we need larger type to accomodate it.
+    /// If modulo of division can yield negative number, we need larger type to accommodate it.
     /// Example: toInt32(-199) % toUInt8(200) will return -199 that does not fit in Int8, only in Int16.
     static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B)) : sizeof(B);
     using Type0 = typename Construct<result_is_signed, false, size_of_result>::Type;
