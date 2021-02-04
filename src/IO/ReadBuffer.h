@@ -56,6 +56,7 @@ public:
     bool next()
     {
         assert(!hasPendingData());
+        assert(position() <= working_buffer.end());
 
         bytes += offset();
         bool res = nextImpl();
@@ -64,6 +65,9 @@ public:
 
         pos = working_buffer.begin() + nextimpl_working_buffer_offset;
         nextimpl_working_buffer_offset = 0;
+
+        assert(position() <= working_buffer.end());
+
         return res;
     }
 

@@ -57,6 +57,29 @@ public:
 
 using SpacePtr = std::shared_ptr<Space>;
 
+struct DiskType
+{
+    enum class Type
+    {
+        Local,
+        RAM,
+        S3
+    };
+    static String toString(Type disk_type)
+    {
+        switch (disk_type)
+        {
+            case Type::Local:
+                return "local";
+            case Type::RAM:
+                return "memory";
+            case Type::S3:
+                return "s3";
+        }
+        __builtin_unreachable();
+    }
+};
+
 /**
  * A guard, that should synchronize file's or directory's state
  * with storage device (e.g. fsync in POSIX) in its destructor.
@@ -191,7 +214,7 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual const String getType() const = 0;
+    virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
