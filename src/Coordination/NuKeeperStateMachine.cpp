@@ -53,11 +53,11 @@ NuKeeperStateMachine::NuKeeperStateMachine(long tick_time)
 
 nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
-    if (data.size() == sizeof(long))
+    if (data.size() == sizeof(int64_t))
     {
         nuraft::buffer_serializer timeout_data(data);
-        long session_timeout_ms = timeout_data.get_i64();
-        auto response = nuraft::buffer::alloc(sizeof(size_t));
+        int64_t session_timeout_ms = timeout_data.get_i64();
+        auto response = nuraft::buffer::alloc(sizeof(int64_t));
         int64_t session_id;
         nuraft::buffer_serializer bs(response);
         {

@@ -18,11 +18,11 @@ bool SessionExpiryQueue::remove(int64_t session_id)
     return false;
 }
 
-bool SessionExpiryQueue::update(int64_t session_id, long timeout_ms)
+bool SessionExpiryQueue::update(int64_t session_id, int64_t timeout_ms)
 {
     auto session_it = session_to_timeout.find(session_id);
-    long now = getNowMilliseconds();
-    long new_expiry_time = roundToNextInterval(now + timeout_ms);
+    int64_t now = getNowMilliseconds();
+    int64_t new_expiry_time = roundToNextInterval(now + timeout_ms);
 
     if (session_it != session_to_timeout.end())
     {
@@ -34,7 +34,7 @@ bool SessionExpiryQueue::update(int64_t session_id, long timeout_ms)
             std::tie(set_it, std::ignore) = expiry_to_sessions.emplace(new_expiry_time, std::unordered_set<int64_t>());
 
         set_it->second.insert(session_id);
-        long prev_expiry_time = session_it->second;
+        int64_t prev_expiry_time = session_it->second;
 
         if (prev_expiry_time != new_expiry_time)
         {
@@ -58,12 +58,12 @@ bool SessionExpiryQueue::update(int64_t session_id, long timeout_ms)
 
 std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions()
 {
-    long now = getNowMilliseconds();
+    int64_t now = getNowMilliseconds();
     if (now < next_expiration_time)
         return {};
 
     auto set_it = expiry_to_sessions.find(next_expiration_time);
-    long new_expiration_time = next_expiration_time + expiration_interval;
+    int64_t new_expiration_time = next_expiration_time + expiration_interval;
     next_expiration_time = new_expiration_time;
     if (set_it != expiry_to_sessions.end())
     {

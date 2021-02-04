@@ -42,7 +42,8 @@ def test_simple_replicated_table(started_cluster):
     assert node3.query("SELECT COUNT() FROM t") == "10\n"
 
 
-
+# in extremely rare case it can take more than 5 minutes in debug build with sanitizer
+@pytest.mark.timeout(600)
 def test_blocade_leader(started_cluster):
     for i, node in enumerate([node1, node2, node3]):
         node.query("CREATE TABLE t1 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t1', '{}') ORDER BY tuple()".format(i + 1))
@@ -133,6 +134,8 @@ def test_blocade_leader(started_cluster):
     assert node3.query("SELECT COUNT() FROM t1") == "310\n"
 
 
+# in extremely rare case it can take more than 5 minutes in debug build with sanitizer
+@pytest.mark.timeout(600)
 def test_blocade_leader_twice(started_cluster):
     for i, node in enumerate([node1, node2, node3]):
         node.query("CREATE TABLE t2 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t2', '{}') ORDER BY tuple()".format(i + 1))
