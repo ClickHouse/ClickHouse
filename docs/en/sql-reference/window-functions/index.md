@@ -31,6 +31,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
 ### Postgres Docs
+https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
 https://www.postgresql.org/docs/devel/functions-window.html
 https://www.postgresql.org/docs/devel/tutorial-window.html
