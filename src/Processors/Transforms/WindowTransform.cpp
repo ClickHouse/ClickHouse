@@ -434,18 +434,15 @@ void WindowTransform::advanceFrameEndCurrentRow()
 
 //    fmt::print(stderr, "first row {} last {}\n", frame_end.row, rows_end);
 
-    // We could retreat the frame_end here, but for some reason I am reluctant
-    // to do this... It would have better data locality.
-    auto reference = current_row;
+    // Advance frame_end while it is still peers with the current row.
     for (; frame_end.row < rows_end; ++frame_end.row)
     {
-        if (!arePeers(reference, frame_end))
+        if (!arePeers(current_row, frame_end))
         {
 //            fmt::print(stderr, "{} and {} don't match\n", reference, frame_end);
             frame_ended = true;
             return;
         }
-        reference = frame_end;
     }
 
     // Might have gotten to the end of the current block, have to properly
