@@ -10,7 +10,7 @@ namespace DB
 class NuKeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(long tick_time);
+    NuKeeperStateMachine(long tick_time = 500);
 
     nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
