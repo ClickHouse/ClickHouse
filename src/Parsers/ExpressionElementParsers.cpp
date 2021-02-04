@@ -46,6 +46,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -558,7 +559,24 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
-            node->frame.begin_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+            const Field & value = ast_literal->as<ASTLiteral &>().value;
+            if (!isInt64FieldType(value.getType()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    Field::Types::toString(value.getType()));
+            }
+            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
+            // We can easily get a UINT64_MAX here, which doesn't even fit into
+            // int64_t. Not sure what checks we are going to need here after we
+            // support floats and dates.
+            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame offset must be between {} and {}, but {} is given",
+                    INT_MAX, INT_MIN, node->frame.begin_offset);
+            }
         }
         else
         {
@@ -567,7 +585,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_preceding.ignore(pos, expected))
         {
-            node->frame.begin_offset = - node->frame.begin_offset;
+            node->frame.begin_offset = -node->frame.begin_offset;
         }
         else if (keyword_following.ignore(pos, expected))
         {
@@ -604,7 +622,22 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
-                node->frame.end_offset = ast_literal->as<ASTLiteral &>().value.safeGet<Int64>();
+                const Field & value = ast_literal->as<ASTLiteral &>().value;
+                if (!isInt64FieldType(value.getType()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        Field::Types::toString(value.getType()));
+                }
+                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_type = WindowFrame::BoundaryType::Offset;
+
+                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame offset must be between {} and {}, but {} is given",
+                        INT_MAX, INT_MIN, node->frame.end_offset);
+                }
             }
             else
             {
@@ -623,6 +656,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (keyword_following.ignore(pos, expected))
             {
+                // Positive offset or UNBOUNDED FOLLOWING.
             }
             else
             {
