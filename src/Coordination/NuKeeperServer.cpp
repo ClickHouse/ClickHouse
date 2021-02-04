@@ -43,7 +43,7 @@ void NuKeeperServer::addServer(int server_id_, const std::string & server_uri_, 
 }
 
 
-void NuKeeperServer::startup()
+void NuKeeperServer::startup(int64_t operation_timeout_ms)
 {
     nuraft::raft_params params;
     params.heart_beat_interval_ = 500;
@@ -51,8 +51,10 @@ void NuKeeperServer::startup()
     params.election_timeout_upper_bound_ = 2000;
     params.reserved_log_items_ = 5000;
     params.snapshot_distance_ = 5000;
-    params.client_req_timeout_ = 10000;
+    params.client_req_timeout_ = operation_timeout_ms;
     params.auto_forwarding_ = true;
+    /// For some reason may lead to a very long timeouts
+    params.use_bg_thread_for_urgent_commit_ = false;
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
@@ -197,6 +199,7 @@ int64_t NuKeeperServer::getSessionID(int64_t session_timeout_ms)
     std::lock_guard lock(append_entries_mutex);
 
     auto result = raft_instance->append_entries({entry});
+
     if (!result->get_accepted())
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot send session_id request to RAFT");
 
