@@ -442,7 +442,7 @@ namespace MySQLReplication
         UInt64 table_id;
         UInt16 flags;
 
-        RowsEventHeader(EventType type_) : type(type_), table_id(0), flags(0) {};
+        RowsEventHeader(EventType type_) : type(type_), table_id(0), flags(0) {}
         void parse(ReadBuffer & payload);
     };
 
