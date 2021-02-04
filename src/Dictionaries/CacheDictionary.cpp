@@ -1291,7 +1291,6 @@ void CacheDictionary::update(UpdateUnitPtr & update_unit_ptr)
             BlockInputStreamPtr stream = current_source_ptr->loadIds(update_unit_ptr->requested_ids);
             stream->readPrefix();
 
-
             while (true)
             {
                 Block block = stream->read();

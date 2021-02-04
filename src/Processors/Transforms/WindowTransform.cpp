@@ -165,16 +165,195 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-void WindowTransform::advanceFrameStart() const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) const
 {
-    // Frame start is always UNBOUNDED PRECEDING for now, so we don't have to
-    // move it. It is initialized when the new partition starts.
-    if (window_description.frame.begin_type
-        != WindowFrame::BoundaryType::Unbounded)
+    RowNumber x = _x;
+
+    if (offset > 0)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Frame start type '{}' is not implemented",
-            WindowFrame::toString(window_description.frame.begin_type));
+        for (;;)
+        {
+            assertValid(x);
+            assert(offset >= 0);
+
+            const auto block_rows = blockRowsNumber(x);
+            x.row += offset;
+            if (x.row >= block_rows)
+            {
+                offset = x.row - block_rows;
+                x.row = 0;
+                x.block++;
+
+                if (x == blocksEnd())
+                {
+                    break;
+                }
+            }
+            else
+            {
+                offset = 0;
+                break;
+            }
+        }
+    }
+    else if (offset < 0)
+    {
+        for (;;)
+        {
+            assertValid(x);
+            assert(offset <= 0);
+
+            if (x.row >= static_cast<uint64_t>(-offset))
+            {
+                x.row -= -offset;
+                offset = 0;
+                break;
+            }
+
+            // Move to the first row in current block. Note that the offset is
+            // negative.
+            offset += x.row;
+            x.row = 0;
+
+            // Move to the last row of the previous block, if we are not at the
+            // first one. Offset also is incremented by one, because we pass over
+            // the first row of this block.
+            if (x.block == first_block_number)
+            {
+                break;
+            }
+
+            --x.block;
+            offset += 1;
+            x.row = blockRowsNumber(x) - 1;
+        }
+    }
+
+    return std::tuple{x, offset};
+}
+
+auto WindowTransform::moveRowNumber(const RowNumber & _x, int offset) const
+{
+    auto [x, o] = moveRowNumberNoCheck(_x, offset);
+
+#ifndef NDEBUG
+    // Check that it was reversible.
+    auto [xx, oo] = moveRowNumberNoCheck(x, -(offset - o));
+
+//    fmt::print(stderr, "{} -> {}, result {}, {}, new offset {}, twice {}, {}\n",
+//        _x, offset, x, o, -(offset - o), xx, oo);
+    assert(xx == _x);
+    assert(oo == 0);
+#endif
+
+    return std::tuple{x, o};
+}
+
+
+void WindowTransform::advanceFrameStartRowsOffset()
+{
+    // Just recalculate it each time by walking blocks.
+    const auto [moved_row, offset_left] = moveRowNumber(current_row,
+        window_description.frame.begin_offset);
+
+    frame_start = moved_row;
+
+    assertValid(frame_start);
+
+//    fmt::print(stderr, "frame start {} left {} partition start {}\n",
+//        frame_start, offset_left, partition_start);
+
+    if (frame_start <= partition_start)
+    {
+        // Got to the beginning of partition and can't go further back.
+        frame_start = partition_start;
+        frame_started = true;
+        return;
+    }
+
+    assert(frame_start <= partition_end);
+    if (frame_start == partition_end && partition_ended)
+    {
+        // A FOLLOWING frame start ran into the end of partition.
+        frame_started = true;
+        return;
+    }
+
+    assert(partition_start < frame_start);
+    frame_started = offset_left == 0;
+}
+
+void WindowTransform::advanceFrameStartChoose()
+{
+    switch (window_description.frame.begin_type)
+    {
+        case WindowFrame::BoundaryType::Unbounded:
+            // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
+            // the new partition starts.
+            frame_started = true;
+            return;
+        case WindowFrame::BoundaryType::Current:
+            switch (window_description.frame.type)
+            {
+                case WindowFrame::FrameType::Rows:
+                    // CURRENT ROW
+                    frame_start = current_row;
+                    frame_started = true;
+                    return;
+                default:
+                    // Fallthrough to the "not implemented" error.
+                    break;
+            }
+            break;
+        case WindowFrame::BoundaryType::Offset:
+            switch (window_description.frame.type)
+            {
+                case WindowFrame::FrameType::Rows:
+                    advanceFrameStartRowsOffset();
+                    return;
+                default:
+                    // Fallthrough to the "not implemented" error.
+                    break;
+            }
+            break;
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Frame start type '{}' for frame '{}' is not implemented",
+        WindowFrame::toString(window_description.frame.begin_type),
+        WindowFrame::toString(window_description.frame.type));
+}
+
+void WindowTransform::advanceFrameStart()
+{
+    if (frame_started)
+    {
+        return;
+    }
+
+    const auto frame_start_before = frame_start;
+    advanceFrameStartChoose();
+    assert(frame_start_before <= frame_start);
+    if (frame_start == frame_start_before)
+    {
+        // If the frame start didn't move, this means we validated that the frame
+        // starts at the point we reached earlier but were unable to validate.
+        // This probably only happens in degenerate cases where the frame start
+        // is further than the end of partition, and the partition ends at the
+        // last row of the block, but we can only tell for sure after a new
+        // block arrives. We still have to update the state of aggregate
+        // functions when the frame start becomes valid, so we continue.
+        assert(frame_started);
+    }
+
+    assert(partition_start <= frame_start);
+    assert(frame_start <= partition_end);
+    if (partition_ended && frame_start == partition_end)
+    {
+        // Check that if the start of frame (e.g. FOLLOWING) runs into the end
+        // of partition, it is marked as valid -- we can't advance it any
+        // further.
+        assert(frame_started);
     }
 }
 
@@ -301,7 +480,6 @@ void WindowTransform::advanceFrameEnd()
     switch (window_description.frame.end_type)
     {
         case WindowFrame::BoundaryType::Current:
-            // The only frame end we have for now is CURRENT ROW.
             advanceFrameEndCurrentRow();
             break;
         case WindowFrame::BoundaryType::Unbounded:
@@ -321,44 +499,81 @@ void WindowTransform::advanceFrameEnd()
     {
         return;
     }
+}
 
-    // Add the rows over which we advanced the frame to the aggregate function
-    // states. We could have advanced over at most the entire last block.
-    uint64_t rows_end = frame_end.row;
-    if (frame_end.row == 0)
+// Update the aggregation states after the frame has changed.
+void WindowTransform::updateAggregationState()
+{
+//    fmt::print(stderr, "update agg states [{}, {}) -> [{}, {})\n",
+//        prev_frame_start, prev_frame_end, frame_start, frame_end);
+
+    // Assert that the frame boundaries are known, have proper order wrt each
+    // other, and have not gone back wrt the previous frame.
+    assert(frame_started);
+    assert(frame_ended);
+    assert(frame_start <= frame_end);
+    assert(prev_frame_start <= prev_frame_end);
+    assert(prev_frame_start <= frame_start);
+    assert(prev_frame_end <= frame_end);
+
+    // We might have to reset aggregation state and/or add some rows to it.
+    // Figure out what to do.
+    bool reset_aggregation = false;
+    RowNumber rows_to_add_start;
+    RowNumber rows_to_add_end;
+    if (frame_start == prev_frame_start)
     {
-        assert(frame_end == blocksEnd());
-        rows_end = blockRowsNumber(frame_end_before);
+        // The frame start didn't change, add the tail rows.
+        reset_aggregation = false;
+        rows_to_add_start = prev_frame_end;
+        rows_to_add_end = frame_end;
     }
     else
     {
-        assert(frame_end_before.block == frame_end.block);
+        // The frame start changed, reset the state and aggregate over the
+        // entire frame. This can be made per-function after we learn to
+        // subtract rows from some types of aggregation states, but for now we
+        // always have to reset when the frame start changes.
+        reset_aggregation = true;
+        rows_to_add_start = frame_start;
+        rows_to_add_end = frame_end;
     }
-    // Equality would mean "no data to process", for which we checked above.
-    assert(frame_end_before.row < rows_end);
 
     for (auto & ws : workspaces)
     {
-        if (frame_end_before.block != ws.cached_block_number)
-        {
-            const auto & block
-                = blocks[frame_end_before.block - first_block_number];
-            ws.argument_columns.clear();
-            for (const auto i : ws.argument_column_indices)
-            {
-                ws.argument_columns.push_back(block.input_columns[i].get());
-            }
-            ws.cached_block_number = frame_end_before.block;
-        }
-
         const auto * a = ws.window_function.aggregate_function.get();
         auto * buf = ws.aggregate_function_state.data();
-        auto * columns = ws.argument_columns.data();
-        for (auto row = frame_end_before.row; row < rows_end; ++row)
+
+        if (reset_aggregation)
         {
-            a->add(buf, columns, row, arena.get());
+//            fmt::print(stderr, "(2) reset aggregation\n");
+            a->destroy(buf);
+            a->create(buf);
+        }
+
+        for (auto row = rows_to_add_start; row < rows_to_add_end;
+            advanceRowNumber(row))
+        {
+            if (row.block != ws.cached_block_number)
+            {
+                const auto & block
+                    = blocks[row.block - first_block_number];
+                ws.argument_columns.clear();
+                for (const auto i : ws.argument_column_indices)
+                {
+                    ws.argument_columns.push_back(block.input_columns[i].get());
+                }
+                ws.cached_block_number = row.block;
+            }
+
+//            fmt::print(stderr, "(2) add row {}\n", row);
+            auto * columns = ws.argument_columns.data();
+            a->add(buf, columns, row.row, arena.get());
         }
     }
+
+    prev_frame_start = frame_start;
+    prev_frame_end = frame_end;
 }
 
 void WindowTransform::writeOutCurrentRow()
@@ -414,8 +629,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
     for (;;)
     {
         advancePartitionEnd();
-//        fmt::print(stderr, "partition [?, {}), {}\n",
-//            partition_end, partition_ended);
+//        fmt::print(stderr, "partition [{}, {}), {}\n",
+//            partition_start, partition_end, partition_ended);
 
         // Either we ran out of data or we found the end of partition (maybe
         // both, but this only happens at the total end of data).
@@ -430,15 +645,31 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // which is precisely the definition of `partition_end`.
         while (current_row < partition_end)
         {
-            // Advance the frame start, updating the state of the aggregate
-            // functions.
-            advanceFrameStart();
-            // Advance the frame end, updating the state of the aggregate
-            // functions.
-            advanceFrameEnd();
+//            fmt::print(stderr, "(1) row {} frame [{}, {}) {}, {}\n",
+//                current_row, frame_start, frame_end,
+//                frame_started, frame_ended);
 
-//            fmt::print(stderr, "row {} frame [{}, {}) {}\n",
-//                current_row, frame_start, frame_end, frame_ended);
+            // Advance the frame start.
+            advanceFrameStart();
+
+            if (!frame_started)
+            {
+                // Wait for more input data to find the start of frame.
+                assert(!input_is_finished);
+                assert(!partition_ended);
+                return;
+            }
+
+            // frame_end must be greater or equal than frame_start, so if the
+            // frame_start is already past the current frame_end, we can start
+            // from it to save us some work.
+            if (frame_end < frame_start)
+            {
+                frame_end = frame_start;
+            }
+
+            // Advance the frame end.
+            advanceFrameEnd();
 
             if (!frame_ended)
             {
@@ -448,8 +679,23 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 return;
             }
 
-            // The frame shouldn't be empty (probably?).
-            assert(frame_start < frame_end);
+//            fmt::print(stderr, "(2) row {} frame [{}, {}) {}, {}\n",
+//                current_row, frame_start, frame_end,
+//                frame_started, frame_ended);
+
+            // The frame can be empty sometimes, e.g. the boundaries coincide
+            // or the start is after the partition end. But hopefully start is
+            // not after end.
+            assert(frame_started);
+            assert(frame_ended);
+            assert(frame_start <= frame_end);
+
+            // Now that we know the new frame boundaries, update the aggregation
+            // states. Theoretically we could do this simultaneously with moving
+            // the frame boundaries, but it would require some care not to
+            // perform unnecessary work while we are still looking for the frame
+            // start, so do it the simple way for now.
+            updateAggregationState();
 
             // Write out the aggregation results.
             writeOutCurrentRow();
@@ -458,6 +704,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
             advanceRowNumber(current_row);
             first_not_ready_row = current_row;
             frame_ended = false;
+            frame_started = false;
         }
 
         if (input_is_finished)
@@ -478,15 +725,17 @@ void WindowTransform::appendChunk(Chunk & chunk)
         }
 
         // Start the next partition.
-        const auto new_partition_start = partition_end;
+        partition_start = partition_end;
         advanceRowNumber(partition_end);
         partition_ended = false;
         // We have to reset the frame when the new partition starts. This is not a
         // generally correct way to do so, but we don't really support moving frame
         // for now.
-        frame_start = new_partition_start;
-        frame_end = new_partition_start;
-        assert(current_row == new_partition_start);
+        frame_start = partition_start;
+        frame_end = partition_start;
+        prev_frame_start = partition_start;
+        prev_frame_end = partition_start;
+        assert(current_row == partition_start);
 
 //        fmt::print(stderr, "reinitialize agg data at start of {}\n",
 //            new_partition_start);
@@ -530,6 +779,15 @@ IProcessor::Status WindowTransform::prepare()
     {
         // The consumer asked us not to continue (or we decided it ourselves),
         // so we abort.
+        input.close();
+        return Status::Finished;
+    }
+
+    if (output_data.exception)
+    {
+        // An exception occurred during processing.
+        output.pushData(std::move(output_data));
+        output.finish();
         input.close();
         return Status::Finished;
     }

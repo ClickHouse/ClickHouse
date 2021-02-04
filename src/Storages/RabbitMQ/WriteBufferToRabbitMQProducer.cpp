@@ -55,7 +55,6 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-
     loop = std::make_unique<uv_loop_t>();
     uv_loop_init(loop.get());
     event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
@@ -85,6 +84,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
             key_arguments[matching[0]] = matching[1];
         }
     }
+
+    reinitializeChunks();
 }
 
 
@@ -122,9 +123,7 @@ void WriteBufferToRabbitMQProducer::countRow()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        rows = 0;
-        chunks.clear();
-        set(nullptr, 0);
+        reinitializeChunks();
 
         ++payload_counter;
         payloads.push(std::make_pair(payload_counter, payload));
@@ -321,15 +320,30 @@ void WriteBufferToRabbitMQProducer::writingFunc()
             setupChannel();
     }
 
-    LOG_DEBUG(log, "Prodcuer on channel {} completed", channel_id);
+    LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
 }
 
 
 void WriteBufferToRabbitMQProducer::nextImpl()
 {
+    addChunk();
+}
+
+void WriteBufferToRabbitMQProducer::addChunk()
+{
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
+}
+
+void WriteBufferToRabbitMQProducer::reinitializeChunks()
+{
+    rows = 0;
+    chunks.clear();
+    /// We cannot leave the buffer in the undefined state (i.e. without any
+    /// underlying buffer), since in this case the WriteBuffeR::next() will
+    /// not call our nextImpl() (due to available() == 0)
+    addChunk();
 }
 
 
