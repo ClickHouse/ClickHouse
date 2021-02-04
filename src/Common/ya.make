@@ -59,6 +59,7 @@ SRCS(
     RWLock.cpp
     RemoteHostFilter.cpp
     SensitiveDataMasker.cpp
+    ServerUUIDFile.cpp
     SettingsChanges.cpp
     SharedLibrary.cpp
     ShellCommand.cpp
