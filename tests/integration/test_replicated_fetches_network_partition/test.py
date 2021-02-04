@@ -12,8 +12,6 @@ node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
 node3 = cluster.add_instance('node3', with_zookeeper=True, main_configs=['configs/merge_tree.xml'])
 
-DEFAULT_MAX_THREADS_FOR_FETCH = 3
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -56,7 +54,7 @@ def test_no_stall(started_cluster):
         print("replica 2 fully synced")
 
         # Make node1 very slow, node3 should replicate from node2 instead.
-        pm.add_network_delay(node1, 1000)
+        pm.add_network_delay(node1, 2000)
 
         # node3 starts to replicate from node 1
         node3.query("SYSTEM START FETCHES t")
@@ -68,7 +66,7 @@ def test_no_stall(started_cluster):
         node2.query("SYSTEM START REPLICATED SENDS")
 
         for _ in range(1000):
-            print('Currently running fetches', node3.query("SELECT result_part_name FROM system.replicated_fetches").strip().split())
+            print('Currently running fetches', node3.query("SELECT result_part_name, source_replica_hostname, progress FROM system.replicated_fetches").strip().split())
             parts_fetched = node3.query("SELECT count() FROM system.parts WHERE table = 't'").strip()
             print('parts_fetched', parts_fetched)
 
