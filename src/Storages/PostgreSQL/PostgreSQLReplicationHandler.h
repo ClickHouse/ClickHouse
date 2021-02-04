@@ -42,7 +42,7 @@ private:
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
     void createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name);
     void createReplicationSlot(NontransactionPtr ntx);
-    void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name, bool use_replication_api);
+    void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
     void dropPublication(NontransactionPtr ntx);
 
     void startReplication();
@@ -55,11 +55,10 @@ private:
     const std::string database_name, table_name;
 
     std::string publication_name, replication_slot;
-    std::string temp_replication_slot;
+    std::string tmp_replication_slot;
     const size_t max_block_size;
 
-    PostgreSQLConnectionPtr connection;
-    PostgreSQLConnectionPtr replication_connection;
+    PostgreSQLConnectionPtr connection, replication_connection;
     std::shared_ptr<pqxx::work> tx;
 
     const String metadata_path;

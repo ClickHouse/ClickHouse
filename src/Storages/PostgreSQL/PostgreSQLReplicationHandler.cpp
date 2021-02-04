@@ -39,19 +39,14 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , replication_slot(replication_slot_name_)
     , max_block_size(max_block_size_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
+    , replication_connection(std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection->conn_str())))
     , metadata_path(DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata")
 {
-    /// Create a replication connection, through which it is possible to execute only commands from streaming replication protocol
-    /// interface. Passing 'database' as the value instructs walsender to connect to the database specified in the dbname parameter,
-    /// which will allow the connection to be used for logical replication from that database.
-    replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", conn_str));
-
-    /// Non temporary replication slot. Should be the same at restart.
     if (replication_slot.empty())
         replication_slot = fmt::format("{}_{}_ch_replication_slot", database_name, table_name);
 
     /// Temporary replication slot is used to acquire a snapshot for initial table synchronization and to determine starting lsn position.
-    temp_replication_slot = replication_slot + "_temp";
+    tmp_replication_slot = replication_slot + "_temp";
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
     startup_task->deactivate();
@@ -69,8 +64,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
 {
     try
     {
-        /// Used commands require a specific transaction isolation mode.
-        replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
+        connection->conn();
     }
     catch (pqxx::broken_connection const & pqxx_error)
     {
@@ -133,7 +127,10 @@ void PostgreSQLReplicationHandler::createPublication()
 
 void PostgreSQLReplicationHandler::startReplication()
 {
-    tx = std::make_shared<pqxx::work>(*connection->conn());
+    /// used commands require a specific transaction isolation mode.
+    replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
+
+    tx = std::make_shared<pqxx::work>(*replication_connection->conn());
     if (publication_name.empty())
     {
         publication_name = fmt::format("{}_{}_ch_publication", database_name, table_name);
@@ -154,8 +151,8 @@ void PostgreSQLReplicationHandler::startReplication()
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
     /// Normally temporary replication slot should not exist.
-    if (isReplicationSlotExist(ntx, temp_replication_slot))
-        dropReplicationSlot(ntx, temp_replication_slot, true);
+    if (isReplicationSlotExist(ntx, tmp_replication_slot))
+        dropReplicationSlot(ntx, tmp_replication_slot);
 
     std::string snapshot_name;
     LSNPosition start_lsn;
@@ -168,16 +165,18 @@ void PostgreSQLReplicationHandler::startReplication()
         /// Initial table synchronization from created snapshot
         loadFromSnapshot(snapshot_name);
         /// Do not need this replication slot anymore (snapshot loaded and start lsn determined
-        dropReplicationSlot(ntx, temp_replication_slot, true);
+        dropReplicationSlot(ntx, tmp_replication_slot);
         /// Non-temporary replication slot
         createReplicationSlot(ntx);
     }
+
+    ntx->commit();
 
     LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Creating replication consumer");
     consumer = std::make_shared<PostgreSQLReplicaConsumer>(
             context,
             table_name,
-            connection->conn_str(),
+            std::move(connection),
             replication_slot,
             publication_name,
             metadata_path,
@@ -186,7 +185,6 @@ void PostgreSQLReplicationHandler::startReplication()
             nested_storage);
 
     LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Successfully created replication consumer");
-    ntx->commit();
 
     consumer->startSynchronization();
 }
@@ -254,18 +252,18 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr ntx,
 
 void PostgreSQLReplicationHandler::createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name)
 {
-    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} TEMPORARY LOGICAL pgoutput EXPORT_SNAPSHOT", temp_replication_slot);
+    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} TEMPORARY LOGICAL pgoutput EXPORT_SNAPSHOT", tmp_replication_slot);
     try
     {
         pqxx::result result{ntx->exec(query_str)};
         start_lsn.lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
         LOG_TRACE(log, "Created temporary replication slot: {}, start lsn: {}, snapshot: {}",
-                temp_replication_slot, start_lsn.lsn, snapshot_name);
+                tmp_replication_slot, start_lsn.lsn, snapshot_name);
     }
     catch (Exception & e)
     {
-        e.addMessage("while creating PostgreSQL replication slot {}", temp_replication_slot);
+        e.addMessage("while creating PostgreSQL replication slot {}", tmp_replication_slot);
         throw;
     }
 }
@@ -287,21 +285,10 @@ void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx)
 }
 
 
-void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, std::string & slot_name, bool use_replication_api)
+void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, std::string & slot_name)
 {
-    if (use_replication_api)
-    {
-        std::string query_str = fmt::format("DROP_REPLICATION_SLOT {}", slot_name);
-        ntx->exec(query_str);
-    }
-    else
-    {
-        pqxx::work work(*connection->conn());
-        std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
-        work.exec(query_str);
-        work.commit();
-    }
-
+    std::string query_str = fmt::format("DROP_REPLICATION_SLOT {}", slot_name);
+    ntx->exec(query_str);
     LOG_TRACE(log, "Replication slot {} is dropped", slot_name);
 }
 
@@ -319,16 +306,15 @@ void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr ntx)
 /// Only used when MaterializePostgreSQL table is dropped.
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
+    /// TODO: check: if metadata file does not exist and replication slot does exist, then need to drop it at startup
     if (Poco::File(metadata_path).exists())
         Poco::File(metadata_path).remove();
 
-    /// TODO: another transaction might be active on this same connection. Need to make sure it does not happen.
-    replication_connection->conn()->close();
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
     dropPublication(ntx);
     if (isReplicationSlotExist(ntx, replication_slot))
-        dropReplicationSlot(ntx, replication_slot, false);
+        dropReplicationSlot(ntx, replication_slot);
 
     ntx->commit();
 }

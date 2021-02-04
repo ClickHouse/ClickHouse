@@ -21,7 +21,6 @@ PostgreSQLReplicaMetadata::PostgreSQLReplicaMetadata(const std::string & metadat
     , tmp_metadata_file(metadata_file_path + ".tmp")
     , data_version(1)
 {
-    readDataVersion();
 }
 
 
@@ -29,16 +28,12 @@ void PostgreSQLReplicaMetadata::readDataVersion()
 {
     if (Poco::File(metadata_file).exists())
     {
-        LOG_INFO(&Poco::Logger::get("PostgreSQLReplicaMetadata"),
-                "PostgreSQLReplica metadata file exists. Starting version {}", data_version);
-
         ReadBufferFromFile in(metadata_file, DBMS_DEFAULT_BUFFER_SIZE);
-
         assertString("\nData version:\t", in);
         readIntText(data_version, in);
 
-        LOG_INFO(&Poco::Logger::get("PostgreSQLReplicaMetadata"),
-                "PostgreSQLReplica metadata file exists. Starting version {}", data_version);
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLReplicaMetadata"),
+                "Last written version is {}. (From metadata file {})", data_version, metadata_file);
     }
 }
 
@@ -46,7 +41,7 @@ void PostgreSQLReplicaMetadata::readDataVersion()
 void PostgreSQLReplicaMetadata::writeDataVersion()
 {
     WriteBufferFromFile out(tmp_metadata_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
-    writeString("\nData Version:\t" + toString(data_version), out);
+    writeString("\nData version:\t" + toString(data_version), out);
 
     out.next();
     out.sync();

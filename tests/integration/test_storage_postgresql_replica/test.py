@@ -228,7 +228,39 @@ def test_replicating_update_queries(started_cluster):
     time.sleep(2);
 
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
-    print(result)
+    cursor.execute('DROP TABLE postgresql_replica;')
+    postgresql_replica_check_result(result, True)
+
+
+def test_resume_from_written_version(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
+
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+            ENGINE = PostgreSQLReplica(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key;
+        ''')
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, 50 + number from numbers(50)")
+    time.sleep(2)
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    assert(int(result) == 100)
+
+    instance.query('DETACH TABLE test.postgresql_replica')
+
+    cursor.execute('DELETE FROM postgresql_replica WHERE key > 49;')
+    cursor.execute('UPDATE postgresql_replica SET value = value - 10;')
+
+    instance.query('ATTACH TABLE test.postgresql_replica')
+
+    time.sleep(3)
+
+    result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
 

@@ -45,7 +45,7 @@ public:
     PostgreSQLReplicaConsumer(
             std::shared_ptr<Context> context_,
             const std::string & table_name_,
-            const std::string & conn_str_,
+            PostgreSQLConnectionPtr connection_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
             const std::string & metadata_path,
@@ -96,7 +96,7 @@ private:
     PostgreSQLReplicaMetadata metadata;
 
     const std::string table_name;
-    PostgreSQLConnectionPtr connection, replication_connection;
+    PostgreSQLConnectionPtr connection;
 
     LSNPosition current_lsn, final_lsn;
     BackgroundSchedulePool::TaskHolder wal_reader_task;
