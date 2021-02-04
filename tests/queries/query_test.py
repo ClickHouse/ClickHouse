@@ -76,6 +76,7 @@ SKIP_LIST = [
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01610_client_spawn_editor",  # expect-test
+    "01676_clickhouse_client_autocomplete",  # expect-test (partially)
     "01683_text_log_deadlock",  # secure tcp
 ]
 

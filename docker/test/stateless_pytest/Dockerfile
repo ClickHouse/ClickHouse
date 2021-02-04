@@ -7,7 +7,8 @@ RUN apt-get update -y && \
         python3-setuptools \
         python3-wheel \
         brotli \
-        netcat-openbsd
+        netcat-openbsd \
+        zstd
 
 RUN python3 -m pip install \
     wheel \
@@ -18,7 +19,9 @@ RUN python3 -m pip install \
     pytest-rerunfailures \
     pytest-timeout \
     pytest-xdist \
-    pandas
+    pandas \
+    numpy \
+    scipy
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
