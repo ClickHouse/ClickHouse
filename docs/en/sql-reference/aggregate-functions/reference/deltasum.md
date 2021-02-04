@@ -13,7 +13,7 @@ Adds the differences between consecutive rows. If the difference is negative, it
 Example:
 
 ```sql
-select deltaSum(arrayJoin([1, 2, 3]));                  -- => 3
-select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));   -- => 8
+select deltaSum(arrayJoin([1, 2, 3]));                  -- => 2
+select deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]));   -- => 7
 ```
 
