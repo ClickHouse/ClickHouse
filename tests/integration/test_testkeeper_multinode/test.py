@@ -124,6 +124,11 @@ def test_blocade_leader(started_cluster):
                 node.query("SYSTEM SYNC REPLICA t1", timeout=10)
                 break
             except Exception as ex:
+                try:
+                    node.query("ATTACH TABLE t1")
+                except Exception as attach_ex:
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
+
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:
@@ -229,13 +234,18 @@ def test_blocade_leader_twice(started_cluster):
         else:
             assert False, "Cannot reconnect for node{}".format(n + 1)
 
-    for node in [node1, node2, node3]:
+    for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
                 node.query("SYSTEM RESTART REPLICA t2", timeout=10)
                 node.query("SYSTEM SYNC REPLICA t2", timeout=10)
                 break
             except Exception as ex:
+                try:
+                    node.query("ATTACH TABLE t2")
+                except Exception as attach_ex:
+                    print("Got exception node{}".format(n + 1), smaller_exception(attach_ex))
+
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))
                 time.sleep(0.5)
         else:

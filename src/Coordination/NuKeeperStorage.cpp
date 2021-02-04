@@ -520,8 +520,8 @@ void NuKeeperStorage::finalize()
 
     finalized = true;
 
-    for (const auto & [session_id, ephemerals] : ephemerals)
-        for (const String & ephemeral_path : ephemerals)
+    for (const auto & [session_id, ephemerals_paths] : ephemerals)
+        for (const String & ephemeral_path : ephemerals_paths)
             container.erase(ephemeral_path);
 
     ephemerals.clear();
