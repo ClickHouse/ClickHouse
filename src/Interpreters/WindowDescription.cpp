@@ -109,6 +109,21 @@ void WindowFrame::checkValid() const
         return;
     }
 
+    if (end_type == BoundaryType::Offset
+        && begin_type == BoundaryType::Offset)
+    {
+        if (type == FrameType::Rows)
+        {
+            if (end_offset >= begin_offset)
+            {
+                return;
+            }
+        }
+
+        // For RANGE and GROUPS, we must check that end follows begin if sorted
+        // according to ORDER BY (we don't support them yet).
+    }
+
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Window frame '{}' is invalid",
         toString());
