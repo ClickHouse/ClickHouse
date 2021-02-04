@@ -61,6 +61,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
+#include <Common/ServerUUIDFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
@@ -563,6 +564,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setPath(path);
 
     StatusFile status{path + "status", StatusFile::write_full_info};
+    ServerUUIDFile uuid{path + "server_uuid", ServerUUIDFile::write_server_uuid};
 
     /// Try to increase limit on number of open files.
     {
@@ -601,6 +603,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
+    }
+
+    /// write unique server UUID
+    {
+        Poco::File(path + "uuidfile").createFile();
+
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
