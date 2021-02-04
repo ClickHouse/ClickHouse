@@ -34,7 +34,7 @@ private:
 public:
     NuKeeperServer(int server_id_, const std::string & hostname_, int port_);
 
-    void startup();
+    void startup(int64_t operation_timeout_ms);
 
     NuKeeperStorage::ResponsesForSessions putRequest(const NuKeeperStorage::RequestForSession & request);
 

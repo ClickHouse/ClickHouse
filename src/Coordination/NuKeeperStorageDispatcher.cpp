@@ -111,6 +111,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     int myport;
     int32_t my_priority = 1;
 
+    operation_timeout = Poco::Timespan(0, config.getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000);
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys("test_keeper_server.raft_configuration", keys);
     bool my_can_become_leader = true;
@@ -141,7 +142,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     server = std::make_unique<NuKeeperServer>(myid, myhostname, myport);
     try
     {
-        server->startup();
+        server->startup(operation_timeout.totalMilliseconds());
         if (shouldBuildQuorum(myid, my_priority, my_can_become_leader, server_configs))
         {
             for (const auto & [id, hostname, port, can_become_leader, priority] : server_configs)

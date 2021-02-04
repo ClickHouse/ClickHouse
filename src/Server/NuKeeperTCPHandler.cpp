@@ -331,7 +331,9 @@ void NuKeeperTCPHandler::runImpl()
     {
         try
         {
+            LOG_INFO(log, "Requesting session ID for the new client");
             session_id = nu_keeper_storage_dispatcher->getSessionID(session_timeout.totalMilliseconds());
+            LOG_INFO(log, "Received session ID {}", session_id);
         }
         catch (const Exception & e)
         {
