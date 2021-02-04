@@ -68,15 +68,12 @@ def test_no_stall(started_cluster):
         node2.query("SYSTEM START REPLICATED SENDS")
 
         for _ in range(1000):
-            print(node3.query("SELECT result_part_name FROM system.replicated_fetches").strip().split())
-            print()
-            result = node3.query("SELECT count() FROM system.parts WHERE table = 't'").strip()
-            print(result)
-            print()
-            print()
+            print('Currently running fetches', node3.query("SELECT result_part_name FROM system.replicated_fetches").strip().split())
+            parts_fetched = node3.query("SELECT count() FROM system.parts WHERE table = 't'").strip()
+            print('parts_fetched', parts_fetched)
 
             # Replication done.
-            if result == "5":
+            if parts_fetched == "5":
                 break
 
             time.sleep(3)
