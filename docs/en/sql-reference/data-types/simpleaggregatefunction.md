@@ -32,14 +32,24 @@ The following aggregate functions are supported:
 -   Name of the aggregate function.
 -   Types of the aggregate function arguments.
 
-**Syntax**
+**Example**
+
+Query:
 
 ``` sql
-CREATE TABLE t
+CREATE TABLE simple (id UInt64,val SimpleAggregateFunction(sum,Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+```
+
+Result:
+
+``` text
+CREATE TABLE simple
 (
-    column1 SimpleAggregateFunction(sum, UInt64),
-    column2 SimpleAggregateFunction(any, String)
-) ENGINE = ...
+    `id` UInt64,
+    `val` SimpleAggregateFunction(sum, Double)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id
 ```
 
 [Original article](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->
