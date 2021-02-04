@@ -67,7 +67,7 @@ public:
 
     void ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        if ((this->data(place).last < this->data(rhs).first) && this->data(place).seen_last && this->data(place).seen_first) {
+        if ((this->data(place).last < this->data(rhs).first) && this->data(place).seen_last && this->data(rhs).seen_first) {
             this->data(place).sum += this->data(rhs).sum + (this->data(rhs).first - this->data(place).last);
         } else {
             this->data(place).sum += this->data(rhs).sum;
