@@ -62,6 +62,7 @@ void PostgreSQLReplicaMetadata::commitVersion(const std::function<void()> & fina
 
     try
     {
+        /// TODO: return last actially written lsn and write it to file
         finalizeStreamFunc();
         Poco::File(tmp_metadata_file).renameTo(metadata_file);
     }

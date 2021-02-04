@@ -206,6 +206,33 @@ def test_replicating_delete_queries(started_cluster):
     postgresql_replica_check_result(result, True)
 
 
+def test_replicating_update_queries(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number + 10 from numbers(50)")
+
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+            ENGINE = PostgreSQLReplica(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key;
+        ''')
+
+    time.sleep(0.2)
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    assert(int(result) == 50)
+
+    cursor.execute('UPDATE postgresql_replica SET value = value - 10;')
+    time.sleep(2);
+
+    result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
+    print(result)
+    cursor.execute('DROP TABLE postgresql_replica;')
+    postgresql_replica_check_result(result, True)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
