@@ -309,4 +309,139 @@ public:
     bool allocatesMemoryInArena() const override { return true; }
 };
 
+template <typename T, typename Node, bool Descending>
+class SequenceFirstNodeImpl final
+    : public IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>
+{
+    using Data = SequenceNextNodeGeneralData<T, Node, Descending>;
+    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+
+    DataTypePtr & data_type;
+
+public:
+    SequenceFirstNodeImpl(const DataTypePtr & data_type_)
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<T, Node, Descending>, SequenceFirstNodeImpl<T, Node, Descending>>(
+            {data_type_}, {})
+        , data_type(this->argument_types[0])
+    {
+    }
+
+    String getName() const override { return "sequenceFirstNode"; }
+
+    DataTypePtr getReturnType() const override { return data_type; }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,
+        const AggregateFunctionProperties &) const override
+    {
+        return std::make_shared<AggregateFunctionNullVariadic<false, false, true, true>>(nested_function, arguments, params);
+    }
+
+    void insert(Data & a, const Node * v, Arena * arena) const
+    {
+        ++a.total_values;
+        a.value.push_back(v->clone(arena), arena);
+    }
+
+    void create(AggregateDataPtr place) const override
+    {
+        [[maybe_unused]] auto a = new (place) Data;
+    }
+
+    bool compare(const T lhs_timestamp, const T rhs_timestamp) const
+    {
+        return Descending ? lhs_timestamp < rhs_timestamp : lhs_timestamp > rhs_timestamp;
+    }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        bool is_first = true;
+        auto & value = data(place).value;
+        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+
+        if (value.size() != 0)
+        {
+            if (compare(value[0]->event_time, timestamp))
+                value.pop_back();
+            else
+                is_first = false;
+        }
+
+
+        if (is_first)
+        {
+            Node * node = Node::allocate(*columns[1], row_num, arena);
+            node->event_time = timestamp;
+            node->events_bitset = 0x80000000;
+
+            data(place).value.push_back(node, arena);
+        }
+    }
+
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        auto & a = data(place).value;
+        auto & b = data(rhs).value;
+
+        if (b.empty())
+            return;
+
+        if (a.empty())
+        {
+            a.push_back(b[0]->clone(arena), arena);
+            return;
+        }
+
+        if (compare(a[0]->event_time, b[0]->event_time))
+        {
+            data(place).value.pop_back();
+            a.push_back(b[0]->clone(arena), arena);
+        }
+    }
+
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    {
+        writeBinary(data(place).sorted, buf);
+
+        auto & value = data(place).value;
+        writeVarUInt(value.size(), buf);
+        for (auto & node : value)
+            node->write(buf);
+    }
+
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    {
+        readBinary(data(place).sorted, buf);
+
+        UInt64 size;
+        readVarUInt(size, buf);
+
+        if (unlikely(size == 0))
+            return;
+
+        auto & value = data(place).value;
+
+        value.resize(size, arena);
+        for (UInt64 i = 0; i < size; ++i)
+            value[i] = Node::read(buf, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    {
+        auto & value = data(place).value;
+
+        if (value.size() > 0)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            value[0]->insertInto(to_concrete.getNestedColumn());
+            to_concrete.getNullMapData().push_back(0);
+        }
+        else
+            to.insertDefault();
+    }
+
+    bool allocatesMemoryInArena() const override { return true; }
+};
+
 }
