@@ -110,7 +110,7 @@ template <typename A, typename B> struct ResultOfModulo
 {
     using Type0 = typename Construct<
         is_signed_v<A> || is_signed_v<B>,
-	false,
+        false,
         (is_signed_v<A> || is_signed_v<B>) ? std::max(sizeof(A), sizeof(B)) : sizeof(B)>::Type;
     using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
