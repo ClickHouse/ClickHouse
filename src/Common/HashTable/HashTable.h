@@ -1214,6 +1214,13 @@ public:
         return grower.bufSize();
     }
 
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        if (ptr->isZero(*this))
+            return 0;
+        return ptr - buf + 1;
+    }
+
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const
     {
