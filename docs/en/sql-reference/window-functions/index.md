@@ -8,7 +8,7 @@ toc_title: Window Functions
 !!! warning "Warning"
 This is an experimental feature that is currently in development and is not ready
 for general use. It will change in unpredictable backwards-incompatible ways in
-the future releases.
+the future releases. Set `allow_experimental_window_functions = 1` to enable it.
 
 ClickHouse currently supports calculation of aggregate functions over a window.
 Pure window functions such as `rank`, `lag`, `lead` and so on are not yet supported.
