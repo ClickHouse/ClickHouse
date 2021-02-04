@@ -105,11 +105,7 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    int open(const String & path, int flags) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
-
-    const String getType() const override { return "s3"; }
+    DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
 

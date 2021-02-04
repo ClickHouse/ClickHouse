@@ -89,13 +89,9 @@ public:
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-    int open(const String & path, int flags) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
-
     void truncateFile(const String & path, size_t size) override;
 
-    const String getType() const override { return "memory"; }
+    DiskType::Type getType() const override { return DiskType::Type::RAM; }
 
 private:
     void createDirectoriesImpl(const String & path);

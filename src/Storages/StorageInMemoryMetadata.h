@@ -109,6 +109,9 @@ struct StorageInMemoryMetadata
     TTLDescription getRowsTTL() const;
     bool hasRowsTTL() const;
 
+    TTLDescriptions getRowsWhereTTLs() const;
+    bool hasAnyRowsWhereTTL() const;
+
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
     TTLDescriptions getMoveTTLs() const;
@@ -117,6 +120,10 @@ struct StorageInMemoryMetadata
     // Just wrapper for table TTLs, return info about recompression ttl
     TTLDescriptions getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
+
+    // Just wrapper for table TTLs, return info about recompression ttl
+    TTLDescriptions getGroupByTTLs() const;
+    bool hasAnyGroupByTTL() const;
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
