@@ -727,6 +727,23 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     return actions_dag;
 }
 
+ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
+{
+    auto adding_column_action = std::make_shared<ActionsDAG>();
+    FunctionOverloadResolverPtr func_builder_materialize =
+            std::make_shared<FunctionOverloadResolverAdaptor>(
+                    std::make_unique<DefaultOverloadResolver>(
+                            std::make_shared<FunctionMaterialize>()));
+
+    auto column_name = column.name;
+    const auto & column_node = adding_column_action->addColumn(std::move(column));
+    Inputs inputs = {const_cast<Node *>(&column_node)};
+    auto & function_node = adding_column_action->addFunction(func_builder_materialize, std::move(inputs), {}, true);
+    adding_column_action->addAlias(function_node, std::move(column_name), true);
+
+    return adding_column_action;
+}
+
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
     /// first: x (1), x (2), y ==> x (2), z, x (3)
