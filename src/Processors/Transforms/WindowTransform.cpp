@@ -271,16 +271,22 @@ void WindowTransform::advanceFrameStartRowsOffset()
         return;
     }
 
-    assert(frame_start <= partition_end);
-    if (frame_start == partition_end && partition_ended)
+    if (partition_end <= frame_start)
     {
         // A FOLLOWING frame start ran into the end of partition.
-        frame_started = true;
+        frame_start = partition_end;
+        frame_started = partition_ended;
         return;
     }
 
+    // Handled the equality case above. Now the frame start is inside the
+    // partition, if we walked all the offset, it's final.
     assert(partition_start < frame_start);
     frame_started = offset_left == 0;
+
+    // If we ran into the start of data (offset left is negative), we won't be
+    // able to make progress. Should have handled this case above.
+    assert(offset_left >= 0);
 }
 
 void WindowTransform::advanceFrameStartChoose()
@@ -463,6 +469,39 @@ void WindowTransform::advanceFrameEndUnbounded()
     frame_ended = partition_ended;
 }
 
+void WindowTransform::advanceFrameEndRowsOffset()
+{
+    // Walk the specified offset from the current row. The "+1" is needed
+    // because the frame_end is a past-the-end pointer.
+    const auto [moved_row, offset_left] = moveRowNumber(current_row,
+        window_description.frame.end_offset + 1);
+
+    if (partition_end <= moved_row)
+    {
+        // Clamp to the end of partition. It might not have ended yet, in which
+        // case wait for more data.
+        frame_end = partition_end;
+        frame_ended = partition_ended;
+        return;
+    }
+
+    if (moved_row <= partition_start)
+    {
+        // Clamp to the start of partition.
+        frame_end = partition_start;
+        frame_ended = true;
+        return;
+    }
+
+    // Frame end inside partition, if we walked all the offset, it's final.
+    frame_end = moved_row;
+    frame_ended = offset_left == 0;
+
+    // If we ran into the start of data (offset left is negative), we won't be
+    // able to make progress. Should have handled this case above.
+    assert(offset_left >= 0);
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -479,9 +518,17 @@ void WindowTransform::advanceFrameEnd()
             advanceFrameEndUnbounded();
             break;
         case WindowFrame::BoundaryType::Offset:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "The frame end type '{}' is not implemented",
-                WindowFrame::toString(window_description.frame.end_type));
+            switch (window_description.frame.type)
+            {
+                case WindowFrame::FrameType::Rows:
+                    advanceFrameEndRowsOffset();
+                    break;
+                default:
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "The frame end type '{}' is not implemented",
+                        WindowFrame::toString(window_description.frame.end_type));
+            }
+            break;
     }
 
 //    fmt::print(stderr, "frame_end {} -> {}\n", frame_end_before, frame_end);

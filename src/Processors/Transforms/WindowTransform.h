@@ -109,9 +109,10 @@ private:
     void advanceFrameStart();
     void advanceFrameStartChoose();
     void advanceFrameStartRowsOffset();
-    void advanceFrameEnd();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
+    void advanceFrameEndRowsOffset();
+    void advanceFrameEnd();
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
     void updateAggregationState();
     void writeOutCurrentRow();
