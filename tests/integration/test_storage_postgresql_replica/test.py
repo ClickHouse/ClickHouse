@@ -78,12 +78,13 @@ def test_initial_load_from_snapshot(started_cluster):
             PRIMARY KEY key;
         ''')
 
-    time.sleep(0.2)
+    time.sleep(1)
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
 
 
+@pytest.mark.timeout(180)
 def test_no_connection_at_startup(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
@@ -102,8 +103,8 @@ def test_no_connection_at_startup(started_cluster):
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     while int(result) == 0:
+        time.sleep(0.5);
         result = instance.query('SELECT count() FROM test.postgresql_replica;')
-        time.sleep(1);
 
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     cursor.execute('DROP TABLE postgresql_replica;')
@@ -123,7 +124,11 @@ def test_detach_attach_is_ok(started_cluster):
             PRIMARY KEY key;
         ''')
 
-    time.sleep(0.2)
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 0):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     postgresql_replica_check_result(result, True)
 
@@ -149,7 +154,11 @@ def test_replicating_insert_queries(started_cluster):
             PRIMARY KEY key;
         ''')
 
-    time.sleep(0.2)
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 0):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
     assert(int(result) == 10)
 
@@ -188,7 +197,11 @@ def test_replicating_delete_queries(started_cluster):
             PRIMARY KEY key;
         ''')
 
-    time.sleep(0.2)
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 0):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     postgresql_replica_check_result(result, True)
 
@@ -220,8 +233,11 @@ def test_replicating_update_queries(started_cluster):
             PRIMARY KEY key;
         ''')
 
-    time.sleep(0.2)
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 0):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
     assert(int(result) == 50)
 
     cursor.execute('UPDATE postgresql_replica SET value = value - 10;')
@@ -245,6 +261,13 @@ def test_resume_from_written_version(started_cluster):
             PRIMARY KEY key;
         ''')
 
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 0):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    assert(int(result) == 50)
+
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, 50 + number from numbers(50)")
     time.sleep(2)
 
@@ -263,6 +286,56 @@ def test_resume_from_written_version(started_cluster):
     result = instance.query('SELECT * FROM test.postgresql_replica ORDER BY key;')
     cursor.execute('DROP TABLE postgresql_replica;')
     postgresql_replica_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_many_replication_messages(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000)")
+
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+            ENGINE = PostgreSQLReplica(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key;
+        ''')
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) == 100000):
+        time.sleep(0.2)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000, 100000)")
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while (int(result) != 200000):
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+        time.sleep(1)
+
+    result = instance.query('SELECT key FROM test.postgresql_replica ORDER BY key;')
+    expected = instance.query("SELECT number from numbers(200000)")
+    assert(result == expected)
+
+    cursor.execute('UPDATE postgresql_replica SET value = key + 1 WHERE key < 100000;')
+
+    result = instance.query('SELECT key FROM test.postgresql_replica WHERE value = key + 1 ORDER BY key;')
+    expected = instance.query("SELECT number from numbers(100000)")
+
+    while (result != expected):
+        result = instance.query('SELECT key FROM test.postgresql_replica WHERE value = key + 1 ORDER BY key;')
+        time.sleep(1)
+
+    cursor.execute('DELETE FROM postgresql_replica WHERE key % 2 = 1;')
+    cursor.execute('DELETE FROM postgresql_replica WHERE key != value;')
+
+    result = instance.query('SELECT count() FROM (SELECT * FROM test.postgresql_replica);')
+    while (int(result) != 50000):
+        result = instance.query('SELECT count() FROM (SELECT * FROM test.postgresql_replica);')
+        time.sleep(1)
+
+    cursor.execute('DROP TABLE postgresql_replica;')
 
 
 if __name__ == '__main__':

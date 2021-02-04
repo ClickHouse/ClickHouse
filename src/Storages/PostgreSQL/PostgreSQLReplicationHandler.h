@@ -28,16 +28,15 @@ public:
             const std::string & replication_slot_name_,
             const size_t max_block_size_);
 
-    void startup(StoragePtr storage_);
+    void startup(StoragePtr storage);
     void shutdown();
     void shutdownFinal();
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
 
-    void waitConnectionAndStart();
-    bool isPublicationExist();
-    void createPublication();
+    bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
+    void createPublication(std::shared_ptr<pqxx::work> tx);
 
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
     void createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name);
@@ -45,22 +44,19 @@ private:
     void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
     void dropPublication(NontransactionPtr ntx);
 
+    void waitConnectionAndStart();
     void startReplication();
     void loadFromSnapshot(std::string & snapshot_name);
-    Context createQueryContext();
-    void getTableOutput(const Context & query_context);
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
-    const std::string database_name, table_name;
+    const std::string database_name, table_name, connection_str;
 
     std::string publication_name, replication_slot;
     std::string tmp_replication_slot;
     const size_t max_block_size;
 
     PostgreSQLConnectionPtr connection, replication_connection;
-    std::shared_ptr<pqxx::work> tx;
-
     const String metadata_path;
     BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;

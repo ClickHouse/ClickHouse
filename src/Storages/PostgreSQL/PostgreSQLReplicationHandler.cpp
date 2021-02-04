@@ -35,6 +35,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , context(context_)
     , database_name(database_name_)
     , table_name(table_name_)
+    , connection_str(conn_str)
     , publication_name(publication_name_)
     , replication_slot(replication_slot_name_)
     , max_block_size(max_block_size_)
@@ -70,6 +71,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     {
         LOG_ERROR(log, "Unable to set up connection for table {}.{}. Reconnection attempt continues. Error message: {}",
                 database_name, table_name, pqxx_error.what());
+
         startup_task->scheduleAfter(reschedule_ms);
     }
     catch (Exception & e)
@@ -78,7 +80,6 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
         throw;
     }
 
-    LOG_DEBUG(log, "PostgreSQLReplica starting replication proccess");
     startReplication();
 }
 
@@ -90,7 +91,7 @@ void PostgreSQLReplicationHandler::shutdown()
 }
 
 
-bool PostgreSQLReplicationHandler::isPublicationExist()
+bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work> tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx->exec(query_str)};
@@ -105,7 +106,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist()
 }
 
 
-void PostgreSQLReplicationHandler::createPublication()
+void PostgreSQLReplicationHandler::createPublication(std::shared_ptr<pqxx::work> tx)
 {
     /// 'ONLY' means just a table, without descendants.
     std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, table_name);
@@ -119,28 +120,29 @@ void PostgreSQLReplicationHandler::createPublication()
         throw Exception(fmt::format("PostgreSQL table {}.{} does not exist", database_name, table_name), ErrorCodes::UNKNOWN_TABLE);
     }
 
-    /// TODO: check replica identity
+    /// TODO: check replica identity?
     /// Requires changed replica identity for included table to be able to receive old values of updated rows.
-    /// (ALTER TABLE table_name REPLICA IDENTITY FULL ?)
 }
 
 
 void PostgreSQLReplicationHandler::startReplication()
 {
+    LOG_DEBUG(log, "PostgreSQLReplica starting replication proccess");
+
     /// used commands require a specific transaction isolation mode.
     replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
 
-    tx = std::make_shared<pqxx::work>(*replication_connection->conn());
+    auto tx = std::make_shared<pqxx::work>(*replication_connection->conn());
     if (publication_name.empty())
     {
         publication_name = fmt::format("{}_{}_ch_publication", database_name, table_name);
 
         /// Publication defines what tables are included into replication stream. Should be deleted only if MaterializePostgreSQL
         /// table is dropped.
-        if (!isPublicationExist())
-            createPublication();
+        if (!isPublicationExist(tx))
+            createPublication(tx);
     }
-    else if (!isPublicationExist())
+    else if (!isPublicationExist(tx))
     {
         throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -157,8 +159,7 @@ void PostgreSQLReplicationHandler::startReplication()
     std::string snapshot_name;
     LSNPosition start_lsn;
 
-    /// Non temporary replication slot should be deleted with drop table only and created only once, reused after detach.
-    if (!isReplicationSlotExist(ntx, replication_slot))
+    auto initial_sync = [&]()
     {
         /// Temporary replication slot
         createTempReplicationSlot(ntx, start_lsn, snapshot_name);
@@ -168,6 +169,18 @@ void PostgreSQLReplicationHandler::startReplication()
         dropReplicationSlot(ntx, tmp_replication_slot);
         /// Non-temporary replication slot
         createReplicationSlot(ntx);
+    };
+
+    /// Non temporary replication slot should be deleted with drop table only and created only once, reused after detach.
+    if (!isReplicationSlotExist(ntx, replication_slot))
+    {
+        initial_sync();
+    }
+    else if (!Poco::File(metadata_path).exists())
+    {
+        /// If non-temporary slot exists and metadata file (where last synced version is written) does not exist, it is not normal.
+        dropReplicationSlot(ntx, replication_slot);
+        initial_sync();
     }
 
     ntx->commit();
@@ -187,6 +200,9 @@ void PostgreSQLReplicationHandler::startReplication()
     LOG_DEBUG(&Poco::Logger::get("StoragePostgreSQLMetadata"), "Successfully created replication consumer");
 
     consumer->startSynchronization();
+
+    /// Takes time to close
+    replication_connection->conn()->close();
 }
 
 
@@ -287,7 +303,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx)
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr ntx, std::string & slot_name)
 {
-    std::string query_str = fmt::format("DROP_REPLICATION_SLOT {}", slot_name);
+    std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
     ntx->exec(query_str);
     LOG_TRACE(log, "Replication slot {} is dropped", slot_name);
 }
@@ -303,14 +319,13 @@ void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr ntx)
 }
 
 
-/// Only used when MaterializePostgreSQL table is dropped.
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    /// TODO: check: if metadata file does not exist and replication slot does exist, then need to drop it at startup
     if (Poco::File(metadata_path).exists())
         Poco::File(metadata_path).remove();
 
-    auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+    connection = std::make_shared<PostgreSQLConnection>(connection_str);
+    auto ntx = std::make_shared<pqxx::nontransaction>(*connection->conn());
 
     dropPublication(ntx);
     if (isReplicationSlotExist(ntx, replication_slot))
@@ -318,6 +333,5 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
     ntx->commit();
 }
-
 
 }
