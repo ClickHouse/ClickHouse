@@ -708,7 +708,6 @@ SELECT FROM_UNIXTIME(423543535);
 
 В случае, когда есть два аргумента: первый типа [Integer](../../sql-reference/data-types/int-uint.md) или [DateTime](../../sql-reference/data-types/datetime.md), а второй является строкой постоянного формата — функция работает таким же образом, как [formatDateTime](#formatdatetime), и возвращает значение типа [String](../../sql-reference/data-types/string.md#string).
 
-**Пример**
 
 Запрос:
 
