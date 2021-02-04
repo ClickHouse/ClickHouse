@@ -4,27 +4,32 @@ toc_priority: 113
 
 # groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
-Calculates the moving sum of input values.
+
+计算输入值的移动和。
+
+**语法**
 
 ``` sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+该函数可以将窗口大小作为参数。 如果未指定，则该函数的窗口大小等于列中的行数。
 
-**Parameters**
+**参数**
 
--   `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
--   `window_size` — Size of the calculation window.
+-   `numbers_for_summing` — [表达式](../../../sql-reference/syntax.md#syntax-expressions) 生成数值数据类型值。。
+-   `window_size` — 窗口大小。
 
-**Returned values**
+**返回值**
 
--   Array of the same size and type as the input data.
+-   与输入数据大小相同的数组。
+对于输入数据类型是[Decimal](../../../sql-reference/data-types/decimal.md) 数组元素类型是 `Decimal128` 。
+对于其他的数值类型, 获取其对应的 `NearestFieldType` 。
 
-**Example**
+**示例**
 
-The sample table:
+样表:
 
 ``` sql
 CREATE TABLE t
@@ -45,7 +50,7 @@ ENGINE = TinyLog
 └─────┴───────┴──────┘
 ```
 
-The queries:
+查询:
 
 ``` sql
 SELECT
