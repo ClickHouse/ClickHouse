@@ -249,6 +249,9 @@ public:
         MatchColumnsMode mode,
         bool ignore_constant_values = false); /// Do not check that constants are same. Use value from result_header.
 
+    /// Create expression which add const column and then materialize it.
+    static ActionsDAGPtr makeAddingColumnActions(ColumnWithTypeAndName column);
+
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
     /// If first.settings.project_input is set, then outputs of `first` must include inputs of `second`.

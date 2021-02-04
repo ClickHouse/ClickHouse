@@ -28,15 +28,12 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/AddingConstColumnStep.h>
 #include <Processors/QueryPlan/ReverseRowsStep.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingFinal.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -846,7 +843,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         column.type = std::make_shared<DataTypeFloat64>();
         column.column = column.type->createColumnConst(0, Field(used_sample_factor));
 
-        auto adding_column = std::make_unique<AddingConstColumnStep>(plan->getCurrentDataStream(), std::move(column));
+        auto adding_column_action = ActionsDAG::makeAddingColumnActions(std::move(column));
+
+        auto adding_column = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), std::move(adding_column_action));
         adding_column->setStepDescription("Add _sample_factor column");
         plan->addStep(std::move(adding_column));
     }
