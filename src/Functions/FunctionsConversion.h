@@ -491,8 +491,9 @@ struct ToDateTime64TransformUnsigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(const FromType & from, const DateLUTImpl &) const
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        from = std::min(time_t(from), time_t(0xFFFFFFFF));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -507,10 +508,11 @@ struct ToDateTime64TransformSigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
-    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(const FromType & from, const DateLUTImpl &) const
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         if (from < 0)
             return 0;
+        from = std::min(time_t(from), time_t(0xFFFFFFFF));
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
