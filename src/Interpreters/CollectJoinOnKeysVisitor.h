@@ -59,7 +59,7 @@ private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
-    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data, bool *need_optimize);
+    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
     static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
 };
