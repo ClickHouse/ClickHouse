@@ -21,7 +21,7 @@ ClickHouse支持以下 `count` 语法:
 **返回值**
 
 -   如果没有参数调用函数，它会计算行数。
--   如果 [表达式](../../../syntax.md#syntax-expressions) 被传递，则该函数计数此表达式返回非null的次数。 如果表达式返回 [可为空](../../../sql-reference/data-types/nullable.md)类型的值，`count`的结果仍然不 `Nullable`。 如果表达式对于所有的行都返回 `NULL` ，则该函数返回 0 。
+-   如果 [表达式](../../../sql-reference/syntax.md#syntax-expressions) 被传递，则该函数计数此表达式返回非null的次数。 如果表达式返回 [可为空](../../../sql-reference/data-types/nullable.md)类型的值，`count`的结果仍然不 `Nullable`。 如果表达式对于所有的行都返回 `NULL` ，则该函数返回 0 。
 
 在这两种情况下，返回值的类型为 [UInt64](../../../sql-reference/data-types/int-uint.md)。
 

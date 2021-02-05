@@ -2,7 +2,7 @@
 toc_priority: 6
 ---
 
-# any(x) {#agg_function-any}
+# any {#agg_function-any}
 
 选择第一个遇到的值。
 查询可以以任何顺序执行，甚至每次都以不同的顺序执行，因此此函数的结果是不确定的。

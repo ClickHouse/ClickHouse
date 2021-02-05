@@ -23,7 +23,7 @@ groupArraySample(max_size[, seed])(x)
 
 -   随机选取参数 `x` (的值)组成的数组。
 
-类型: [Array](../../../data-types/array.md).
+类型: [Array](../../../sql-reference/data-types/array.md).
 
 **示例**
 

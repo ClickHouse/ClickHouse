@@ -29,7 +29,7 @@ avgWeighted(x, weight)
 -   `NaN`。 如果所有的权重都等于0 或所提供的权重参数是空。
 -   加权平均值。 其他。
 
-类型: 总是[Float64](../data-types/float.md).
+类型: 总是[Float64](../../../sql-reference/data-types/float.md).
 
 **示例**
 
