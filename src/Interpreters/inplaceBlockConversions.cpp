@@ -104,7 +104,7 @@ ActionsDAGPtr createFillingMissingDefaultsExpression(
     if (save_unneeded_columns)
     {
         Names required_names;
-        required_names.resize(required_columns.size());
+        required_names.reserve(required_columns.size());
         for (const auto & column : required_columns)
             required_names.push_back(column.name);
 
