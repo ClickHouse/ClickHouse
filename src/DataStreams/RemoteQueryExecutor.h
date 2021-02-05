@@ -174,9 +174,13 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
-    /** Set part uuids to a query context, collected from remote replicas.
-      */
+    /// Set part uuids to a query context, collected from remote replicas.
+    /// Return true if duplicates found.
     bool setPartUUIDs(const std::vector<UUID> & uuids);
+
+    /// Cancell query and restart it with info about duplicated UUIDs
+    /// only for `allow_experimental_query_deduplication`.
+    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
@@ -192,6 +196,7 @@ private:
 
     /// Reads packet by packet
     Block readPackets();
+
 };
 
 }
