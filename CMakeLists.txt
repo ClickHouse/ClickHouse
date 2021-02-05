@@ -652,13 +652,27 @@ foreach(TARGET ${all_targets})
     if (FASTBUILD_CONTRIB_UNITY)
         get_target_property(TARGET_DIRECTORY ${TARGET} SOURCE_DIR)
 
-        # Groups of targets that can be Unity-built at low batch sizes
+        # A list of LLVM targets that we DO NOT want to enable Unity builds for.
+        set(LLVM_OVERRIDE_LIST
+            LLVMCodeGen LLVMSelectionDAG LLVMVectorize LLVMBitReader LLVMObject LLVMScalarOpts)
+
+        # Groups of targets that support Unity builds at low batch sizes
         if (${TARGET_DIRECTORY} MATCHES "/contrib/" AND (
                 ${TARGET} MATCHES "LLVM" OR
                 ${TARGET} MATCHES "absl" OR
                 ${TARGET} MATCHES "poco" OR
                 ${TARGET} MATCHES "cassandra" OR
-                ${TARGET} MATCHES "grpc"))
+                ${TARGET} MATCHES "grpc"
+                ))
+
+            # While it would appear to make sense to modify all elements of LLVM_OVERRIDE_LIST
+            # by using a single set_target_properties command, ENABLE_EMBEDDED_COMPILER being set
+            # can lead set_target_properties to error. This is because only a restricted set of
+            # LLVM targets will actually be added. LLVMCodeGen, for example, would not exist.
+            if (${TARGET} IN_LIST LLVM_OVERRIDE_LIST)
+                continue()
+            endif()
+
             set_target_properties(${TARGET} PROPERTIES
                                   UNITY_BUILD ON
                                   UNITY_BUILD_BATCH_SIZE 2
@@ -671,10 +685,6 @@ endforeach()
 if (FASTBUILD_CONTRIB_UNITY)
     # Miscellaneous packages that get caught by the automatic Unity building rule, despite not supporting Unity builds.
     set_target_properties(_poco_foundation absl_synchronization grpc PROPERTIES UNITY_BUILD OFF)
-    set_target_properties(LLVMCodeGen LLVMSelectionDAG LLVMVectorize
-                          LLVMBitReader LLVMObject LLVMScalarOpts
-                          PROPERTIES UNITY_BUILD OFF
-                          )
 
     # Packages that support and benefit a lot from unity builds.
     set_target_properties(arrow_static PROPERTIES UNITY_BUILD ON)
@@ -692,7 +702,7 @@ endif()
 
 # This handles FASTBUILD_FUNCTIONS_UNITY.
 if (FASTBUILD_FUNCTIONS_UNITY)
-    # This is the list of targets to Unity-build.
+    # This is the list of targets to activate Unity builds on.
     set(FUNCTIONS_TARGETS
         clickhouse_functions_gatherutils clickhouse_functions_array clickhouse_functions_array clickhouse_functions)
 
