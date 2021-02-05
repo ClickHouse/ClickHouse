@@ -535,7 +535,9 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
-        sendPartUUIDs();
+
+        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+            sendPartUUIDs();
 
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
@@ -601,7 +603,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
 
-    sendPartUUIDs();
+    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        sendPartUUIDs();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
