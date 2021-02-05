@@ -515,6 +515,86 @@ select DATE_DIFF(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
 │                                                           -11 │
 └───────────────────────────────────────────────────────────────┘
 ```
+
+## timestamp\_add {#timestamp_add}
+
+Adds the specified time value with the provided date or date time value.
+
+**Syntax** 
+
+``` sql
+timestamp_add(date, INTERVAL value unit)
+```
+
+Aliases: `timeStampAdd`, `TIMESTAMP_ADD`. 
+
+**Parameters**
+    
+-   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `value` -  Amount of the specified unit of time - [String](../syntax.md#syntax-string-literal)
+-   `unit` - The unit of time interval - [String](../syntax.md#syntax-string-literal).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+    
+**Example**
+
+```sql
+select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
+```
+
+```text
+┌─plus(toDate('2018-01-01'), toIntervalMonth(3))─┐
+│                                     2018-04-01 │
+└────────────────────────────────────────────────┘
+```
+
+## timestamp\_sub {#timestamp_sub}
+
+Returns the difference between two dates in terms of the specified unit.
+
+**Syntax** 
+
+``` sql
+timestamp_sub(unit, value, date)
+```
+
+Aliases: `timeStampSub`, `TIMESTAMP_SUB`. 
+
+**Parameters**
+
+-   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+- value -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
+-   `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
+```
+
+```text
+┌─minus(toDateTime('2018-12-18 01:02:03'), toIntervalMonth(5))─┐
+│                                          2018-07-18 01:02:03 │
+└──────────────────────────────────────────────────────────────┘
+```
     
 ## now {#now}
 
