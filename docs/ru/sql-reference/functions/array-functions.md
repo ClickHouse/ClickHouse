@@ -1135,11 +1135,161 @@ SELECT
 
 Функция `arrayFirstIndex` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию, и этот аргумент не может быть опущен.
 
+## arrayMin(\[func,\] arr1, …) {#array-min}
+
+Возвращает минимальное значение функции `func`. Если функция не указана, возвращает минимальный из элементов массива.
+
+Функция `arrayMin` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию.
+
+**Синтаксис** 
+
+``` sql
+arrayMin(arr)
+```
+
+**Возвращаемое значение**
+
+-   Число.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Параметры** 
+
+-   `arr` — [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT arrayMin([1, 2, 4]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayMin(x -> (-x), [1, 2, 4]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│  -4 │
+└─────┘
+```
+
+## arrayMax(\[func,\] arr1, …) {#array-max}
+
+Возвращает максимальное значение функции `func`. Если функция не указана, возвращает максимальный из элементов массива.
+
+Функция `arrayMax` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) — в качестве первого аргумента ей нужно передать лямбда-функцию.
+
+**Синтаксис** 
+
+``` sql
+arrayMax(arr)
+```
+
+**Возвращаемое значение**
+
+-   Число.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Параметры** 
+
+-   `arr` — [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arrayMax([1, 2, 4]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   4 │
+└─────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arrayMax(x -> (-x), [1, 2, 4]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│  -1 │
+└─────┘
+```
+
 ## arraySum(\[func,\] arr1, …) {#array-sum}
 
 Возвращает сумму значений функции `func`. Если функция не указана - просто возвращает сумму элементов массива.
 
 Функция `arraySum` является [функцией высшего порядка](../../sql-reference/functions/index.md#higher-order-functions) - в качестве первого аргумента ей можно передать лямбда-функцию.
+
+**Синтаксис** 
+
+``` sql
+arraySum(arr)
+```
+
+**Возвращаемое значение**
+
+-   Число.
+
+Тип: [Int](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Параметры** 
+
+-   `arr` — [Массив](../../sql-reference/data-types/array.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT arraySum([2,3]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+Запрос:
+
+``` sql
+SELECT arraySum(x -> x*x, [2, 3]) AS res
+```
+
+Результат:
+
+``` text
+┌─res─┐
+│  13 │
+└─────┘
+```
 
 ## arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
