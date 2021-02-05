@@ -190,7 +190,7 @@ During startup ClickHouse reads all parts of all tables (reads files with metada
 
 Limits the maximum number of partitions that can be accessed in one query.
 
-The setting value specified when table is created can be overridden via query-level setting.
+The setting value specified when the table is created can be overridden via query-level setting.
 
 Possible values:
 
