@@ -249,7 +249,6 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
                         + " are from different tables.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         }
     }
-    assert(table_number != 0);
 
     return table_number;
 }
