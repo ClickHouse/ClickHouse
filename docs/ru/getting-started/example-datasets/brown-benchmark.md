@@ -5,7 +5,7 @@ toc_title: Brown University Benchmark
 
 # Brown University Benchmark
 
-`MgBench` — это новый аналитический бенчмарк для сгенерированного журнала событий, разработанный [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
+`MgBench` — это новый аналитический бенчмарк для данных журнала событий, сгенерированных машиной. Бенчмарк разработан [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
 Скачать данные:
 ```
