@@ -173,9 +173,7 @@ void RemoteQueryExecutor::sendQuery()
     {
         std::lock_guard lock(duplicated_part_uuids_mutex);
         if (!duplicated_part_uuids.empty())
-        {
             multiplexed_connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-        }
     }
 
     multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
@@ -206,29 +204,9 @@ Block RemoteQueryExecutor::read()
         Packet packet = multiplexed_connections->receivePacket();
 
         if (auto block = processPacket(std::move(packet)))
-        {
-            if (got_duplicated_part_uuids)
-            {
-                /// Cancel previous query and disconnect before retry.
-                cancel();
-                multiplexed_connections->disconnect();
-
-                /// Only resend once, otherwise throw an exception
-                if (!resent_query)
-                {
-                    if (log)
-                        LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
-
-                    resent_query = true;
-                    sent_query = false;
-                    got_duplicated_part_uuids = false;
-                    /// Consecutive read will implicitly send query first.
-                    return read();
-                }
-                throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
-            }
             return *block;
-        }
+        else if (got_duplicated_part_uuids)
+            return std::get<Block>(restartQueryWithoutDuplicatedUUIDs());
     }
 }
 
@@ -266,29 +244,9 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         else
         {
             if (auto data = processPacket(std::move(read_context->packet)))
-            {
-                if (got_duplicated_part_uuids)
-                {
-                    /// Cancel previous query and disconnect before retry.
-                    cancel(&read_context);
-                    multiplexed_connections->disconnect();
-
-                    /// Only resend once, otherwise throw an exception
-                    if (!resent_query)
-                    {
-                        if (log)
-                            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
-
-                        resent_query = true;
-                        sent_query = false;
-                        got_duplicated_part_uuids = false;
-                        /// Consecutive read will implicitly send query first.
-                        return read(read_context);
-                    }
-                    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
-                }
                 return std::move(*data);
-            }
+            else if (got_duplicated_part_uuids)
+                return restartQueryWithoutDuplicatedUUIDs(&read_context);
         }
     }
     while (true);
@@ -297,16 +255,38 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
 #endif
 }
 
+
+std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context)
+{
+    /// Cancel previous query and disconnect before retry.
+    cancel(read_context);
+    multiplexed_connections->disconnect();
+
+    /// Only resend once, otherwise throw an exception
+    if (!resent_query)
+    {
+        if (log)
+            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
+
+        resent_query = true;
+        sent_query = false;
+        got_duplicated_part_uuids = false;
+        /// Consecutive read will implicitly send query first.
+        if (!read_context)
+            return read();
+        else
+            return read(*read_context);
+    }
+    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+}
+
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
         case Protocol::Server::PartUUIDs:
             if (!setPartUUIDs(packet.part_uuids))
-            {
                 got_duplicated_part_uuids = true;
-                return Block();
-            }
             break;
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
