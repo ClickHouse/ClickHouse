@@ -453,7 +453,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 -   `value` - Amount of the specified unit of time.    
--   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 
 **Example**
