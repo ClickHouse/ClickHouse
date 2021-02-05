@@ -45,10 +45,10 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
     }
 }
 
-ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
+ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace, bool add_to_index)
 {
     auto it = index.find(node.result_name);
-    if (it != index.end() && !can_replace)
+    if (it != index.end() && !can_replace && add_to_index)
         throw Exception("Column '" + node.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
     auto & res = nodes.emplace_back(std::move(node));
@@ -56,7 +56,8 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node, bool can_replace)
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
-    index.replace(&res);
+    if (add_to_index)
+        index.replace(&res);
     return res;
 }
 
@@ -90,7 +91,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column, bool
     return addNode(std::move(node), can_replace);
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool can_replace, bool materialize)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -101,7 +102,20 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
 
-    return addNode(std::move(node), can_replace);
+    auto * res = &addNode(std::move(node), can_replace, !materialize);
+
+    if (materialize)
+    {
+        auto & name = res->result_name;
+
+        FunctionOverloadResolverPtr func_builder_materialize =
+                std::make_shared<FunctionOverloadResolverAdaptor>(
+                        std::make_unique<DefaultOverloadResolver>(
+                                std::make_shared<FunctionMaterialize>()));
+
+        res = &addFunction(func_builder_materialize, {res}, {}, true, false);
+        res = &addAlias(*res, name, true);
+    }
 }
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
@@ -169,7 +183,8 @@ ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         Inputs children,
         std::string result_name,
-        bool can_replace)
+        bool can_replace,
+        bool add_to_index)
 {
     size_t num_arguments = children.size();
 
@@ -250,7 +265,7 @@ ActionsDAG::Node & ActionsDAG::addFunction(
 
     node.result_name = std::move(result_name);
 
-    return addNode(std::move(node), can_replace);
+    return addNode(std::move(node), can_replace, add_to_index);
 }
 
 
@@ -630,7 +645,7 @@ void ActionsDAG::addMaterializingOutputActions()
     for (auto * node : index_nodes)
     {
         auto & name = node->result_name;
-        node = &addFunction(func_builder_materialize, {node}, {}, true);
+        node = &addFunction(func_builder_materialize, {node}, {}, true, false);
         node = &addAlias(*node, name, true);
         new_index.insert(node);
     }
