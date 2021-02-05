@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Clone some not too large repository and create a database from it.
 
-cd $CLICKHOUSE_TMP
+cd $CLICKHOUSE_TMP || exit
 
 # Protection for network errors
 for _ in {1..10}; do
