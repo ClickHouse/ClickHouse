@@ -60,7 +60,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     {
         buf << abs(begin_offset);
         buf << " "
-            << (begin_offset > 0 ? "FOLLOWING" : "PRECEDING");
+            << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
     buf << " AND ";
     if (end_type == BoundaryType::Current)
@@ -75,12 +75,17 @@ void WindowFrame::toString(WriteBuffer & buf) const
     {
         buf << abs(end_offset);
         buf << " "
-            << (end_offset > 0 ? "FOLLOWING" : "PRECEDING");
+            << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
 }
 
 void WindowFrame::checkValid() const
 {
+    // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
+    // forbidden at the parsing level.
+    assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
+    assert(!(end_type == BoundaryType::Unbounded && end_preceding));
+
     if (begin_type == BoundaryType::Unbounded
         || end_type == BoundaryType::Unbounded)
     {
@@ -89,14 +94,14 @@ void WindowFrame::checkValid() const
 
     if (begin_type == BoundaryType::Current
         && end_type == BoundaryType::Offset
-        && end_offset > 0)
+        && !end_preceding)
     {
         return;
     }
 
     if (end_type == BoundaryType::Current
         && begin_type == BoundaryType::Offset
-        && begin_offset < 0)
+        && begin_preceding)
     {
         return;
     }
@@ -112,16 +117,13 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
-        if (type == FrameType::Rows)
+        if (!(end_preceding && !begin_preceding))
         {
-            if (end_offset >= begin_offset)
+            if (begin_offset <= end_offset)
             {
                 return;
             }
         }
-
-        // For RANGE and GROUPS, we must check that end follows begin if sorted
-        // according to ORDER BY (we don't support them yet).
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
