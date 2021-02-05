@@ -428,15 +428,23 @@ def run_tests_array(all_tests_with_params):
                                 status += print_test_time(total_time)
                                 status += " - result differs with reference:\n{}\n".format(diff)
                             else:
-                                passed_total += 1
-                                failures_chain = 0
-                                status += MSG_OK
-                                status += print_test_time(total_time)
-                                status += "\n"
-                                if os.path.exists(stdout_file):
-                                    os.remove(stdout_file)
-                                if os.path.exists(stderr_file):
-                                    os.remove(stderr_file)
+                                if args.test_runs > 1 and total_time > 30 and 'long' not in name:
+                                    # We're in Flaky Check mode, check the run time as well while we're at it.
+                                    failures += 1
+                                    failures_chain += 1
+                                    status += MSG_FAIL
+                                    status += print_test_time(total_time)
+                                    status += " - Long test not marked as 'long'"
+                                else:
+                                    passed_total += 1
+                                    failures_chain = 0
+                                    status += MSG_OK
+                                    status += print_test_time(total_time)
+                                    status += "\n"
+                                    if os.path.exists(stdout_file):
+                                        os.remove(stdout_file)
+                                    if os.path.exists(stderr_file):
+                                        os.remove(stderr_file)
 
             if status and not status.endswith('\n'):
                 status += '\n'
