@@ -4,9 +4,9 @@ toc_priority: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# 聚合函数列表 {#aggregate-functions-reference}
 
-Standard aggregate functions:
+标准聚合函数:
 
 -   [count](../../../sql-reference/aggregate-functions/reference/count.md)
 -   [min](../../../sql-reference/aggregate-functions/reference/min.md)
@@ -21,7 +21,7 @@ Standard aggregate functions:
 -   [covarPop](../../../sql-reference/aggregate-functions/reference/covarpop.md)
 -   [covarSamp](../../../sql-reference/aggregate-functions/reference/covarsamp.md)
 
-ClickHouse-specific aggregate functions:
+ClickHouse 特有的聚合函数:
 
 -   [anyHeavy](../../../sql-reference/aggregate-functions/reference/anyheavy.md)
 -   [anyLast](../../../sql-reference/aggregate-functions/reference/anylast.md)
