@@ -74,20 +74,16 @@ ActionsDAGPtr addMissingDefaults(
 
             auto & group = nested_groups[offsets_name];
             group[0] = constant.result_name;
-            const auto & func = actions->addFunction(func_builder_replicate, group, {}, context);
+            actions->addFunction(func_builder_replicate, group, constant.result_name, context);
 
-            actions->addAlias(func.result_name, column.name, true);
             continue;
         }
-
-        auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * node = &actions->addColumn({std::move(new_column), column.type, column.name}, true);
 
         /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
-        node = &actions->addFunction(func_builder_materialize, {node->result_name}, {}, context);
-        actions->addAlias(node->result_name, column.name, true);
+        auto new_column = column.type->createColumnConstWithDefaultValue(0);
+        actions->addColumn({std::move(new_column), column.type, column.name}, true, true);
     }
 
     /// Computes explicitly specified values by default and materialized columns.
