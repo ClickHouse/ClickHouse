@@ -449,17 +449,9 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Parameters**
 
--   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
-    Possible values:
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
+        Supported values: second, minute, hour, day, week, month, quarter, year.
 -   `value` - Amount of the specified unit of time.    
 -   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -476,43 +468,48 @@ select date_add(YEAR, 3, toDate('2018-01-01'));
 └───────────────────────────────────────────────┘
 ```
 
-## date\_diff {#date_diff}
+## date\_diff {#dated_diff}
 
-Returns the difference between two dates in terms of the specified unit.
+Returns the difference between two Date or DateTime values.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
-date_sub(unit, date1, date2)
+date_diff('unit', startdate, enddate, [timezone])
 ```
-
-Aliases: `date_diff`, `DATE_DIFF`. 
 
 **Parameters**
 
--   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
-    Possible values:
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
--   `date1`,`date2` - Dates or Dates with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+        Supported values: second, minute, hour, day, week, month, quarter, year.
+
+-   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `enddate` — The second time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
+
+**Returned value**
+
+Difference between `startdate` and `enddate` expressed in `unit`.
+
+Type: `int`.
 
 **Example**
 
-```sql
-select date_diff(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
+Query:
+
+``` sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
 ```
 
-```text
-┌─dateDiff('month', toDate('2018-12-18'), toDate('2018-01-01'))─┐
-│                                                           -11 │
-└───────────────────────────────────────────────────────────────┘
+Result:
+
+``` text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timestamp\_add {#timestamp_add}
@@ -531,17 +528,9 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
     
 -   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` -  Amount of the specified unit of time - [String](../syntax.md#syntax-string-literal)
--   `unit` - The unit of time interval - [String](../syntax.md#syntax-string-literal).
-    Possible values:
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
+        Supported values: second, minute, hour, day, week, month, quarter, year.
     
 **Example**
 
@@ -569,17 +558,9 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Parameters**
 
--   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
-    Possible values:
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
-    - `second`
-    - `minute`
-    - `hour`
-    - `day`
-    - `week`
-    - `month`
-    - `quarter`
-    - `year`
+        Supported values: second, minute, hour, day, week, month, quarter, year.
 - `value` -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
 - `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -708,50 +689,6 @@ SELECT
 ┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
 │               2018-01-01 │           2018-01-01 00:00:00 │
 └──────────────────────────┴───────────────────────────────┘
-```
-
-## dateDiff {#datediff}
-
-Returns the difference between two Date or DateTime values.
-
-**Syntax**
-
-``` sql
-dateDiff('unit', startdate, enddate, [timezone])
-```
-
-**Parameters**
-
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-
-        Supported values: second, minute, hour, day, week, month, quarter, year.
-
--   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
--   `enddate` — The second time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
--   `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
-
-**Returned value**
-
-Difference between `startdate` and `enddate` expressed in `unit`.
-
-Type: `int`.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Result:
-
-``` text
-┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                     25 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## timeSlots(StartTime, Duration,\[, Size\]) {#timeslotsstarttime-duration-size}
