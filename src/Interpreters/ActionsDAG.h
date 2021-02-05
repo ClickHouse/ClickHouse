@@ -205,7 +205,8 @@ public:
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context);
+            const Context & context,
+            bool can_replace = false);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
