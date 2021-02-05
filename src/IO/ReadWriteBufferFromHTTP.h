@@ -107,7 +107,7 @@ namespace detail
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
-            // With empty path poco will send "POST  HTTP/1.1" its bug.
+            // With empty path poco will send "POST HTTP/1.1" its bug.
             if (uri_.getPath().empty())
                 uri_.setPath("/");
 

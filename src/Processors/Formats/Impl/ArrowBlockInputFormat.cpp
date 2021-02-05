@@ -24,7 +24,6 @@ namespace ErrorCodes
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
     : IInputFormat(header_, in_), stream{stream_}
 {
-    prepareReader();
 }
 
 Chunk ArrowBlockInputFormat::generate()
@@ -32,6 +31,9 @@ Chunk ArrowBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
+
+    if (!file_reader && !stream_reader)
+        prepareReader();
 
     if (stream)
     {
@@ -71,7 +73,6 @@ void ArrowBlockInputFormat::resetParser()
         stream_reader.reset();
     else
         file_reader.reset();
-    prepareReader();
 }
 
 void ArrowBlockInputFormat::prepareReader()

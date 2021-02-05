@@ -33,7 +33,6 @@ namespace ErrorCodes
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
     : IInputFormat(std::move(header_), in_)
 {
-    prepareReader();
 }
 
 Chunk ParquetBlockInputFormat::generate()
@@ -43,6 +42,9 @@ Chunk ParquetBlockInputFormat::generate()
 
     if (row_group_current >= row_group_total)
         return res;
+
+    if (!file_reader)
+        prepareReader();
 
     std::shared_ptr<arrow::Table> table;
     arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
@@ -62,7 +64,6 @@ void ParquetBlockInputFormat::resetParser()
 
     file_reader.reset();
     column_indices.clear();
-    prepareReader();
 }
 
 void ParquetBlockInputFormat::prepareReader()
