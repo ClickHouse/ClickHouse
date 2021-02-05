@@ -25,7 +25,31 @@
         select *
         from (
             select CounterID, UserID, count(*) user_hits,
-                count() over (partition by CounterID order by user_hits desc)
+                count()
+                    over (partition by CounterID order by user_hits desc
+                        rows unbounded preceding)
+                    user_rank
+            from hits_100m_single
+            where CounterID < 10000
+            group by CounterID, UserID
+        )
+        where user_rank <= 10
+        format Null
+    ]]></query>
+
+    <!--
+        The RANGE version should give (almost) the same result, because counts
+        for the top ranking users are probably different, so the ranks won't be
+        influenced by grouping. But it is going to be slower than ROWS because
+        of the additional work of finding the group boundaries.
+    -->
+    <query><![CDATA[
+        select *
+        from (
+            select CounterID, UserID, count(*) user_hits,
+                count()
+                    over (partition by CounterID order by user_hits desc
+                        range unbounded preceding)
                     user_rank
             from hits_100m_single
             where CounterID < 10000

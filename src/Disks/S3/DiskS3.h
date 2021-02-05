@@ -105,7 +105,7 @@ public:
 
     void setReadOnly(const String & path) override;
 
-    const String getType() const override { return "s3"; }
+    DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
 

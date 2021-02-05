@@ -10,6 +10,7 @@ import random
 
 import threading
 from multiprocessing.dummy import Pool
+from helpers.test_tools import assert_eq_with_retry
 
 def check_query(clickhouse_node, query, result_set, retry_count=60, interval_seconds=3):
     lastest_result = ''
@@ -485,7 +486,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     check_query(clickhouse_node, "SELECT count((_sign, _version)) FROM db.t FORMAT TSV", res[0])
 
     assert clickhouse_node.query("SELECT count(_sign) FROM db.t FORMAT TSV") == res[1]
-    assert clickhouse_node.query("SELECT count(_version) FROM db.t FORMAT TSV") == res[2]
+    assert_eq_with_retry(clickhouse_node, "SELECT count(_version) FROM db.t", res[2].strip(), sleep_time=2, retry_count=3)
 
     assert clickhouse_node.query("SELECT count() FROM db.t FORMAT TSV") == "1\n"
     assert clickhouse_node.query("SELECT count(*) FROM db.t FORMAT TSV") == "1\n"

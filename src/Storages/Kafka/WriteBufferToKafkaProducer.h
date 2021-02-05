@@ -30,6 +30,8 @@ public:
 
 private:
     void nextImpl() override;
+    void addChunk();
+    void reinitializeChunks();
 
     ProducerPtr producer;
     const std::string topic;
