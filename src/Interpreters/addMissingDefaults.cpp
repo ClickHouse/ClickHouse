@@ -59,7 +59,7 @@ ActionsDAGPtr addMissingDefaults(
     for (const auto & column : required_columns)
     {
         if (header.has(column.name))
-            continue;
+            actions->addInput(header.getByName(column.name));
 
         if (columns.hasDefault(column.name))
             continue;
@@ -87,7 +87,7 @@ ActionsDAGPtr addMissingDefaults(
     }
 
     /// Computes explicitly specified values by default and materialized columns.
-    if (auto dag = evaluateMissingDefaults(header, required_columns, columns, context))
+    if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
 
     return actions;
