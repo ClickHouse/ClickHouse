@@ -27,7 +27,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
@@ -1492,6 +1491,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
+<<<<<<< HEAD
     {
         auto disk = reserved_space->getDisk();
         if (disk->getType() == "s3")
@@ -1522,8 +1522,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             }
         }
     }
+=======
+    /// Account TTL merge
+    if (isTTLMergeType(future_merged_part.merge_type))
+        global_context.getMergeList().bookMergeWithTTL();
+>>>>>>> master
 
     auto table_id = getStorageID();
+    /// Add merge to list
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
 
     Transaction transaction(*this);
@@ -3095,6 +3101,21 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
     ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
 }
 
+void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    String part_path = replica_path + "/parts/" + part_name;
+    Coordination::Stat stat;
+
+    /// Part doesn't exist, nothing to remove
+    if (!zookeeper->exists(part_path, &stat))
+        return;
+
+    Coordination::Requests ops;
+
+    removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+    zookeeper->multi(ops);
+}
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {

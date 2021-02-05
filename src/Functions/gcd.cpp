@@ -1,46 +1,29 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <numeric>
+#include <Functions/GCDLCMImpl.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 namespace
 {
 
+struct NameGCD { static constexpr auto name = "gcd"; };
+
 template <typename A, typename B>
-struct GCDImpl
+struct GCDImpl : public GCDLCMImpl<A, B, GCDImpl<A, B>, NameGCD>
 {
-    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
+    using ResultType = typename GCDLCMImpl<A, B, GCDImpl, NameGCD>::ResultType;
 
-    template <typename Result = ResultType>
-    static inline Result apply([[maybe_unused]] A a, [[maybe_unused]] B b)
+    static ResultType applyImpl(A a, B b)
     {
-        if constexpr (is_big_int_v<A> || is_big_int_v<B> || is_big_int_v<Result>)
-            throw Exception("GCD is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-        else
-        {
-            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-            throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-            return std::gcd(
-                typename NumberTraits::ToInteger<Result>::Type(a),
-                typename NumberTraits::ToInteger<Result>::Type(b));
-        }
+        using Int = typename NumberTraits::ToInteger<ResultType>::Type;
+        return std::gcd(Int(a), Int(b));
     }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
-#endif
 };
 
-struct NameGCD { static constexpr auto name = "gcd"; };
-using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false>;
+using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, false>;
 
 }
 

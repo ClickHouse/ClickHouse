@@ -65,6 +65,16 @@ static IColumn & extractNestedColumn(IColumn & column)
     return assert_cast<ColumnMap &>(column).getNestedColumn();
 }
 
+DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
+{
+    return nested->tryGetSubcolumnType(subcolumn_name);
+}
+
+ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
+{
+    return nested->getSubcolumn(subcolumn_name, extractNestedColumn(column));
+}
+
 void DataTypeMap::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const auto & map = get<const Map &>(field);

@@ -58,6 +58,9 @@ public:
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start()
     {
+        /// Update once right now, to make metrics available just after server start
+        /// (without waiting for asynchronous_metrics_update_period_s).
+        update();
         thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
     }
 
