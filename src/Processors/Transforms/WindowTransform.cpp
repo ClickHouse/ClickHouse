@@ -254,7 +254,8 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset);
+        window_description.frame.begin_offset
+            * (window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
 
@@ -289,41 +290,123 @@ void WindowTransform::advanceFrameStartRowsOffset()
     assert(offset_left >= 0);
 }
 
-void WindowTransform::advanceFrameStartChoose()
+template <typename ColumnType>
+static bool isBeforeFrameStart(const ColumnType * compared_column,
+    size_t compared_row, const ColumnType * reference_column,
+    size_t reference_row,
+    typename ColumnType::ValueType offset, bool is_preceding)
 {
-    switch (window_description.frame.begin_type)
+    // The frame is [[current_row] + begin_offset, [current_row] + end_offset]
+    // We need to return "is to the left of frame", that is,
+    // [tested_row] < [current_row] + begin_offset
+    // 1) right side overflows to positive, the condition is
+    // false.
+    // 2) [frame_start] + begin_offset overflows to negative, the condition is
+    // false.
+    // 3) no overflows, perform the comparison normally
+
+    const auto compared_value_data = compared_column->getDataAt(compared_row);
+    assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
+    auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
+        compared_value_data.data);
+
+    const auto reference_value_data = reference_column->getDataAt(reference_row);
+    assert(reference_value_data.size == sizeof(typename ColumnType::ValueType));
+    auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
+        reference_value_data.data);
+
+    bool is_overflow;
+    bool overflow_to_negative;
+    if (is_preceding)
     {
-        case WindowFrame::BoundaryType::Unbounded:
-            // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
-            // the new partition starts.
-            frame_started = true;
-            return;
-        case WindowFrame::BoundaryType::Current:
-            // CURRENT ROW differs between frame types only in how the peer
-            // groups are accounted.
-            assert(partition_start <= peer_group_start);
-            assert(peer_group_start < partition_end);
-            assert(peer_group_start <= current_row);
-            frame_start = peer_group_start;
-            frame_started = true;
-            return;
-        case WindowFrame::BoundaryType::Offset:
-            switch (window_description.frame.type)
-            {
-                case WindowFrame::FrameType::Rows:
-                    advanceFrameStartRowsOffset();
-                    return;
-                default:
-                    // Fallthrough to the "not implemented" error.
-                    break;
-            }
-            break;
+        // The frame start is ref] - offset, inclusive. We answer
+        // "is compared row to the left of the frame?", i.e.
+        // [compared] < [ref] - offset.
+        is_overflow = __builtin_sub_overflow(reference_value, offset,
+            &reference_value);
+        overflow_to_negative = offset > 0;
+    }
+    else
+    {
+        // The frame start is [ref] + offset, inclusive. We answer
+        // "is compared row to the left of the frame?", i.e.
+        // [compared] < [ref] + offset.
+        is_overflow = __builtin_add_overflow(reference_value, offset,
+            &reference_value);
+        overflow_to_negative = offset < 0;
     }
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Frame start type '{}' for frame '{}' is not implemented",
-        WindowFrame::toString(window_description.frame.begin_type),
-        WindowFrame::toString(window_description.frame.type));
+    fmt::print(stderr,
+        "compared [{}] = {}, ref [{}] = {}, offset {} overflow {} to negative {}\n",
+        compared_row, toString(compared_value),
+        reference_row, toString(reference_value),
+        toString(offset), is_overflow, overflow_to_negative);
+
+    if (is_overflow)
+    {
+        if (overflow_to_negative)
+        {
+            // Overflow to the negative, [compared] must be greater.
+            return false;
+        }
+        else
+        {
+            // Overflow to the positive, [compared] must be less.
+            return true;
+        }
+    }
+    else
+    {
+        // No overflow, compare normally.
+        return compared_value < reference_value;
+    }
+}
+
+template <typename ColumnType>
+void WindowTransform::advanceFrameStartRangeOffset()
+{
+    // [frame_start] + begin_offset < [current_row]
+    // 1) [frame_start] + begin_offset overflows to positive, the condition is
+    // false.
+    // 2) [frame_start] + begin_offset overflows to negative, the condition is
+    // false.
+    // 3) no overflows, perform the comparison normally
+
+    const auto * reference_column = assert_cast<const ColumnType *>(
+        inputAt(current_row)[order_by_indices[0]].get());
+    for (; frame_start < partition_end; advanceRowNumber(frame_start))
+    {
+        const auto * compared_column = assert_cast<const ColumnType *>(
+            inputAt(frame_start)[order_by_indices[0]].get());
+        if (!isBeforeFrameStart(compared_column, frame_start.row,
+            reference_column, current_row.row,
+            window_description.frame.begin_offset,
+            window_description.frame.begin_preceding))
+        {
+            frame_started = true;
+            return;
+        }
+    }
+
+    frame_started = partition_ended;
+}
+
+void WindowTransform::advanceFrameStartRangeOffsetDispatch()
+{
+    // Dispatch on the type of the ORDER BY column.
+    assert(order_by_indices.size() == 1);
+    const IColumn * column = inputAt(current_row)[order_by_indices[0]].get();
+
+    if (typeid_cast<const ColumnVector<UInt8> *>(column))
+    {
+        advanceFrameStartRangeOffset<ColumnVector<UInt8>>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The RANGE OFFSET frame start for '{}' ORDER BY column is not implemented",
+            demangle(typeid(*column).name()));
+    }
 }
 
 void WindowTransform::advanceFrameStart()
@@ -334,7 +417,41 @@ void WindowTransform::advanceFrameStart()
     }
 
     const auto frame_start_before = frame_start;
-    advanceFrameStartChoose();
+
+    switch (window_description.frame.begin_type)
+    {
+        case WindowFrame::BoundaryType::Unbounded:
+            // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
+            // the new partition starts.
+            frame_started = true;
+            break;
+        case WindowFrame::BoundaryType::Current:
+            // CURRENT ROW differs between frame types only in how the peer
+            // groups are accounted.
+            assert(partition_start <= peer_group_start);
+            assert(peer_group_start < partition_end);
+            assert(peer_group_start <= current_row);
+            frame_start = peer_group_start;
+            frame_started = true;
+            break;
+        case WindowFrame::BoundaryType::Offset:
+            switch (window_description.frame.type)
+            {
+                case WindowFrame::FrameType::Rows:
+                    advanceFrameStartRowsOffset();
+                    break;
+                case WindowFrame::FrameType::Range:
+                    advanceFrameStartRangeOffsetDispatch();
+                    break;
+                default:
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Frame start type '{}' for frame '{}' is not implemented",
+                        WindowFrame::toString(window_description.frame.begin_type),
+                        WindowFrame::toString(window_description.frame.type));
+            }
+            break;
+    }
+
     assert(frame_start_before <= frame_start);
     if (frame_start == frame_start_before)
     {
@@ -474,7 +591,9 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset + 1);
+        window_description.frame.end_offset
+            * (window_description.frame.end_preceding ? -1 : 1)
+            + 1);
 
     if (partition_end <= moved_row)
     {

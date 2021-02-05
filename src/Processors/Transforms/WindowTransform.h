@@ -107,8 +107,10 @@ public:
 private:
     void advancePartitionEnd();
     void advanceFrameStart();
-    void advanceFrameStartChoose();
     void advanceFrameStartRowsOffset();
+    void advanceFrameStartRangeOffsetDispatch();
+    template <typename T>
+    void advanceFrameStartRangeOffset();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
     void advanceFrameEndRowsOffset();

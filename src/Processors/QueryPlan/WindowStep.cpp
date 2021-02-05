@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
@@ -55,9 +60,21 @@ WindowStep::WindowStep(const DataStream & input_stream_,
     , window_functions(window_functions_)
     , input_header(input_stream_.header)
 {
+    const auto & frame = window_description.frame;
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
-    window_description.frame.checkValid();
+    frame.checkValid();
+
+    // RANGE OFFSET requires exactly one ORDER BY column.
+    if (frame.type == WindowFrame::FrameType::Range
+        && (frame.begin_type == WindowFrame::BoundaryType::Offset
+            || frame.end_type == WindowFrame::BoundaryType::Offset)
+        && window_description.order_by.size() != 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The RANGE OFFSET window frame requires exactly one ORDER BY column, {} given",
+            window_description.order_by.size());
+    }
 }
 
 void WindowStep::transformPipeline(QueryPipeline & pipeline)
