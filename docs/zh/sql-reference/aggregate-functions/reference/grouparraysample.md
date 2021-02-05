@@ -15,9 +15,9 @@ groupArraySample(max_size[, seed])(x)
 
 **参数**
 
--   `max_size` — 结果数组的最大长度. [UInt64](../../data-types/int-uint.md)。
--   `seed` — 随机数发生器的种子. 可选。 [UInt64](../../data-types/int-uint.md)。 默认值: `123456`。
--   `x` — 参数 (列名 或者 表达式).
+-   `max_size` — 结果数组的最大长度。[UInt64](../../data-types/int-uint.md)。
+-   `seed` — 随机数发生器的种子。可选。[UInt64](../../data-types/int-uint.md)。默认值: `123456`。
+-   `x` — 参数 (列名 或者 表达式)。
 
 **返回值**
 

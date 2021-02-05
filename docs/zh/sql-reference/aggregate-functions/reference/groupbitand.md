@@ -4,23 +4,25 @@ toc_priority: 125
 
 # groupBitAnd {#groupbitand}
 
-Applies bitwise `AND` for series of numbers.
+对于数字序列按位应用 `AND` 。
+
+**语法**
 
 ``` sql
 groupBitAnd(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – 结果为 `UInt*` 类型的表达式。
 
-**Return value**
+**返回值**
 
-Value of the `UInt*` type.
+`UInt*` 类型的值。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 binary     decimal
@@ -30,15 +32,15 @@ binary     decimal
 01010101 = 85
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitAnd(num) FROM t
 ```
 
-Where `num` is the column with the test data.
+`num` 是包含测试数据的列。
 
-Result:
+结果:
 
 ``` text
 binary     decimal
