@@ -7,9 +7,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', user_configs=["configs/users.d/assign_myquota.xml",
+instance = cluster.add_instance('instance', user_configs=["configs/users.d/assign_myquota_to_default_user.xml",
                                                           "configs/users.d/drop_default_quota.xml",
-                                                          "configs/users.d/quota.xml"])
+                                                          "configs/users.d/myquota.xml",
+                                                          "configs/users.d/user_with_no_quota.xml"])
 
 
 def check_system_quotas(canonical):
@@ -49,9 +50,11 @@ def system_quotas_usage(canonical):
 def copy_quota_xml(local_file_name, reload_immediately=True):
     script_dir = os.path.dirname(os.path.realpath(__file__))
     instance.copy_file_to_container(os.path.join(script_dir, local_file_name),
-                                    '/etc/clickhouse-server/users.d/quota.xml')
+                                    '/etc/clickhouse-server/users.d/myquota.xml')
     if reload_immediately:
-        instance.query("SYSTEM RELOAD CONFIG")
+         # We use the special user 'user_with_no_quota' here because
+         # we don't want SYSTEM RELOAD CONFIG to mess our quota consuming checks.
+        instance.query("SYSTEM RELOAD CONFIG", user='user_with_no_quota')
 
 
 @pytest.fixture(scope="module", autouse=True)
