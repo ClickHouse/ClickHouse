@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
+#include <Common/ServerUUIDFile.h>
 #include <Common/StatusFile.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -217,6 +218,7 @@ try
     tryInitPath();
 
     std::optional<StatusFile> status;
+    std::optional<ServerUUIDFile> server_uuid;
 
     /// Skip temp path installation
 
@@ -279,6 +281,7 @@ try
 
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
+        server_uuid.emplace(path + "uuid", ServerUUIDFile::write_server_uuid);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         Poco::File(path + "data/").createDirectories();
