@@ -27,6 +27,7 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
+    librdkafka-dev \
     gdb \
     software-properties-common \
     libkrb5-dev \
