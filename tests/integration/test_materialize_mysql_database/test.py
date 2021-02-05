@@ -229,3 +229,9 @@ def test_clickhouse_killed_while_insert_5_7(started_cluster, started_mysql_5_7, 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_atomic])
 def test_clickhouse_killed_while_insert_8_0(started_cluster, started_mysql_8_0, clickhouse_node):
     materialize_with_ddl.clickhouse_killed_while_insert(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.multi_table_update_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
