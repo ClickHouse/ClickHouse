@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
