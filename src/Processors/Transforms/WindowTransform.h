@@ -106,16 +106,23 @@ public:
 
 private:
     void advancePartitionEnd();
-    void advanceFrameStart();
+
+    bool arePeers(const RowNumber & x, const RowNumber & y) const;
+
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffsetDispatch();
-    template <typename T>
+    template <typename ColumnType>
     void advanceFrameStartRangeOffset();
+    void advanceFrameStart();
+
+    void advanceFrameEndRowsOffset();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
-    void advanceFrameEndRowsOffset();
     void advanceFrameEnd();
-    bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    void advanceFrameEndRangeOffsetDispatch();
+    template <typename ColumnType>
+    void advanceFrameEndRangeOffset();
+
     void updateAggregationState();
     void writeOutCurrentRow();
 
