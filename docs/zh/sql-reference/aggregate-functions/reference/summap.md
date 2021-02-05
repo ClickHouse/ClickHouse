@@ -4,17 +4,21 @@ toc_priority: 141
 
 # sumMap {#agg_functions-summap}
 
-Syntax: `sumMap(key, value)` or `sumMap(Tuple(key, value))`
+**语法**
 
-Totals the `value` array according to the keys specified in the `key` array.
+``` sql
+`sumMap(key, value)`
+或
+`sumMap(Tuple(key, value))`
+```
 
-Passing tuple of keys and values arrays is a synonym to passing two arrays of keys and values.
+根据 `key` 数组中指定的键对 `value` 数组进行求和。
 
-The number of elements in `key` and `value` must be the same for each row that is totaled.
+传递键和值数组的元组与传递两个键和值数组是同义的。
+要总计的每一行的 `key` 和 `value` (数组)元素的数量必须相同。
+返回两个数组组成的一个元组: 排好序的 `key` 和对应 `key` 的 `value` 之和。
 
-Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
-
-Example:
+示例:
 
 ``` sql
 CREATE TABLE sum_map(

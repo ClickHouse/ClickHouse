@@ -4,21 +4,23 @@ toc_priority: 129
 
 # groupBitmapAnd {#groupbitmapand}
 
-Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
+计算位图列的 `AND` ，返回 `UInt64` 类型的基数，如果添加后缀 `State` ，则返回 [位图对象](../../../sql-reference/functions/bitmap-functions.md)。
+
+**语法**
 
 ``` sql
 groupBitmapAnd(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+`expr` – 结果为 `AggregateFunction(groupBitmap, UInt*)` 类型的表达式。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+`UInt64` 类型的值。
 
-**Example**
+**示例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;

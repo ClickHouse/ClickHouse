@@ -4,23 +4,25 @@ toc_priority: 128
 
 # groupBitmap {#groupbitmap}
 
-Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
+从无符号整数列进行位图或聚合计算，返回 `UInt64` 类型的基数，如果添加后缀 `State` ，则返回[位图对象](../../../sql-reference/functions/bitmap-functions.md)。
+
+**语法**
 
 ``` sql
 groupBitmap(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` –  结果为 `UInt*` 类型的表达式。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+`UInt64` 类型的值。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 UserID
@@ -30,13 +32,13 @@ UserID
 3
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 num
