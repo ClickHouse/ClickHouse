@@ -16,7 +16,7 @@ anyHeavy(column)
 
 **示例**
 
-使用 [OnTime](../../getting-started/example-datasets/ontime.md) 数据集，并选择在 `AirlineID` 列任何频繁出现的值。
+使用 [OnTime](../../../getting-started/example-datasets/ontime.md) 数据集，并选择在 `AirlineID` 列任何频繁出现的值。
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
