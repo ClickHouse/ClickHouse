@@ -59,7 +59,7 @@ ActionsDAGPtr addMissingDefaults(
     for (const auto & column : required_columns)
     {
         if (header.has(column.name))
-            actions->addInput(header.getByName(column.name));
+            continue;
 
         if (columns.hasDefault(column.name))
             continue;
