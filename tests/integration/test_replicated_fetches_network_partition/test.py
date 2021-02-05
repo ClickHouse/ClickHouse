@@ -82,6 +82,7 @@ def test_no_stall(started_cluster):
 
             time.sleep(3)
 
-    node1.query("DROP TABLE t SYNC")
-    node2.query("DROP TABLE t SYNC")
-    node3.query("DROP TABLE t SYNC")
+    for n in [node1, node2, node3]:
+        # Workaround for drop not finishing if it is started while table is readonly.
+        n.query("SYSTEM RESTART REPLICA t")
+        n.query("DROP TABLE t SYNC")
