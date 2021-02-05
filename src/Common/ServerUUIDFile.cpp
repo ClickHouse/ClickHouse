@@ -42,13 +42,12 @@ ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer 
     random.words.a = thread_local_rng(); //-V656
     random.words.b = thread_local_rng(); //-V656
 
-    struct QueryUUID : Poco::UUID
+    struct ServerUUID : Poco::UUID
     {
-        QueryUUID(const char * bytes, Poco::UUID::Version version)
-            : Poco::UUID(bytes, version) {}
+        ServerUUID(const char * bytes, Poco::UUID::Version version) : Poco::UUID(bytes, version) { }
     };
 
-    auto server_uuid = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+    auto server_uuid = ServerUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
 
     out << server_uuid;
 };
