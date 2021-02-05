@@ -22,6 +22,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -324,6 +325,51 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
+void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
+{
+    switch (fuzz_rand() % 40)
+    {
+        case 0:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.type = r == 0 ? WindowFrame::FrameType::Rows
+                : r == 1 ? WindowFrame::FrameType::Range
+                    : WindowFrame::FrameType::Groups;
+            break;
+        }
+        case 1:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.begin_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 2:
+        {
+            const auto r = fuzz_rand() % 3;
+            frame.end_type = r == 0 ? WindowFrame::BoundaryType::Unbounded
+                : r == 1 ? WindowFrame::BoundaryType::Current
+                    : WindowFrame::BoundaryType::Offset;
+            break;
+        }
+        case 3:
+        {
+            frame.begin_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        case 4:
+        {
+            frame.end_offset = getRandomField(0).get<Int64>();
+            break;
+        }
+        default:
+            break;
+    }
+
+    frame.is_default = (frame == WindowFrame{});
+}
+
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -403,10 +449,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (fn->is_window_function)
+        if (fn->is_window_function && fn->window_definition)
         {
-            fuzzColumnLikeExpressionList(fn->window_partition_by.get());
-            fuzzOrderByList(fn->window_order_by.get());
+            auto & def = fn->window_definition->as<ASTWindowDefinition &>();
+            fuzzColumnLikeExpressionList(def.partition_by.get());
+            fuzzOrderByList(def.order_by.get());
+            fuzzWindowFrame(def.frame);
         }
 
         fuzz(fn->children);
@@ -419,6 +467,23 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(select->children);
     }
+    /*
+     * The time to fuzz the settings has not yet come.
+     * Apparently we don't have any infractructure to validate the values of
+     * the settings, and the first query with max_block_size = -1 breaks
+     * because of overflows here and there.
+     *//*
+     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+     * {
+     *      for (auto & c : set->changes)
+     *      {
+     *          if (fuzz_rand() % 50 == 0)
+     *          {
+     *              c.value = fuzzField(c.value);
+     *          }
+     *      }
+     * }
+     */
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the
@@ -477,7 +542,7 @@ void QueryFuzzer::addTableLike(const ASTPtr ast)
 {
     if (table_like_map.size() > 1000)
     {
-        return;
+        table_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -491,7 +556,7 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
 {
     if (column_like_map.size() > 1000)
     {
-        return;
+        column_like_map.clear();
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -505,10 +570,12 @@ void QueryFuzzer::collectFuzzInfoRecurse(const ASTPtr ast)
 {
     if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
-        if (aliases_set.size() < 1000)
+        if (aliases_set.size() > 1000)
         {
-            aliases_set.insert(impl->alias);
+            aliases_set.clear();
         }
+
+        aliases_set.insert(impl->alias);
     }
 
     if (typeid_cast<ASTLiteral *>(ast.get()))

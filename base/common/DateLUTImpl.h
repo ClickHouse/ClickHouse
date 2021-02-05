@@ -229,8 +229,12 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
+        UInt16 idx = year - DATE_LUT_MIN_YEAR;
+        if (unlikely(idx >= DATE_LUT_YEARS))
+            return 31;  /// Implementation specific behaviour on overflow.
+
         /// 32 makes arithmetic more simple.
-        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
+        DayNum any_day_of_month = DayNum(years_lut[idx] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
@@ -272,6 +276,31 @@ public:
             res += lut[index].amount_of_offset_change;
 
         return res / 3600;
+    }
+
+    /** Calculating offset from UTC in seconds.
+     * which means Using the same literal time of "t" to get the corresponding timestamp in UTC,
+     * then subtract the former from the latter to get the offset result.
+     * The boundaries when meets DST(daylight saving time) change should be handled very carefully.
+     */
+    inline time_t timezoneOffset(time_t t) const
+    {
+        DayNum index = findIndex(t);
+
+        /// Calculate daylight saving offset first.
+        /// Because the "amount_of_offset_change" in LUT entry only exists in the change day, it's costly to scan it from the very begin.
+        /// but we can figure out all the accumulated offsets from 1970-01-01 to that day just by get the whole difference between lut[].date,
+        /// and then, we can directly subtract multiple 86400s to get the real DST offsets for the leap seconds is not considered now.
+        time_t res = (lut[index].date - lut[0].date) % 86400;
+        /// As so far to know, the maximal DST offset couldn't be more than 2 hours, so after the modulo operation the remainder
+        /// will sits between [-offset --> 0 --> offset] which respectively corresponds to moving clock forward or backward.
+        res = res > 43200 ? (86400 - res) : (0 - res);
+
+        /// Check if has a offset change during this day. Add the change when cross the line
+        if (lut[index].amount_of_offset_change != 0 && t >= lut[index].date + lut[index].time_at_offset_change)
+            res += lut[index].amount_of_offset_change;
+
+        return res + offset_at_start_of_epoch;
     }
 
     /** Only for time zones with/when offset from UTC is multiple of five minutes.
@@ -767,7 +796,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline time_t addDays(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
         DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -780,7 +809,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline time_t addWeeks(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
@@ -812,7 +841,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addMonths(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addMonths(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -836,18 +865,18 @@ public:
         }
     }
 
-    inline time_t addQuarters(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addQuarters(time_t t, Int64 delta) const
     {
         return addMonths(t, delta * 3);
     }
 
-    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addQuarters(DayNum d, Int64 delta) const
     {
         return addMonths(d, delta * 3);
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    inline time_t addYears(time_t t, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED time_t addYears(time_t t, Int64 delta) const
     {
         DayNum result_day = addYears(toDayNum(t), delta);
 
@@ -859,7 +888,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum addYears(DayNum d, Int64 delta) const
+    inline NO_SANITIZE_UNDEFINED DayNum addYears(DayNum d, Int64 delta) const
     {
         const Values & values = lut[d];
 
