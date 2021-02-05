@@ -40,7 +40,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
-    void ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
 
@@ -59,7 +59,7 @@ public:
         }
     }
 
-    void ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if ((this->data(place).last < this->data(rhs).first) && this->data(place).seen_last && this->data(rhs).seen_first)
         {
