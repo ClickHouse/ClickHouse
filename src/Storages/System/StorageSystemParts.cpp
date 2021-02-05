@@ -68,6 +68,14 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"recompression_ttl_info.expression",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"recompression_ttl_info.min",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"recompression_ttl_info.max",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"group_by_ttl_info.expression",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"group_by_ttl_info.min",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"group_by_ttl_info.max",                       std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
     }
     )
 {
@@ -181,6 +189,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(queryToString(part->default_codec->getCodecDesc()));
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
+        add_ttl_info_map(part->ttl_infos.group_by_ttl);
+        add_ttl_info_map(part->ttl_infos.rows_where_ttl);
 
         /// _state column should be the latest.
         if (has_state_column)

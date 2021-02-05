@@ -114,6 +114,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 
@@ -3619,6 +3620,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     const auto data_parts = getDataParts();
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
+    String backup_path = shadow_path + backup_name + "/";
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+        disk->onFreeze(backup_path);
 
     PartitionCommandsResultInfo result;
 
@@ -3628,11 +3633,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
         if (!matcher(part))
             continue;
 
-        part->volume->getDisk()->createDirectories(shadow_path);
-
-        String backup_path = shadow_path + backup_name + "/";
-
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+
+        part->volume->getDisk()->createDirectories(backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
         if (auto part_in_memory = asInMemoryPart(part))
@@ -3987,5 +3990,25 @@ void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
     total_active_size_bytes.store(bytes, std::memory_order_release);
     total_active_size_rows.store(rows, std::memory_order_release);
     total_active_size_parts.store(parts, std::memory_order_release);
+}
+
+void MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
+{
+    std::lock_guard lock(query_id_set_mutex);
+    if (query_id_set.find(query_id) != query_id_set.end())
+        return;
+    if (query_id_set.size() >= max_queries)
+        throw Exception(
+            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
+    query_id_set.insert(query_id);
+}
+
+void MergeTreeData::removeQueryId(const String & query_id) const
+{
+    std::lock_guard lock(query_id_set_mutex);
+    if (query_id_set.find(query_id) == query_id_set.end())
+        LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
+    else
+        query_id_set.erase(query_id);
 }
 }
