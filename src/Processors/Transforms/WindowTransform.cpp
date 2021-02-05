@@ -63,6 +63,35 @@ WindowTransform::WindowTransform(const Block & input_header_,
         order_by_indices.push_back(
             input_header.getPositionByName(column.column_name));
     }
+
+// FIXME this is just all wrong. Disabled desc order for now.
+    if (window_description.frame.type == WindowFrame::FrameType::Range
+        && window_description.order_by.size() == 1
+        && window_description.order_by[0].direction < 0)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ORDER BY DESC for RANGE frames is not implemented");
+    }
+//     // If we have at least one RANGE OFFSET frame boundary, no UNBOUNDED frame
+//     // boundaries, and the ORDER BY is DESC, we have to swap the frame end
+//     // and frame start. This is tricky and I'm not sure how to explain the
+//     // reason, so I can only suggest to draw various RANGE OFFSET frames with
+//     // ASC and DESC orders to understand...
+//     // swap is a no-op if both frames are CURRENT ROW, so use a simpler condition.
+//     auto & frame = window_description.frame;
+//     if (frame.type == WindowFrame::FrameType::Range
+//         && (frame.end_type != WindowFrame::BoundaryType::Unbounded
+//             && frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+//         && window_description.order_by.size() == 1
+//         && window_description.order_by[0].direction < 0)
+//     {
+//         std::swap(frame.begin_type, frame.end_type);
+//         std::swap(frame.begin_preceding, frame.end_preceding);
+//         std::swap(frame.begin_offset, frame.end_offset);
+//
+//         fmt::print(stderr, "swapped frame boundaries\n");
+//     }
+
 }
 
 WindowTransform::~WindowTransform()
@@ -290,21 +319,16 @@ void WindowTransform::advanceFrameStartRowsOffset()
     assert(offset_left >= 0);
 }
 
+// Compares ORDER BY column values at given rows to find the boundaries of frame:
+// [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
+// sorting predicates -- -1 means [compared] is less than [reference] +/- offset.
 template <typename ColumnType>
-static bool isBeforeFrameStart(const ColumnType * compared_column,
+static int compareValuesWithOffset(const ColumnType * compared_column,
     size_t compared_row, const ColumnType * reference_column,
     size_t reference_row,
-    typename ColumnType::ValueType offset, bool is_preceding)
+    typename ColumnType::ValueType offset,
+    bool offset_is_preceding)
 {
-    // The frame is [[current_row] + begin_offset, [current_row] + end_offset]
-    // We need to return "is to the left of frame", that is,
-    // [tested_row] < [current_row] + begin_offset
-    // 1) right side overflows to positive, the condition is
-    // false.
-    // 2) [frame_start] + begin_offset overflows to negative, the condition is
-    // false.
-    // 3) no overflows, perform the comparison normally
-
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
     auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
@@ -317,20 +341,14 @@ static bool isBeforeFrameStart(const ColumnType * compared_column,
 
     bool is_overflow;
     bool overflow_to_negative;
-    if (is_preceding)
+    if (offset_is_preceding)
     {
-        // The frame start is ref] - offset, inclusive. We answer
-        // "is compared row to the left of the frame?", i.e.
-        // [compared] < [ref] - offset.
         is_overflow = __builtin_sub_overflow(reference_value, offset,
             &reference_value);
         overflow_to_negative = offset > 0;
     }
     else
     {
-        // The frame start is [ref] + offset, inclusive. We answer
-        // "is compared row to the left of the frame?", i.e.
-        // [compared] < [ref] + offset.
         is_overflow = __builtin_add_overflow(reference_value, offset,
             &reference_value);
         overflow_to_negative = offset < 0;
@@ -347,41 +365,39 @@ static bool isBeforeFrameStart(const ColumnType * compared_column,
         if (overflow_to_negative)
         {
             // Overflow to the negative, [compared] must be greater.
-            return false;
+            return 1;
         }
         else
         {
             // Overflow to the positive, [compared] must be less.
-            return true;
+            return -1;
         }
     }
     else
     {
         // No overflow, compare normally.
-        return compared_value < reference_value;
+        return compared_value < reference_value ? -1
+            : compared_value == reference_value ? 0 : 1;
     }
 }
 
 template <typename ColumnType>
 void WindowTransform::advanceFrameStartRangeOffset()
 {
-    // [frame_start] + begin_offset < [current_row]
-    // 1) [frame_start] + begin_offset overflows to positive, the condition is
-    // false.
-    // 2) [frame_start] + begin_offset overflows to negative, the condition is
-    // false.
-    // 3) no overflows, perform the comparison normally
-
+    const int direction = window_description.order_by[0].direction;
     const auto * reference_column = assert_cast<const ColumnType *>(
         inputAt(current_row)[order_by_indices[0]].get());
     for (; frame_start < partition_end; advanceRowNumber(frame_start))
     {
+        // The first frame value is [current_row] with offset, so we advance
+        // while [frames_start] < [current_row] with offset.
         const auto * compared_column = assert_cast<const ColumnType *>(
             inputAt(frame_start)[order_by_indices[0]].get());
-        if (!isBeforeFrameStart(compared_column, frame_start.row,
+        if (compareValuesWithOffset(compared_column, frame_start.row,
             reference_column, current_row.row,
             window_description.frame.begin_offset,
-            window_description.frame.begin_preceding))
+            window_description.frame.begin_preceding)
+                * direction >= 0)
         {
             frame_started = true;
             return;
@@ -400,6 +416,10 @@ void WindowTransform::advanceFrameStartRangeOffsetDispatch()
     if (typeid_cast<const ColumnVector<UInt8> *>(column))
     {
         advanceFrameStartRangeOffset<ColumnVector<UInt8>>();
+    }
+    else if(typeid_cast<const ColumnVector<Int8> *>(column))
+    {
+        advanceFrameStartRangeOffset<ColumnVector<Int8>>();
     }
     else
     {
@@ -621,6 +641,55 @@ void WindowTransform::advanceFrameEndRowsOffset()
     assert(offset_left >= 0);
 }
 
+template <typename ColumnType>
+void WindowTransform::advanceFrameEndRangeOffset()
+{
+    const int direction = window_description.order_by[0].direction;
+    const auto * reference_column = assert_cast<const ColumnType *>(
+        inputAt(current_row)[order_by_indices[0]].get());
+    for (; frame_end < partition_end; advanceRowNumber(frame_end))
+    {
+        // The last frame value is current_row with offset, and we need a
+        // past-the-end pointer, so we advance while
+        // [frame_end] <= [current_row] with offset.
+        const auto * compared_column = assert_cast<const ColumnType *>(
+            inputAt(frame_end)[order_by_indices[0]].get());
+        if (compareValuesWithOffset(compared_column, frame_end.row,
+            reference_column, current_row.row,
+            window_description.frame.end_offset,
+            window_description.frame.end_preceding)
+                * direction > 0)
+        {
+            frame_ended = true;
+            return;
+        }
+    }
+
+    frame_ended = partition_ended;
+}
+
+void WindowTransform::advanceFrameEndRangeOffsetDispatch()
+{
+    // Dispatch on the type of the ORDER BY column.
+    assert(order_by_indices.size() == 1);
+    const IColumn * column = inputAt(current_row)[order_by_indices[0]].get();
+
+    if (typeid_cast<const ColumnVector<UInt8> *>(column))
+    {
+        advanceFrameEndRangeOffset<ColumnVector<UInt8>>();
+    }
+    else if (typeid_cast<const ColumnVector<Int8> *>(column))
+    {
+        advanceFrameEndRangeOffset<ColumnVector<Int8>>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The RANGE OFFSET frame end for '{}' ORDER BY column is not implemented",
+            demangle(typeid(*column).name()));
+    }
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -641,6 +710,9 @@ void WindowTransform::advanceFrameEnd()
             {
                 case WindowFrame::FrameType::Rows:
                     advanceFrameEndRowsOffset();
+                    break;
+                case WindowFrame::FrameType::Range:
+                    advanceFrameEndRangeOffsetDispatch();
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
