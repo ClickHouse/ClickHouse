@@ -626,7 +626,8 @@ void ActionsDAG::addMaterializingOutputActions()
                             std::make_shared<FunctionMaterialize>()));
 
     Index new_index;
-    for (auto * node : index)
+    std::vector<Node *> index_nodes(index.begin(), index.end());
+    for (auto * node : index_nodes)
     {
         auto & name = node->result_name;
         node = &addFunction(func_builder_materialize, {node}, {}, true);
