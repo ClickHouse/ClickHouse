@@ -435,6 +435,87 @@ Result:
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
+## date\_add {#date_add}
+
+Adds specified date/time interval to the provided date.
+
+**Syntax** 
+
+``` sql
+date_add(unit, value, date)
+```
+
+Aliases: `dateAdd`, `DATE_ADD`. 
+
+**Parameters**
+
+-   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+-   `value` - Amount of the specified unit of time.    
+-   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+
+**Example**
+
+```sql
+select DATE_ADD(YEAR, 3, toDate('2018-01-01'));
+```
+
+```text
+┌─plus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                    2021-01-01 │
+└───────────────────────────────────────────────┘
+```
+
+## date\_diff {#date_diff}
+
+Returns the difference between two dates in terms of the specified unit.
+
+**Syntax** 
+
+``` sql
+date_sub(unit, date1, date2)
+```
+
+Aliases: `date_diff`, `DATE_DIFF`. 
+
+**Parameters**
+
+-   `unit` - The unit of time - [String](../syntax.md#syntax-string-literal).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+    
+-   `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+select DATE_DIFF(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
+```
+
+```text
+┌─dateDiff('month', toDate('2018-12-18'), toDate('2018-01-01'))─┐
+│                                                           -11 │
+└───────────────────────────────────────────────────────────────┘
+```
+    
 ## now {#now}
 
 Returns the current date and time. 
