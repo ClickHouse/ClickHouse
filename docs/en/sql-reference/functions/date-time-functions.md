@@ -380,7 +380,7 @@ Alias: `dateTrunc`.
 
 **Parameters**
 
--   `unit` — Part of date. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -449,7 +449,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 -   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
@@ -486,7 +486,7 @@ Aliases: `dateDiff`, `DATE_DIFF`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 
@@ -534,7 +534,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
     
 -   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 
@@ -568,11 +568,11 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
-- `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md).   
-- `date`- [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md).   
+-   `date`- [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
