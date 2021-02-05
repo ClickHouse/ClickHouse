@@ -12,6 +12,10 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 要输出所有根节点的数据，write path= ‘/’.
 如果在指定的路径 ‘path’ 不存在，将引发异常。
 
+查询`SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` 输出`/` 和 `/clickhouse`节点上所有子节点的数据。
+如果在指定的 ‘path’ 集合中有不存在的路径，将引发异常。
+它可以用来做一批ZooKeeper路径查询。
+
 列:
 
 -   `name` (String) — The name of the node.
