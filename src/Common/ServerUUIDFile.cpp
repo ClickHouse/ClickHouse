@@ -1,33 +1,33 @@
 #include "ServerUUIDFile.h"
 
-#include <sys/file.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/file.h>
 
 #include <Poco/File.h>
 #include <Poco/UUID.h>
-#include <common/logger_useful.h>
 #include <common/errnoToString.h>
+#include <common/logger_useful.h>
 
-#include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-extern const int CANNOT_OPEN_FILE;
-extern const int CANNOT_CLOSE_FILE;
-extern const int CANNOT_TRUNCATE_FILE;
-extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 
-ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer & out) {
+ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer & out)
+{
     union
     {
         char bytes[16];
@@ -53,8 +53,7 @@ ServerUUIDFile::FillFunction ServerUUIDFile::write_server_uuid = [](WriteBuffer 
 };
 
 
-ServerUUIDFile::ServerUUIDFile(std::string path_, FillFunction fill_)
-    : path(std::move(path_)), fill(std::move(fill_))
+ServerUUIDFile::ServerUUIDFile(std::string path_, FillFunction fill_) : path(std::move(path_)), fill(std::move(fill_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (Poco::File(path).exists())
@@ -67,9 +66,16 @@ ServerUUIDFile::ServerUUIDFile(std::string path_, FillFunction fill_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Poco::Logger::get("ServerUUIDFile"), "Server UUID file {} already exists - unclean restart. Contents:\n{}", path, contents);
+            LOG_INFO(
+                &Poco::Logger::get("ServerUUIDFile"),
+                "Server UUID file {} already exists - unclean restart. Contents:\n{}",
+                path,
+                contents);
         else
-            LOG_INFO(&Poco::Logger::get("ServerUUIDFile"), "Server UUID file {} already exists and is empty - probably unclean hardware restart.", path);
+            LOG_INFO(
+                &Poco::Logger::get("ServerUUIDFile"),
+                "Server UUID file {} already exists and is empty - probably unclean hardware restart.",
+                path);
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
@@ -83,7 +89,9 @@ ServerUUIDFile::ServerUUIDFile(std::string path_, FillFunction fill_)
         if (-1 == flock_ret)
         {
             if (errno == EWOULDBLOCK)
-                throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.", ErrorCodes::CANNOT_OPEN_FILE);
+                throw Exception(
+                    "Cannot lock file " + path + ". Another server instance in same directory is already running.",
+                    ErrorCodes::CANNOT_OPEN_FILE);
             else
                 throwFromErrnoWithPath("Cannot lock file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
         }
