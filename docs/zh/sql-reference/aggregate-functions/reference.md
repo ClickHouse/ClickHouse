@@ -252,13 +252,6 @@ uniqExact(x[, ...])
 -   [uniqHLL12](#agg_function-uniqhll12)
 
 
-## groupUniqArray(x), groupUniqArray(max_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
-
-从不同的参数值创建一个数组。 内存消耗是一样的 `uniqExact` 功能。
-
-第二个版本（`max_size` 参数）将结果数组的大小限制为 `max_size` 元素。
-例如, `groupUniqArray(1)(x)` 相当于 `[any(x)]`.
-
 ## quantile {#quantile}
 
 计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
