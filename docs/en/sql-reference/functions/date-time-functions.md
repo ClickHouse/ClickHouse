@@ -456,6 +456,10 @@ Aliases: `dateAdd`, `DATE_ADD`.
 -   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 
+**Returned value**
+
+Returns Date or DateTime with `value` expressed in `unit` added to `date`. 
+
 **Example**
 
 ```sql
@@ -477,6 +481,8 @@ Returns the difference between two Date or DateTime values.
 ``` sql
 date_diff('unit', startdate, enddate, [timezone])
 ```
+
+Aliases: `dateDiff`, `DATE_DIFF`. 
 
 **Parameters**
 
@@ -531,6 +537,10 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 -   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
+
+**Returned value**
+
+Returns Date or DateTime with the specified `value`  expressed in `unit` added to `date`. 
     
 **Example**
 
@@ -562,7 +572,11 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 - `value` -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
-- `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date`- [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+Difference between `date` and the specified `value` expressed in `unit`.
 
 **Example**
 
