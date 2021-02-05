@@ -143,11 +143,9 @@ public:
     const IColumn & getNestedColumn() const { return *nested_column; }
 
     const ColumnPtr & getNestedColumnPtr() const { return nested_column; }
-    ColumnPtr & getNestedColumnPtr() { return nested_column; }
 
     /// Return the column that represents the byte map.
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
-    ColumnPtr & getNullMapColumnPtr() { return null_map; }
 
     ColumnUInt8 & getNullMapColumn() { return assert_cast<ColumnUInt8 &>(*null_map); }
     const ColumnUInt8 & getNullMapColumn() const { return assert_cast<const ColumnUInt8 &>(*null_map); }

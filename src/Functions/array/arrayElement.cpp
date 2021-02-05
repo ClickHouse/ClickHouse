@@ -231,7 +231,7 @@ struct ArrayElementNumImpl
                 if (builder)
                     builder.update(j);
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result[i] = data[j];
@@ -329,7 +329,7 @@ struct ArrayElementStringImpl
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
                 adjusted_index = array_size + index;
             else
                 adjusted_index = array_size;    /// means no element should be taken
@@ -427,7 +427,7 @@ struct ArrayElementGenericImpl
                 if (builder)
                     builder.update(j);
             }
-            else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+            else if (index < 0 && static_cast<size_t>(-index) <= array_size)
             {
                 size_t j = offsets[i] + index;
                 result.insertFrom(data, j);
@@ -472,24 +472,11 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
     auto col_res = ColumnVector<DataType>::create();
 
     if (index.getType() == Field::Types::UInt64)
-    {
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
             col_nested->getData(), col_array->getOffsets(), safeGet<UInt64>(index) - 1, col_res->getData(), builder);
-    }
     else if (index.getType() == Field::Types::Int64)
-    {
-        /// Cast to UInt64 before negation allows to avoid undefined behaviour for negation of the most negative number.
-        /// NOTE: this would be undefined behaviour in C++ sense, but nevertheless, compiler cannot see it on user provided data,
-        /// and generates the code that we want on supported CPU architectures (overflow in sense of two's complement arithmetic).
-        /// This is only needed to avoid UBSan report.
-
-        /// Negative array indices work this way:
-        /// arr[-1] is the element at offset 0 from the last
-        /// arr[-2] is the element at offset 1 from the last and so on.
-
         ArrayElementNumImpl<DataType>::template vectorConst<true>(
-            col_nested->getData(), col_array->getOffsets(), -(UInt64(safeGet<Int64>(index)) + 1), col_res->getData(), builder);
-    }
+            col_nested->getData(), col_array->getOffsets(), -safeGet<Int64>(index) - 1, col_res->getData(), builder);
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
@@ -547,7 +534,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
             col_nested->getChars(),
             col_array->getOffsets(),
             col_nested->getOffsets(),
-            -(UInt64(safeGet<Int64>(index)) + 1),
+            -safeGet<Int64>(index) - 1,
             col_res->getChars(),
             col_res->getOffsets(),
             builder);
@@ -601,7 +588,7 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
             col_nested, col_array->getOffsets(), safeGet<UInt64>(index) - 1, *col_res, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl::vectorConst<true>(
-            col_nested, col_array->getOffsets(), -(UInt64(safeGet<Int64>(index) + 1)), *col_res, builder);
+            col_nested, col_array->getOffsets(), -safeGet<Int64>(index) - 1, *col_res, builder);
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
@@ -652,7 +639,7 @@ ColumnPtr FunctionArrayElement::executeConst(const ColumnsWithTypeAndName & argu
             if (builder)
                 builder.update(j);
         }
-        else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+        else if (index < 0 && static_cast<size_t>(-index) <= array_size)
         {
             size_t j = array_size + index;
             res->insertFrom(array_elements, j);

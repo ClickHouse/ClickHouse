@@ -34,7 +34,6 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/AddingDelayedSourceStep.h>
@@ -294,13 +293,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
-    // Only propagate WITH elements to subqueries if we're not a subquery
-    if (options.subquery_depth == 0)
-    {
-        if (context->getSettingsRef().enable_global_with_statement)
-            ApplyWithAliasVisitor().visit(query_ptr);
-        ApplyWithSubqueryVisitor().visit(query_ptr);
-    }
+    if (context->getSettingsRef().enable_global_with_statement)
+        ApplyWithAliasVisitor().visit(query_ptr);
+    ApplyWithSubqueryVisitor().visit(query_ptr);
 
     JoinedTables joined_tables(getSubqueryContext(*context), getSelectQuery());
 
@@ -1260,7 +1255,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
             temp_query_info.sets = query_analyzer->getPreparedSets();
-
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, *context);
         }
         if (num_rows)
@@ -1367,12 +1361,9 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (is_alias)
                 {
                     auto column_decl = storage_columns.get(column);
-                    column_expr = column_default->expression->clone();
-                    // recursive visit for alias to alias
-                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), *context);
-
-                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), *context);
-                    column_expr = setAlias(column_expr, column);
+                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
+                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    column_expr = setAlias(cast_column_default->clone(), column);
                 }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
@@ -1584,7 +1575,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, *context);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot);
         }
 
         StreamLocalLimits limits;
