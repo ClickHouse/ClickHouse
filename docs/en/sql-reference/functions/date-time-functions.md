@@ -380,7 +380,7 @@ Alias: `dateTrunc`.
 
 **Parameters**
 
--   `unit` — Part of date. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Part of date. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -449,10 +449,10 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
--   `value` - Amount of the specified unit of time.    
+-   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
 -   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 
@@ -472,7 +472,7 @@ select date_add(YEAR, 3, toDate('2018-01-01'));
 └───────────────────────────────────────────────┘
 ```
 
-## date\_diff {#dated_diff}
+## date\_diff {#date_diff}
 
 Returns the difference between two Date or DateTime values.
 
@@ -486,7 +486,7 @@ Aliases: `dateDiff`, `DATE_DIFF`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 
@@ -533,8 +533,8 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 **Parameters**
     
 -   `date` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
--   `value` -  Amount of the specified unit of time - [String](../syntax.md#syntax-string-literal)
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 
@@ -568,10 +568,10 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Parameters**
 
--   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
-- `value` -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
+- `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md).   
 - `date`- [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
