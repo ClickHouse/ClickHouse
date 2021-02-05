@@ -19,7 +19,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
-#include <Disks/StoragePolicy.h>
+#include <Disks/IVolume.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
