@@ -222,7 +222,10 @@ StorageS3::StorageS3(
     if (access_key_id_.empty())
         credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
 
-    Aws::Client::ClientConfiguration client_configuration;
+    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+        context_.getRemoteHostFilter(),
+        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
+
     client_configuration.endpointOverride = uri_.endpoint;
     client_configuration.maxConnections = max_connections_;
 
@@ -232,9 +235,8 @@ StorageS3::StorageS3(
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         std::move(settings.headers),
-        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false)),
-        context_.getRemoteHostFilter(),
-        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
+        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false))
+    );
 }
 
 
@@ -327,7 +329,7 @@ Pipe StorageS3::read(
             context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            chooseCompressionMethod(uri.endpoint, compression_method),
+            chooseCompressionMethod(uri.key, compression_method),
             client,
             uri.bucket,
             key));
@@ -345,7 +347,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         format_name,
         metadata_snapshot->getSampleBlock(),
         global_context,
-        chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.key, compression_method),
         client,
         uri.bucket,
         uri.key,

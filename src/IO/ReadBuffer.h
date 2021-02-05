@@ -61,15 +61,10 @@ public:
         bytes += offset();
         bool res = nextImpl();
         if (!res)
-        {
-            working_buffer = Buffer(working_buffer.end(), working_buffer.end());
-            pos = working_buffer.end();
-        }
+            working_buffer = Buffer(pos, pos);
         else
-        {
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            nextimpl_working_buffer_offset = 0;
-        }
+        nextimpl_working_buffer_offset = 0;
 
         assert(position() <= working_buffer.end());
 

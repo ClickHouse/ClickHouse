@@ -25,7 +25,7 @@ protected:
             return false;
 
         /// First reading
-        if (working_buffer.size() == 0)
+        if (working_buffer.empty())
         {
             if ((*current)->hasPendingData())
             {

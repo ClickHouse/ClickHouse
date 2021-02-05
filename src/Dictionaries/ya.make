@@ -6,31 +6,25 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/poco/Data
-    contrib/libs/poco/Data/ODBC
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
 )
+
+IF (USE_ODBC)
+    PEERDIR(contrib/libs/poco/Data/ODBC)
+ENDIF ()
 
 NO_COMPILER_WARNINGS()
 
 
 SRCS(
     CacheDictionary.cpp
-    CacheDictionary_generate1.cpp
-    CacheDictionary_generate2.cpp
-    CacheDictionary_generate3.cpp
     CassandraBlockInputStream.cpp
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
-    ComplexKeyCacheDictionary_createAttributeWithType.cpp
-    ComplexKeyCacheDictionary_generate1.cpp
-    ComplexKeyCacheDictionary_generate2.cpp
-    ComplexKeyCacheDictionary_generate3.cpp
-    ComplexKeyCacheDictionary_setAttributeValue.cpp
-    ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
     ComplexKeyDirectDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
