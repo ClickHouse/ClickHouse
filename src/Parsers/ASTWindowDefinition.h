@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/WindowDescription.h>
 
 #include <Parsers/IAST.h>
 
