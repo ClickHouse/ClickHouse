@@ -27,7 +27,6 @@ RUN apt-get update \
     luajit \
     libssl-dev \
     libcurl4-openssl-dev \
-    librdkafka-dev \
     gdb \
     software-properties-common \
     libkrb5-dev \
@@ -62,7 +61,7 @@ RUN python3 -m pip install \
     aerospike \
     avro \
     cassandra-driver \
-    confluent-kafka \
+    confluent-kafka==1.5.0 \
     dict2xml \
     dicttoxml \
     docker \
