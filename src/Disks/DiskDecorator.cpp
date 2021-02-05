@@ -103,11 +103,6 @@ void DiskDecorator::replaceFile(const String & from_path, const String & to_path
     delegate->replaceFile(from_path, to_path);
 }
 
-void DiskDecorator::copyFile(const String & from_path, const String & to_path)
-{
-    delegate->copyFile(from_path, to_path);
-}
-
 void DiskDecorator::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     delegate->copy(from_path, to_disk, to_path);
@@ -183,6 +178,11 @@ Executor & DiskDecorator::getExecutor()
 SyncGuardPtr DiskDecorator::getDirectorySyncGuard(const String & path) const
 {
     return delegate->getDirectorySyncGuard(path);
+}
+
+void DiskDecorator::onFreeze(const String & path)
+{
+    delegate->onFreeze(path);
 }
 
 }
