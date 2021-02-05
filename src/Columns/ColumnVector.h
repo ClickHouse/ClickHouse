@@ -298,7 +298,7 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    void getIndicesOfNotDefaultValues(IColumn::Offsets & offsets) const override
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & offsets) const override
     {
         offsets.reserve(data.size());
         for (size_t i = 0; i < data.size(); ++i)
@@ -306,7 +306,7 @@ public:
                 offsets.push_back(i);
     }
 
-    size_t getNumberOfNotDefaultValues() const override
+    size_t getNumberOfNonDefaultValues() const override
     {
         size_t res = 0;
         for (size_t i = 0; i < data.size(); ++i)

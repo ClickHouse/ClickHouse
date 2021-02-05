@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeOneElementTuple.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 #include <Parsers/IAST.h>
 

@@ -34,6 +34,7 @@ void deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets, ReadBuffe
         readIntBinary(current_size, istr);
         current_offset += current_size;
         offsets.push_back(current_offset);
+        std::cerr << "current_offset: " << current_offset << "\n";
     }
 }
 
@@ -87,24 +88,29 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    /// TODO: too inefficient.
+    UNUSED(limit);
+    UNUSED(offset);
+
+    /// TODO: inefficient.
     /// TODO: use limit and offset
     size_t size = column.size();
 
     auto offsets_column = DataTypeNumber<IColumn::Offset>().createColumn();
     auto & offsets_data = assert_cast<ColumnVector<IColumn::Offset> &>(*offsets_column).getData();
 
-    column.getIndicesOfNotDefaultValues(offsets_data);
-    auto values = column.index(*offsets_column, limit);
-
+    column.getIndicesOfNonDefaultValues(offsets_data);
+    auto values = column.index(*offsets_column, 0);
     offsets_data.push_back(size);
 
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))
         serializeOffsetsPositionIndependent(offsets_data, *stream);
+
+    std::cerr << "offsets_column: " << offsets_column->dumpStructure() << "\n";
+    std::cerr << "values: " << values->dumpStructure() << "\n";
     
     settings.path.back() = Substream::SparseElements;
-    nested->serializeBinaryBulkWithMultipleStreams(*values, offset, limit, settings, state);
+    nested->serializeBinaryBulkWithMultipleStreams(*values, 0, 0, settings, state);
 
     settings.path.pop_back();
 }
@@ -129,16 +135,25 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreamsImpl(
     ColumnPtr values = column.cloneEmpty();
     nested->deserializeBinaryBulkWithMultipleStreams(values, limit, settings, state, cache);
 
+    std::cerr << "offsets: " << offsets_column->dumpStructure() << ", values: " << values->dumpStructure() << "\n";
+
+    size_t size = values->size();
     IColumn::Offset prev_offset = 0;
-    for (size_t i = 0; i < offsets_data.size(); ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        size_t num_defaults = offsets_data[i] - prev_offset - 1;
-        if (num_defaults)
-            column.insertManyDefaults(num_defaults);
+        size_t offsets_diff = offsets_data[i] - prev_offset;
+        if (offsets_diff > 1)
+            column.insertManyDefaults(offsets_diff - 1);
 
         column.insertFrom(*values, i);
         prev_offset = offsets_data[i];
     }
+
+    size_t offsets_diff = offsets_data[size] - prev_offset;
+    if (offsets_diff > 1)
+        column.insertManyDefaults(offsets_diff - 1);
+
+    settings.path.pop_back();
 }
 
 }

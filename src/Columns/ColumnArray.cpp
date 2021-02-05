@@ -1180,4 +1180,22 @@ void ColumnArray::gather(ColumnGathererStream & gatherer)
     gatherer.gather(*this);
 }
 
+void ColumnArray::getIndicesOfNonDefaultValues(IColumn::Offsets & indices) const
+{
+    const auto & offsets_data = getOffsets();
+    for (size_t i = 0;  i < offsets_data.size(); ++i)
+        if (offsets_data[i] != offsets_data[i - 1])
+            indices.push_back(i);
+}
+
+size_t ColumnArray::getNumberOfNonDefaultValues() const
+{
+    const auto & offsets_data = getOffsets();
+    size_t res = 0;
+    for (size_t i = 0; i < offsets_data.size(); ++i)
+        res += (offsets_data[i] != offsets_data[i - 1]);
+        
+    return res;
+}
+
 }

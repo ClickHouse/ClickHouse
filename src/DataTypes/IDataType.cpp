@@ -458,18 +458,37 @@ SerializationPtr IDataType::getDefaultSerialization() const
 
 SerializationPtr IDataType::getSerialization(const IColumn & column) const
 {
+    ISerialization::Settings settings =
+    {
+        .num_rows = column.size(),
+        .num_non_default_rows = column.getNumberOfNonDefaultValues(),
+        .min_ratio_for_dense_serialization = 10
+    };
+    
+    return getSerialization(settings);
+}
+
+SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
+{
+    std::cerr << "rows_count: " << settings.num_rows << ", non-default: " << settings.num_non_default_rows << "\n";
+
     auto default_serialization = getDefaultSerialization();
-
-    size_t size = column.size();
-    size_t num_not_default = column.getNumberOfNotDefaultValues();
-
-    if (num_not_default * 10 <= size)
+    if (settings.num_non_default_rows * settings.min_ratio_for_dense_serialization < settings.num_rows)
         return std::make_shared<SerializationSparse>(default_serialization);
     
     return default_serialization;
 }
 
-DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const
+SerializationPtr IDataType::getSerialization(const NameAndTypePair & name_and_type, const StreamExistenceCallback & callback) const
+{
+    auto default_serialization = getDefaultSerialization();
+    if (callback(name_and_type.name + ".sparse.idx"))
+        return std::make_shared<SerializationSparse>(default_serialization);
+    
+    return default_serialization;
+}
+
+DataTypePtr IDataType::getTypeForSubstream(const ISerialization::SubstreamPath &) const
 {
     return shared_from_this();
 }
@@ -478,8 +497,8 @@ void IDataType::enumerateStreams(const SerializationPtr & serialization, const S
 {
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        callback(path, *getTypeForSubstream(path));
-    });
+        callback(substream_path, *getTypeForSubstream(substream_path));
+    }, path);
 }
 
 }

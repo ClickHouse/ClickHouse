@@ -31,8 +31,6 @@ public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
 
-    virtual DataTypePtr getDataType() const = 0;
-
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
       * Some data types are represented in multiple streams while being serialized.
@@ -140,6 +138,13 @@ public:
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
+    };
+
+    struct Settings
+    {
+        size_t num_rows;
+        size_t num_non_default_rows;
+        size_t min_ratio_for_dense_serialization;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -263,6 +268,8 @@ public:
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+
+    static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;

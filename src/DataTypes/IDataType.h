@@ -277,6 +277,10 @@ public:
 
     virtual SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSerialization(const IColumn & column) const;
+    SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
+
+    using StreamExistenceCallback = std::function<bool(const String &)>;
+    SerializationPtr getSerialization(const NameAndTypePair & name_and_type, const StreamExistenceCallback & callback) const;
 
     virtual DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 

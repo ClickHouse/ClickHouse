@@ -56,7 +56,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToPosition = std::unordered_map<std::string, size_t>;
+    using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Type = MergeTreeDataPartType;
 
@@ -361,6 +361,11 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
+    void calculateNumberOfNonDefaultValues(const Block & block);
+    void setNumberOfNonDefaultValues(NameToNumber && number_of_non_default_values_);
+    size_t getNumberOfNonDefaultValues(const String & column_name) const;
+
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -390,7 +395,9 @@ protected:
 
 private:
     /// In compact parts order of columns is necessary
-    NameToPosition column_name_to_position;
+    NameToNumber column_name_to_position;
+
+    NameToNumber number_of_non_default_values;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

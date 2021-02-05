@@ -201,4 +201,17 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
     return it->second;
 }
 
+bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
+{
+    for (const auto & elem : path)
+    {
+        if (elem.type == Substream::NullMap
+            || elem.type == Substream::ArraySizes
+            || elem.type == Substream::DictionaryIndexes
+            || elem.type == Substream::SparseOffsets)
+            return false;
+    }
+    return true;
+}
+
 }
