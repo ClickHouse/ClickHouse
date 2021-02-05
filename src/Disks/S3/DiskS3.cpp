@@ -23,12 +23,8 @@
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
-<<<<<<< HEAD
-#include <aws/s3/model/ListObjectsRequest.h>
-=======
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/HeadObjectRequest.h>
->>>>>>> master
 
 #include <boost/algorithm/string.hpp>
 
@@ -985,10 +981,10 @@ bool DiskS3::checkUniqueId(const String & id) const
 {
     /// Check that we have right s3 and have access rights
     /// Actually interprets id as s3 object name and checks if it exists
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(id);
-    auto resp = client->ListObjects(request);
+    auto resp = client->ListObjectsV2(request);
     throwIfError(resp);
     Aws::Vector<Aws::S3::Model::Object> object_list = resp.GetResult().GetContents();
 

@@ -48,7 +48,7 @@ public:
     Disks getDisks() const override;
 
     /// Returns disks by type ordered by volumes priority
-    Disks getDisksByType(const String & type) const;
+    Disks getDisksByType(const String & type) const override;
 
     /// Returns any disk
     /// Used when it's not important, for example for

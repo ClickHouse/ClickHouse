@@ -49,10 +49,9 @@ public:
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     void truncateFile(const String & path, size_t size) override;
-    int open(const String & path, mode_t mode) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
-    const String getType() const override { return delegate->getType(); }
+    int open(const String & path, mode_t mode) const;
+    void close(int fd) const;
+    void sync(int fd) const;
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
