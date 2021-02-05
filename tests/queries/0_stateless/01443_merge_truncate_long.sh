@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# remove this comment before merge
-
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
