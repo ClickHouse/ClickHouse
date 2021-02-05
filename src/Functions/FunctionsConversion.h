@@ -477,6 +477,59 @@ template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Na
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
+/** Conversion of numeric to DateTime64
+  */
+
+template <typename FromType>
+struct ToDateTime64TransformUnsigned
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64TransformUnsigned(UInt32 scale = 0)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(const FromType & from, const DateLUTImpl &) const
+    {
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+    }
+};
+template <typename FromType>
+struct ToDateTime64TransformSigned
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64TransformSigned(UInt32 scale = 0)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(const FromType & from, const DateLUTImpl &) const
+    {
+        if (from < 0)
+            return 0;
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+    }
+};
+
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32>> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64>> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformSigned<Float32>> {};
+template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformSigned<Float64>> {};
+
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
 template <typename Transform>
@@ -2318,7 +2371,7 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
