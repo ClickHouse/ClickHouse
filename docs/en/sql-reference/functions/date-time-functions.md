@@ -467,7 +467,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 **Example**
 
 ```sql
-select DATE_ADD(YEAR, 3, toDate('2018-01-01'));
+select date_add(YEAR, 3, toDate('2018-01-01'));
 ```
 
 ```text
@@ -501,13 +501,12 @@ Aliases: `date_diff`, `DATE_DIFF`.
     - `month`
     - `quarter`
     - `year`
-    
--   `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `date1`,`date2` - Dates or Dates with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
 ```sql
-select DATE_DIFF(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
+select date_diff(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
 ```
 
 ```text
@@ -558,7 +557,7 @@ select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 
 ## timestamp\_sub {#timestamp_sub}
 
-Returns the difference between two dates in terms of the specified unit.
+Returns the difference between two dates in the specified unit.
 
 **Syntax** 
 
@@ -581,8 +580,8 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `month`
     - `quarter`
     - `year`
-- value -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
--   `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `value` -  Amount of the specified unit of time. [String](../syntax.md#syntax-string-literal).   
+- `date1`, `date2` — Date or Date with time - [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
