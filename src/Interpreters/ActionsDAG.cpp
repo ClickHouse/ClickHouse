@@ -116,6 +116,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
         res = &addFunction(func_builder_materialize, {res}, {}, true, false);
         res = &addAlias(*res, name, true);
     }
+
+    return *res;
 }
 
 const ActionsDAG::Node & ActionsDAG::addAlias(const std::string & name, std::string alias, bool can_replace)
