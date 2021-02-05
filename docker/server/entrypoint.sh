@@ -54,6 +54,7 @@ FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
+CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -97,6 +98,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           </networks>
           <password>${CLICKHOUSE_PASSWORD}</password>
           <quota>default</quota>
+          <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
       </users>
     </yandex>
