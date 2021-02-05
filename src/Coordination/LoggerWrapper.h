@@ -11,7 +11,7 @@ class LoggerWrapper : public nuraft::logger
 public:
     LoggerWrapper(const std::string & name)
         : log(&Poco::Logger::get(name))
-        , level(4)
+        , level(6)
     {
         log->setLevel(level);
     }
