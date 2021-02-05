@@ -76,13 +76,13 @@ public:
         return nested_function->alignOfData();
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         nested_function->create(place);
         place[size_of_data] = 0;
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_function->destroy(place);
     }
