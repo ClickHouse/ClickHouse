@@ -15,9 +15,8 @@ class ColumnsDescription;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
-/// Adds missing defaults to block according to required_columns
-/// using columns description
-ActionsDAGPtr createFillingMissingDefaultsExpression(
+/// Create actions which adds missing defaults to block according to required_columns using columns description.
+ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
