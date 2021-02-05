@@ -32,7 +32,6 @@ def drop_table(nodes, table_name):
 
 # Create table with default zookeeper.
 def test_create_replicated_merge_tree_with_default_zookeeper(started_cluster):
-    drop_table([node1, node2], "test_default_zookeeper")
     for node in [node1, node2]:
         node.query(
             '''
@@ -49,9 +48,10 @@ def test_create_replicated_merge_tree_with_default_zookeeper(started_cluster):
     assert TSV(node1.query("SELECT a FROM test_default_zookeeper")) == TSV(expected)
     assert TSV(node2.query("SELECT a FROM test_default_zookeeper")) == TSV(expected)
 
+    drop_table([node1, node2], "test_default_zookeeper")
+
 # Create table with auxiliary zookeeper.
 def test_create_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
-    drop_table([node1, node2], "test_auxiliary_zookeeper")
     for node in [node1, node2]:
         node.query(
             '''
@@ -67,6 +67,8 @@ def test_create_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
     expected = "1\n"
     assert TSV(node1.query("SELECT a FROM test_auxiliary_zookeeper")) == TSV(expected)
     assert TSV(node2.query("SELECT a FROM test_auxiliary_zookeeper")) == TSV(expected)
+
+    drop_table([node1, node2], "test_auxiliary_zookeeper")
 
 # Create table with auxiliary zookeeper.
 def test_create_replicated_merge_tree_with_not_exists_auxiliary_zookeeper(started_cluster):
