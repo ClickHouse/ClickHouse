@@ -212,3 +212,32 @@ select
     count(*) over (rows between  current row and current row),
     count(*) over (range between  current row and current row)
 from numbers(3);
+
+-- RANGE OFFSET
+-- a basic RANGE OFFSET frame
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11))
+window w as (order by x asc range between 1 preceding and 2 following)
+order by x;
+
+-- overflow conditions
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toInt8(multiIf(
+        mod(number, 3) == 0, toInt64(intDiv(number, 3)),
+        mod(number, 3) == 1, toInt64(127 - intDiv(number, 3)),
+        toInt64(-128 + intDiv(number, 3)))) x
+    from numbers(15)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
