@@ -74,7 +74,7 @@ ActionsDAGPtr addMissingDefaults(
 
             auto & group = nested_groups[offsets_name];
             group[0] = constant.result_name;
-            actions->addFunction(func_builder_replicate, group, constant.result_name, context);
+            actions->addFunction(func_builder_replicate, group, constant.result_name, context, true);
 
             continue;
         }

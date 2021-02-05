@@ -159,7 +159,8 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         const Names & argument_names,
         std::string result_name,
-        const Context & context [[maybe_unused]])
+        const Context & context [[maybe_unused]],
+        bool can_replace)
 {
     const auto & all_settings = context.getSettingsRef();
     settings.max_temporary_columns = all_settings.max_temporary_columns;
@@ -178,7 +179,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     for (const auto & name : argument_names)
         children.push_back(&getNode(name));
 
-    return addFunction(function, children, std::move(result_name), false);
+    return addFunction(function, children, std::move(result_name), can_replace);
 }
 
 ActionsDAG::Node & ActionsDAG::addFunction(
