@@ -1,7 +1,5 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -185,37 +183,6 @@ namespace
         if (dir_fsync)
             return disk->getDirectorySyncGuard(path);
         return nullptr;
-    }
-
-    void writeRemoteConvert(const DistributedHeader & header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
-    {
-        if (remote.getHeader() && header.header != remote.getHeader().dumpStructure())
-        {
-            LOG_WARNING(log,
-                "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
-                remote.getHeader().dumpStructure(), header.header);
-
-            CompressedReadBuffer decompressing_in(in);
-            /// Lack of header, requires to read blocks
-            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-
-            block_in.readPrefix();
-            while (Block block = block_in.read())
-            {
-                ConvertingBlockInputStream convert(
-                    std::make_shared<OneBlockInputStream>(block),
-                    remote.getHeader(),
-                    ConvertingBlockInputStream::MatchColumnsMode::Name);
-                auto adopted_block = convert.read();
-                remote.write(adopted_block);
-            }
-            block_in.readSuffix();
-        }
-        else
-        {
-            CheckingCompressedReadBuffer checking_in(in);
-            remote.writePrepared(checking_in);
-        }
     }
 }
 
@@ -471,8 +438,11 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         auto connection = pool->get(timeouts, &header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
             header.insert_query, header.insert_settings, header.client_info};
+
+        CheckingCompressedReadBuffer checking_in(in);
+
         remote.writePrefix();
-        writeRemoteConvert(header, remote, in, log);
+        remote.writePrepared(checking_in);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -590,6 +560,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         try
         {
             std::unique_ptr<RemoteBlockOutputStream> remote;
+            bool first = true;
 
             for (UInt64 file_idx : file_indices)
             {
@@ -604,14 +575,16 @@ struct StorageDistributedDirectoryMonitor::Batch
                 ReadBufferFromFile in(file_path->second);
                 const auto & header = readDistributedHeader(in, parent.log);
 
-                if (!remote)
+                if (first)
                 {
+                    first = false;
                     remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts,
                         header.insert_query, header.insert_settings, header.client_info);
                     remote->writePrefix();
                 }
 
-                writeRemoteConvert(header, *remote, in, parent.log);
+                CheckingCompressedReadBuffer checking_in(in);
+                remote->writePrepared(checking_in);
             }
 
             if (remote)

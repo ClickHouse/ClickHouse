@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_IO_BUFFER;
+}
+
+
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -31,6 +37,9 @@ void RabbitMQBlockOutputStream::writePrefix()
         storage.unbindExchange();
 
     buffer = storage.createWriteBuffer();
+    if (!buffer)
+        throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+
     buffer->activateWriting();
 
     auto format_settings = getFormatSettings(context);

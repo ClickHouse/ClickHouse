@@ -58,8 +58,7 @@ private:
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        const String & query_id) const;
+        const MergeTreeReaderSettings & reader_settings) const;
 
     /// out_projection - save projection only with columns, requested to read
     QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
@@ -74,8 +73,7 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection,
-        const String & query_id) const;
+        ActionsDAGPtr & out_projection) const;
 
     QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -88,8 +86,7 @@ private:
         const Names & virt_columns,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        ActionsDAGPtr & out_projection,
-        const String & query_id) const;
+        ActionsDAGPtr & out_projection) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(

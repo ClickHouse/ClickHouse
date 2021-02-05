@@ -22,8 +22,6 @@ ASTPtr ASTWindowDefinition::clone() const
         result->children.push_back(result->order_by);
     }
 
-    result->frame = frame;
-
     return result;
 }
 
@@ -33,12 +31,12 @@ String ASTWindowDefinition::getID(char) const
 }
 
 void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked format_frame) const
+    FormatState & state, FormatStateStacked frame) const
 {
     if (partition_by)
     {
         settings.ostr << "PARTITION BY ";
-        partition_by->formatImpl(settings, state, format_frame);
+        partition_by->formatImpl(settings, state, frame);
     }
 
     if (partition_by && order_by)
@@ -49,46 +47,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     if (order_by)
     {
         settings.ostr << "ORDER BY ";
-        order_by->formatImpl(settings, state, format_frame);
-    }
-
-    if ((partition_by || order_by) && !frame.is_default)
-    {
-        settings.ostr << " ";
-    }
-
-    if (!frame.is_default)
-    {
-        settings.ostr << WindowFrame::toString(frame.type) << " BETWEEN ";
-        if (frame.begin_type == WindowFrame::BoundaryType::Current)
-        {
-            settings.ostr << "CURRENT ROW";
-        }
-        else if (frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-        {
-            settings.ostr << "UNBOUNDED PRECEDING";
-        }
-        else
-        {
-            settings.ostr << abs(frame.begin_offset);
-            settings.ostr << " "
-                << (frame.begin_offset > 0 ? "FOLLOWING" : "PRECEDING");
-        }
-        settings.ostr << " AND ";
-        if (frame.end_type == WindowFrame::BoundaryType::Current)
-        {
-            settings.ostr << "CURRENT ROW";
-        }
-        else if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
-        {
-            settings.ostr << "UNBOUNDED PRECEDING";
-        }
-        else
-        {
-            settings.ostr << abs(frame.end_offset);
-            settings.ostr << " "
-                << (frame.end_offset > 0 ? "FOLLOWING" : "PRECEDING");
-        }
+        order_by->formatImpl(settings, state, frame);
     }
 }
 
@@ -97,8 +56,8 @@ std::string ASTWindowDefinition::getDefaultWindowName() const
     WriteBufferFromOwnString ostr;
     FormatSettings settings{ostr, true /* one_line */};
     FormatState state;
-    FormatStateStacked format_frame;
-    formatImpl(settings, state, format_frame);
+    FormatStateStacked frame;
+    formatImpl(settings, state, frame);
     return ostr.str();
 }
 

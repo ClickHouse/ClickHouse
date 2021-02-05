@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Interpreters/WindowDescription.h>
-
 #include <Parsers/IAST.h>
 
 
@@ -13,8 +11,6 @@ struct ASTWindowDefinition : public IAST
     ASTPtr partition_by;
 
     ASTPtr order_by;
-
-    WindowFrame frame;
 
 
     ASTPtr clone() const override;

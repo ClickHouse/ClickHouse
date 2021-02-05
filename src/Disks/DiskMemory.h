@@ -60,6 +60,8 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
+    void copyFile(const String & from_path, const String & to_path) override;
+
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -89,7 +91,7 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::RAM; }
+    const String getType() const override { return "memory"; }
 
 private:
     void createDirectoriesImpl(const String & path);

@@ -409,6 +409,8 @@ SRCS(
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAs.cpp
+    reinterpretAsFixedString.cpp
+    reinterpretAsString.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
@@ -452,7 +454,6 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
-    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp

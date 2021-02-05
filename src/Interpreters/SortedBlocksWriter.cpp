@@ -4,7 +4,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/materializeBlock.h>
-#include <Disks/IVolume.h>
+#include <Disks/StoragePolicy.h>
 
 namespace DB
 {
