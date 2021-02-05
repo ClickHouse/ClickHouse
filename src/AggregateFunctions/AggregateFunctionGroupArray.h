@@ -142,14 +142,14 @@ public:
         }
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
             a->rng.seed(seed);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -176,7 +176,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -235,7 +235,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -254,7 +254,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -283,7 +283,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -416,8 +416,8 @@ class GroupArrayGeneralImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>;
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
     UInt64 max_elems;
@@ -450,14 +450,14 @@ public:
         }
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
         if constexpr (Trait::sampler == Sampler::RNG)
             a->rng.seed(seed);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -485,7 +485,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (Trait::sampler == Sampler::NONE)
             mergeNoSampler(place, rhs, arena);
@@ -495,7 +495,7 @@ public:
         // else if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void ALWAYS_INLINE mergeNoSampler(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const
+    void ALWAYS_INLINE mergeNoSampler(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
         if (data(rhs).value.empty()) /// rhs state is empty
             return;
@@ -517,7 +517,7 @@ public:
             a.push_back(b[i]->clone(arena), arena);
     }
 
-    void ALWAYS_INLINE mergeWithRNGSampler(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const
+    void ALWAYS_INLINE mergeWithRNGSampler(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
     {
         if (data(rhs).value.empty()) /// rhs state is empty
             return;
@@ -553,7 +553,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeVarUInt(data(place).value.size(), buf);
 
@@ -573,7 +573,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         UInt64 elems;
         readVarUInt(elems, buf);
@@ -606,7 +606,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
@@ -692,8 +692,8 @@ class GroupArrayGeneralListImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralListData<Node>;
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
     UInt64 max_elems;
@@ -710,7 +710,7 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (limit_num_elems && data(place).elems >= max_elems)
             return;
@@ -731,7 +731,7 @@ public:
         ++data(place).elems;
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         /// It is sadly, but rhs's Arena could be destroyed
 
@@ -780,7 +780,7 @@ public:
         data(place).elems = new_elems;
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeVarUInt(data(place).elems, buf);
 
@@ -792,7 +792,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         UInt64 elems;
         readVarUInt(elems, buf);
@@ -821,7 +821,7 @@ public:
         data(place).last = prev;
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
