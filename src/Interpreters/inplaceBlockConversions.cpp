@@ -87,7 +87,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-ActionsDAGPtr createFillingMissingDefaultsExpression(
+ActionsDAGPtr createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
@@ -125,14 +125,14 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    if (auto dag = createFillingMissingDefaultsExpression(block, conversion_expr_list, true, required_columns, context))
+    if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(dag));
         expression->execute(block);
     }
 }
 
-ActionsDAGPtr createFillingMissingDefaultsExpression(
+ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
@@ -142,7 +142,7 @@ ActionsDAGPtr createFillingMissingDefaultsExpression(
         return nullptr;
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns);
-    return createFillingMissingDefaultsExpression(header, expr_list, save_unneeded_columns, required_columns, context);
+    return createExpressions(header, expr_list, save_unneeded_columns, required_columns, context);
 }
 
 }
