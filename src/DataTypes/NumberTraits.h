@@ -106,7 +106,7 @@ template <typename A, typename B> struct ResultOfIntegerDivision
 
 /** Division with remainder you get a number with the same number of bits as in divisor,
   * or larger in case of signed type.
-    */
+  */
 template <typename A, typename B> struct ResultOfModulo
 {
     static constexpr bool result_is_signed = is_signed_v<A>;

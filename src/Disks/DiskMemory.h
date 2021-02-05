@@ -91,7 +91,7 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    const String getType() const override { return "memory"; }
+    DiskType::Type getType() const override { return DiskType::Type::RAM; }
 
 private:
     void createDirectoriesImpl(const String & path);

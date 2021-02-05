@@ -100,7 +100,7 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    const String getType() const override { return "local"; }
+    DiskType::Type getType() const override { return DiskType::Type::Local; }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
