@@ -15,6 +15,11 @@ node2 = cluster.add_instance("node2", main_configs=["configs/zookeeper_config.xm
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+        def create_zk_roots(zk):
+            zk.ensure_path('/aux2')
+
+        cluster.add_zookeeper_startup_command(create_zk_roots)
+
         cluster.start()
 
         yield cluster
@@ -49,6 +54,8 @@ def test_create_replicated_merge_tree_with_default_zookeeper(started_cluster):
     assert TSV(node2.query("SELECT a FROM test_default_zookeeper")) == TSV(expected)
 
     drop_table([node1, node2], "test_default_zookeeper")
+    assert node1.query("SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/test'").strip() == "0", \
+        "leftovers in zookeeper after drop table"
 
 # Create table with auxiliary zookeeper.
 def test_create_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
@@ -60,6 +67,9 @@ def test_create_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
                 ORDER BY a;
             '''.format(replica=node.name))
 
+    assert node1.query("SELECT count() > 0 FROM system.zookeeper WHERE path = '/aux2/clickhouse/tables/test/test_auxiliary_zookeeper'").strip() == "1", \
+        "table not create at expected zk location"
+
     # Insert data into node1, and query it from node2.
     node1.query("INSERT INTO test_auxiliary_zookeeper VALUES (1)")
     time.sleep(5)
@@ -69,6 +79,8 @@ def test_create_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
     assert TSV(node2.query("SELECT a FROM test_auxiliary_zookeeper")) == TSV(expected)
 
     drop_table([node1, node2], "test_auxiliary_zookeeper")
+    assert node1.query("SELECT count() FROM system.zookeeper WHERE path = '/aux2/clickhouse/tables/test'").strip() == "0", \
+        "leftovers in zookeeper after drop table"
 
 # Create table with auxiliary zookeeper.
 def test_create_replicated_merge_tree_with_not_exists_auxiliary_zookeeper(started_cluster):
