@@ -100,7 +100,7 @@ public:
 private:
     ReplicaStatePtr startEstablishingConnection(int index);
 
-    void processConnectionEstablisherStage(ReplicaStatePtr & replica,  bool remove_from_epoll = false);
+    void processConnectionEstablisherStage(ReplicaStatePtr & replica, bool remove_from_epoll = false);
 
     /// Find an index of the next free replica to start connection.
     /// Return -1 if there is no free replica.
