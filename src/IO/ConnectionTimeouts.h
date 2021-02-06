@@ -33,9 +33,9 @@ struct ConnectionTimeouts
       tcp_keep_alive_timeout(0),
       http_keep_alive_timeout(0),
       secure_connection_timeout(connection_timeout),
-      receive_hello_timeout(0),
-      receive_tables_status_timeout(0),
-      receive_data_timeout(0)
+      receive_hello_timeout(receive_timeout_),
+      receive_tables_status_timeout(receive_timeout_),
+      receive_data_timeout(receive_timeout_)
     {
     }
 
@@ -49,9 +49,9 @@ struct ConnectionTimeouts
       tcp_keep_alive_timeout(tcp_keep_alive_timeout_),
       http_keep_alive_timeout(0),
       secure_connection_timeout(connection_timeout),
-      receive_hello_timeout(0),
-      receive_tables_status_timeout(0),
-      receive_data_timeout(0)
+      receive_hello_timeout(receive_timeout_),
+      receive_tables_status_timeout(receive_timeout_),
+      receive_data_timeout(receive_timeout_)
     {
     }
     ConnectionTimeouts(const Poco::Timespan & connection_timeout_,
@@ -65,9 +65,9 @@ struct ConnectionTimeouts
           tcp_keep_alive_timeout(tcp_keep_alive_timeout_),
           http_keep_alive_timeout(http_keep_alive_timeout_),
           secure_connection_timeout(connection_timeout),
-          receive_hello_timeout(0),
-          receive_tables_status_timeout(0),
-          receive_data_timeout(0)
+          receive_hello_timeout(receive_timeout_),
+          receive_tables_status_timeout(receive_timeout_),
+          receive_data_timeout(receive_timeout_)
     {
     }
 

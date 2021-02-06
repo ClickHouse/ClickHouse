@@ -46,24 +46,24 @@ void Epoll::remove(int fd)
     --events_count;
 }
 
-epoll_event Epoll::getReady(AsyncCallback async_callback) const
+epoll_event Epoll::getReady(bool blocking, AsyncCallback async_callback) const
 {
-    std::vector<epoll_event> events = getManyReady(1, true, std::move(async_callback));
-    if (events.empty())
-        throw Exception("Vector of ready events is empty", ErrorCodes::LOGICAL_ERROR);
+    epoll_event event;
+    event.data.fd = -1;
+    size_t ready_events_count = getManyReady(1, &event, blocking, std::move(async_callback));
+    if (ready_events_count > 1)
+        throw Exception("Returned amount of events cannot be more than 1.", ErrorCodes::LOGICAL_ERROR);
 
-    return events[0];
+    return event;
 }
 
-std::vector<epoll_event> Epoll::getManyReady(int max_events, bool blocking, AsyncCallback async_callback) const
+size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback) const
 {
-    std::vector<epoll_event> events(max_events);
-
     int ready_size = 0;
     int timeout = blocking && !async_callback ? -1 : 0;
-    while (ready_size <= 0 && (ready_size != 0 || blocking))
+    do
     {
-        ready_size = epoll_wait(epoll_fd, events.data(), max_events, timeout);
+        ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
 
         if (ready_size == -1 && errno != EINTR)
             throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
@@ -71,9 +71,9 @@ std::vector<epoll_event> Epoll::getManyReady(int max_events, bool blocking, Asyn
         if (ready_size == 0 && blocking && async_callback)
             async_callback(epoll_fd, 0, "epoll");
     }
+    while (ready_size <= 0 && (ready_size != 0 || blocking));
 
-    events.resize(ready_size);
-    return events;
+    return ready_size;
 }
 
 Epoll::~Epoll()

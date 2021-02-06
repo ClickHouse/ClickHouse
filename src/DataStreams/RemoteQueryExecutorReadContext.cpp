@@ -121,19 +121,22 @@ bool RemoteQueryExecutorReadContext::checkTimeout() const
 bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
 {
     /// Wait for epoll will not block if it was polled externally.
-    std::vector<epoll_event> events = epoll.getManyReady(epoll.size(), /* blocking = */ false);
+    epoll_event events[3];
+    events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
+
+    epoll.getManyReady(3, events,/* blocking = */ false);
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
     bool has_timer_alarm = false;
 
-    for (const auto & event : events)
+    for (int i = 0; i < 3; ++i)
     {
-        if (event.data.fd == connection_fd)
+        if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
-        if (event.data.fd == timer.getDescriptor())
+        if (events[i].data.fd == timer.getDescriptor())
             has_timer_alarm = true;
-        if (event.data.fd == pipe_fd[0])
+        if (events[i].data.fd == pipe_fd[0])
             is_pipe_alarmed = true;
     }
 
@@ -198,7 +201,7 @@ void RemoteQueryExecutorReadContext::cancel()
 
 RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
-    /// connection_fd is closed by Poco::Net::Socket
+    /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
         close(pipe_fd[0]);
     if (pipe_fd[1] != -1)
