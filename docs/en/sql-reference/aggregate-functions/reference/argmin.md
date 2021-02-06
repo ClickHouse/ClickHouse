@@ -4,9 +4,9 @@ toc_priority: 105
 
 # argMin {#agg-function-argmin}
 
-Calculates the `arg` value for a minimal `val` value. If there are several different values of `arg` for minimal values of `val`, returns the first of these values encountered.
+Calculates the `arg` value for a minimum `val` value. If there are several different values of `arg` for minimum values of `val`, returns the first of these values encountered.
 
-Tuple version of this function will return the tuple with the minimal `val` value. It is convenient for use with [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md).
+Tuple version of this function will return the tuple with the minimum `val` value. It is convenient for use with [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md).
 
 **Syntax**
 
@@ -25,19 +25,15 @@ argMin(tuple(arg, val))
 -   `arg` — Argument.
 -   `val` — Value.
 
-or 
-
--   `tuple(arg, val)` — [Tuple](../../../sql-reference/data-types/tuple.md).
-
 **Returned value**
 
--   `arg` value that corresponds to minimal `val` value.
+-   `arg` value that corresponds to minimum `val` value.
 
 Type: matches `arg` type. 
 
 For tuple in the input:
 
--   Tuple with minimal `val` value.
+-   Tuple with minimum `val` value.
 
 Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
