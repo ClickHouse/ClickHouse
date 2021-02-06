@@ -124,13 +124,13 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
-    epoll.getManyReady(3, events,/* blocking = */ false);
+    int num_events = epoll.getManyReady(3, events,/* blocking = */ false);
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
     bool has_timer_alarm = false;
 
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < num_events; ++i)
     {
         if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
