@@ -231,7 +231,8 @@ HedgedConnectionsFactory::ReplicaStatePtr HedgedConnectionsFactory::startEstabli
         {
             epoll.add(connection_establisher.socket_fd);
             fd_to_replica[connection_establisher.socket_fd] = replica;
-            connection_establisher.setActionBeforeDisconnect([&](int fd) {
+            connection_establisher.setActionBeforeDisconnect([&](int fd)
+            {
                 epoll.remove(fd);
                 fd_to_replica.erase(fd);
             });
