@@ -380,7 +380,7 @@ Alias: `dateTrunc`.
 
 **Parameters**
 
--   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to truncate the result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -486,19 +486,19 @@ Aliases: `dateDiff`, `DATE_DIFF`.
 
 **Parameters**
 
--   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval for result [String](../../sql-reference/data-types/string.md).
 
         Supported values: second, minute, hour, day, week, month, quarter, year.
 
--   `startdate` — The first time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
--   `enddate` — The second time value to compare. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 -   `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
 
 **Returned value**
 
-Difference between `startdate` and `enddate` expressed in `unit`.
+Difference between `enddate` and `startdate` expressed in `unit`.
 
 Type: `int`.
 
