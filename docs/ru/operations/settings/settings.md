@@ -2473,4 +2473,58 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 Значение по умолчанию: `16`.
 
+## optimize_on_insert {#optimize-on-insert}
+
+Включает или выключает преобразованние данных перед их вставкой, как будто над блоком было произведено слияние (например замена, сворачивание, агрегация...).
+
+Возможные значения:
+
+-   0 — выключена
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+**Пример**
+
+Разница между включенным и выключенным состояниями:
+
+Запрос:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Результат:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Обратите внимание на то, что эта настройка влияет на поведение [материализованное представление ](../../sql-reference/statements/create/view.md#materialized) и [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
