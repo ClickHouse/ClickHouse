@@ -1,39 +1,17 @@
 #pragma once
 
 #include "PostgreSQLConnection.h"
-#include <Core/BackgroundSchedulePool.h>
 #include "PostgreSQLReplicaMetadata.h"
+#include "pqxx/pqxx"
+
+#include <Core/BackgroundSchedulePool.h>
 #include <common/logger_useful.h>
 #include <Storages/IStorage.h>
-#include <Core/ExternalResultDescription.h>
-#include "pqxx/pqxx"
 #include <Storages/PostgreSQL/insertPostgreSQLValue.h>
+
 
 namespace DB
 {
-
-struct LSNPosition
-{
-    std::string lsn;
-    int64_t lsn_value;
-
-    int64_t getValue()
-    {
-        uint64_t upper_half, lower_half, result;
-        std::sscanf(lsn.data(), "%lX/%lX", &upper_half, &lower_half);
-        result = (upper_half << 32) + lower_half;
-        return result;
-    }
-
-    std::string getString()
-    {
-        char result[16];
-        std::snprintf(result, sizeof(result), "%lX/%lX", (lsn_value >> 32), lsn_value & 0xFFFFFFFF);
-        std::string ans = result;
-        return ans;
-    }
-};
-
 
 class PostgreSQLReplicaConsumer
 {
@@ -45,7 +23,7 @@ public:
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
             const std::string & metadata_path,
-            const LSNPosition & start_lsn,
+            const std::string & start_lsn,
             const size_t max_block_size_,
             StoragePtr nested_storage_);
 
@@ -94,7 +72,7 @@ private:
     const std::string table_name;
     PostgreSQLConnectionPtr connection;
 
-    LSNPosition current_lsn, final_lsn;
+    std::string current_lsn, final_lsn;
     BackgroundSchedulePool::TaskHolder wal_reader_task;
     //BackgroundSchedulePool::TaskHolder table_sync_task;
     std::atomic<bool> stop_synchronization = false;

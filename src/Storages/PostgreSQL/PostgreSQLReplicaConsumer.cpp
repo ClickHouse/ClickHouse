@@ -1,31 +1,14 @@
 #include "PostgreSQLReplicaConsumer.h"
 
-#include <Formats/FormatFactory.h>
-#include <Formats/FormatSettings.h>
-
-#include <ext/range.h>
-
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
-#include <Common/FieldVisitors.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
-
+#include <DataStreams/copyData.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <ext/range.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
-#include <DataStreams/copyData.h>
-#include <DataStreams/OneBlockInputStream.h>
-
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
-
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -37,7 +20,6 @@ namespace ErrorCodes
 
 static const auto reschedule_ms = 500;
 static const auto max_thread_work_duration_ms = 60000;
-static const auto max_empty_slot_reads = 16;
 
 
 PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
@@ -47,7 +29,7 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
     const std::string & metadata_path,
-    const LSNPosition & start_lsn,
+    const std::string & start_lsn,
     const size_t max_block_size_,
     StoragePtr nested_storage_)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
@@ -69,12 +51,21 @@ PostgreSQLReplicaConsumer::PostgreSQLReplicaConsumer(
 
     wal_reader_task = context->getSchedulePool().createTask("PostgreSQLReplicaWALReader", [this]{ replicationStream(); });
     wal_reader_task->deactivate();
-
 }
 
 
 void PostgreSQLReplicaConsumer::startSynchronization()
 {
+    metadata.readMetadata();
+
+    if (!metadata.lsn().empty())
+    {
+        auto tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
+        final_lsn = metadata.lsn();
+        final_lsn = advanceLSN(tx);
+        tx->commit();
+    }
+
     wal_reader_task->activateAndSchedule();
 }
 
@@ -88,21 +79,14 @@ void PostgreSQLReplicaConsumer::stopSynchronization()
 
 void PostgreSQLReplicaConsumer::replicationStream()
 {
-    size_t count_empty_slot_reads = 0;
     auto start_time = std::chrono::steady_clock::now();
-    metadata.readMetadata();
 
     LOG_TRACE(log, "Starting replication stream");
 
     while (!stop_synchronization)
     {
-        if (!readFromReplicationSlot() && ++count_empty_slot_reads == max_empty_slot_reads)
-        {
-            LOG_TRACE(log, "Reschedule replication stream. Replication slot is empty.");
+        if (!readFromReplicationSlot())
             break;
-        }
-        else
-            count_empty_slot_reads = 0;
 
         auto end_time = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -270,7 +254,6 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
             LOG_DEBUG(log, "transaction lsn {}, transaction commit timespamp {}",
                     transaction_end_lsn, transaction_commit_timestamp);
-            //current_lsn.lsn_value = transaction_end_lsn;
             break;
         }
         case 'C': // Commit
@@ -282,7 +265,7 @@ void PostgreSQLReplicaConsumer::processReplicationMessage(const char * replicati
             Int64 transaction_commit_timestamp = readInt64(replication_message, pos);
             LOG_DEBUG(log, "commit lsn {}, transaction lsn {}, transaction commit timestamp {}",
                     commit_lsn, transaction_end_lsn, transaction_commit_timestamp);
-            final_lsn.lsn = current_lsn.lsn;
+            final_lsn = current_lsn;
             break;
         }
         case 'O': // Origin
@@ -384,9 +367,9 @@ void PostgreSQLReplicaConsumer::syncIntoTable(Block & block)
 
 String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx)
 {
-    LOG_TRACE(log, "CURRENT LSN FROM TO {}", final_lsn.lsn);
+    LOG_TRACE(log, "CURRENT LSN FROM TO {}", final_lsn);
 
-    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn.lsn);
+    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
     pqxx::result result{ntx->exec(query_str)};
 
     ntx->commit();
@@ -394,7 +377,7 @@ String PostgreSQLReplicaConsumer::advanceLSN(std::shared_ptr<pqxx::nontransactio
     if (!result.empty())
         return result[0][0].as<std::string>();
 
-    return final_lsn.lsn;
+    return final_lsn;
 }
 
 
@@ -409,9 +392,10 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     {
         tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
 
-        /// Read up to max_block_size rows changes (upto_n_changes parameter). It return larger number as the limit
+        /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.
         /// Returns less than max_block_changes, if reached end of wal. Sync to table in this case.
+
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
                 "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
@@ -439,10 +423,25 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
 
             slot_empty = false;
 
-            current_lsn.lsn = (*row)[0];
+            current_lsn = (*row)[0];
             LOG_TRACE(log, "Replication message: {}", (*row)[1]);
             processReplicationMessage((*row)[1].c_str(), (*row)[1].size());
         }
+    }
+    catch (const pqxx::sql_error & e)
+    {
+        /// Currently `sql replication interface` is used and it has the problem that it registers relcache
+        /// callbacks on each pg_logical_slot_get_changes and there is no way to invalidate them:
+        /// https://github.com/postgres/postgres/blob/master/src/backend/replication/pgoutput/pgoutput.c#L1128
+        /// So at some point will get out of limit and then they will be cleaned.
+
+        std::string error_message = e.what();
+        if (error_message.find("out of relcache_callback_list slots") != std::string::npos)
+            LOG_DEBUG(log, "Out of rel_cache_list slot");
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        return false;
     }
     catch (...)
     {
@@ -453,8 +452,9 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     Block result_rows = description.sample_block.cloneWithColumns(std::move(columns));
     if (result_rows.rows())
     {
+        LOG_TRACE(log, "SYNCING TABLE {} max_block_size {}", result_rows.rows(), max_block_size);
         assert(!slot_empty);
-        metadata.commitMetadata(final_lsn.lsn, [&]()
+        metadata.commitMetadata(final_lsn, [&]()
         {
             syncIntoTable(result_rows);
             return advanceLSN(tx);

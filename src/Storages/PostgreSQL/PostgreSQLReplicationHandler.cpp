@@ -1,15 +1,10 @@
 #include "PostgreSQLReplicationHandler.h"
-#include "PostgreSQLReplicaConsumer.h"
-#include <Interpreters/InterpreterInsertQuery.h>
 
-#include <Poco/File.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/FormatSettings.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
-#include <Common/CurrentThread.h>
-#include <Storages/IStorage.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Poco/File.h>
+
 
 namespace DB
 {
@@ -27,6 +22,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
     const std::string & table_name_,
     const std::string & conn_str,
+    const std::string & metadata_path_,
     std::shared_ptr<Context> context_,
     const std::string & publication_name_,
     const std::string & replication_slot_name_,
@@ -36,18 +32,15 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , database_name(database_name_)
     , table_name(table_name_)
     , connection_str(conn_str)
+    , metadata_path(metadata_path_)
     , publication_name(publication_name_)
     , replication_slot(replication_slot_name_)
     , max_block_size(max_block_size_)
     , connection(std::make_shared<PostgreSQLConnection>(conn_str))
     , replication_connection(std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection->conn_str())))
-    , metadata_path(DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata")
 {
     if (replication_slot.empty())
         replication_slot = fmt::format("{}_{}_ch_replication_slot", database_name, table_name);
-
-    /// Temporary replication slot is used to acquire a snapshot for initial table synchronization and to determine starting lsn position.
-    tmp_replication_slot = replication_slot + "_temp";
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
     startup_task->deactivate();
@@ -56,7 +49,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
 void PostgreSQLReplicationHandler::startup(StoragePtr storage)
 {
-    nested_storage = storage;
+    nested_storage = std::move(storage);
+
+
     startup_task->activateAndSchedule();
 }
 
@@ -67,7 +62,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     {
         connection->conn();
     }
-    catch (pqxx::broken_connection const & pqxx_error)
+    catch (const pqxx::broken_connection & pqxx_error)
     {
         LOG_ERROR(log, "Unable to set up connection for table {}.{}. Reconnection attempt continues. Error message: {}",
                 database_name, table_name, pqxx_error.what());
@@ -152,33 +147,22 @@ void PostgreSQLReplicationHandler::startReplication()
 
     auto ntx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
 
-    /// Normally temporary replication slot should not exist.
-    if (isReplicationSlotExist(ntx, tmp_replication_slot))
-        dropReplicationSlot(ntx, tmp_replication_slot);
-
-    std::string snapshot_name;
-    LSNPosition start_lsn;
+    std::string snapshot_name, start_lsn;
 
     auto initial_sync = [&]()
     {
-        /// Temporary replication slot
-        createTempReplicationSlot(ntx, start_lsn, snapshot_name);
-        /// Initial table synchronization from created snapshot
+        createReplicationSlot(ntx, start_lsn, snapshot_name);
         loadFromSnapshot(snapshot_name);
-        /// Do not need this replication slot anymore (snapshot loaded and start lsn determined
-        dropReplicationSlot(ntx, tmp_replication_slot);
-        /// Non-temporary replication slot
-        createReplicationSlot(ntx);
     };
 
-    /// Non temporary replication slot should be deleted with drop table only and created only once, reused after detach.
+    /// Replication slot should be deleted with drop table only and created only once, reused after detach.
     if (!isReplicationSlotExist(ntx, replication_slot))
     {
         initial_sync();
     }
     else if (!Poco::File(metadata_path).exists())
     {
-        /// If non-temporary slot exists and metadata file (where last synced version is written) does not exist, it is not normal.
+        /// If replication slot exists and metadata file (where last synced version is written) does not exist, it is not normal.
         dropReplicationSlot(ntx, replication_slot);
         initial_sync();
     }
@@ -266,32 +250,16 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr ntx,
 }
 
 
-void PostgreSQLReplicationHandler::createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name)
+void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name)
 {
-    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} TEMPORARY LOGICAL pgoutput EXPORT_SNAPSHOT", tmp_replication_slot);
+    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", replication_slot);
     try
     {
         pqxx::result result{ntx->exec(query_str)};
-        start_lsn.lsn = result[0][1].as<std::string>();
+        start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
         LOG_TRACE(log, "Created temporary replication slot: {}, start lsn: {}, snapshot: {}",
-                tmp_replication_slot, start_lsn.lsn, snapshot_name);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("while creating PostgreSQL replication slot {}", tmp_replication_slot);
-        throw;
-    }
-}
-
-
-void PostgreSQLReplicationHandler::createReplicationSlot(NontransactionPtr ntx)
-{
-    std::string query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput", replication_slot);
-    try
-    {
-        pqxx::result result{ntx->exec(query_str)};
-        LOG_TRACE(log, "Created replication slot: {}, start lsn: {}", replication_slot, result[0][1].as<std::string>());
+                replication_slot, start_lsn, snapshot_name);
     }
     catch (Exception & e)
     {

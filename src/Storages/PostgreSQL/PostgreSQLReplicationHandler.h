@@ -1,16 +1,9 @@
 #pragma once
 
-#include <common/logger_useful.h>
 #include "PostgreSQLConnection.h"
 #include "PostgreSQLReplicaConsumer.h"
 #include "PostgreSQLReplicaMetadata.h"
-#include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
-#include "pqxx/pqxx"
 
-
-/* Implementation of logical streaming replication protocol: https://www.postgresql.org/docs/10/protocol-logical-replication.html.
- */
 
 namespace DB
 {
@@ -23,6 +16,7 @@ public:
             const std::string & database_name_,
             const std::string & table_name_,
             const std::string & conn_str_,
+            const std::string & metadata_path_,
             std::shared_ptr<Context> context_,
             const std::string & publication_slot_name_,
             const std::string & replication_slot_name_,
@@ -36,11 +30,11 @@ private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
 
     bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
-    void createPublication(std::shared_ptr<pqxx::work> tx);
-
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
-    void createTempReplicationSlot(NontransactionPtr ntx, LSNPosition & start_lsn, std::string & snapshot_name);
-    void createReplicationSlot(NontransactionPtr ntx);
+
+    void createPublication(std::shared_ptr<pqxx::work> tx);
+    void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name);
+
     void dropReplicationSlot(NontransactionPtr tx, std::string & slot_name);
     void dropPublication(NontransactionPtr ntx);
 
@@ -50,14 +44,13 @@ private:
 
     Poco::Logger * log;
     std::shared_ptr<Context> context;
-    const std::string database_name, table_name, connection_str;
+    const std::string database_name, table_name, connection_str, metadata_path;
 
     std::string publication_name, replication_slot;
     std::string tmp_replication_slot;
     const size_t max_block_size;
 
     PostgreSQLConnectionPtr connection, replication_connection;
-    const String metadata_path;
     BackgroundSchedulePool::TaskHolder startup_task;
     std::shared_ptr<PostgreSQLReplicaConsumer> consumer;
     StoragePtr nested_storage;

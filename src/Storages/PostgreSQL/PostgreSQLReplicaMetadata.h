@@ -13,10 +13,8 @@ public:
     void commitMetadata(std::string & lsn, const std::function<String()> & syncTableFunc);
     void readMetadata();
 
-    size_t version()
-    {
-        return last_version++;
-    }
+    size_t version() { return last_version++; }
+    std::string lsn() { return last_lsn; }
 
 private:
     void writeMetadata(bool append_metadata = false);

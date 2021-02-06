@@ -1,4 +1,5 @@
 #include "insertPostgreSQLValue.h"
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -10,11 +11,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
-#include <common/logger_useful.h>
 
 
 namespace DB

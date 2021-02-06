@@ -1,36 +1,25 @@
 #include "StoragePostgreSQLReplica.h"
-
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-
-#include <Databases/DatabaseOnDisk.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/FormatSettings.h>
-
-#include <Processors/Transforms/FilterTransform.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include "PostgreSQLReplicationSettings.h"
 
 #include <Common/Macros.h>
 #include <Core/Settings.h>
-
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
-
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-
 #include <Storages/StorageFactory.h>
 
-#include "PostgreSQLReplicationSettings.h"
-#include <Databases/DatabaseOnDisk.h>
-
-#include <common/logger_useful.h>
-#include <Poco/File.h>
 
 namespace DB
 {
@@ -62,10 +51,14 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
         relative_data_path.resize(relative_data_path.size() - 1);
     relative_data_path += NESTED_STORAGE_SUFFIX;
 
+    auto metadata_path = DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getMetadataPath()
+                       +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
             remote_table_name,
             connection_str,
+            metadata_path,
             global_context,
             global_context->getMacros()->expand(replication_settings->postgresql_replication_slot_name.value),
             global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value),
@@ -148,9 +141,6 @@ ASTPtr StoragePostgreSQLReplica::getCreateHelperTableQuery()
     auto primary_key_ast = getInMemoryMetadataPtr()->getPrimaryKeyAST();
     if (primary_key_ast)
         storage->set(storage->order_by, primary_key_ast);
-    /// else
-
-    //storage->set(storage->partition_by, ?);
 
     create_table_query->set(create_table_query->storage, storage);
 
@@ -167,16 +157,23 @@ Pipe StoragePostgreSQLReplica::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    StoragePtr storage = DatabaseCatalog::instance().getTable(nested_storage->getStorageID(), *global_context);
+    if (!nested_storage)
+    {
+        auto table_id = getStorageID();
+        nested_storage = DatabaseCatalog::instance().getTable(
+                StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX),
+                *global_context);
+    }
+
     auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
-    NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
-
     Block nested_header = nested_metadata->getSampleBlock();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);
     ColumnWithTypeAndName & version_column = nested_header.getByPosition(nested_header.columns() - 1);
+
+    NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
 
     if (ASTSelectQuery * select_query = query_info.query->as<ASTSelectQuery>(); select_query && !column_names_set.count(version_column.name))
     {
@@ -208,7 +205,7 @@ Pipe StoragePostgreSQLReplica::read(
             expressions->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
     }
 
-    Pipe pipe = storage->read(
+    Pipe pipe = nested_storage->read(
             require_columns_name,
             nested_metadata, query_info, context,
             processed_stage, max_block_size, num_streams);
@@ -249,11 +246,9 @@ void StoragePostgreSQLReplica::startup()
         LOG_TRACE(&Poco::Logger::get("StoragePostgreSQLReplica"),
                 "Directory already exists {}", relative_data_path);
 
-    nested_storage = DatabaseCatalog::instance().getTable(
-            StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX),
-            *global_context);
-
-    replication_handler->startup(nested_storage);
+    replication_handler->startup(
+            DatabaseCatalog::instance().getTable(
+            StorageID(table_id.database_name, table_id.table_name + NESTED_STORAGE_SUFFIX), *global_context));
 }
 
 
