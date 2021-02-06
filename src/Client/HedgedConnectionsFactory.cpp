@@ -8,7 +8,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
@@ -370,7 +369,10 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking)
         if (replica->connection->hasReadPendingData())
             return replica->connection->getSocket()->impl()->sockfd();
 
-    return epoll.getReady(/* blocking */blocking).data.fd;
+    epoll_event event;
+    event.data.fd = -1;
+    epoll.getManyReady(1, &event, blocking);
+    return event.data.fd;
 }
 
 void HedgedConnectionsFactory::processReplicaEvent(ReplicaStatePtr & replica)
@@ -388,7 +390,7 @@ void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr & replica, Co
     replica->active_timeouts.erase(timeout_descriptor->timer.getDescriptor());
     timeout_fd_to_replica[timeout_descriptor->timer.getDescriptor()];
 
-    if (timeout_descriptor->type  == ConnectionTimeoutType::RECEIVE_TIMEOUT)
+    if (timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_TIMEOUT)
     {
         removeTimeoutsFromReplica(replica);
         int fd = replica->connection->getSocket()->impl()->sockfd();
@@ -401,8 +403,8 @@ void HedgedConnectionsFactory::processTimeoutEvent(ReplicaStatePtr & replica, Co
         connection_establisher.stage = ConnectionEstablisher::Stage::FAILED;
         processFailedConnection(replica);
     }
-    else if ((timeout_descriptor->type  == ConnectionTimeoutType::RECEIVE_HELLO_TIMEOUT
-             || timeout_descriptor->type  == ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT)
+    else if ((timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_HELLO_TIMEOUT
+             || timeout_descriptor->type == ConnectionTimeoutType::RECEIVE_TABLES_STATUS_TIMEOUT)
              && entries_count + indexes_in_process.size() + failed_pools_count < shuffled_pools.size())
         replica = createNewReplica();
 }

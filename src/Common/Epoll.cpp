@@ -46,17 +46,6 @@ void Epoll::remove(int fd)
     --events_count;
 }
 
-epoll_event Epoll::getReady(bool blocking, AsyncCallback async_callback) const
-{
-    epoll_event event;
-    event.data.fd = -1;
-    size_t ready_events_count = getManyReady(1, &event, blocking, std::move(async_callback));
-    if (ready_events_count > 1)
-        throw Exception("Returned amount of events cannot be more than 1.", ErrorCodes::LOGICAL_ERROR);
-
-    return event;
-}
-
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback) const
 {
     int ready_size = 0;

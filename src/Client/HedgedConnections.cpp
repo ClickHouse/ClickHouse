@@ -275,7 +275,7 @@ Packet HedgedConnections::receivePacketImpl(AsyncCallback async_callback)
         else if (timeout_fd_to_replica_location.contains(event_fd))
         {
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
-            processTimeoutEvent(location,  offset_states[location.offset].replicas[location.index].active_timeouts[event_fd]);
+            processTimeoutEvent(location, offset_states[location.offset].replicas[location.index].active_timeouts[event_fd]);
         }
         else if (event_fd == hedged_connections_factory.getFileDescriptor())
             tryGetNewReplica(false);
@@ -295,7 +295,10 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
             return replica.connection->getSocket()->impl()->sockfd();
     }
 
-    return epoll.getReady(true, std::move(async_callback)).data.fd;
+    epoll_event event;
+    event.data.fd = -1;
+    epoll.getManyReady(1, &event, true, std::move(async_callback));
+    return event.data.fd;
 }
 
 Packet HedgedConnections::receivePacketFromReplica(ReplicaLocation & replica_location, AsyncCallback async_callback)

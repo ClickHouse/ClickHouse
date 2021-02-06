@@ -30,9 +30,6 @@ public:
     /// with epoll file descriptor.
     size_t getManyReady(int max_events, epoll_event * events_out, bool blocking, AsyncCallback async_callback = {}) const;
 
-    /// Get only one ready event, if blocking is false and there is no ready events, epoll_event.data.fd will be set to -1.
-    epoll_event getReady(bool blocking = true, AsyncCallback async_callback = {}) const;
-
     int getFileDescriptor() const { return epoll_fd; }
 
     int size() const { return events_count; }
