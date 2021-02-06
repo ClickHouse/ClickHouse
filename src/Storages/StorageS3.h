@@ -67,6 +67,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client;
     String name;
     size_t max_read_threads;
+    size_t max_read_buffer_size;
 };
 
 }

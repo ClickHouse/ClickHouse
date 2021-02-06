@@ -77,7 +77,8 @@ namespace
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
             const String & key,
-            size_t max_read_threads)
+            size_t max_read_threads,
+            size_t buffer_size)
             : SourceWithProgress(getHeader(sample_block, need_path, need_file))
             , name(std::move(name_))
             , with_file_column(need_file)
@@ -86,19 +87,18 @@ namespace
         {
             size_t object_size = DB::S3::getObjectSize(client, bucket, key);
 
-
             std::unique_ptr<ReadBuffer> s3_read_buf;
-            if (max_read_threads <= 1 || object_size <= max_read_threads * DBMS_DEFAULT_BUFFER_SIZE)
+            if (max_read_threads <= 1 || object_size <= max_read_threads * buffer_size)
             {
                 LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading from S3 in single thread");
-                s3_read_buf = std::make_unique<ReadBufferFromS3>(client, bucket, key);
+                s3_read_buf = std::make_unique<ReadBufferFromS3>(client, bucket, key, buffer_size);
             }
             else
             {
                 LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
                           "Downloading from S3 in {} threads. Object size: {}, Range size: {}",
-                          max_read_threads, object_size, DBMS_DEFAULT_BUFFER_SIZE);
-                auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, DBMS_DEFAULT_BUFFER_SIZE, object_size);
+                          max_read_threads, object_size, buffer_size);
+                auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, buffer_size, object_size);
                 s3_read_buf = std::make_unique<ReadBufferFanIn>(std::move(factory), max_read_threads);
             }
 
@@ -230,7 +230,8 @@ StorageS3::StorageS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
-    , max_read_threads(context_.getSettings().max_threads)
+    , max_read_threads(context_.getSettings().max_download_threads)
+    , max_read_buffer_size(std::max<size_t>(context_.getSettings().max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE))
 {
     global_context.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -352,7 +353,8 @@ Pipe StorageS3::read(
             client,
             uri.bucket,
             key,
-            max_read_threads));
+            max_read_threads,
+            max_read_buffer_size));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
