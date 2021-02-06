@@ -62,5 +62,4 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) 
-<!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/view) <!--hide-->
