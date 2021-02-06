@@ -53,7 +53,7 @@ struct ArrayCumSumImpl
         for (const auto * end = offsets + size; offsets < end; ++offsets)
         {
             auto offset = *offsets;
-            Src accumulated{};
+            Dst accumulated{};
             for (; pos < offset; ++pos)
             {
                 accumulated += src_value;
@@ -70,7 +70,7 @@ struct ArrayCumSumImpl
         for (const auto * end = offsets + size; offsets < end; ++offsets)
         {
             auto offset = *offsets;
-            Src accumulated{};
+            Dst accumulated{};
             for (; pos < offset; ++pos)
             {
                 accumulated += src_values[pos];
