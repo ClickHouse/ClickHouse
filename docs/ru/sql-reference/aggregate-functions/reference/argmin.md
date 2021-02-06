@@ -25,10 +25,6 @@ argMin(tuple(arg, val))
 -   `arg` — аргумент.
 -   `val` — значение.
 
-или
-
--   `tuple(arg, val)` — [Tuple](../../../sql-reference/data-types/tuple.md).
-
 **Возвращаемое значение**
 
 -   Значение `arg`, соответствующее минимальному значению `val`.
@@ -43,7 +39,7 @@ argMin(tuple(arg, val))
 
 **Пример**
 
-Таблица ввода:
+Исходная таблица:
 
 ``` text
 ┌─user─────┬─salary─┐

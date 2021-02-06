@@ -25,10 +25,6 @@ argMax(tuple(arg, val))
 -   `arg` — Argument.
 -   `val` — Value.
 
-or 
-
--   `tuple(arg, val)` — [Tuple](../../../sql-reference/data-types/tuple.md).
-
 **Returned value**
 
 -   `arg` value that corresponds to maximum `val` value.
