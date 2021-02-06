@@ -64,6 +64,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -341,6 +342,7 @@ struct ContextShared
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable std::optional<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -439,6 +441,7 @@ struct ContextShared
         buffer_flush_schedule_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
+        message_broker_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -1525,6 +1528,17 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     return *shared->distributed_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
+{
+    auto lock = getLock();
+    if (!shared->message_broker_schedule_pool)
+        shared->message_broker_schedule_pool.emplace(
+            settings.background_message_broker_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            "BgMsgBrkSchPool");
+    return *shared->message_broker_schedule_pool;
+}
+
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -2495,6 +2509,24 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
+}
+
+PartUUIDsPtr Context::getPartUUIDs()
+{
+    auto lock = getLock();
+    if (!part_uuids)
+        part_uuids = std::make_shared<PartUUIDs>();
+
+    return part_uuids;
+}
+
+PartUUIDsPtr Context::getIgnoredPartUUIDs()
+{
+    auto lock = getLock();
+    if (!ignored_part_uuids)
+        ignored_part_uuids = std::make_shared<PartUUIDs>();
+
+    return ignored_part_uuids;
 }
 
 }

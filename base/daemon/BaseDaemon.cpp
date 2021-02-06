@@ -230,10 +230,10 @@ public:
             }
             else
             {
-                siginfo_t info;
-                ucontext_t context;
+                siginfo_t info{};
+                ucontext_t context{};
                 StackTrace stack_trace(NoCapture{});
-                UInt32 thread_num;
+                UInt32 thread_num{};
                 std::string query_id;
                 DB::ThreadStatus * thread_ptr{};
 

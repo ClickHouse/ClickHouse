@@ -214,16 +214,17 @@ public:
 
     /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-    /// Find column in input. Remove it from input and index.
-    /// Checks that column in inputs and has not dependent nodes.
-    void removeUnusedInput(const std::string & column_name);
+    /// Find column in result. Remove it from index.
+    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
+    /// Return true if column was removed from inputs.
+    bool removeUnusedResult(const std::string & column_name);
 
     void projectInput() { settings.project_input = true; }
     void removeUnusedActions(const Names & required_names);
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
-    bool empty() const; /// If actions only contain inputs.
+    bool trivial() const; /// If actions has no functions or array join.
 
     const ActionsSettings & getSettings() const { return settings; }
 
@@ -255,18 +256,20 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAGPtr merge(ActionsDAG && first, ActionsDAG && second);
 
+    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
+
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
     /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> split(std::unordered_set<const Node *> split_nodes) const;
+    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
+    SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
     /// Index of initial actions must contain column_name.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr> splitActionsForFilter(const std::string & column_name) const;
+    SplitResult splitActionsForFilter(const std::string & column_name) const;
 
 private:
     Node & addNode(Node node, bool can_replace = false);
