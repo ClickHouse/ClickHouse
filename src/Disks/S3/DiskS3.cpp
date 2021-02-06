@@ -249,7 +249,7 @@ public:
         if (whence == SEEK_CUR)
         {
             /// If position within current working buffer - shift pos.
-            if (working_buffer.size() && size_t(getPosition() + offset_) < absolute_position)
+            if (!working_buffer.empty() && size_t(getPosition() + offset_) < absolute_position)
             {
                 pos += offset_;
                 return getPosition();
@@ -262,7 +262,7 @@ public:
         else if (whence == SEEK_SET)
         {
             /// If position within current working buffer - shift pos.
-            if (working_buffer.size() && size_t(offset_) >= absolute_position - working_buffer.size()
+            if (!working_buffer.empty() && size_t(offset_) >= absolute_position - working_buffer.size()
                 && size_t(offset_) < absolute_position)
             {
                 pos = working_buffer.end() - (absolute_position - offset_);

@@ -50,7 +50,7 @@ LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exc
 LimitReadBuffer::~LimitReadBuffer()
 {
     /// Update underlying buffer's position in case when limit wasn't reached.
-    if (working_buffer.size() != 0)
+    if (!working_buffer.empty())
         in.position() = position();
 }
 
