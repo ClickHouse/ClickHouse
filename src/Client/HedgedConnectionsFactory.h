@@ -137,7 +137,6 @@ private:
 
     std::vector<ConnectionEstablisher> connection_establishers;
     std::vector<ShuffledPool> shuffled_pools;
-    std::vector<ReplicaState> replica_states;
 
     /// Map socket file descriptor to replica.
     std::unordered_map<int, ReplicaStatePtr> fd_to_replica;
