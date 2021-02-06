@@ -1,4 +1,4 @@
-Check the bug causing situation: the special Australia/Lord_Howe time zone. tooDateTime and toString functions are all tested at once
+Check the bug causing situation: the special Australia/Lord_Howe time zone. toDateTime and toString functions are all tested at once
 1554559200	2019-04-07 01:00:00	2019-04-07 01:00:00
 1554559800	2019-04-07 01:10:00	2019-04-07 01:10:00
 1554560400	2019-04-07 01:20:00	2019-04-07 01:20:00
