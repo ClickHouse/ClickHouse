@@ -470,7 +470,7 @@ struct TimezoneOffsetImpl
 
     static inline time_t execute(UInt16, const DateLUTImpl &)
     {
-        return dateIsNotSupported(name);
+        return DateTime::dateIsNotSupported(name);
     }
 
     using FactorTransform = ToTimeImpl;
