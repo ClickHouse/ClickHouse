@@ -454,36 +454,42 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
     return false;
 }
 
-void ActionsDAG::removeUnusedInput(const std::string & column_name)
+bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
+    /// Find column in index and remove.
+    const Node * col;
+    {
+        auto it = index.begin();
+        for (; it != index.end(); ++it)
+            if ((*it)->result_name == column_name)
+                break;
+
+        if (it == index.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+        col = *it;
+        index.remove(it);
+    }
+
+    /// Check if column is in input.
     auto it = inputs.begin();
     for (; it != inputs.end(); ++it)
-        if ((*it)->result_name == column_name)
+        if (*it == col)
             break;
 
     if (it == inputs.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found input {} in ActionsDAG\n{}", column_name, dumpDAG());
+        return false;
 
-    auto * input = *it;
+    /// Check column has no dependent.
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (input == child)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Cannot remove input {} because it has dependent nodes in ActionsDAG\n{}",
-                                column_name, dumpDAG());
+            if (col == child)
+                return false;
 
-    for (auto jt = index.begin(); jt != index.end(); ++jt)
-    {
-        if (*jt == input)
-        {
-            index.remove(jt);
-            break;
-        }
-    }
-
+    /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
-        if (&(*jt) == input)
+        if (&(*jt) == *it)
         {
             nodes.erase(jt);
             break;
@@ -491,6 +497,7 @@ void ActionsDAG::removeUnusedInput(const std::string & column_name)
     }
 
     inputs.erase(it);
+    return true;
 }
 
 ActionsDAGPtr ActionsDAG::clone() const
@@ -609,10 +616,10 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
-bool ActionsDAG::empty() const
+bool ActionsDAG::trivial() const
 {
     for (const auto & node : nodes)
-        if (node.type != ActionType::INPUT)
+        if (node.type == ActionType::FUNCTION || node.type == ActionType::ARRAY_JOIN)
             return false;
 
     return true;
@@ -844,7 +851,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     return std::make_shared<ActionsDAG>(std::move(first));
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_index) is a part which will have split_list in result.
@@ -1045,7 +1052,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::split(std::unordered_set<con
     return {std::move(first_actions), std::move(second_actions)};
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
 
     struct Frame
@@ -1113,7 +1120,7 @@ std::pair<ActionsDAGPtr, ActionsDAGPtr>  ActionsDAG::splitActionsBeforeArrayJoin
     return res;
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr> ActionsDAG::splitActionsForFilter(const std::string & column_name) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
 {
     auto it = index.begin();
     for (; it != index.end(); ++it)

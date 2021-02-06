@@ -14,6 +14,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTOrderByElement;
+struct WindowFrame;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -65,6 +66,7 @@ struct QueryFuzzer
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
+    void fuzzWindowFrame(WindowFrame & frame);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(const ASTPtr ast);

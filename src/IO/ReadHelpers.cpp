@@ -683,7 +683,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
               */
             size_t size = s.size();
             while (size > 0
