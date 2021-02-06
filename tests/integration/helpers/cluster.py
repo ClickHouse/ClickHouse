@@ -154,6 +154,7 @@ class ClickHouseCluster:
         self.minio_certs_dir = None
         self.minio_host = "minio1"
         self.minio_bucket = "root"
+        self.minio_bucket_2 = "root2"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -555,17 +556,18 @@ class ClickHouseCluster:
 
                 print("Connected to Minio.")
 
-                if minio_client.bucket_exists(self.minio_bucket):
-                    minio_client.remove_bucket(self.minio_bucket)
+                buckets = [self.minio_bucket, self.minio_bucket_2]
 
-                minio_client.make_bucket(self.minio_bucket)
-
-                print(("S3 bucket '%s' created", self.minio_bucket))
+                for bucket in buckets:
+                    if minio_client.bucket_exists(bucket):
+                        minio_client.remove_bucket(bucket)
+                    minio_client.make_bucket(bucket)
+                    print("S3 bucket '%s' created", bucket)
 
                 self.minio_client = minio_client
                 return
             except Exception as ex:
-                print(("Can't connect to Minio: %s", str(ex)))
+                print("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait Minio to start")
@@ -1048,32 +1050,25 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def kill_clickhouse(self, stop_start_wait_sec=5):
-        pid = self.get_process_pid("clickhouse")
-        if not pid:
-            raise Exception("No clickhouse found")
-        self.exec_in_container(["bash", "-c", "kill -9 {}".format(pid)], user='root')
-        time.sleep(stop_start_wait_sec)
-
-    def restore_clickhouse(self, retries=100):
-        pid = self.get_process_pid("clickhouse")
-        if pid:
-            raise Exception("ClickHouse has already started")
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
-        from helpers.test_tools import assert_eq_with_retry
-        # wait start
-        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
-
-    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
+    def stop_clickhouse(self, start_wait_sec=5, kill=False):
         if not self.stay_alive:
-            raise Exception("clickhouse can be restarted only with stay_alive=True instance")
+            raise Exception("clickhouse can be stopped only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-        time.sleep(stop_start_wait_sec)
+        time.sleep(start_wait_sec)
+
+    def start_clickhouse(self, stop_wait_sec=5):
+        if not self.stay_alive:
+            raise Exception("clickhouse can be started again only with stay_alive=True instance")
+
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
+
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
+        self.stop_clickhouse(stop_start_wait_sec, kill)
+        self.start_clickhouse(stop_start_wait_sec)
 
     def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         container_id = self.get_docker_handle().id
@@ -1411,7 +1406,7 @@ class ClickHouseKiller(object):
         self.clickhouse_node = clickhouse_node
 
     def __enter__(self):
-        self.clickhouse_node.kill_clickhouse()
+        self.clickhouse_node.stop_clickhouse(kill=True)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.clickhouse_node.restore_clickhouse()
+        self.clickhouse_node.start_clickhouse()

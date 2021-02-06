@@ -4,6 +4,7 @@
 #include <Disks/IDisk.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
@@ -345,6 +346,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
             NameAndTypePair("_table", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+            NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
             NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
             NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
