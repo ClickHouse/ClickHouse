@@ -198,7 +198,7 @@ private:
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] static inline void throwReadAfterEOF()
+    [[noreturn]] static void throwReadAfterEOF()
     {
         throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
