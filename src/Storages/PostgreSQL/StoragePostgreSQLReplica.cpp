@@ -69,7 +69,10 @@ StoragePostgreSQLReplica::StoragePostgreSQLReplica(
             global_context,
             global_context->getMacros()->expand(replication_settings->postgresql_replication_slot_name.value),
             global_context->getMacros()->expand(replication_settings->postgresql_publication_name.value),
-            global_context->getSettingsRef().postgresql_replica_max_rows_to_insert.value
+            replication_settings->postgresql_max_block_size.changed
+                     ? replication_settings->postgresql_max_block_size.value
+                     : (global_context->getSettingsRef().max_insert_block_size.value)
+
     );
 }
 
