@@ -265,7 +265,7 @@ SELECT toIPv6('127.0.0.1')
 └─────────────────────┘
 ```
 
-## isIPv4String {#isIPv4String}
+## isIPv4String {#isipv4string}
 
 Determines whether the input string is an IPv4 address or not.
 
@@ -277,7 +277,7 @@ isIPv4String(string)
 
 **Parameters**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -291,8 +291,6 @@ Query:
 
 ```sql
 SELECT isIPv4String('0.0.0.0');
-
-SELECT isIPv4String('Hello');
 ```
 
 Result:
@@ -301,12 +299,9 @@ Result:
 ┌─isIPv4String('0.0.0.0')─┐
 │                       1 │
 └─────────────────────────┘
-┌─isIPv4String('Hello')─┐
-│                     0 │
-└───────────────────────┘
 ```
 
-## isIPv6String {#isIPv4String}
+## isIPv6String {#isipv4string}
 
 Determines whether the input string is an IPv6 address or not. 
 
@@ -318,7 +313,7 @@ isIPv6String(string)
 
 **Parameters**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -332,8 +327,6 @@ Query:
 
 ``` sql
 SELECT isIPv6String('::ffff:127.0.0.1');
-
-SELECT isIPv6String('Hello');
 ```
 
 Result:
@@ -342,9 +335,6 @@ Result:
 ┌─isIPv6String('::ffff:127.0.0.1')─┐
 │                                1 │
 └──────────────────────────────────┘
-┌─isIPv6String('Hello')─┐
-│                     0 │
-└───────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

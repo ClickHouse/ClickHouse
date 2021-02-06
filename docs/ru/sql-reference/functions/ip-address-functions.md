@@ -243,7 +243,7 @@ SELECT
 └───────────────────────────────────┴──────────────────────────────────┘
 ```
 
-## isIPv4String {#isIPv4String}
+## isIPv4String {#isipv4string}
 
 Определяет, является ли строка адресом IPv4 или нет.
 
@@ -255,7 +255,7 @@ isIPv4String(string)
 
 **Параметры**
 
--   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -269,8 +269,6 @@ isIPv4String(string)
 
 ```sql
 SELECT isIPv4String('0.0.0.0');
-
-SELECT isIPv4String('Hello');
 ```
 
 Результат:
@@ -279,12 +277,9 @@ SELECT isIPv4String('Hello');
 ┌─isIPv4String('0.0.0.0')─┐
 │                       1 │
 └─────────────────────────┘
-┌─isIPv4String('Hello')─┐
-│                     0 │
-└───────────────────────┘
 ```
 
-## isIPv6String {#isIPv4String}
+## isIPv6String {#isipv4string}
 
 Определяет, является ли строка адресом IPv6 или нет.
 
@@ -296,7 +291,7 @@ isIPv6String(string)
 
 **Параметры**
 
--   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -310,8 +305,6 @@ isIPv6String(string)
 
 ``` sql
 SELECT isIPv6String('::ffff:127.0.0.1');
-
-SELECT isIPv6String('Hello');
 ```
 
 Результат:
@@ -320,9 +313,6 @@ SELECT isIPv6String('Hello');
 ┌─isIPv6String('::ffff:127.0.0.1')─┐
 │                                1 │
 └──────────────────────────────────┘
-┌─isIPv6String('Hello')─┐
-│                     0 │
-└───────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->
