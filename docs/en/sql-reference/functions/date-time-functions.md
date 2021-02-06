@@ -518,6 +518,46 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## date\_sub {#date_sub}
+
+This subtracts a time/date interval from a date and then returns the date.
+
+**Syntax**
+
+``` sql
+date_sub(unit, value, date)
+```
+
+Aliases: `dateSub`, `DATE_SUB`. 
+
+**Parameters**
+
+-   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+
+        Supported values: second, minute, hour, day, week, month, quarter, year.
+-   `value` - Value in specified unit - [Int](../../sql-reference/data-types/int-uint.md)    
+-   `date` — [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+Returns Date or DateTime with `value` expressed in `unit` subtracted from `date`. 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT date_sub(YEAR, 3, toDate('2018-01-01'));
+```
+
+Result:
+
+``` text
+┌─minus(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                     2015-01-01 │
+└────────────────────────────────────────────────┘
+```
+
 ## timestamp\_add {#timestamp_add}
 
 Adds the specified time value with the provided date or date time value.
