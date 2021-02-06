@@ -2525,6 +2525,6 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованное представление ](../../sql-reference/statements/create/view.md#materialized) и [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
