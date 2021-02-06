@@ -1,5 +1,5 @@
 /* toDateTime or toString or other functions which should call the toMinute() function will all meet this bug. tests below will verify the toDateTime and toString. */
-SELECT 'Check the bug causing situation: the special Australia/Lord_Howe time zone. tooDateTime and toString functions are all tested at once';
+SELECT 'Check the bug causing situation: the special Australia/Lord_Howe time zone. toDateTime and toString functions are all tested at once';
 SELECT toUnixTimestamp(x) as tt, (toDateTime('2019-04-07 01:00:00', 'Australia/Lord_Howe') + INTERVAL number * 600 SECOND) AS x,  toString(x) as xx FROM numbers(20);
 
 /* The Batch Part. Test period is whole 4 days*/
