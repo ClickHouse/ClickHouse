@@ -251,8 +251,12 @@ function run_tests
         00701_rollup
         00834_cancel_http_readonly_queries_on_client_close
         00911_tautological_compare
+
+        # Hyperscan
         00926_multimatch
         00929_multi_match_edit_distance
+        01681_hyperscan_debug_assertion
+
         01031_mutations_interpreter_and_context
         01053_ssd_dictionary # this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
         01083_expressions_in_engine_arguments
@@ -315,6 +319,7 @@ function run_tests
 
          # In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
         01504_rocksdb
+        01686_rocksdb
 
         # Look at DistributedFilesToInsert, so cannot run in parallel.
         01460_DistributedFilesToInsert
@@ -337,7 +342,7 @@ function run_tests
         01666_blns
     )
 
-    time clickhouse-test -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
     # substr is to remove semicolon after test name
     readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
@@ -360,7 +365,7 @@ function run_tests
 
         echo "Going to run again: ${FAILED_TESTS[*]}"
 
-        clickhouse-test --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+        clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
     else
         echo "No failed tests"
     fi

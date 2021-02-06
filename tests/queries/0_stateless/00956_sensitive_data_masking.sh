@@ -97,7 +97,7 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where event_time > now() - 10 and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_time > now() - 10 and query like '%TOPSECRET%';"
 
 
 rm -f "$tmp_file" >/dev/null 2>&1

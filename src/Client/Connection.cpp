@@ -138,6 +138,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
+    maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -541,6 +542,12 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
+void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
+    writeVectorBinary(uuids, *out);
+    out->next();
+}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
@@ -795,6 +802,10 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
                 return res;
 
             case Protocol::Server::EndOfStream:
+                return res;
+
+            case Protocol::Server::PartUUIDs:
+                readVectorBinary(res.part_uuids, *in);
                 return res;
 
             default:

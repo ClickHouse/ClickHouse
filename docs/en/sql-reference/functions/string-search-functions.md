@@ -14,8 +14,6 @@ The search is case-sensitive by default in all these functions. There are separa
 
 Returns the position (in bytes) of the found substring in the string, starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
-
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
 **Syntax**

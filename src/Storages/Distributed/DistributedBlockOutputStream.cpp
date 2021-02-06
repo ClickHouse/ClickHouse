@@ -29,7 +29,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <Common/DirectorySyncGuard.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -61,24 +60,26 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
 {
-    if (!blocksHaveEqualStructure(out->getHeader(), block))
-    {
-        ConvertingBlockInputStream convert(
-            std::make_shared<OneBlockInputStream>(block),
-            out->getHeader(),
-            ConvertingBlockInputStream::MatchColumnsMode::Name);
-        auto adopted_block = convert.read();
+    if (blocksHaveEqualStructure(header, block))
+        return block;
 
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(adopted_block);
-    }
-    else
-    {
-        for (size_t i = 0; i < repeats; ++i)
-            out->write(block);
-    }
+    LOG_WARNING(log,
+        "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
+        header.dumpStructure(), block.dumpStructure());
+
+    ConvertingBlockInputStream convert(
+        std::make_shared<OneBlockInputStream>(block),
+        header,
+        ConvertingBlockInputStream::MatchColumnsMode::Name);
+    return convert.read();
+}
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats, Poco::Logger * log)
+{
+    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    for (size_t i = 0; i < repeats; ++i)
+        out->write(adopted_block);
 }
 
 
@@ -344,7 +345,9 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-            job.stream->write(shard_block);
+
+            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
+            job.stream->write(adopted_shard_block);
         }
         else // local
         {
@@ -368,7 +371,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
@@ -590,7 +593,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats, log);
     block_io.out->writeSuffix();
 }
 
@@ -623,11 +626,11 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
     auto make_directory_sync_guard = [&](const std::string & current_path)
     {
-        std::unique_ptr<DirectorySyncGuard> guard;
+        SyncGuardPtr guard;
         if (dir_fsync)
         {
             const std::string relative_path(data_path + current_path);
-            guard = std::make_unique<DirectorySyncGuard>(disk, relative_path);
+            guard = disk->getDirectorySyncGuard(relative_path);
         }
         return guard;
     };
