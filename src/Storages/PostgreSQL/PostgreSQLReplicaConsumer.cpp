@@ -408,15 +408,16 @@ bool PostgreSQLReplicaConsumer::readFromReplicationSlot()
     try
     {
         tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
-        //tx->set_variable("transaction_isolation", "'repeatable read'");
 
-        /// up_to_lsn is set to NULL, up_to_n_changes is set to max_block_size.
+        /// Read up to max_block_size rows changes (upto_n_changes parameter). It return larger number as the limit
+        /// is checked only after each transaction block.
+        /// Returns less than max_block_changes, if reached end of wal. Sync to table in this case.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
-                "'{}', NULL, NULL, 'publication_names', '{}', 'proto_version', '1')",
-                replication_slot_name, publication_name);
+                "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
+                replication_slot_name, max_block_size, publication_name);
+
         pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query_str));
-        LOG_DEBUG(log, "Starting replication stream");
 
         while (true)
         {
