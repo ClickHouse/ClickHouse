@@ -69,7 +69,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
