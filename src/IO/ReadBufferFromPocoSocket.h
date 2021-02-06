@@ -34,6 +34,7 @@ public:
 
 private:
     AsyncCallback async_callback;
+    std::string socket_description;
 };
 
 }

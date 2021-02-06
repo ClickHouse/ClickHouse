@@ -31,8 +31,8 @@ enum class PoolMode
     GET_ALL
 };
 
-/// Class for establishing connection with replica without blocking.
-class TryGetConnection
+/// Class for establishing connection with replica without blocking using different stages.
+class ConnectionEstablisher
 {
 public:
     enum Stage
@@ -47,7 +47,7 @@ public:
 
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    TryGetConnection(IConnectionPool * pool_,
+    ConnectionEstablisher(IConnectionPool * pool_,
                      const ConnectionTimeouts * timeouts_,
                      const Settings * settings_,
                      const QualifiedTableName * table_to_check = nullptr,

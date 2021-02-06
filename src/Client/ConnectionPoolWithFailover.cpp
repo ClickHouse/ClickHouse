@@ -329,7 +329,7 @@ std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> ConnectionPoolWithFa
     return Base::getShuffledPools(max_ignored_errors, get_priority);
 }
 
-TryGetConnection::TryGetConnection(
+ConnectionEstablisher::ConnectionEstablisher(
     IConnectionPool * pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings * settings_,
@@ -340,7 +340,7 @@ TryGetConnection::TryGetConnection(
 {
 }
 
-void TryGetConnection::reset()
+void ConnectionEstablisher::reset()
 {
     resetResult();
     stage = Stage::CONNECT;
@@ -349,7 +349,7 @@ void TryGetConnection::reset()
     fail_message.clear();
 }
 
-void TryGetConnection::resetResult()
+void ConnectionEstablisher::resetResult()
 {
     if (!result.entry.isNull())
     {
@@ -358,7 +358,7 @@ void TryGetConnection::resetResult()
     }
 }
 
-void TryGetConnection::processFail(bool add_description)
+void ConnectionEstablisher::processFail(bool add_description)
 {
     if (action_before_disconnect)
         action_before_disconnect(socket_fd);
@@ -371,7 +371,7 @@ void TryGetConnection::processFail(bool add_description)
     stage = Stage::FAILED;
 }
 
-void TryGetConnection::run()
+void ConnectionEstablisher::run()
 {
     try
     {
