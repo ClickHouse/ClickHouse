@@ -380,7 +380,7 @@ Alias: `dateTrunc`.
 
 **Parameters**
 
--   `unit` — The type of interval to truncate the result. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
 
     - `second`
