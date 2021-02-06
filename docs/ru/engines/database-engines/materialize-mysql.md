@@ -93,7 +93,7 @@ DDL-запросы в MySQL конвертируются в соответств
 - Каскадные запросы `UPDATE/DELETE` не поддерживаются движком `MaterializeMySQL`.
 - Репликация может быть легко нарушена.
 - Прямые операции изменения данных в таблицах и базах данных `MaterializeMySQL` запрещены.
-- на работу `MaterializeMySQL` влияет настройка [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert). Когда таблица на MySQL сервере меняется, происходит слияние данных в соответсвующей таблице в базе данных `MaterializeMySQL`.
+- На работу `MaterializeMySQL` влияет настройка [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert). Когда таблица на MySQL сервере меняется, происходит слияние данных в соответсвующей таблице в базе данных `MaterializeMySQL`.
 
 ## Примеры использования {#examples-of-use}
 
