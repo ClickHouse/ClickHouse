@@ -36,6 +36,9 @@ public:
     /// Send a request to replicas to cancel the request
     virtual void sendCancel() = 0;
 
+    /// Send parts' uuids to replicas to exclude them from query processing
+    virtual void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) = 0;
+
     /** On each replica, read and skip all packets to EndOfStream or Exception.
       * Returns EndOfStream if no exception has been received. Otherwise
       * returns the last received packet of type Exception.

@@ -273,7 +273,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
 {
     /// Cancel previous query and disconnect before retry.
     cancel(read_context);
-    multiplexed_connections->disconnect();
+    connections->disconnect();
 
     /// Only resend once, otherwise throw an exception
     if (!resent_query)
