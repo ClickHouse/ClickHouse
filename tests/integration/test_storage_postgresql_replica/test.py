@@ -323,6 +323,7 @@ def test_many_replication_messages(started_cluster):
     while (int(result) == 100000):
         time.sleep(0.2)
         result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    print("SYNC OK")
 
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(100000, 100000)")
 
@@ -358,41 +359,40 @@ def test_many_replication_messages(started_cluster):
     cursor.execute('DROP TABLE postgresql_replica;')
 
 
-@pytest.mark.timeout(120)
-def test_flush_by_block_size(started_cluster):
+@pytest.mark.timeout(180)
+def test_connection_loss(started_cluster):
     conn = get_postgres_conn(True)
     cursor = conn.cursor()
     create_postgres_table(cursor, 'postgresql_replica');
-
-    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(1000)")
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
     instance.query('''
-        CREATE TABLE test.postgresql_replica (
-            key UInt64, value UInt64,
-            _sign Int8 MATERIALIZED 1,
-            _version UInt64 MATERIALIZED 1,
-            PRIMARY KEY(key))
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
             ENGINE = PostgreSQLReplica(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            SETTINGS postgresql_max_block_size = 5000;
+            PRIMARY KEY key;
         ''')
 
-    result = instance.query('SELECT count() FROM test.postgresql_replica;')
-    while int(result) != 1000:
-        time.sleep(0.2)
-        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    i = 50
+    while i < 100000:
+        instance.query("INSERT INTO postgres_database.postgresql_replica SELECT {} + number, number from numbers(10000)".format(i))
+        i += 10000
 
-    for i in range(100):
-        instance.query("INSERT INTO postgres_database.postgresql_replica SELECT {} * 1000 + number, number from numbers(1000)".format(i))
-
-    time.sleep(0.5)
+    started_cluster.pause_container('postgres1')
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
-    while (int(result) == 0):
-        result = instance.query('SELECT count() FROM test.postgresql_replica;')
-        time.sleep(0.2)
+    print(int(result))
+    time.sleep(6)
 
-    assert(int(result) % 5000 == 0)
+    started_cluster.unpause_container('postgres1')
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while int(result) < 100050:
+        time.sleep(1)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    cursor.execute('DROP TABLE postgresql_replica;')
+    assert(int(result) == 100050)
 
 
 if __name__ == '__main__':

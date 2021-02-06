@@ -1,4 +1,5 @@
 #include "PostgreSQLReplicaMetadata.h"
+
 #include <Poco/File.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>

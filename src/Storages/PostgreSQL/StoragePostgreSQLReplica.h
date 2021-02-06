@@ -2,24 +2,21 @@
 
 #include "config_core.h"
 
+#include "PostgreSQLReplicationHandler.h"
+#include "PostgreSQLReplicationSettings.h"
+
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
-
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-
-#include <Storages/IStorage.h>
 #include <ext/shared_ptr_helper.h>
-#include <Interpreters/Context.h>
-#include "PostgreSQLReplicationHandler.h"
-#include "PostgreSQLReplicationSettings.h"
-#include "pqxx/pqxx"
+
 
 namespace DB
 {
@@ -67,7 +64,7 @@ private:
     ASTPtr getCreateHelperTableQuery();
     void dropNested();
 
-    String relative_data_path, metadata_path;
+    String relative_data_path;
     std::shared_ptr<Context> global_context;
 
     std::unique_ptr<PostgreSQLReplicationSettings> replication_settings;
